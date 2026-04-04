@@ -1,16 +1,33 @@
-# Ignore le dossier "OTP LOL" et tout son contenu
-OTP LOL/
-
-# Fichiers exécutables
-*.exe
-OTP LOL.exe
-
-# Python caches
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-*.pdb
+*.py[cod]
+*$py.class
 
-# Logs d'application
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+*.spec
+OTP LOL/
+OTP LOL.exe
+*.exe
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local app/runtime files
 app_debug.log
