@@ -29,7 +29,7 @@ import pygame
 
 from .config import (
     resource_path, CURRENT_VERSION, GITHUB_REPO_URL,
-    REGION_LIST, SUMMONER_SPELL_LIST, DEFAULT_PARAMS
+    REGION_LIST, SUMMONER_SPELL_LIST
 )
 from .utils import build_opgg_url, build_porofessor_url
 
@@ -108,6 +108,7 @@ class SettingsWindow:
         self.summoner_auto_detect_var = tk.BooleanVar(value=params.get("summoner_name_auto_detect", True))
         self.summoner_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
+        self.saved_manual_region = params.get("manual_region", "euw")
         self.play_again_var = tk.BooleanVar(value=params.get("auto_play_again_enabled", False))
         self.auto_hide_var = tk.BooleanVar(value=params.get("auto_hide_on_connect", True))
         self.close_on_exit_var = tk.BooleanVar(value=params.get("close_app_on_lol_exit", True))
@@ -246,6 +247,7 @@ class SettingsWindow:
         detect_frame.grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
         
         def on_auto_toggle():
+            self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
             self.toggle_summoner_entry()
             if self.summoner_auto_detect_var.get():
                 self.parent.force_refresh_summoner()
@@ -267,10 +269,10 @@ class SettingsWindow:
         
         # Region
         ttk.Label(self.main_frame, text="Région :", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
-        self.region_var = tk.StringVar(value=params.get("region", "euw"))
+        self.region_var = tk.StringVar(value=params.get("manual_region", "euw"))
         self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
         self.region_cb.grid(row=start_row + 2, column=1, sticky="ew", padx=5)
-        self.region_cb.bind("<<ComboboxSelected>>", lambda e: self.parent.update_param("region", self.region_var.get()))
+        self.region_cb.bind("<<ComboboxSelected>>", lambda e: self.parent.update_param("manual_region", self.region_var.get()))
         
         return start_row + 3
     
@@ -342,11 +344,11 @@ class SettingsWindow:
         # Exclude already selected champions
         params = self.parent.get_params()
         excluded = set()
+        pick_1 = params.get("selected_pick_1")
+        pick_2 = params.get("selected_pick_2")
+        pick_3 = params.get("selected_pick_3")
+        banned = params.get("selected_ban")
         if context == "pick":
-            pick_1 = params.get("selected_pick_1")
-            pick_2 = params.get("selected_pick_2")
-            pick_3 = params.get("selected_pick_3")
-            banned = params.get("selected_ban")
             if banned:
                 excluded.add(banned)
             if slot_num == 1:
@@ -355,6 +357,8 @@ class SettingsWindow:
                 excluded.update({pick_1, pick_3})
             elif slot_num == 3:
                 excluded.update({pick_1, pick_2})
+        elif context == "ban":
+            excluded.update({pick_1, pick_2, pick_3})
         
         valid_champs = [c for c in self.all_champions if c not in excluded]
         
@@ -505,6 +509,8 @@ class SettingsWindow:
             current_auto = self.parent.get_auto_summoner_name()
             if current_entry != current_auto and current_entry != "(détection auto...)":
                 self.saved_manual_name = current_entry
+            if self.region_var.get() and self.region_var.get() in REGION_LIST:
+                self.saved_manual_region = self.region_var.get()
             
             self.summ_entry.configure(state="readonly")
             self.region_cb.configure(state="disabled")
@@ -515,12 +521,11 @@ class SettingsWindow:
             
             auto_reg = self.parent.get_platform_for_websites()
             self.region_var.set(auto_reg)
-            self.parent.update_param("region", auto_reg)
         else:
             self.summ_entry.configure(state="normal")
             self.region_cb.configure(state="readonly")
             self.summoner_entry_var.set(self.saved_manual_name)
-            self.region_var.set(self.parent.get_params().get("region", "euw"))
+            self.region_var.set(self.saved_manual_region or self.parent.get_params().get("manual_region", "euw"))
         
         self._update_detect_label_text()
     
@@ -564,10 +569,10 @@ class SettingsWindow:
             areg = self.parent.get_platform_for_websites()
             if self.region_var.get() != areg:
                 self.region_var.set(areg)
-                self.parent.update_param("region", areg)
         
         if not self.summoner_auto_detect_var.get():
             self.saved_manual_name = self.summoner_entry_var.get()
+            self.saved_manual_region = self.region_var.get()
         
         self.window.after(1000, self._poll_summoner_label)
     
@@ -578,7 +583,7 @@ class SettingsWindow:
         
         if not self.summoner_auto_detect_var.get():
             self.parent.update_param("manual_summoner_name", self.summoner_entry_var.get())
-            self.parent.update_param("region", self.region_var.get())
+            self.parent.update_param("manual_region", self.region_var.get())
         
         self.parent.update_param("auto_play_again_enabled", self.play_again_var.get())
         self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get())
@@ -596,6 +601,7 @@ class LoLAssistantUI:
     
     # ThreadPoolExecutor partagé pour le chargement des icônes
     MAX_WORKERS = 4
+    DISCONNECT_CLOSE_DELAY_MS = 8000
     
     def __init__(
         self, 
@@ -625,8 +631,13 @@ class LoLAssistantUI:
         self._quit_callback = quit_callback
         
         self.running = True
+        self.closing_requested = False
         self.settings_win: Optional[SettingsWindow] = None
         self.ws_manager = None  # Sera défini par main.py
+        self.tray_available = False
+        self.hotkeys_available = False
+        self.hotkey_handles = []
+        self.disconnect_close_after_id = None
         
         # ThreadPoolExecutor pour le chargement des icônes
         self.executor = ThreadPoolExecutor(max_workers=self.MAX_WORKERS)
@@ -648,10 +659,12 @@ class LoLAssistantUI:
         self.banner_label: Optional[ttk.Label] = None
         self.connection_indicator: Optional[tk.Canvas] = None
         self.status_label: Optional[ttk.Label] = None
+        self.safe_quit_btn: Optional[ttk.Button] = None
         
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
+        self._refresh_safe_controls()
     
     def _init_sound(self) -> None:
         """Initialise le système de son."""
@@ -685,13 +698,15 @@ class LoLAssistantUI:
     
     def get_auto_summoner_name(self) -> Optional[str]:
         """Retourne le nom du summoner détecté automatiquement."""
-        return self.ws_manager.get_riot_id() if self.ws_manager else None
+        params = self.get_params()
+        return params.get("auto_detected_riot_id") or (self.ws_manager.get_riot_id() if self.ws_manager else None)
     
     def get_platform_for_websites(self) -> str:
         """Retourne la région pour les URLs."""
-        if self.ws_manager:
-            return self.ws_manager.get_platform_for_websites()
-        return self.get_params().get("region", "euw")
+        params = self.get_params()
+        if params.get("summoner_name_auto_detect", True):
+            return (params.get("auto_detected_region") or (self.ws_manager.get_platform_for_websites() if self.ws_manager else "euw")).lower()
+        return params.get("manual_region", "euw").lower()
     
     def force_refresh_summoner(self) -> None:
         """Force un rafraîchissement du summoner."""
@@ -707,9 +722,10 @@ class LoLAssistantUI:
         self._create_status_label()
         self._create_settings_gear()
         self._create_opgg_button()
+        self._create_safe_quit_button()
         
         # Window protocol
-        self.root.protocol("WM_DELETE_WINDOW", self.root.withdraw)
+        self.root.protocol("WM_DELETE_WINDOW", self._handle_window_close)
     
     def _configure_styles(self) -> None:
         """Configure les styles de l'interface."""
@@ -784,6 +800,18 @@ class LoLAssistantUI:
             command=lambda: webbrowser.open(self.build_opgg_url())
         )
         opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
+
+    def _create_safe_quit_button(self) -> None:
+        """Crée le bouton de sortie de secours pour les environnements sans tray/hotkeys."""
+        self.safe_quit_btn = ttk.Button(
+            self.root,
+            text="Quitter",
+            command=self._quit_callback,
+            bootstyle="danger-outline",
+            width=10
+        )
+        self.safe_quit_btn.place(relx=0.98, rely=0.95, anchor="se")
+        self.safe_quit_btn.place_forget()
     
     def build_opgg_url(self) -> str:
         """Construit l'URL OP.GG."""
@@ -803,8 +831,60 @@ class LoLAssistantUI:
         """Retourne le Riot ID à afficher selon le mode de détection."""
         params = self.get_params()
         if params.get("summoner_name_auto_detect", True):
-            return self.get_auto_summoner_name()
+            return params.get("auto_detected_riot_id") or self.get_auto_summoner_name()
         return params.get("manual_summoner_name")
+
+    def _refresh_safe_controls(self) -> None:
+        """Affiche les contrôles de secours si le tray ou les hotkeys sont indisponibles."""
+        safe_mode = not (self.tray_available and self.hotkeys_available)
+        if self.safe_quit_btn and self.safe_quit_btn.winfo_exists():
+            if safe_mode:
+                self.safe_quit_btn.place(relx=0.98, rely=0.95, anchor="se")
+            else:
+                self.safe_quit_btn.place_forget()
+
+    def _handle_window_close(self) -> None:
+        """Ferme ou masque la fenêtre selon les capacités de l'environnement."""
+        if self.tray_available and not self.closing_requested:
+            self.hide_window()
+            return
+        self._quit_callback()
+
+    def _cancel_disconnect_close(self) -> None:
+        """Annule une fermeture différée déclenchée par une déconnexion temporaire."""
+        if self.disconnect_close_after_id is not None:
+            try:
+                self.root.after_cancel(self.disconnect_close_after_id)
+            except Exception:
+                pass
+            self.disconnect_close_after_id = None
+
+    def _schedule_disconnect_close(self) -> None:
+        """Programme une fermeture si la déconnexion LCU persiste réellement."""
+        self._cancel_disconnect_close()
+
+        def close_if_still_disconnected():
+            self.disconnect_close_after_id = None
+            if not self.running or self.closing_requested:
+                return
+            if self.is_ws_active():
+                return
+            if self.get_params().get("close_app_on_lol_exit", True):
+                self._quit_callback()
+
+        self.disconnect_close_after_id = self.root.after(
+            self.DISCONNECT_CLOSE_DELAY_MS,
+            close_if_still_disconnected
+        )
+
+    def play_accept_sound(self) -> None:
+        """Joue le son de confirmation d'auto-accept si disponible."""
+        if not self.sound_effect:
+            return
+        try:
+            self.sound_effect.play()
+        except Exception as e:
+            logging.debug(f"Impossible de jouer le son d'accept: {e}")
     
     def set_background_splash(self, champion_name: str) -> None:
         """Met le splash art d'un champion en arrière-plan."""
@@ -862,23 +942,32 @@ class LoLAssistantUI:
                 pystray.MenuItem("Quitter", self._quit_callback)
             )
             self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
+            self.tray_available = True
             
             def run_tray():
                 try:
                     self.icon.run()
                 except Exception as e:
+                    self.tray_available = False
                     logging.debug(f"Erreur system tray: {e}")
+                    self.root.after(0, self._refresh_safe_controls)
             
             self.executor.submit(run_tray)
         except Exception as e:
+            self.tray_available = False
             logging.warning(f"Impossible de créer le system tray: {e}")
     
     def setup_hotkeys(self) -> None:
         """Configure les raccourcis clavier."""
         try:
-            keyboard.add_hotkey('alt+p', self.open_porofessor)
-            keyboard.add_hotkey('alt+c', self.toggle_window)
+            self.hotkey_handles = [
+                keyboard.add_hotkey('alt+p', self.open_porofessor),
+                keyboard.add_hotkey('alt+c', self.toggle_window)
+            ]
+            self.hotkeys_available = True
         except Exception as e:
+            self.hotkeys_available = False
+            self.hotkey_handles = []
             logging.debug(f"Impossible de configurer les hotkeys: {e}")
     
     def open_porofessor(self) -> None:
@@ -1035,6 +1124,7 @@ class LoLAssistantUI:
         from .core import WebSocketManager  # Import relatif correct
         
         if event_type == WebSocketManager.EVENT_CONNECTED:
+            self._cancel_disconnect_close()
             self.update_connection_indicator(True)
             params = self.get_params()
             if params.get("auto_hide_on_connect", True):
@@ -1044,7 +1134,7 @@ class LoLAssistantUI:
             self.update_connection_indicator(False)
             params = self.get_params()
             if params.get("close_app_on_lol_exit", True):
-                self.root.after(100, self._quit_callback)
+                self._schedule_disconnect_close()
             else:
                 self.root.after(100, self.show_window)
         
@@ -1057,6 +1147,9 @@ class LoLAssistantUI:
         
         elif event_type == WebSocketManager.EVENT_TOAST:
             self.show_toast(data)
+
+        elif event_type == WebSocketManager.EVENT_READY_CHECK_ACCEPTED:
+            self.play_accept_sound()
     
     def run(self) -> None:
         """Lance la boucle principale Tkinter."""
@@ -1064,11 +1157,22 @@ class LoLAssistantUI:
     
     def stop(self) -> None:
         """Arrête l'interface."""
+        if self.closing_requested:
+            return
+        self.closing_requested = True
         self.running = False
+        self._cancel_disconnect_close()
+
+        for handle in self.hotkey_handles:
+            try:
+                keyboard.remove_hotkey(handle)
+            except Exception as e:
+                logging.debug(f"Erreur suppression hotkey: {e}")
+        self.hotkey_handles = []
         
         # Arrêter le ThreadPoolExecutor
         try:
-            self.executor.shutdown(wait=False)
+            self.executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
             logging.debug(f"Erreur arrêt executor: {e}")
         
@@ -1078,5 +1182,18 @@ class LoLAssistantUI:
                 self.icon.stop()
         except Exception as e:
             logging.debug(f"Erreur arrêt tray icon: {e}")
-        
-        self.root.quit()
+
+        try:
+            if pygame.mixer.get_init():
+                pygame.mixer.quit()
+        except Exception as e:
+            logging.debug(f"Erreur arrêt mixer pygame: {e}")
+
+        def destroy_root():
+            if self.root.winfo_exists():
+                self.root.destroy()
+
+        try:
+            self.root.after(0, destroy_root)
+        except Exception:
+            destroy_root()
