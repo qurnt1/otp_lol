@@ -12,6 +12,7 @@ from typing import Optional
 import urllib.parse
 
 import psutil
+from packaging.version import InvalidVersion, Version
 
 from .config import LOCKFILE_PATH, GITHUB_RELEASES_API, CURRENT_VERSION
 
@@ -94,12 +95,11 @@ def check_for_updates() -> Optional[str]:
             data = resp.json()
             tag_name = data.get("tag_name", "")
             
-            # Extraire le numéro de version (v6.0 -> 6.0)
-            remote_version = tag_name.lstrip("v").strip()
+            remote_version = normalize_version(tag_name)
             
             logging.info(f"[Update] Version en ligne: {remote_version}, locale: {CURRENT_VERSION}")
             
-            if remote_version and remote_version != CURRENT_VERSION:
+            if remote_version and is_newer_version(remote_version, CURRENT_VERSION):
                 return remote_version
         
         elif resp.status_code == 404:
@@ -113,6 +113,28 @@ def check_for_updates() -> Optional[str]:
         logging.error(f"[Update] Erreur inattendue: {e}")
     
     return None
+
+
+def normalize_version(version: str) -> str:
+    """Normalise une version de type v6.1 vers 6.1."""
+    return (version or "").strip().lstrip("vV")
+
+
+def parse_version(version: str) -> Version:
+    """Parse une version en objet sémantique comparable."""
+    normalized = normalize_version(version)
+    if not normalized:
+        raise InvalidVersion("Version vide")
+    return Version(normalized)
+
+
+def is_newer_version(remote_version: str, current_version: str) -> bool:
+    """Retourne True seulement si la version distante est strictement plus récente."""
+    try:
+        return parse_version(remote_version) > parse_version(current_version)
+    except InvalidVersion as e:
+        logging.warning(f"[Update] Version invalide ignorée: {e}")
+        return False
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -130,14 +152,7 @@ def build_opgg_url(region: str, riot_id: str) -> str:
     Returns:
         URL OP.GG complète
     """
-
-    
-    # Convertir GameName#Tag en GameName-Tag pour l'URL
-    url_name = riot_id
-    if "#" in riot_id:
-        left, right = riot_id.split("#", 1)
-        if left and right:
-            url_name = f"{left}-{right}"
+    url_name = _normalize_riot_id_for_url(riot_id)
     
     return f"https://www.op.gg/lol/summoners/{region}/{urllib.parse.quote(url_name)}"
 
@@ -154,10 +169,16 @@ def build_porofessor_url(region: str, riot_id: str) -> str:
         URL Porofessor complète
     """
     
-    url_name = riot_id
+    url_name = _normalize_riot_id_for_url(riot_id)
+    
+    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name)}"
+
+
+def _normalize_riot_id_for_url(riot_id: str) -> str:
+    """Convertit GameName#Tag en GameName-Tag pour les URLs externes."""
+    riot_id = riot_id or ""
     if "#" in riot_id:
         left, right = riot_id.split("#", 1)
         if left and right:
-            url_name = f"{left}-{right}"
-    
-    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name)}"
+            return f"{left}-{right}"
+    return riot_id
