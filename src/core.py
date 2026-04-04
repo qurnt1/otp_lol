@@ -13,8 +13,7 @@ import logging
 import unicodedata
 from io import BytesIO
 from time import time
-from functools import lru_cache
-from threading import Thread, Event, Lock
+from threading import Thread, Event, Lock, current_thread
 from typing import Optional, Dict, Any, List, Callable, Set
 
 import requests
@@ -439,12 +438,14 @@ class WebSocketManager:
     EVENT_SPELLS_SET = "spells_set"
     EVENT_PLAY_AGAIN = "play_again"
     EVENT_TOAST = "toast"
+    EVENT_READY_CHECK_ACCEPTED = "ready_check_accepted"
     
     def __init__(
         self, 
         ui_callback: Callable[[str, Any], None],
         dd: DataDragon,
-        get_params: Callable[[], Dict[str, Any]]
+        get_params: Callable[[], Dict[str, Any]],
+        update_param: Optional[Callable[[str, Any], None]] = None
     ):
         """
         Initialise le WebSocketManager.
@@ -457,10 +458,13 @@ class WebSocketManager:
         self.ui_callback = ui_callback
         self.dd = dd
         self.get_params = get_params
+        self.update_param = update_param
         
         self.state = GameState()
         self.connection = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        self.connector = None
+        self.thread: Optional[Thread] = None
         self.ws_active: bool = False
         self._stop_event = Event()
         self._cs_tick_lock = asyncio.Lock()
@@ -476,13 +480,25 @@ class WebSocketManager:
         if Connector is None:
             self._notify_ui(self.EVENT_STATUS, ("❌ Erreur: 'lcu_driver' manquant.", ""))
             return
-        
-        thread = Thread(target=self._ws_loop, daemon=True)
-        thread.start()
+        if self.thread and self.thread.is_alive():
+            return
+
+        self._stop_event.clear()
+        self.thread = Thread(target=self._ws_loop, daemon=True, name="mainlol-lcu")
+        self.thread.start()
     
     def stop(self) -> None:
         """Arrête le WebSocket proprement."""
         self._stop_event.set()
+        if self.connector and self.connection and self.loop and not self.loop.is_closed():
+            try:
+                future = asyncio.run_coroutine_threadsafe(self.connector.stop(), self.loop)
+                future.result(timeout=3)
+            except Exception as e:
+                logging.debug(f"WebSocket: arrêt du connector incomplet - {e}")
+
+        if self.thread and self.thread.is_alive() and self.thread is not current_thread():
+            self.thread.join(timeout=3)
     
     @property
     def is_active(self) -> bool:
@@ -499,11 +515,25 @@ class WebSocketManager:
         """Retourne la région pour les URLs (op.gg, etc.)."""
         params = self.get_params()
         if not params.get("summoner_name_auto_detect", True):
-            return params.get("region", "euw").lower()
-        return PLATFORM_TO_REGION.get(
+            return params.get("manual_region", "euw").lower()
+        return (
+            params.get("auto_detected_region")
+            or PLATFORM_TO_REGION.get(
             (self.state.platform_routing or "").lower(), 
             "euw"
         )
+        ).lower()
+
+    def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
+        """Met à jour les paramètres auto-détectés sans toucher à la config manuelle."""
+        if not self.update_param:
+            return
+
+        self.update_param("auto_detected_riot_id", riot_id or "")
+        if platform:
+            self.update_param("auto_detected_platform", platform.lower())
+        if region:
+            self.update_param("auto_detected_region", region.lower())
     
     def force_refresh_summoner(self) -> None:
         """Force un rafraîchissement des données du joueur."""
@@ -522,7 +552,8 @@ class WebSocketManager:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self.loop = loop
-            connector = Connector()
+            connector = Connector(loop=loop)
+            self.connector = connector
             
             @connector.ready
             async def on_ready(connection):
@@ -537,10 +568,13 @@ class WebSocketManager:
             async def on_close(connection):
                 self.connection = None
                 self.ws_active = False
-                self._notify_ui(self.EVENT_DISCONNECTED, None)
-                self._notify_ui(self.EVENT_STATUS, ("LoL fermé. En attente...", "💤"))
                 self.state.last_reported_summoner = None
-                logging.info("WebSocket: Déconnecté.")
+                if not self._stop_event.is_set():
+                    self._notify_ui(self.EVENT_DISCONNECTED, None)
+                    self._notify_ui(self.EVENT_STATUS, ("Client LoL déconnecté. Tentative de reconnexion...", "💤"))
+                    logging.info("WebSocket: Déconnecté.")
+                else:
+                    logging.info("WebSocket: Arrêt demandé.")
             
             @connector.ws.register(EP_CURRENT_SUMMONER)
             async def _ws_summoner_change(connection, event):
@@ -586,8 +620,12 @@ class WebSocketManager:
                 if (params.get("auto_accept_enabled", True) and 
                     data.get('state') == 'InProgress' and 
                     data.get('playerResponse') != 'Accepted'):
-                    await connection.request('post', f'{EP_READY_CHECK}/accept')
-                    self._notify_ui(self.EVENT_STATUS, ("Partie acceptée !", "✅"))
+                    response = await connection.request('post', f'{EP_READY_CHECK}/accept')
+                    if response and response.status < 400:
+                        self._notify_ui(self.EVENT_STATUS, ("Partie acceptée !", "✅"))
+                        if not self.state.has_played_accept_sound:
+                            self.state.has_played_accept_sound = True
+                            self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
             
             @connector.ws.register(EP_SESSION)
             async def _ws_cs_session(connection, event):
@@ -602,12 +640,18 @@ class WebSocketManager:
                     await self._champ_select_timer_tick()
                     self.state._last_cs_timer_fetch = time()
             
-            loop.run_until_complete(connector.start())
+            connector.start()
             
         except Exception as e:
             logging.critical(f"[WS] Erreur critique dans la boucle WebSocket : {e}", exc_info=True)
             self.ws_active = False
-            self._notify_ui(self.EVENT_DISCONNECTED, None)
+            if not self._stop_event.is_set():
+                self._notify_ui(self.EVENT_DISCONNECTED, None)
+        finally:
+            self.connection = None
+            self.ws_active = False
+            self.connector = None
+            self.loop = None
     
     async def _refresh_player_and_region(self) -> None:
         """Rafraîchit les données du joueur connecté."""
@@ -639,6 +683,7 @@ class WebSocketManager:
             self._notify_ui(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
             self._notify_ui(self.EVENT_STATUS, (f"Connecté : {self.get_riot_id()}", "👤"))
             self.state.last_reported_summoner = self.state.summoner
+        self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
         
         # Région
         reg = None
@@ -653,6 +698,11 @@ class WebSocketManager:
             if platform:
                 self.state.platform_routing = platform
                 self.state.region_routing = self._platform_to_region_routing(platform)
+                self._store_auto_detected_values(
+                    self.get_riot_id(),
+                    platform,
+                    PLATFORM_TO_REGION.get(platform, "euw")
+                )
     
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:
@@ -754,6 +804,13 @@ class WebSocketManager:
         """Logique de ban automatique."""
         selected_ban = params.get("selected_ban")
         if not selected_ban:
+            return
+        if selected_ban in {
+            params.get("selected_pick_1"),
+            params.get("selected_pick_2"),
+            params.get("selected_pick_3")
+        }:
+            logging.warning("Auto-ban ignoré: le champion banni est aussi configuré dans les picks.")
             return
         if time() - self.state.last_action_try_ts < 0.1:
             return
