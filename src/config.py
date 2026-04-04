@@ -9,7 +9,7 @@ import sys
 import json
 import tempfile
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 # ───────────────────────────────────────────────────────────────────────────
 # LOGGING CONFIGURATION (configured after get_appdata_path is defined below)
@@ -23,9 +23,12 @@ from typing import Dict, Any, Optional
 # APPLICATION METADATA
 # ───────────────────────────────────────────────────────────────────────────
 
+APP_NAME: str = "MAIN LOL"
+APP_BUILD_NAME: str = "OTP LOL"
+GITHUB_REPO_NAME: str = "qurnt1/main_lol_2"
 CURRENT_VERSION: str = "6.1"
-GITHUB_REPO_URL: str = "https://github.com/qurnt1/main_lol_2"
-GITHUB_RELEASES_API: str = "https://api.github.com/repos/qurnt1/main_lol_2/releases/latest"
+GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
+GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
 
 # ───────────────────────────────────────────────────────────────────────────
 # DATA DRAGON URLS
@@ -96,10 +99,13 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
     "selected_ban": "Teemo",
-    "region": "euw",
     "theme": "darkly",
     "summoner_name_auto_detect": True,
     "manual_summoner_name": "VotrePseudo#VotreTag",
+    "manual_region": "euw",
+    "auto_detected_riot_id": "",
+    "auto_detected_region": "",
+    "auto_detected_platform": "",
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
     "auto_play_again_enabled": False,
@@ -189,10 +195,7 @@ def load_parameters() -> Dict[str, Any]:
     try:
         with open(PARAMETERS_PATH, 'r', encoding='utf-8') as f:
             config = json.load(f)
-        # Fusionner avec les valeurs par défaut pour les clés manquantes
-        merged = DEFAULT_PARAMS.copy()
-        merged.update(config)
-        return merged
+        return _normalize_parameters(config)
     except (json.JSONDecodeError, IOError) as e:
         logging.warning(f"Erreur chargement paramètres: {e}")
         return DEFAULT_PARAMS.copy()
@@ -210,12 +213,33 @@ def save_parameters(params: Dict[str, Any]) -> bool:
     """
     try:
         os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
+        sanitized = _normalize_parameters(params)
         with open(PARAMETERS_PATH, 'w', encoding='utf-8') as f:
-            json.dump(params, f, indent=4, ensure_ascii=False)
+            json.dump(sanitized, f, indent=4, ensure_ascii=False)
         return True
     except (IOError, OSError) as e:
         logging.error(f"Erreur sauvegarde paramètres: {e}")
         return False
+
+
+def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise les paramètres chargés et migre les anciennes clés."""
+    merged = DEFAULT_PARAMS.copy()
+    merged.update(config)
+
+    if "manual_region" not in config:
+        merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])
+
+    if "auto_detected_region" not in config and config.get("summoner_name_auto_detect"):
+        merged["auto_detected_region"] = ""
+
+    if "auto_detected_riot_id" not in config:
+        merged["auto_detected_riot_id"] = ""
+
+    if "auto_detected_platform" not in config:
+        merged["auto_detected_platform"] = ""
+
+    return {key: merged[key] for key in DEFAULT_PARAMS}
 
 
 def get_cache_dirs() -> None:
