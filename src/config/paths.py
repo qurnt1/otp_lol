@@ -39,6 +39,7 @@ def get_appdata_path(filename: str) -> str:
 
 
 PARAMETERS_PATH: str = get_appdata_path("parameters.json")
+HISTORY_PATH: str = get_appdata_path("history.json")
 LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), "main_lol.lock")
 DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), "mainlol_ddragon_champions.json")
 ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), "mainlol_icons")
