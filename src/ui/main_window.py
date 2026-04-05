@@ -36,7 +36,7 @@ class LoLAssistantUI:
     MAX_WORKERS = 4
     DISCONNECT_CLOSE_DELAY_MS = 8000
     PREVIEW_ICON_SIZE = 30
-    PREVIEW_TOP_RELY = 0.54
+    PREVIEW_TOP_RELY = 0.47
     STATS_BUTTON_TOP_RELY = 0.79
     FEATURE_PREVIEW_DEFINITIONS = (
         ("pick", "Pick", 3, "info"),
