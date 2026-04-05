@@ -67,8 +67,17 @@ class WebSocketManager(ChampSelectMixin):
     def _notify_ui(self, event_type: str, data: Any = None) -> None:
         self.ui_callback(event_type, data)
 
-    def _log_history(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
-        log_history_event(event_type, message, details)
+    def _log_history(
+        self,
+        event_type: str,
+        message: str,
+        details: Optional[Dict[str, Any]] = None,
+        *,
+        level: Optional[str] = None,
+        category: Optional[str] = None,
+        action: Optional[str] = None,
+    ) -> None:
+        log_history_event(event_type, message, details, level=level, category=category, action=action)
 
     def start(self) -> None:
         if Connector is None:
@@ -199,7 +208,14 @@ class WebSocketManager(ChampSelectMixin):
             async def on_ready(connection):
                 self.connection = connection
                 self.ws_active = True
-                log_history_event("connection", "Client LoL detecte.")
+                log_history_event(
+                    "connection",
+                    "Client LoL detecte et connexion etablie.",
+                    {"region": self.get_platform_for_websites()},
+                    level="success",
+                    category="Connexion",
+                    action="connected",
+                )
                 self._notify_ui(self.EVENT_CONNECTED, None)
                 self._notify_ui(self.EVENT_STATUS, ("Client LoL detecte ! Pret a vous aider.", "⚡"))
                 logging.info("WebSocket: Connecte au client LCU.")
@@ -211,7 +227,13 @@ class WebSocketManager(ChampSelectMixin):
                 self.ws_active = False
                 self.state.last_reported_summoner = None
                 if not self._stop_event.is_set():
-                    log_history_event("connection", "Client LoL deconnecte, reconnexion en cours.")
+                    log_history_event(
+                        "connection",
+                        "Connexion au client LoL perdue, tentative de reconnexion.",
+                        level="warning",
+                        category="Connexion",
+                        action="disconnected",
+                    )
                     self._notify_ui(self.EVENT_DISCONNECTED, None)
                     self._notify_ui(self.EVENT_STATUS, ("Client LoL deconnecte. Tentative de reconnexion...", "💤"))
                     logging.info("WebSocket: Deconnecte.")
@@ -266,7 +288,13 @@ class WebSocketManager(ChampSelectMixin):
                 ):
                     response = await connection.request("post", f"{EP_READY_CHECK}/accept")
                     if response and response.status < 400:
-                        log_history_event("ready_check", "Partie acceptee automatiquement.")
+                        log_history_event(
+                            "ready_check",
+                            "Partie acceptee automatiquement.",
+                            level="success",
+                            category="Partie trouvee",
+                            action="accepted",
+                        )
                         self._notify_ui(self.EVENT_STATUS, ("Partie acceptee !", "✅"))
                         if not self.state.has_played_accept_sound:
                             self.state.has_played_accept_sound = True
