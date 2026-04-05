@@ -21,9 +21,11 @@ from ..config import (
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
     PLATFORM_TO_REGION,
+    ROLE_PROFILE_LABELS,
 )
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
+from ..services.history import log_history_event
 
 
 class WebSocketManager(ChampSelectMixin):
@@ -64,6 +66,9 @@ class WebSocketManager(ChampSelectMixin):
 
     def _notify_ui(self, event_type: str, data: Any = None) -> None:
         self.ui_callback(event_type, data)
+
+    def _log_history(self, event_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+        log_history_event(event_type, message, details)
 
     def start(self) -> None:
         if Connector is None:
@@ -124,17 +129,46 @@ class WebSocketManager(ChampSelectMixin):
         return aliases.get(role, role)
 
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
-        role = self._normalize_role(self.state.assigned_position)
+        effective = self.get_effective_profile_config(params=params)
+        return {
+            "selected_pick_1": effective["selected_pick_1"],
+            "selected_pick_2": effective["selected_pick_2"],
+            "selected_pick_3": effective["selected_pick_3"],
+            "selected_ban": effective["selected_ban"],
+        }
+
+    def get_effective_profile_config(
+        self,
+        role: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        params = params or self.get_params()
+        role = self._normalize_role(role or self.state.assigned_position)
+        resolved_role = role if role in ROLE_PROFILE_LABELS and role != "GLOBAL" else "GLOBAL"
         role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(role, {}) if isinstance(role_profiles, dict) else {}
+        role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
         if not isinstance(role_data, dict):
             role_data = {}
 
         return {
+            "detected_role": self._normalize_role(self.state.assigned_position) or "GLOBAL",
+            "resolved_role": resolved_role,
+            "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
+            "fallback_policy": "Le profil du role detecte est prioritaire, puis la config globale prend le relais si un champ est vide.",
             "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
             "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
             "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
             "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
+            "spell_1": role_data.get("spell_1") or params.get("global_spell_1", ""),
+            "spell_2": role_data.get("spell_2") or params.get("global_spell_2", ""),
+            "sources": {
+                "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
+                "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
+                "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
+                "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
+                "spell_1": resolved_role if role_data.get("spell_1") else "GLOBAL",
+                "spell_2": resolved_role if role_data.get("spell_2") else "GLOBAL",
+            },
         }
 
     def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
@@ -165,6 +199,7 @@ class WebSocketManager(ChampSelectMixin):
             async def on_ready(connection):
                 self.connection = connection
                 self.ws_active = True
+                log_history_event("connection", "Client LoL detecte.")
                 self._notify_ui(self.EVENT_CONNECTED, None)
                 self._notify_ui(self.EVENT_STATUS, ("Client LoL detecte ! Pret a vous aider.", "⚡"))
                 logging.info("WebSocket: Connecte au client LCU.")
@@ -176,6 +211,7 @@ class WebSocketManager(ChampSelectMixin):
                 self.ws_active = False
                 self.state.last_reported_summoner = None
                 if not self._stop_event.is_set():
+                    log_history_event("connection", "Client LoL deconnecte, reconnexion en cours.")
                     self._notify_ui(self.EVENT_DISCONNECTED, None)
                     self._notify_ui(self.EVENT_STATUS, ("Client LoL deconnecte. Tentative de reconnexion...", "💤"))
                     logging.info("WebSocket: Deconnecte.")
@@ -230,6 +266,7 @@ class WebSocketManager(ChampSelectMixin):
                 ):
                     response = await connection.request("post", f"{EP_READY_CHECK}/accept")
                     if response and response.status < 400:
+                        log_history_event("ready_check", "Partie acceptee automatiquement.")
                         self._notify_ui(self.EVENT_STATUS, ("Partie acceptee !", "✅"))
                         if not self.state.has_played_accept_sound:
                             self.state.has_played_accept_sound = True
