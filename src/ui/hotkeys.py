@@ -12,11 +12,12 @@ class HotkeyManager:
         self.available = False
         self.handles = []
 
-    def setup(self, toggle_window, open_porofessor) -> bool:
+    def setup(self, toggle_window, open_hotkey_site, toggle_hotkey: str, stats_hotkey: str) -> bool:
         try:
+            self.shutdown()
             self.handles = [
-                keyboard.add_hotkey("alt+p", open_porofessor),
-                keyboard.add_hotkey("alt+c", toggle_window),
+                keyboard.add_hotkey(stats_hotkey, open_hotkey_site),
+                keyboard.add_hotkey(toggle_hotkey, toggle_window),
             ]
             self.available = True
         except Exception as e:
