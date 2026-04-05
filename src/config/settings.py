@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from .constants import ROLE_PROFILE_ORDER
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
@@ -44,7 +44,10 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "role_profiles": build_role_profile_defaults(),
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
-    "favorite_champions": [],
+    "preferred_stats_site": "opgg",
+    "preferred_hotkey_site": "porofessor",
+    "hotkey_toggle_window": "alt+c",
+    "hotkey_open_site": "alt+p",
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
@@ -147,15 +150,25 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         )
     merged["role_profiles"] = normalized_profiles
 
-    raw_favorites = config.get("favorite_champions", [])
-    if not isinstance(raw_favorites, list):
-        raw_favorites = []
-    favorites: List[str] = []
-    for champion in raw_favorites:
-        name = str(champion).strip()
-        if name and name not in favorites:
-            favorites.append(name)
-    merged["favorite_champions"] = favorites
+    preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
+    if preferred_stats_site not in {"opgg", "deeplol", "leagueofgraphs"}:
+        preferred_stats_site = DEFAULT_PARAMS["preferred_stats_site"]
+    merged["preferred_stats_site"] = preferred_stats_site
+
+    preferred_hotkey_site = str(config.get("preferred_hotkey_site", DEFAULT_PARAMS["preferred_hotkey_site"])).lower().strip()
+    if preferred_hotkey_site not in {"porofessor", "deeplol", "opgg"}:
+        preferred_hotkey_site = DEFAULT_PARAMS["preferred_hotkey_site"]
+    merged["preferred_hotkey_site"] = preferred_hotkey_site
+
+    hotkey_toggle_window = str(config.get("hotkey_toggle_window", DEFAULT_PARAMS["hotkey_toggle_window"])).strip().lower()
+    hotkey_open_site = str(config.get("hotkey_open_site", DEFAULT_PARAMS["hotkey_open_site"])).strip().lower()
+    merged["hotkey_toggle_window"] = hotkey_toggle_window or DEFAULT_PARAMS["hotkey_toggle_window"]
+    merged["hotkey_open_site"] = hotkey_open_site or DEFAULT_PARAMS["hotkey_open_site"]
+
+    theme = str(config.get("theme", DEFAULT_PARAMS["theme"])).strip().lower()
+    if theme not in {"darkly", "flatly"}:
+        theme = DEFAULT_PARAMS["theme"]
+    merged["theme"] = theme
 
     return {key: merged[key] for key in DEFAULT_PARAMS}
 
