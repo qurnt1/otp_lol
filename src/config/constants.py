@@ -72,3 +72,64 @@ ROLE_PROFILE_ICON_FILES: Dict[str, str] = {
     "BOTTOM": "config/images/roles/bottom.png",
     "UTILITY": "config/images/roles/utility.png",
 }
+
+APP_IMAGE_FILES: Dict[str, str] = {
+    "icon_webp": "config/images/app/garen.webp",
+    "icon_ico": "config/images/app/garen.ico",
+    "gear": "config/images/app/gear.png",
+}
+
+WEBSITE_LOGO_FILES: Dict[str, str] = {
+    "opgg": "config/images/websites/opgg.png",
+    "deeplol": "config/images/websites/deeplol.png",
+    "porofessor": "config/images/websites/porofessor.png",
+    "leagueofgraphs": "config/images/websites/leagueofgraphs.png",
+}
+
+STATS_SITE_LABELS: Dict[str, str] = {
+    "opgg": "OP.GG",
+    "deeplol": "DeepLOL",
+    "leagueofgraphs": "League of Graphs",
+}
+
+STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "leagueofgraphs"]
+
+HOTKEY_SITE_LABELS: Dict[str, str] = {
+    "porofessor": "Porofessor",
+    "deeplol": "DeepLOL",
+    "opgg": "OP.GG",
+}
+
+HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "opgg"]
+
+THEME_LABELS: Dict[str, str] = {
+    "darkly": "Sombre",
+    "flatly": "Clair",
+}
+
+THEME_ORDER: list[str] = ["darkly", "flatly"]
+
+THEME_PALETTE: Dict[str, Dict[str, str]] = {
+    "darkly": {
+        "window_bg": "#2b2b2b",
+        "text": "#f5f5f5",
+        "muted": "#8f8f8f",
+        "history_time": "#8fa1b3",
+        "history_info": "#7ec8ff",
+        "history_success": "#79d17d",
+        "history_warning": "#f7c35f",
+        "history_error": "#ff8a8a",
+        "history_detail": "#c3c3c3",
+    },
+    "flatly": {
+        "window_bg": "#f8f9fa",
+        "text": "#1f1f1f",
+        "muted": "#6b7280",
+        "history_time": "#5c7c99",
+        "history_info": "#2d7dd2",
+        "history_success": "#2e8b57",
+        "history_warning": "#c27c0e",
+        "history_error": "#c0392b",
+        "history_detail": "#4b5563",
+    },
+}
