@@ -26,6 +26,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["manual_summoner_name"], "Testeur#EUW")
         self.assertEqual(loaded["auto_detected_region"], "")
         self.assertEqual(loaded["auto_detected_riot_id"], "")
+        self.assertIn("TOP", loaded["role_profiles"])
+        self.assertEqual(loaded["role_profiles"]["TOP"]["selected_pick_1"], "")
 
     def test_save_parameters_filters_unknown_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -42,6 +44,30 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(written["manual_region"], "kr")
         self.assertNotIn("unexpected_key", written)
         self.assertEqual(set(written), set(config.DEFAULT_PARAMS))
+
+    def test_load_parameters_normalizes_role_profiles(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps({
+                    "selected_profile_role": "mid",
+                    "role_profiles": {
+                        "MIDDLE": {
+                            "selected_pick_1": "Ahri",
+                            "selected_ban": "Zed",
+                        }
+                    },
+                }),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["selected_profile_role"], "MIDDLE")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_1"], "Ahri")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_ban"], "Zed")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_2"], "")
 
 
 if __name__ == "__main__":
