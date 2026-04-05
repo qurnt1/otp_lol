@@ -4,7 +4,7 @@ Assistant desktop Windows pour League of Legends, ecrit en Python.
 
 `MAIN LOL` automatise plusieurs actions autour du client LoL pour gagner du temps pendant la file, la selection des champions et l'apres-partie, tout en gardant une interface simple a configurer.
 
-Version actuelle du projet: `6.1`
+Version actuelle du projet: `7.0`
 
 ## Sommaire
 
@@ -69,9 +69,9 @@ L'application est concue pour fonctionner comme un outil desktop leger:
 
 - detection automatique du compte
 - detection automatique de la region du client
-- liens rapides `OP.GG` et `Porofessor`
+- liens rapides vers plusieurs sites de stats joueur et in-game
 - masquage de la fenetre dans le systray
-- raccourcis clavier globaux
+- raccourcis clavier globaux configurables
 - cache des icones champions et sorts
 - logs dans `%APPDATA%`
 
@@ -158,7 +158,7 @@ Au demarrage, l'application:
 Le projet fournit un script de build PyInstaller:
 
 ```bash
-python install_exe.py
+python create_exe.py
 ```
 
 Ce script genere un executable portable:
@@ -246,8 +246,12 @@ Apres la partie:
 
 ## Raccourcis
 
+Les raccourcis sont configurables depuis les parametres.
+
+Valeurs par defaut:
+
 - `Alt + P`
-  Ouvre la page `Porofessor`
+  Ouvre le site in-game configure
 - `Alt + C`
   Affiche ou masque la fenetre principale
 
@@ -256,14 +260,15 @@ Apres la partie:
 ```text
 MAIN_LOL/
 |-- launcher.py
-|-- install_exe.py
+|-- create_exe.py
 |-- requirements.txt
 |-- readme.md
 |-- src/
 |   |-- __init__.py
-|   |-- config.py
-|   |-- core.py
-|   |-- ui.py
+|   |-- config/
+|   |-- core/
+|   |-- services/
+|   |-- ui/
 |   `-- utils.py
 |-- config/
 |   |-- son.wav
@@ -271,6 +276,8 @@ MAIN_LOL/
 `-- tests/
     |-- test_config.py
     |-- test_core_champ_select.py
+    |-- test_history.py
+    |-- test_ui_settings.py
     `-- test_utils.py
 ```
 
@@ -278,15 +285,17 @@ MAIN_LOL/
 
 - `launcher.py`
   Point d'entree principal et orchestration du cycle de vie.
-- `src/config.py`
-  Constantes, chemins, version, parametres par defaut, gestion des fichiers de config.
-- `src/core.py`
-  Logique metier, Data Dragon, WebSocket / LCU, automatisations de jeu.
-- `src/ui.py`
+- `src/config/`
+  Constantes, chemins, version, parametres par defaut et gestion des fichiers de config.
+- `src/core/`
+  Logique metier, Data Dragon, WebSocket / LCU et automatisations de jeu.
+- `src/services/`
+  URLs externes, historique, updates, DPI et single-instance.
+- `src/ui/`
   Interface graphique, systray, toasts, raccourcis et gestion des interactions utilisateur.
 - `src/utils.py`
   Fonctions utilitaires: lockfile, URLs externes, verification de mise a jour, DPI.
-- `install_exe.py`
+- `create_exe.py`
   Build Windows via PyInstaller.
 
 ## Tests Et Verification
@@ -306,7 +315,7 @@ python -m unittest discover -s tests -v
 Pour verifier rapidement que le code compile:
 
 ```bash
-python -m compileall launcher.py src install_exe.py tests
+python -m compileall launcher.py src create_exe.py tests
 ```
 
 ## Depannage
