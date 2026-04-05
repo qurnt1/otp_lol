@@ -106,6 +106,21 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(window.parent.params["preferred_hotkey_site"], "opgg")
         self.assertEqual(window.preferred_hotkey_site_var.get(), "opgg")
 
+    def test_format_hotkey_display_is_human_readable(self):
+        self.assertEqual(SettingsWindow._format_hotkey_display("ctrl+alt+p"), "CTRL + ALT + P")
+
+    def test_toggle_theme_updates_parent_once_and_cycles_theme(self):
+        window = self.make_window()
+        window.theme_var = DummyVar("darkly")
+        refresh_calls = []
+        window._refresh_theme_button = lambda: refresh_calls.append(True)
+
+        window._toggle_theme()
+
+        self.assertEqual(window.theme_var.get(), "flatly")
+        self.assertEqual(window.parent.params["theme"], "flatly")
+        self.assertEqual(len(refresh_calls), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

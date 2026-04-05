@@ -128,6 +128,7 @@ class SettingsWindow:
             text=self._get_theme_button_text(),
             bootstyle="secondary-outline",
             command=self._toggle_theme,
+            padding=(10, 8),
         )
         self.theme_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         ttk.Button(
@@ -135,18 +136,21 @@ class SettingsWindow:
             text="Historique",
             bootstyle="secondary-outline",
             command=self.parent.open_history_window,
+            padding=(10, 8),
         ).grid(row=0, column=1, sticky="ew", padx=2)
         ttk.Button(
             top_frame,
             text="Exporter config",
             bootstyle="secondary-outline",
             command=self._export_config,
+            padding=(10, 8),
         ).grid(row=0, column=2, sticky="ew", padx=2)
         ttk.Button(
             top_frame,
             text="Importer config",
             bootstyle="primary-outline",
             command=self._import_config,
+            padding=(10, 8),
         ).grid(row=0, column=3, sticky="ew", padx=(6, 0))
 
         ttk.Checkbutton(
@@ -169,6 +173,7 @@ class SettingsWindow:
             command=self._open_role_picker,
             width=18,
             compound="left",
+            padding=(10, 8),
         )
         self.role_selector_btn.pack(side="left", padx=(10, 0))
         self._refresh_role_selector_button()
@@ -189,15 +194,15 @@ class SettingsWindow:
         for offset, label_text in enumerate(["Pick 1 :", "Pick 2 :", "Pick 3 :"], start=3):
             ttk.Label(self.main_frame, text=label_text).grid(row=start_row + offset, column=0, sticky="e", padx=5, pady=3)
 
-        self.btn_pick_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_pick_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_pick_1.grid(row=start_row + 3, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
 
-        self.btn_pick_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_pick_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_pick_2.grid(row=start_row + 4, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
 
-        self.btn_pick_3 = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_pick_3 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_pick_3.grid(row=start_row + 5, column=1, sticky="ew", padx=5, pady=3)
         self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
         return start_row + 6
@@ -215,7 +220,7 @@ class SettingsWindow:
         ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
         ttk.Label(self.main_frame, text="Bannir :").grid(row=start_row + 1, column=0, sticky="e", padx=5)
-        self.btn_ban = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_ban = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_ban.grid(row=start_row + 1, column=1, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
         return start_row + 2
@@ -235,11 +240,11 @@ class SettingsWindow:
         ttk.Label(self.main_frame, text="Sort 1 :").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
         ttk.Label(self.main_frame, text="Sort 2 :").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
 
-        self.btn_spell_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_spell_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_spell_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_1.configure(command=lambda: self._open_spell_picker(1))
 
-        self.btn_spell_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline")
+        self.btn_spell_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_spell_2.grid(row=start_row + 2, column=1, sticky="ew", padx=5, pady=3)
         self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
         return start_row + 3
@@ -300,6 +305,7 @@ class SettingsWindow:
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("stats"),
             width=24,
+            padding=(10, 8),
         )
         self.stats_site_btn.pack(side="left")
         self._refresh_stats_site_button()
@@ -312,6 +318,7 @@ class SettingsWindow:
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("hotkey"),
             width=24,
+            padding=(10, 8),
         )
         self.hotkey_site_btn.pack(side="left")
         self._refresh_hotkey_site_button()
@@ -327,6 +334,7 @@ class SettingsWindow:
             bootstyle="secondary-outline",
             width=22,
             command=lambda: self._start_hotkey_capture("toggle"),
+            padding=(10, 8),
         )
         self.hotkey_toggle_btn.pack(side="left")
 
@@ -339,6 +347,7 @@ class SettingsWindow:
             bootstyle="secondary-outline",
             width=22,
             command=lambda: self._start_hotkey_capture("site"),
+            padding=(10, 8),
         )
         self.hotkey_open_btn.pack(side="left")
 
@@ -517,7 +526,6 @@ class SettingsWindow:
         index = THEME_ORDER.index(current) if current in THEME_ORDER else 0
         next_theme = THEME_ORDER[(index + 1) % len(THEME_ORDER)]
         self.theme_var.set(next_theme)
-        self.parent.apply_theme(next_theme)
         self.parent.update_param("theme", next_theme)
         self._refresh_theme_button()
 

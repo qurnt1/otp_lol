@@ -35,6 +35,24 @@ class LoLAssistantUI:
 
     MAX_WORKERS = 4
     DISCONNECT_CLOSE_DELAY_MS = 8000
+    PREVIEW_ICON_SIZE = 30
+    PREVIEW_TOP_RELY = 0.54
+    STATS_BUTTON_TOP_RELY = 0.79
+    FEATURE_PREVIEW_DEFINITIONS = (
+        ("pick", "Pick", 3, "info"),
+        ("ban", "Ban", 1, "danger"),
+        ("spells", "Sorts", 2, "warning"),
+    )
+    FEATURE_PARAM_MAP = {
+        "pick": "auto_pick_enabled",
+        "ban": "auto_ban_enabled",
+        "spells": "auto_summoners_enabled",
+    }
+    FEATURE_LABEL_MAP = {
+        "pick": "Auto-pick",
+        "ban": "Auto-ban",
+        "spells": "Auto-sorts",
+    }
 
     def __init__(
         self,
@@ -63,7 +81,7 @@ class LoLAssistantUI:
         self.audio_manager = AudioManager()
         self.tray_controller = TrayController()
         self.hotkey_manager = HotkeyManager()
-        self.theme = params.get("theme", "darkly")
+        self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
         self.root.geometry("420x250")
@@ -73,14 +91,21 @@ class LoLAssistantUI:
         self.banner_label: Optional[ttk.Label] = None
         self.connection_indicator: Optional[tk.Canvas] = None
         self.status_label: Optional[ttk.Label] = None
-        self.preview_placeholder = ImageTk.PhotoImage(Image.new("RGBA", (22, 22), (0, 0, 0, 0)))
+        self.preview_placeholder = ImageTk.PhotoImage(
+            Image.new("RGBA", (self.PREVIEW_ICON_SIZE, self.PREVIEW_ICON_SIZE), (0, 0, 0, 0))
+        )
+        self.preview_icon_cache: Dict[tuple[str, str, int], ImageTk.PhotoImage] = {}
         self.feature_preview_frame: Optional[ttk.Frame] = None
-        self.feature_status_labels: Dict[str, ttk.Label] = {}
-        self.feature_icon_labels: Dict[str, list[ttk.Label]] = {}
+        self.feature_group_frames: Dict[str, ttk.Frame] = {}
+        self.feature_status_labels: Dict[str, tk.Label] = {}
+        self.feature_icon_labels: Dict[str, list[tk.Label]] = {}
+        self._last_preview_signature = None
+        self._preview_refresh_after_id = None
         self.stats_btn: Optional[ttk.Button] = None
-        self.stats_hint_label: Optional[ttk.Label] = None
+        self.settings_gear_label: Optional[ttk.Label] = None
         self.history_filter_var = tk.StringVar(value="Tout")
         self.create_ui()
+        self.apply_theme(self.theme)
         self.create_system_tray()
         self.setup_hotkeys()
         self._refresh_safe_controls()
@@ -95,7 +120,7 @@ class LoLAssistantUI:
 
     def set_ws_manager(self, ws_manager) -> None:
         self.ws_manager = ws_manager
-        self._refresh_feature_preview()
+        self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
 
     def get_params(self) -> Dict[str, Any]:
@@ -103,7 +128,7 @@ class LoLAssistantUI:
 
     def update_param(self, key: str, value: Any) -> None:
         self._update_param_callback(key, value)
-        self._refresh_feature_preview()
+        self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
         if key == "theme":
             self.apply_theme(value)
@@ -115,7 +140,7 @@ class LoLAssistantUI:
             self._update_param_callback(key, value)
             if key == "theme":
                 self.apply_theme(value)
-        self._refresh_feature_preview()
+        self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
         if {"hotkey_toggle_window", "hotkey_open_site"} & set(params):
             self.reload_hotkeys()
@@ -138,18 +163,24 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Impossible d'appliquer le theme {theme_name}: {e}")
 
+        self._configure_styles()
+
         if self.bg_label and self.bg_label.winfo_exists():
             self.bg_label.configure(bg=palette["window_bg"])
         if self.connection_indicator and self.connection_indicator.winfo_exists():
             self.connection_indicator.configure(bg=palette["window_bg"])
 
-        style = ttk.Style()
-        style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=palette["window_bg"], foreground=palette["text"])
         if self.status_label and self.status_label.winfo_exists():
-            self.status_label.configure(style="Status.TLabel")
-        if self.stats_hint_label and self.stats_hint_label.winfo_exists():
-            self.stats_hint_label.configure(style="Status.TLabel")
+            self.status_label.configure(bg=palette["window_bg"], fg=palette["text"])
+        if self.banner_label and self.banner_label.winfo_exists():
+            self.banner_label.configure(background=palette["window_bg"])
+        if self.settings_gear_label and self.settings_gear_label.winfo_exists():
+            self.settings_gear_label.configure(background=palette["window_bg"])
+        self._apply_preview_palette()
         self._refresh_history_colors()
+        self._refresh_settings_gear_icon()
+        self._last_preview_signature = None
+        self._queue_feature_preview_refresh(force=True)
         self.update_connection_indicator(self.is_ws_active())
 
     def is_ws_active(self) -> bool:
@@ -225,9 +256,15 @@ class LoLAssistantUI:
 
     def _configure_styles(self) -> None:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.root.configure(bg=palette["window_bg"])
         style = ttk.Style()
         style.configure(".", font=("Segoe UI Emoji", 10))
         style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=palette["window_bg"], foreground=palette["text"])
+        style.configure("FeatureTitle.TLabel", font=("Segoe UI", 9, "bold"), background=palette["window_bg"], foreground=palette["text"])
+        style.configure("FeatureHint.TLabel", font=("Segoe UI", 9), background=palette["window_bg"], foreground=palette["muted"])
+        style.configure("Feature.TFrame", background=palette["surface_bg"])
+        style.configure("FeatureSlot.TLabel", font=("Segoe UI", 9), background=palette["surface_bg"], foreground=palette["muted"])
+        style.configure("AppSecondary.TButton", padding=(10, 8))
 
     def _create_background(self) -> None:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
@@ -253,69 +290,92 @@ class LoLAssistantUI:
         self.update_connection_indicator(False)
 
     def _create_status_label(self) -> None:
-        self.status_label = ttk.Label(
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.status_label = tk.Label(
             self.root,
             text="En attente du lancement de League of Legends...",
-            style="Status.TLabel",
             justify="center",
             wraplength=390,
+            bg=palette["window_bg"],
+            fg=palette["text"],
+            font=("Segoe UI Emoji", 11),
         )
         self.status_label.place(relx=0.5, rely=0.34, anchor="center")
 
     def _create_feature_preview(self) -> None:
-        self.feature_preview_frame = ttk.Frame(self.root, padding=(10, 6))
-        self.feature_preview_frame.place(relx=0.5, rely=0.60, anchor="center")
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.feature_preview_frame = tk.Frame(self.root, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        self.feature_preview_frame.place(relx=0.5, rely=self.PREVIEW_TOP_RELY, anchor="n")
 
-        definitions = [
-            ("pick", "Pick", 3, "info"),
-            ("ban", "Ban", 1, "danger"),
-            ("spells", "Sorts", 2, "warning"),
-        ]
-
-        for column, (key, label_text, icon_count, status_style) in enumerate(definitions):
-            group = ttk.Frame(self.feature_preview_frame, padding=(8, 4))
+        for column, (key, label_text, icon_count, status_style) in enumerate(self.FEATURE_PREVIEW_DEFINITIONS):
+            group = tk.Frame(self.feature_preview_frame, bg=palette["window_bg"], bd=0, highlightthickness=0, padx=4, pady=1)
             group.grid(row=0, column=column, padx=4)
+            self.feature_group_frames[key] = group
 
-            header = ttk.Frame(group)
+            header = tk.Frame(group, bg=palette["window_bg"], bd=0, highlightthickness=0)
             header.pack(anchor="w")
-            ttk.Label(header, text=label_text, font=("Segoe UI", 9, "bold")).pack(side="left")
-            status = ttk.Label(header, text="OFF", bootstyle="secondary", width=4)
+            title = tk.Label(header, text=label_text, bg=palette["window_bg"], fg=palette["text"], font=("Segoe UI", 9, "bold"))
+            title.pack(side="left")
+            status = tk.Label(
+                header,
+                text="OFF",
+                bg=palette["window_bg"],
+                fg=palette["muted"],
+                font=("Segoe UI", 9),
+                padx=4,
+            )
             status.pack(side="left", padx=(6, 0))
             self.feature_status_labels[key] = status
 
-            icons_row = ttk.Frame(group)
+            icons_row = tk.Frame(group, bg=palette["window_bg"], bd=0, highlightthickness=0)
             icons_row.pack(anchor="w", pady=(4, 0))
-            labels: list[ttk.Label] = []
+            labels: list[tk.Label] = []
             for _ in range(icon_count):
-                slot = ttk.Label(
+                slot = tk.Label(
                     icons_row,
-                    text="...",
-                    width=4,
+                    text="",
                     anchor="center",
                     compound="center",
                     image=self.preview_placeholder,
+                    bg=palette["window_bg"],
+                    fg=palette["muted"],
+                    font=("Segoe UI", 9),
+                    bd=0,
+                    highlightthickness=0,
                 )
-                slot.pack(side="left", padx=2)
+                slot.pack(side="left", padx=2, pady=0)
                 slot.image = self.preview_placeholder
                 labels.append(slot)
             self.feature_icon_labels[key] = labels
+            self._bind_feature_group(group, key)
 
-        self._refresh_feature_preview()
+        self._queue_feature_preview_refresh(force=True)
 
     def _create_settings_gear(self) -> None:
-        gear_path = resource_path(APP_IMAGE_FILES["gear"])
+        self.settings_gear_label = ttk.Label(self.root, cursor="hand2")
+        self.settings_gear_label.place(relx=0.95, rely=0.05, anchor="ne")
+        self.settings_gear_label.bind("<Button-1>", lambda e: self.open_settings())
+        self._refresh_settings_gear_icon()
+
+    def _get_settings_gear_path(self) -> str:
+        icon_key = "gear_light" if self.theme == "darkly" else "gear_dark"
+        return resource_path(APP_IMAGE_FILES.get(icon_key, APP_IMAGE_FILES["gear"]))
+
+    def _refresh_settings_gear_icon(self) -> None:
+        if not self.settings_gear_label or not self.settings_gear_label.winfo_exists():
+            return
+
+        gear_path = self._get_settings_gear_path()
         if os.path.exists(gear_path):
             try:
                 gear_img = ImageTk.PhotoImage(Image.open(gear_path).resize((25, 30)))
-                cog = ttk.Label(self.root, image=gear_img, cursor="hand2")
-                cog.image = gear_img
-                cog.place(relx=0.95, rely=0.05, anchor="ne")
-                cog.bind("<Button-1>", lambda e: self.open_settings())
+                self.settings_gear_label.configure(image=gear_img, text="")
+                self.settings_gear_label.image = gear_img
                 return
             except Exception as e:
                 logging.debug(f"Impossible de charger l'icone engrenage: {e}")
-        cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
-        cog.place(relx=0.95, rely=0.05, anchor="ne")
+        self.settings_gear_label.configure(image="", text="⚙")
+        self.settings_gear_label.image = None
 
     def _create_opgg_button(self) -> None:
         self.stats_btn = ttk.Button(
@@ -326,42 +386,79 @@ class LoLAssistantUI:
             width=22,
             command=self.open_preferred_stats_site,
         )
-        self.stats_btn.place(relx=0.5, rely=0.84, anchor="center")
-        self.stats_hint_label = ttk.Label(self.root, text="", style="Status.TLabel", justify="center")
-        self.stats_hint_label.place(relx=0.5, rely=0.73, anchor="center")
+        self.stats_btn.place(relx=0.5, rely=self.STATS_BUTTON_TOP_RELY, anchor="n")
         self._refresh_stats_button()
+
+    def _apply_preview_palette(self) -> None:
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        if self.feature_preview_frame and self.feature_preview_frame.winfo_exists():
+            self.feature_preview_frame.configure(bg=palette["window_bg"])
+        for group in self.feature_group_frames.values():
+            for current in self._iter_widget_tree(group):
+                try:
+                    if isinstance(current, (tk.Frame, tk.Label)):
+                        current.configure(bg=palette["window_bg"])
+                        if isinstance(current, tk.Label):
+                            current.configure(fg=palette["text"])
+                except Exception:
+                    continue
+        for icon_labels in self.feature_icon_labels.values():
+            for label in icon_labels:
+                try:
+                    label.configure(bg=palette["window_bg"], fg=palette["muted"])
+                except Exception:
+                    continue
+
+    def _get_preview_icon_cache_key(self, name: str, is_champion: bool, size: Optional[int] = None) -> tuple[str, str, int]:
+        kind = "champ" if is_champion else "spell"
+        return kind, name, size or self.PREVIEW_ICON_SIZE
 
     def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
         display_name = name or "..."
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         if not enabled:
-            widget.configure(text="OFF", image=self.preview_placeholder, compound="center", foreground="#8f8f8f")
+            widget.configure(text="", image=self.preview_placeholder, compound="center", bg=palette["window_bg"], fg=palette["muted"])
             widget.image = self.preview_placeholder
             return
         if not name:
-            widget.configure(text="...", image=self.preview_placeholder, compound="center", foreground="#8f8f8f")
+            widget.configure(text="", image=self.preview_placeholder, compound="center", bg=palette["window_bg"], fg=palette["muted"])
             widget.image = self.preview_placeholder
             return
 
-        widget.configure(text="", image=self.preview_placeholder, compound="center", foreground="#f5f5f5")
+        cache_key = self._get_preview_icon_cache_key(name, is_champion, self.PREVIEW_ICON_SIZE)
+        if cache_key in self.preview_icon_cache:
+            cached_photo = self.preview_icon_cache[cache_key]
+            widget.configure(text="", image=cached_photo, compound="center", bg=palette["window_bg"], fg=palette["text"])
+            widget.image = cached_photo
+            return
+
+        widget.configure(text="", image=self.preview_placeholder, compound="center", bg=palette["window_bg"], fg=palette["text"])
         widget.image = self.preview_placeholder
 
         def task():
             try:
                 image = self.dd.get_champion_icon(name) if is_champion else self.dd.get_summoner_icon(name)
                 if image:
-                    image = image.resize((22, 22), Image.LANCZOS)
-                    photo = ImageTk.PhotoImage(image)
+                    resized_image = image.resize((self.PREVIEW_ICON_SIZE, self.PREVIEW_ICON_SIZE), Image.LANCZOS)
 
                     def update_ui():
                         if widget.winfo_exists():
-                            widget.configure(image=photo, text="", compound="center", foreground="#f5f5f5")
+                            photo = ImageTk.PhotoImage(resized_image)
+                            self.preview_icon_cache[cache_key] = photo
+                            widget.configure(image=photo, text="", compound="center", bg=palette["window_bg"], fg=palette["text"])
                             widget.image = photo
 
                     widget.after(0, update_ui)
                 else:
                     def update_ui_no_img():
                         if widget.winfo_exists():
-                            widget.configure(image=self.preview_placeholder, text=name[:4], compound="center", foreground="#d5d5d5")
+                            widget.configure(
+                                image=self.preview_placeholder,
+                                text="",
+                                compound="center",
+                                bg=palette["window_bg"],
+                                fg=palette["muted"],
+                            )
                             widget.image = self.preview_placeholder
 
                     widget.after(0, update_ui_no_img)
@@ -370,17 +467,25 @@ class LoLAssistantUI:
 
         self.executor.submit(task)
 
-    def _refresh_feature_preview(self) -> None:
-        if not self.feature_preview_frame or not self.feature_preview_frame.winfo_exists():
-            return
+    def _bind_feature_group(self, widget: tk.Misc, feature_key: str) -> None:
+        for current in self._iter_widget_tree(widget):
+            try:
+                current.bind("<Button-1>", lambda event, key=feature_key: self._on_feature_group_click(key, event))
+                current.configure(cursor="hand2")
+            except Exception:
+                continue
 
-        detected_role = "GLOBAL"
-        if self.ws_manager and self.ws_manager.state.assigned_position:
-            detected_role = self.ws_manager.state.assigned_position
-        effective = self.get_effective_profile_config(role=detected_role)
-        params = self.get_params()
+    def _iter_widget_tree(self, widget: tk.Misc):
+        yield widget
+        for child in widget.winfo_children():
+            yield from self._iter_widget_tree(child)
 
-        preview_data = {
+    def _on_feature_group_click(self, feature_key: str, event=None):
+        self._toggle_main_preview_feature(feature_key)
+        return "break"
+
+    def _build_feature_preview_payload(self, params: Dict[str, Any], effective: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        return {
             "pick": {
                 "enabled": params.get("auto_pick_enabled", True),
                 "style": "info",
@@ -408,12 +513,78 @@ class LoLAssistantUI:
             },
         }
 
+    def _toggle_main_preview_feature(self, feature_key: str) -> None:
+        param_key = self.FEATURE_PARAM_MAP.get(feature_key)
+        if not param_key:
+            return
+
+        current_value = bool(self.get_params().get(param_key, True))
+        next_value = not current_value
+        self.update_param(param_key, next_value)
+        if self.settings_win and self.settings_win.window.winfo_exists():
+            self.settings_win._sync_from_params()
+        state_label = "active" if next_value else "desactive"
+        self.show_toast(f"{self.FEATURE_LABEL_MAP.get(feature_key, feature_key)} {state_label}.", duration=1200)
+
+    def _queue_feature_preview_refresh(self, force: bool = False) -> None:
+        if not hasattr(self, "root") or not self.root.winfo_exists():
+            return
+        if self._preview_refresh_after_id is not None:
+            return
+
+        def _run():
+            self._preview_refresh_after_id = None
+            self._refresh_feature_preview(force=force)
+
+        self._preview_refresh_after_id = self.root.after(80, _run)
+
+    def _build_preview_signature(self, preview_data: Dict[str, Dict[str, Any]]) -> tuple:
+        signature = []
+        for key in ("pick", "ban", "spells"):
+            data = preview_data.get(key, {})
+            signature.append(
+                (
+                    key,
+                    bool(data.get("enabled")),
+                    tuple(data.get("values", [])),
+                )
+            )
+        return tuple(signature)
+
+    def _get_feature_status_colors(self, accent: str, enabled: bool) -> tuple[str, str]:
+        if not enabled:
+            return ("", THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])["muted"])
+        palette = {
+            "info": "#3da5ff",
+            "danger": "#ff6b5a",
+            "warning": "#f5b84c",
+        }
+        return ("", palette.get(accent, "#3da5ff"))
+
+    def _refresh_feature_preview(self, force: bool = False) -> None:
+        if not self.feature_preview_frame or not self.feature_preview_frame.winfo_exists():
+            return
+
+        detected_role = "GLOBAL"
+        if self.ws_manager and self.ws_manager.state.assigned_position:
+            detected_role = self.ws_manager.state.assigned_position
+        effective = self.get_effective_profile_config(role=detected_role)
+        params = self.get_params()
+        preview_data = self._build_feature_preview_payload(params, effective)
+        signature = self._build_preview_signature(preview_data)
+        if not force and signature == self._last_preview_signature:
+            return
+        self._last_preview_signature = signature
+        self._apply_preview_palette()
+
         for key, data in preview_data.items():
             status = self.feature_status_labels.get(key)
             if status:
+                _, fg = self._get_feature_status_colors(data["style"], data["enabled"])
                 status.configure(
                     text="ON" if data["enabled"] else "OFF",
-                    bootstyle=data["style"] if data["enabled"] else "secondary",
+                    bg=THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])["window_bg"],
+                    fg=fg,
                 )
             for widget, value in zip(self.feature_icon_labels.get(key, []), data["values"]):
                 self._set_feature_icon(widget, value, data["is_champion"], data["enabled"], data["style"])
@@ -437,9 +608,6 @@ class LoLAssistantUI:
     def _get_stats_button_text(self) -> str:
         return f"Voir mes stats ({self.get_preferred_stats_site_label()})"
 
-    def _get_stats_hint_text(self) -> str:
-        return f"Raccourci site: {self.get_params().get('hotkey_open_site', 'alt+p').upper()}"
-
     def _has_valid_riot_id(self) -> bool:
         return is_valid_riot_id(self._get_riot_id_display() or self.get_params().get("manual_summoner_name", ""))
 
@@ -451,8 +619,6 @@ class LoLAssistantUI:
                 state="normal" if enabled else "disabled",
                 image="",
             )
-        if self.stats_hint_label and self.stats_hint_label.winfo_exists():
-            self.stats_hint_label.configure(text=self._get_stats_hint_text())
 
     def open_preferred_stats_site(self) -> None:
         if not self._has_valid_riot_id():
@@ -823,7 +989,7 @@ class LoLAssistantUI:
         elif event_type == WebSocketManager.EVENT_READY_CHECK_ACCEPTED:
             self.play_accept_sound()
 
-        self._refresh_feature_preview()
+        self._queue_feature_preview_refresh()
         self._refresh_stats_button()
         if self.history_window and self.history_window.winfo_exists():
             self.refresh_history_window()
@@ -836,6 +1002,12 @@ class LoLAssistantUI:
             return
         self.closing_requested = True
         self.running = False
+        if self._preview_refresh_after_id is not None:
+            try:
+                self.root.after_cancel(self._preview_refresh_after_id)
+            except Exception:
+                pass
+            self._preview_refresh_after_id = None
         self._cancel_disconnect_close()
         self.hotkey_manager.shutdown()
         self.tray_controller.shutdown()
