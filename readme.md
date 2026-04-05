@@ -86,11 +86,8 @@ Le projet contient maintenant plusieurs garde-fous utiles:
 
 ## Captures D Ecran
 
-Tu m'as dit que tu ajouteras des images plus tard, donc j'ai prepare la structure pour les inserer facilement.
-
 ### Fenetre principale
 
-Ajoute ici une capture de l'ecran principal:
 
 ```md
 ![Fenetre principale](./docs/images/main-window.png)
@@ -98,30 +95,14 @@ Ajoute ici une capture de l'ecran principal:
 
 ### Fenetre de parametres
 
-Ajoute ici une capture de la fenetre de configuration:
-
 ```md
 ![Parametres](./docs/images/settings-window.png)
 ```
 
 ### Pendant un champion select
 
-Ajoute ici une capture montrant l'app connectee au client:
-
 ```md
 ![Champion select](./docs/images/champ-select.png)
-```
-
-### Suggestion de structure pour les futures images
-
-Si tu veux garder le repo propre, tu peux stocker les captures ici:
-
-```text
-docs/
-`-- images/
-    |-- main-window.png
-    |-- settings-window.png
-    `-- champ-select.png
 ```
 
 ## Technologies
@@ -286,7 +267,7 @@ MAIN_LOL/
 |   `-- utils.py
 |-- config/
 |   |-- son.wav
-|   `-- imgs/
+|   `-- images/
 `-- tests/
     |-- test_config.py
     |-- test_core_champ_select.py
@@ -350,7 +331,7 @@ Verifie la presence du dossier:
 
 ```text
 config/
-`-- imgs/
+`-- images/
 ```
 
 ### Les logs
