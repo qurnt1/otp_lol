@@ -71,7 +71,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_1"], "")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_2"], "")
 
-    def test_load_parameters_normalizes_role_spells_and_favorites(self):
+    def test_load_parameters_normalizes_role_spells_and_ignores_legacy_favorites(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text(
@@ -92,15 +92,81 @@ class ConfigTests(unittest.TestCase):
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
-        self.assertEqual(loaded["favorite_champions"], ["Lux", "Ahri"])
         self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_1"], "Smite")
         self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_2"], "Flash")
+        self.assertNotIn("favorite_champions", loaded)
+
+    def test_load_parameters_normalizes_preferred_stats_site(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "preferred_stats_site": "LeagueOfGraphs",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["preferred_stats_site"], "leagueofgraphs")
+
+    def test_load_parameters_normalizes_preferred_hotkey_site(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "preferred_hotkey_site": "DeepLOL",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["preferred_hotkey_site"], "deeplol")
+
+    def test_load_parameters_rejects_non_ingame_hotkey_site(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(json.dumps({"preferred_hotkey_site": "leagueofgraphs"}), encoding="utf-8")
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["preferred_hotkey_site"], "porofessor")
+
+    def test_load_parameters_normalizes_custom_hotkeys(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "hotkey_toggle_window": " ALT+SHIFT+C ",
+                        "hotkey_open_site": " CTRL+ALT+P ",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["hotkey_toggle_window"], "alt+shift+c")
+        self.assertEqual(loaded["hotkey_open_site"], "ctrl+alt+p")
 
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             export_path = Path(tmpdir) / "export.json"
             payload = config.DEFAULT_PARAMS.copy()
-            payload["favorite_champions"] = ["Garen", "Lux"]
+            payload["preferred_stats_site"] = "deeplol"
+            payload["preferred_hotkey_site"] = "porofessor"
+            payload["hotkey_toggle_window"] = "alt+shift+c"
+            payload["hotkey_open_site"] = "ctrl+alt+p"
             payload["role_profiles"]["TOP"]["spell_1"] = "Teleport"
             payload["role_profiles"]["TOP"]["spell_2"] = "Flash"
 
@@ -109,7 +175,10 @@ class ConfigTests(unittest.TestCase):
 
             imported = config.import_parameters_from_file(str(export_path))
 
-        self.assertEqual(imported["favorite_champions"], ["Garen", "Lux"])
+        self.assertEqual(imported["preferred_stats_site"], "deeplol")
+        self.assertEqual(imported["preferred_hotkey_site"], "porofessor")
+        self.assertEqual(imported["hotkey_toggle_window"], "alt+shift+c")
+        self.assertEqual(imported["hotkey_open_site"], "ctrl+alt+p")
         self.assertEqual(imported["role_profiles"]["TOP"]["spell_1"], "Teleport")
         self.assertEqual(imported["role_profiles"]["TOP"]["spell_2"], "Flash")
 
