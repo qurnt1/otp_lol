@@ -3,10 +3,25 @@
 import json
 import logging
 import os
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from .constants import ROLE_PROFILE_ORDER
-from .paths import PARAMETERS_PATH, ICONS_CACHE_DIR, SPELLS_CACHE_DIR
+from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
+
+
+def build_role_profile_defaults() -> Dict[str, Dict[str, str]]:
+    """Return a fully initialized role profile payload."""
+    return {
+        role: {
+            "selected_pick_1": "",
+            "selected_pick_2": "",
+            "selected_pick_3": "",
+            "selected_ban": "",
+            "spell_1": "",
+            "spell_2": "",
+        }
+        for role in ROLE_PROFILE_ORDER
+    }
 
 
 DEFAULT_PARAMS: Dict[str, Any] = {
@@ -26,9 +41,10 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_detected_region": "",
     "auto_detected_platform": "",
     "selected_profile_role": "GLOBAL",
-    "role_profiles": {},
+    "role_profiles": build_role_profile_defaults(),
     "global_spell_1": "Heal",
     "global_spell_2": "Flash",
+    "favorite_champions": [],
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
@@ -45,7 +61,7 @@ def load_parameters() -> Dict[str, Any]:
             config = json.load(f)
         return _normalize_parameters(config)
     except (json.JSONDecodeError, IOError) as e:
-        logging.warning(f"Erreur chargement paramètres: {e}")
+        logging.warning(f"Erreur chargement parametres: {e}")
         return DEFAULT_PARAMS.copy()
 
 
@@ -58,8 +74,29 @@ def save_parameters(params: Dict[str, Any]) -> bool:
             json.dump(sanitized, f, indent=4, ensure_ascii=False)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Erreur sauvegarde paramètres: {e}")
+        logging.error(f"Erreur sauvegarde parametres: {e}")
         return False
+
+
+def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
+    """Export sanitized parameters to a chosen JSON file."""
+    try:
+        sanitized = _normalize_parameters(params)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        return True
+    except (IOError, OSError) as e:
+        logging.error(f"Erreur export parametres: {e}")
+        return False
+
+
+def import_parameters_from_file(path: str) -> Dict[str, Any]:
+    """Import parameters from a JSON file and normalize them."""
+    with open(path, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload, dict):
+        raise ValueError("Le fichier de configuration est invalide.")
+    return _normalize_parameters(payload)
 
 
 def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -88,21 +125,37 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         "SUPPORT": "UTILITY",
         "JGL": "JUNGLE",
     }.get(selected_profile_role, selected_profile_role)
-    merged["selected_profile_role"] = selected_profile_role if selected_profile_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
+    merged["selected_profile_role"] = (
+        selected_profile_role if selected_profile_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
+    )
 
     raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
-    normalized_profiles: Dict[str, Dict[str, str]] = {}
+    normalized_profiles = build_role_profile_defaults()
     for role in ROLE_PROFILE_ORDER:
         role_data = raw_profiles.get(role, {})
         if not isinstance(role_data, dict):
             role_data = {}
-        normalized_profiles[role] = {
-            "selected_pick_1": str(role_data.get("selected_pick_1", "")),
-            "selected_pick_2": str(role_data.get("selected_pick_2", "")),
-            "selected_pick_3": str(role_data.get("selected_pick_3", "")),
-            "selected_ban": str(role_data.get("selected_ban", "")),
-        }
+        normalized_profiles[role].update(
+            {
+                "selected_pick_1": str(role_data.get("selected_pick_1", "")),
+                "selected_pick_2": str(role_data.get("selected_pick_2", "")),
+                "selected_pick_3": str(role_data.get("selected_pick_3", "")),
+                "selected_ban": str(role_data.get("selected_ban", "")),
+                "spell_1": str(role_data.get("spell_1", "")),
+                "spell_2": str(role_data.get("spell_2", "")),
+            }
+        )
     merged["role_profiles"] = normalized_profiles
+
+    raw_favorites = config.get("favorite_champions", [])
+    if not isinstance(raw_favorites, list):
+        raw_favorites = []
+    favorites: List[str] = []
+    for champion in raw_favorites:
+        name = str(champion).strip()
+        if name and name not in favorites:
+            favorites.append(name)
+    merged["favorite_champions"] = favorites
 
     return {key: merged[key] for key in DEFAULT_PARAMS}
 
