@@ -12,9 +12,18 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from PIL import Image, ImageEnhance, ImageTk
 
-from ..config import CURRENT_VERSION, GITHUB_REPO_URL, ROLE_PROFILE_LABELS, ROLE_PROFILE_ORDER, resource_path
-from ..services.history import clear_history_entries, get_history_entries
-from ..utils import build_opgg_url, build_porofessor_url
+from ..config import (
+    APP_IMAGE_FILES,
+    CURRENT_VERSION,
+    GITHUB_REPO_URL,
+    ROLE_PROFILE_LABELS,
+    ROLE_PROFILE_ORDER,
+    STATS_SITE_LABELS,
+    THEME_PALETTE,
+    resource_path,
+)
+from ..services.history import clear_history_entries, format_history_entry, get_history_entries
+from ..utils import build_hotkey_site_url, build_stats_site_url, is_valid_riot_id
 from .hotkeys import HotkeyManager
 from .media import AudioManager
 from .settings_window import SettingsWindow
@@ -68,7 +77,9 @@ class LoLAssistantUI:
         self.feature_preview_frame: Optional[ttk.Frame] = None
         self.feature_status_labels: Dict[str, ttk.Label] = {}
         self.feature_icon_labels: Dict[str, list[ttk.Label]] = {}
-        self.safe_quit_btn: Optional[ttk.Button] = None
+        self.stats_btn: Optional[ttk.Button] = None
+        self.stats_hint_label: Optional[ttk.Label] = None
+        self.history_filter_var = tk.StringVar(value="Tout")
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
@@ -85,6 +96,7 @@ class LoLAssistantUI:
     def set_ws_manager(self, ws_manager) -> None:
         self.ws_manager = ws_manager
         self._refresh_feature_preview()
+        self._refresh_stats_button()
 
     def get_params(self) -> Dict[str, Any]:
         return self._get_params_callback()
@@ -92,11 +104,21 @@ class LoLAssistantUI:
     def update_param(self, key: str, value: Any) -> None:
         self._update_param_callback(key, value)
         self._refresh_feature_preview()
+        self._refresh_stats_button()
+        if key == "theme":
+            self.apply_theme(value)
+        if key in {"hotkey_toggle_window", "hotkey_open_site"}:
+            self.reload_hotkeys()
 
     def replace_params(self, params: Dict[str, Any]) -> None:
         for key, value in params.items():
             self._update_param_callback(key, value)
+            if key == "theme":
+                self.apply_theme(value)
         self._refresh_feature_preview()
+        self._refresh_stats_button()
+        if {"hotkey_toggle_window", "hotkey_open_site"} & set(params):
+            self.reload_hotkeys()
 
     def save_params(self) -> None:
         self._save_callback()
@@ -104,6 +126,31 @@ class LoLAssistantUI:
     def save_and_notify(self) -> None:
         self.save_params()
         self.show_toast("Parametres sauvegardes !")
+
+    def apply_theme(self, theme_name: str) -> None:
+        theme_name = theme_name if theme_name in THEME_PALETTE else "darkly"
+        self.theme = theme_name
+        self.theme_var.set(theme_name)
+        palette = THEME_PALETTE[theme_name]
+
+        try:
+            self.root.style.theme_use(theme_name)
+        except Exception as e:
+            logging.debug(f"Impossible d'appliquer le theme {theme_name}: {e}")
+
+        if self.bg_label and self.bg_label.winfo_exists():
+            self.bg_label.configure(bg=palette["window_bg"])
+        if self.connection_indicator and self.connection_indicator.winfo_exists():
+            self.connection_indicator.configure(bg=palette["window_bg"])
+
+        style = ttk.Style()
+        style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=palette["window_bg"], foreground=palette["text"])
+        if self.status_label and self.status_label.winfo_exists():
+            self.status_label.configure(style="Status.TLabel")
+        if self.stats_hint_label and self.stats_hint_label.winfo_exists():
+            self.stats_hint_label.configure(style="Status.TLabel")
+        self._refresh_history_colors()
+        self.update_connection_indicator(self.is_ws_active())
 
     def is_ws_active(self) -> bool:
         return self.ws_manager.is_active if self.ws_manager else False
@@ -174,24 +221,25 @@ class LoLAssistantUI:
         self._create_feature_preview()
         self._create_settings_gear()
         self._create_opgg_button()
-        self._create_safe_quit_button()
         self.root.protocol("WM_DELETE_WINDOW", self._handle_window_close)
 
     def _configure_styles(self) -> None:
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         style = ttk.Style()
         style.configure(".", font=("Segoe UI Emoji", 10))
-        style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=self.root["bg"])
+        style.configure("Status.TLabel", font=("Segoe UI Emoji", 11), background=palette["window_bg"], foreground=palette["text"])
 
     def _create_background(self) -> None:
-        self.bg_label = tk.Label(self.root, bg="#2b2b2b")
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.bg_label = tk.Label(self.root, bg=palette["window_bg"])
         self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
         self.bg_label.lower()
 
     def _create_banner(self) -> None:
         try:
-            garen_icon = ImageTk.PhotoImage(Image.open(resource_path("./config/images/garen.webp")).resize((32, 32)))
+            garen_icon = ImageTk.PhotoImage(Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((32, 32)))
             self.root.iconphoto(False, garen_icon)
-            banner_img = ImageTk.PhotoImage(Image.open(resource_path("./config/images/garen.webp")).resize((48, 48)))
+            banner_img = ImageTk.PhotoImage(Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((48, 48)))
             self.banner_label = ttk.Label(self.root, image=banner_img)
             self.banner_label.image = banner_img
             self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
@@ -199,7 +247,8 @@ class LoLAssistantUI:
             logging.debug(f"Impossible de charger les images de banniere: {e}")
 
     def _create_connection_indicator(self) -> None:
-        self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b")
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg=palette["window_bg"])
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
 
@@ -254,7 +303,7 @@ class LoLAssistantUI:
         self._refresh_feature_preview()
 
     def _create_settings_gear(self) -> None:
-        gear_path = resource_path("./config/images/gear.png")
+        gear_path = resource_path(APP_IMAGE_FILES["gear"])
         if os.path.exists(gear_path):
             try:
                 gear_img = ImageTk.PhotoImage(Image.open(gear_path).resize((25, 30)))
@@ -269,26 +318,18 @@ class LoLAssistantUI:
         cog.place(relx=0.95, rely=0.05, anchor="ne")
 
     def _create_opgg_button(self) -> None:
-        opgg_btn = ttk.Button(
+        self.stats_btn = ttk.Button(
             self.root,
-            text="Voir mes stats (OP.GG)",
+            text=self._get_stats_button_text(),
             bootstyle="success-outline",
             padding=(16, 10),
             width=22,
-            command=lambda: webbrowser.open(self.build_opgg_url()),
+            command=self.open_preferred_stats_site,
         )
-        opgg_btn.place(relx=0.5, rely=0.84, anchor="center")
-
-    def _create_safe_quit_button(self) -> None:
-        self.safe_quit_btn = ttk.Button(
-            self.root,
-            text="Quitter",
-            command=self._quit_callback,
-            bootstyle="danger-outline",
-            width=10,
-        )
-        self.safe_quit_btn.place(relx=0.98, rely=0.95, anchor="se")
-        self.safe_quit_btn.place_forget()
+        self.stats_btn.place(relx=0.5, rely=0.84, anchor="center")
+        self.stats_hint_label = ttk.Label(self.root, text="", style="Status.TLabel", justify="center")
+        self.stats_hint_label.place(relx=0.5, rely=0.73, anchor="center")
+        self._refresh_stats_button()
 
     def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
         display_name = name or "..."
@@ -377,13 +418,47 @@ class LoLAssistantUI:
             for widget, value in zip(self.feature_icon_labels.get(key, []), data["values"]):
                 self._set_feature_icon(widget, value, data["is_champion"], data["enabled"], data["style"])
 
-    def build_opgg_url(self) -> str:
-        riot_id = self._get_riot_id_display() or self.get_params().get("manual_summoner_name", "")
-        return build_opgg_url(self.get_platform_for_websites(), riot_id)
+    def build_preferred_stats_url(self) -> str:
+        params = self.get_params()
+        riot_id = self._get_riot_id_display() or params.get("manual_summoner_name", "")
+        site = params.get("preferred_stats_site", "opgg")
+        return build_stats_site_url(site, self.get_platform_for_websites(), riot_id)
 
-    def build_porofessor_url(self) -> str:
-        riot_id = self._get_riot_id_display() or self.get_params().get("manual_summoner_name", "")
-        return build_porofessor_url(self.get_platform_for_websites(), riot_id)
+    def build_preferred_hotkey_url(self) -> str:
+        params = self.get_params()
+        riot_id = self._get_riot_id_display() or params.get("manual_summoner_name", "")
+        site = params.get("preferred_hotkey_site", "porofessor")
+        return build_hotkey_site_url(site, self.get_platform_for_websites(), riot_id)
+
+    def get_preferred_stats_site_label(self) -> str:
+        site = self.get_params().get("preferred_stats_site", "opgg")
+        return STATS_SITE_LABELS.get(site, STATS_SITE_LABELS["opgg"])
+
+    def _get_stats_button_text(self) -> str:
+        return f"Voir mes stats ({self.get_preferred_stats_site_label()})"
+
+    def _get_stats_hint_text(self) -> str:
+        return f"Raccourci site: {self.get_params().get('hotkey_open_site', 'alt+p').upper()}"
+
+    def _has_valid_riot_id(self) -> bool:
+        return is_valid_riot_id(self._get_riot_id_display() or self.get_params().get("manual_summoner_name", ""))
+
+    def _refresh_stats_button(self) -> None:
+        if self.stats_btn and self.stats_btn.winfo_exists():
+            enabled = self._has_valid_riot_id()
+            self.stats_btn.configure(
+                text=self._get_stats_button_text(),
+                state="normal" if enabled else "disabled",
+                image="",
+            )
+        if self.stats_hint_label and self.stats_hint_label.winfo_exists():
+            self.stats_hint_label.configure(text=self._get_stats_hint_text())
+
+    def open_preferred_stats_site(self) -> None:
+        if not self._has_valid_riot_id():
+            self.show_toast("Riot ID invalide.")
+            return
+        webbrowser.open(self.build_preferred_stats_url())
 
     def _get_riot_id_display(self) -> Optional[str]:
         params = self.get_params()
@@ -392,12 +467,7 @@ class LoLAssistantUI:
         return params.get("manual_summoner_name")
 
     def _refresh_safe_controls(self) -> None:
-        safe_mode = not (self.tray_available and self.hotkeys_available)
-        if self.safe_quit_btn and self.safe_quit_btn.winfo_exists():
-            if safe_mode:
-                self.safe_quit_btn.place(relx=0.98, rely=0.95, anchor="se")
-            else:
-                self.safe_quit_btn.place_forget()
+        return
 
     def _handle_window_close(self) -> None:
         if self.tray_available and not self.closing_requested:
@@ -475,12 +545,23 @@ class LoLAssistantUI:
         )
 
     def setup_hotkeys(self) -> None:
-        self.hotkey_manager.setup(self.toggle_window, self.open_porofessor)
+        params = self.get_params()
+        self.hotkey_manager.setup(
+            self.toggle_window,
+            self.open_preferred_hotkey_site,
+            params.get("hotkey_toggle_window", "alt+c"),
+            params.get("hotkey_open_site", "alt+p"),
+        )
 
-    def open_porofessor(self) -> None:
+    def reload_hotkeys(self) -> None:
+        self.hotkey_manager.shutdown()
+        self.setup_hotkeys()
+        self._refresh_safe_controls()
+
+    def open_preferred_hotkey_site(self) -> None:
         riot_id = self._get_riot_id_display()
-        if riot_id:
-            webbrowser.open(self.build_porofessor_url())
+        if riot_id and is_valid_riot_id(riot_id):
+            webbrowser.open(self.build_preferred_hotkey_url())
 
     def show_window(self) -> None:
         if self.root.state() == "withdrawn":
@@ -518,7 +599,7 @@ class LoLAssistantUI:
         self.history_window.protocol("WM_DELETE_WINDOW", self._close_history_window)
 
         try:
-            icon_path = resource_path("./config/images/garen.webp")
+            icon_path = resource_path(APP_IMAGE_FILES["icon_webp"])
             if os.path.exists(icon_path):
                 img = Image.open(icon_path).resize((16, 16))
                 photo = ImageTk.PhotoImage(img)
@@ -532,15 +613,43 @@ class LoLAssistantUI:
 
         controls = ttk.Frame(container)
         controls.pack(fill="x", pady=(0, 10))
+        ttk.Label(controls, text="Filtre :", style="Status.TLabel").pack(side="left")
+        history_filter_cb = ttk.Combobox(
+            controls,
+            values=["Tout", "Connexion", "Champ Select", "Sorts", "Erreur"],
+            textvariable=self.history_filter_var,
+            state="readonly",
+            width=16,
+        )
+        history_filter_cb.pack(side="left", padx=(8, 0))
+        history_filter_cb.bind("<<ComboboxSelected>>", lambda e: self.refresh_history_window())
         ttk.Button(controls, text="Effacer", bootstyle="danger-outline", command=self.clear_history_window).pack(
             side="right"
         )
 
-        self.history_text = scrolledtext.ScrolledText(container, wrap="word", font=("Consolas", 10))
+        self.history_text = scrolledtext.ScrolledText(container, wrap="word", font=("Segoe UI", 10))
         self.history_text.pack(fill="both", expand=True)
+        self._refresh_history_colors()
         self.history_text.configure(state="disabled")
         self.refresh_history_window()
         self._schedule_history_refresh()
+
+    def _refresh_history_colors(self) -> None:
+        if not self.history_text:
+            return
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        self.history_text.configure(
+            background=palette["window_bg"],
+            foreground=palette["text"],
+            insertbackground=palette["text"],
+        )
+        self.history_text.tag_configure("history_time", foreground=palette["history_time"], font=("Segoe UI", 9, "bold"))
+        self.history_text.tag_configure("history_info", foreground=palette["history_info"], font=("Segoe UI", 9, "bold"))
+        self.history_text.tag_configure("history_success", foreground=palette["history_success"], font=("Segoe UI", 9, "bold"))
+        self.history_text.tag_configure("history_warning", foreground=palette["history_warning"], font=("Segoe UI", 9, "bold"))
+        self.history_text.tag_configure("history_error", foreground=palette["history_error"], font=("Segoe UI", 9, "bold"))
+        self.history_text.tag_configure("history_message", foreground=palette["text"], font=("Segoe UI", 10))
+        self.history_text.tag_configure("history_detail", foreground=palette["history_detail"], font=("Segoe UI", 9))
 
     def _schedule_history_refresh(self) -> None:
         if self.history_after_id is not None:
@@ -578,19 +687,22 @@ class LoLAssistantUI:
         if not self.history_window or not self.history_window.winfo_exists() or not self.history_text:
             return
         entries = get_history_entries(limit=150)
+        selected_filter = self.history_filter_var.get()
+        if selected_filter != "Tout":
+            entries = [entry for entry in entries if format_history_entry(entry)["category"] == selected_filter]
         self.history_text.configure(state="normal")
         self.history_text.delete("1.0", "end")
         if not entries:
-            self.history_text.insert("end", "Aucun evenement historique pour le moment.")
+            self.history_text.insert("end", "Aucun evenement historique pour le moment.", "history_detail")
         else:
             for entry in entries:
-                timestamp = entry.get("timestamp", "")
-                event_type = entry.get("type", "info")
-                message = entry.get("message", "")
-                details = entry.get("details", {})
-                self.history_text.insert("end", f"[{timestamp}] {event_type.upper()} - {message}\n")
-                if details:
-                    self.history_text.insert("end", f"  details: {details}\n")
+                formatted = format_history_entry(entry)
+                level_tag = f"history_{formatted['level']}"
+                self.history_text.insert("end", f"{formatted['time']}  ", "history_time")
+                self.history_text.insert("end", f"{formatted['level_label']}  {formatted['category']}\n", level_tag)
+                self.history_text.insert("end", f"{formatted['message']}\n", "history_message")
+                for line in formatted["detail_lines"]:
+                    self.history_text.insert("end", f"{line}\n", "history_detail")
                 self.history_text.insert("end", "\n")
         self.history_text.configure(state="disabled")
 
@@ -651,7 +763,7 @@ class LoLAssistantUI:
         popup.geometry(f"{width}x{height}+{x}+{y}")
 
         try:
-            icon_path = resource_path("./config/images/garen.webp")
+            icon_path = resource_path(APP_IMAGE_FILES["icon_webp"])
             if os.path.exists(icon_path):
                 img = Image.open(icon_path).resize((32, 32))
                 photo = ImageTk.PhotoImage(img)
@@ -712,6 +824,7 @@ class LoLAssistantUI:
             self.play_accept_sound()
 
         self._refresh_feature_preview()
+        self._refresh_stats_button()
         if self.history_window and self.history_window.winfo_exists():
             self.refresh_history_window()
 
