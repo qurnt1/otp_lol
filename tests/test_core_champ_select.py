@@ -20,6 +20,13 @@ class DummyDataDragon:
     def resolve_champion(self, name_or_id):
         return self.mapping.get(name_or_id)
 
+    def id_to_name(self, champion_id):
+        reverse = {value: key for key, value in self.mapping.items()}
+        return reverse.get(champion_id)
+
+    def get_champion_tags(self, name_or_id):
+        return ["Fighter"]
+
 
 class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -32,12 +39,16 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
+            "global_spell_1": "Heal",
+            "global_spell_2": "Flash",
             "role_profiles": {
                 "MIDDLE": {
                     "selected_pick_1": "Lux",
                     "selected_pick_2": "Ashe",
                     "selected_pick_3": "",
                     "selected_ban": "Teemo",
+                    "spell_1": "Ignite",
+                    "spell_2": "",
                 }
             },
         }
@@ -146,6 +157,34 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         locked = await self.manager._lock_in_champion(12, 86)
 
         self.assertFalse(locked)
+
+    async def test_effective_profile_config_includes_role_spell_fallback(self):
+        self.manager.state.assigned_position = "MID"
+
+        effective = self.manager.get_effective_profile_config(params=self.params)
+
+        self.assertEqual(effective["selected_pick_1"], "Lux")
+        self.assertEqual(effective["spell_1"], "Ignite")
+        self.assertEqual(effective["spell_2"], "Flash")
+        self.assertEqual(effective["sources"]["spell_1"], "MIDDLE")
+        self.assertEqual(effective["sources"]["spell_2"], "GLOBAL")
+
+    async def test_set_spells_uses_effective_role_profile(self):
+        self.manager.state.assigned_position = "MID"
+
+        async def request(method, url, **kwargs):
+            self.assertEqual(method, "patch")
+            self.assertEqual(url, "/lol-champ-select/v1/session/my-selection")
+            self.assertEqual(kwargs["json"]["spell1Id"], 14)
+            self.assertEqual(kwargs["json"]["spell2Id"], 4)
+            return FakeResponse(200, {})
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+
+        await self.manager._set_spells(self.params)
+
+        self.assertIn((WebSocketManager.EVENT_SPELLS_SET, ("Ignite", "Flash")), self.events)
 
 
 if __name__ == "__main__":
