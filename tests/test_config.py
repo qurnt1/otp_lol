@@ -68,6 +68,50 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_1"], "Ahri")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_ban"], "Zed")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_2"], "")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_1"], "")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_2"], "")
+
+    def test_load_parameters_normalizes_role_spells_and_favorites(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "favorite_champions": ["Lux", "Lux", " Ahri "],
+                        "role_profiles": {
+                            "JUNGLE": {
+                                "spell_1": "Smite",
+                                "spell_2": "Flash",
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["favorite_champions"], ["Lux", "Ahri"])
+        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_1"], "Smite")
+        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_2"], "Flash")
+
+    def test_import_export_round_trip(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            export_path = Path(tmpdir) / "export.json"
+            payload = config.DEFAULT_PARAMS.copy()
+            payload["favorite_champions"] = ["Garen", "Lux"]
+            payload["role_profiles"]["TOP"]["spell_1"] = "Teleport"
+            payload["role_profiles"]["TOP"]["spell_2"] = "Flash"
+
+            exported = config.export_parameters_to_file(str(export_path), payload)
+            self.assertTrue(exported)
+
+            imported = config.import_parameters_from_file(str(export_path))
+
+        self.assertEqual(imported["favorite_champions"], ["Garen", "Lux"])
+        self.assertEqual(imported["role_profiles"]["TOP"]["spell_1"], "Teleport")
+        self.assertEqual(imported["role_profiles"]["TOP"]["spell_2"], "Flash")
 
 
 if __name__ == "__main__":
