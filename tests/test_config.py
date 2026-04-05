@@ -159,6 +159,23 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(loaded["hotkey_open_site"], "ctrl+alt+p")
 
+    def test_load_parameters_normalizes_theme(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "theme": "FLATLY",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["theme"], "flatly")
+
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             export_path = Path(tmpdir) / "export.json"

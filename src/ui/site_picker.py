@@ -95,6 +95,7 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
             bootstyle="secondary-outline" if site != current_site else "primary",
             width=28,
             compound="left",
+            padding=(10, 8),
         )
         if icon:
             btn.configure(image=icon)

@@ -64,6 +64,7 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
                 bootstyle="secondary-outline",
                 compound="top",
                 width=18,
+                padding=(8, 10),
                 command=lambda c=champ_name: on_select(c),
             )
             select_btn.pack(fill="x")

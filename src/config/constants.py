@@ -5,7 +5,7 @@ from typing import Any, Dict
 APP_NAME: str = "MAIN LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/main_lol_2"
-CURRENT_VERSION: str = "6.1"
+CURRENT_VERSION: str = "7.0"
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
 
@@ -77,6 +77,8 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",
     "gear": "config/images/app/gear.png",
+    "gear_light": "config/images/app/gear_light.png",
+    "gear_dark": "config/images/app/gear_dark.png",
 }
 
 WEBSITE_LOGO_FILES: Dict[str, str] = {
@@ -112,6 +114,7 @@ THEME_ORDER: list[str] = ["darkly", "flatly"]
 THEME_PALETTE: Dict[str, Dict[str, str]] = {
     "darkly": {
         "window_bg": "#2b2b2b",
+        "surface_bg": "#2b2b2b",
         "text": "#f5f5f5",
         "muted": "#8f8f8f",
         "history_time": "#8fa1b3",
@@ -123,6 +126,7 @@ THEME_PALETTE: Dict[str, Dict[str, str]] = {
     },
     "flatly": {
         "window_bg": "#f8f9fa",
+        "surface_bg": "#f8f9fa",
         "text": "#1f1f1f",
         "muted": "#6b7280",
         "history_time": "#5c7c99",
