@@ -190,6 +190,14 @@ class DataDragon:
         self.load()
         return self.name_by_id.get(champion_id)
 
+    def get_champion_tags(self, name_or_id: Any) -> List[str]:
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
+            return []
+        champ_data = self.by_id.get(champion_id) or {}
+        tags = champ_data.get("tags", [])
+        return [str(tag) for tag in tags if str(tag).strip()]
+
     def get_champion_icon(self, name_or_id: Any) -> Optional[Image.Image]:
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
