@@ -29,7 +29,7 @@ def main():
         '--windowed',     # Pas de console
         '--noconfirm',    # Écraser sans confirmation
         '--name', APP_BUILD_NAME,
-        '--icon', r'.\config\images\garen.ico',
+        '--icon', r'.\config\images\app\garen.ico',
         
         # ─── INCLUSION DES ASSETS ───
         '--add-data', r'.\config;config',
