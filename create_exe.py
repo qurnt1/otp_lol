@@ -3,9 +3,11 @@ import subprocess
 import sys
 import shutil
 
+from src.config import APP_BUILD_NAME, CURRENT_VERSION
+
 def main():
     print("=" * 60)
-    print("   MAIN LOL - Script de Compilation (v7.0)")
+    print(f"   MAIN LOL - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
     print("=" * 60)
     
@@ -26,8 +28,8 @@ def main():
         '--onefile',      # Fichier unique portable
         '--windowed',     # Pas de console
         '--noconfirm',    # Écraser sans confirmation
-        '--name', 'OTP LOL',
-        '--icon', r'.\config\imgs\garen.ico',
+        '--name', APP_BUILD_NAME,
+        '--icon', r'.\config\images\app\garen.ico',
         
         # ─── INCLUSION DES ASSETS ───
         '--add-data', r'.\config;config',
@@ -60,6 +62,7 @@ def main():
         '--hidden-import=PIL.ImageTk',
         '--hidden-import=PIL.ImageEnhance',
         '--hidden-import=lcu_driver',
+        '--hidden-import=packaging',
         '--hidden-import=requests',
         
         # ─── POINT D'ENTRÉE ───

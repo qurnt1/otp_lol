@@ -10,12 +10,12 @@ Améliorations v6.1:
 
 import sys
 import logging
-from threading import Thread
+from threading import Thread, Lock
 from typing import Dict, Any
 
 # Imports locaux depuis le package src
 from src.config import (
-    load_parameters, save_parameters, DEFAULT_PARAMS, 
+    load_parameters, save_parameters,
     get_cache_dirs, CURRENT_VERSION
 )
 from src.utils import enable_high_dpi, check_single_instance, remove_lockfile, check_for_updates
@@ -35,6 +35,9 @@ class MainLoLApplication:
         """
         # Activer High DPI
         enable_high_dpi()
+        self._shutdown_lock = Lock()
+        self._shutdown_started = False
+        self._cleanup_done = False
         
         # Vérifier instance unique
         if not check_single_instance():
@@ -68,7 +71,8 @@ class MainLoLApplication:
         self.ws_manager = WebSocketManager(
             ui_callback=self.ui.on_core_event,
             dd=self.dd,
-            get_params=self._get_params
+            get_params=self._get_params,
+            update_param=self._update_param
         )
         
         # Connecter le WS à l'UI
@@ -158,14 +162,24 @@ class MainLoLApplication:
     
     def quit_app(self) -> None:
         """Ferme l'application proprement."""
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                return
+            self._shutdown_started = True
+
         logging.info("Fermeture de l'application...")
-        self._save_params()
-        self.ws_manager.stop()
-        self.ui.stop()
-        self.cleanup()
+        try:
+            self._save_params()
+            self.ws_manager.stop()
+            self.ui.stop()
+        finally:
+            self.cleanup()
     
     def cleanup(self) -> None:
         """Nettoyage final avant fermeture."""
+        if self._cleanup_done:
+            return
+        self._cleanup_done = True
         remove_lockfile()
         logging.info("Nettoyage terminé.")
 
