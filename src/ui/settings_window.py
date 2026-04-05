@@ -35,7 +35,12 @@ if TYPE_CHECKING:
 
 
 class SettingsWindow:
-    """Fenetre de parametres de l'application."""
+    """Settings dialog for editing automation, profile and desktop options.
+
+    This window writes directly into the shared parameter store owned by the main
+    UI. Most controls therefore update the live app state immediately instead of
+    waiting for a separate "save" action.
+    """
 
     def __init__(self, parent: "LoLAssistantUI"):
         self.parent = parent
@@ -49,6 +54,7 @@ class SettingsWindow:
         self.scroll_frame: Optional[ScrolledFrame] = None
         self.role_icon_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.website_logo_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
+        self.telegram_icon: Optional[ImageTk.PhotoImage] = None
         self.role_picker_window: Optional[ttk.Toplevel] = None
         self.site_picker_window: Optional[ttk.Toplevel] = None
         self._capture_target: Optional[str] = None
@@ -73,6 +79,13 @@ class SettingsWindow:
         except Exception as e:
             logging.debug(f"Impossible de charger l'icone de la fenetre Settings: {e}")
             self.window._icon_img = None
+
+        try:
+            telegram_img = Image.open(resource_path(APP_IMAGE_FILES["telegram_logo"])).convert("RGBA").resize((36, 36), Image.LANCZOS)
+            self.telegram_icon = ImageTk.PhotoImage(telegram_img)
+        except Exception as e:
+            logging.debug(f"Impossible de charger l'icone Telegram: {e}")
+            self.telegram_icon = None
 
     def _init_variables(self) -> None:
         params = self.parent.get_params()
@@ -153,13 +166,30 @@ class SettingsWindow:
             padding=(10, 8),
         ).grid(row=0, column=3, sticky="ew", padx=(6, 0))
 
+        accept_frame = ttk.Frame(top_frame)
+        accept_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        accept_frame.columnconfigure(0, weight=1)
+
         ttk.Checkbutton(
-            top_frame,
+            accept_frame,
             text="Accepter la partie automatiquement",
             variable=self.auto_accept_var,
             command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_accept_var.get()),
             bootstyle="success-round-toggle",
-        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(10, 0))
+        ).grid(row=0, column=0, sticky="w")
+
+        self.telegram_settings_btn = ttk.Button(
+            top_frame,
+            text="Telegram",
+            bootstyle="info-outline",
+            command=self._open_telegram_settings,
+            image=self.telegram_icon if self.telegram_icon else "",
+            compound="left",
+            padding=(10, 2),
+        )
+        self.telegram_settings_btn.grid(row=1, column=3, sticky="ew", padx=(6, 0), pady=(10, 0))
+        if self.telegram_icon:
+            self.telegram_settings_btn.image = self.telegram_icon
         return start_row + 1
 
     def _create_pick_section(self, start_row: int) -> int:
@@ -257,6 +287,8 @@ class SettingsWindow:
 
         def on_auto_toggle():
             if self.summoner_auto_detect_var.get():
+                # Preserve the last manual identity before switching to auto mode
+                # so the user can come back to it later without retyping it.
                 manual_name = self.summoner_entry_var.get().strip()
                 if manual_name and manual_name != "(detection auto...)":
                     self.saved_manual_name = manual_name
@@ -375,6 +407,9 @@ class SettingsWindow:
             bootstyle="danger-round-toggle",
         ).pack(anchor="w", pady=2)
 
+    def _open_telegram_settings(self) -> None:
+        self.parent.open_telegram_settings()
+
     def _load_initial_icons(self) -> None:
         self._refresh_profile_buttons()
         self._refresh_spell_buttons()
@@ -395,6 +430,12 @@ class SettingsWindow:
         return self._normalize_role(self.profile_role_var.get())
 
     def _get_profile_role_data(self, role: Optional[str] = None) -> Dict[str, str]:
+        """Return the editable values for the selected role or for GLOBAL.
+
+        GLOBAL still uses the legacy top-level keys. Role-specific profiles live
+        inside `role_profiles`, so this helper hides the storage difference from
+        the rest of the settings UI.
+        """
         params = self.parent.get_params()
         target_role = self._normalize_role(role or self._get_selected_profile_role())
         if target_role == "GLOBAL":
@@ -435,6 +476,7 @@ class SettingsWindow:
         return global_map.get(key, "")
 
     def _get_display_value(self, key: str) -> str:
+        """Return the value shown on buttons, including global fallback hints."""
         value = self._get_profile_value(key)
         if value:
             return value
@@ -445,6 +487,7 @@ class SettingsWindow:
         return "..."
 
     def _set_profile_value(self, key: str, value: str) -> None:
+        """Persist a value either to GLOBAL keys or to the selected role profile."""
         role = self._get_selected_profile_role()
         if role == "GLOBAL":
             key_map = {"spell_1": "global_spell_1", "spell_2": "global_spell_2"}
@@ -539,21 +582,37 @@ class SettingsWindow:
         if hasattr(self, "hotkey_open_btn"):
             self.hotkey_open_btn.configure(text=self._format_hotkey_display(self.hotkey_open_site_var.get()))
 
+    def _set_hotkey_capture_buttons_state(self, state: str) -> None:
+        if hasattr(self, "hotkey_toggle_btn"):
+            self.hotkey_toggle_btn.configure(state=state)
+        if hasattr(self, "hotkey_open_btn"):
+            self.hotkey_open_btn.configure(state=state)
+
     def _start_hotkey_capture(self, target: str) -> None:
+        """Put the window into hotkey-capture mode for one shortcut button."""
+        if self._capture_target:
+            return
+        if hasattr(self.parent, "suspend_hotkeys"):
+            self.parent.suspend_hotkeys()
         self._capture_target = target
         self._pressed_modifiers.clear()
+        self._set_hotkey_capture_buttons_state("disabled")
         if target == "toggle" and hasattr(self, "hotkey_toggle_btn"):
-            self.hotkey_toggle_btn.configure(text="Appuie sur un raccourci...")
+            self.hotkey_toggle_btn.configure(text="Appuie sur un raccourci...", state="normal")
         if target == "site" and hasattr(self, "hotkey_open_btn"):
-            self.hotkey_open_btn.configure(text="Appuie sur un raccourci...")
+            self.hotkey_open_btn.configure(text="Appuie sur un raccourci...", state="normal")
         self.window.focus_force()
 
     def _cancel_hotkey_capture(self) -> None:
         self._capture_target = None
         self._pressed_modifiers.clear()
+        self._set_hotkey_capture_buttons_state("normal")
         self._refresh_hotkey_buttons()
+        if hasattr(self.parent, "resume_hotkeys"):
+            self.parent.resume_hotkeys()
 
     def _finish_hotkey_capture(self, sequence: str) -> None:
+        """Persist a validated shortcut, unless it collides with the other one."""
         target_var = self.hotkey_toggle_var if self._capture_target == "toggle" else self.hotkey_open_site_var
         other_var = self.hotkey_open_site_var if self._capture_target == "toggle" else self.hotkey_toggle_var
         if sequence == other_var.get():
@@ -584,6 +643,7 @@ class SettingsWindow:
         return mapping.get(key, key if key else None)
 
     def _on_hotkey_capture_keypress(self, event) -> Optional[str]:
+        """Translate Tk keypresses into the `keyboard` library hotkey format."""
         if not self._capture_target:
             return None
 
@@ -598,6 +658,8 @@ class SettingsWindow:
             self._pressed_modifiers.add(key)
             return "break"
 
+        # Require at least one modifier to reduce the chance of creating a
+        # global shortcut that conflicts with normal typing.
         modifiers = [modifier for modifier in ("ctrl", "alt", "shift") if modifier in self._pressed_modifiers]
         if not modifiers:
             self.parent.show_toast("Utilise au moins Ctrl, Alt ou Shift.")
@@ -651,6 +713,11 @@ class SettingsWindow:
         self._close_site_picker()
 
     def _get_excluded_champions(self, context: str, slot_num: int = 1) -> set[str]:
+        """Return champions that should not appear in the current picker.
+
+        The goal is to prevent duplicate picks inside one role profile and to
+        avoid selecting the same champion as both pick and ban.
+        """
         profile_data = self._get_profile_role_data()
         excluded = set()
         pick_1 = profile_data.get("selected_pick_1")
@@ -710,6 +777,11 @@ class SettingsWindow:
                 row += 1
 
     def _update_btn_content(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
+        """Refresh a picker button label/icon asynchronously.
+
+        Settings widgets are frequently rebuilt after role changes, so the image
+        load is delegated to the shared executor to keep the dialog reactive.
+        """
         display_name = name or "..."
 
         def task():
@@ -805,6 +877,7 @@ class SettingsWindow:
             self.lbl_auto_detect.configure(text="Detection auto du compte")
 
     def _sync_from_params(self) -> None:
+        """Reload widget variables from the shared parameter store."""
         params = self.parent.get_params()
         self.auto_accept_var.set(params.get("auto_accept_enabled", True))
         self.auto_pick_var.set(params.get("auto_pick_enabled", True))
@@ -908,6 +981,8 @@ class SettingsWindow:
         self.window.after(1000, self._poll_summoner_label)
 
     def on_close(self) -> None:
+        if self._capture_target:
+            self._cancel_hotkey_capture()
         self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get())
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
         if not self.summoner_auto_detect_var.get():

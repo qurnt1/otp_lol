@@ -27,11 +27,17 @@ from ..utils import build_hotkey_site_url, build_stats_site_url, is_valid_riot_i
 from .hotkeys import HotkeyManager
 from .media import AudioManager
 from .settings_window import SettingsWindow
+from .telegram_window import TelegramSettingsWindow
 from .tray import TrayController
 
 
 class LoLAssistantUI:
-    """Interface graphique principale de MAIN LOL."""
+    """Main Tk window for MAIN LOL.
+
+    The class owns the visible desktop UI plus a few integration helpers
+    (executor, tray, hotkeys, audio). Runtime events coming from the LCU manager
+    are funneled back into this class through `on_core_event`.
+    """
 
     MAX_WORKERS = 4
     DISCONNECT_CLOSE_DELAY_MS = 8000
@@ -72,7 +78,9 @@ class LoLAssistantUI:
         self.running = True
         self.closing_requested = False
         self.settings_win: Optional[SettingsWindow] = None
+        self.telegram_settings_win: Optional[TelegramSettingsWindow] = None
         self.ws_manager = None
+        self.telegram_service = None
         self.disconnect_close_after_id = None
         self.history_window = None
         self.history_text = None
@@ -81,6 +89,7 @@ class LoLAssistantUI:
         self.audio_manager = AudioManager()
         self.tray_controller = TrayController()
         self.hotkey_manager = HotkeyManager()
+        self._hotkeys_suspended = False
         self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
@@ -119,14 +128,20 @@ class LoLAssistantUI:
         return self.hotkey_manager.available
 
     def set_ws_manager(self, ws_manager) -> None:
+        """Attach the live websocket manager after both sides have been created."""
         self.ws_manager = ws_manager
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
+
+    def set_telegram_service(self, telegram_service) -> None:
+        """Attach the optional Telegram integration service."""
+        self.telegram_service = telegram_service
 
     def get_params(self) -> Dict[str, Any]:
         return self._get_params_callback()
 
     def update_param(self, key: str, value: Any) -> None:
+        """Update a parameter and refresh the UI parts that depend on it."""
         self._update_param_callback(key, value)
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
@@ -153,6 +168,7 @@ class LoLAssistantUI:
         self.show_toast("Parametres sauvegardes !")
 
     def apply_theme(self, theme_name: str) -> None:
+        """Apply the ttk theme and repaint the custom Tk widgets around it."""
         theme_name = theme_name if theme_name in THEME_PALETTE else "darkly"
         self.theme = theme_name
         self.theme_var.set(theme_name)
@@ -201,7 +217,49 @@ class LoLAssistantUI:
         if self.ws_manager:
             self.ws_manager.force_refresh_summoner()
 
+    def get_lcu_diagnostics(self) -> Dict[str, Any]:
+        if self.ws_manager and hasattr(self.ws_manager, "get_diagnostics"):
+            return self.ws_manager.get_diagnostics()
+        return {
+            "connected": False,
+            "reconnect_count": 0,
+            "retry_count": 0,
+            "endpoint_error_count": 0,
+            "last_error": "",
+        }
+
+    def get_telegram_diagnostics(self) -> Dict[str, Any]:
+        if self.telegram_service and hasattr(self.telegram_service, "get_diagnostics"):
+            return self.telegram_service.get_diagnostics()
+        return {
+            "enabled": False,
+            "running": False,
+            "status": "Desactive",
+            "last_error": "",
+            "messages_sent": 0,
+        }
+
+    def reconfigure_telegram_service(self) -> None:
+        if self.telegram_service and hasattr(self.telegram_service, "reconfigure"):
+            self.telegram_service.reconfigure()
+
+    def test_telegram_connection(self) -> tuple[bool, str]:
+        if self.telegram_service and hasattr(self.telegram_service, "test_connection"):
+            return self.telegram_service.test_connection()
+        return False, "Service Telegram indisponible."
+
+    def send_telegram_status_panel(self) -> tuple[bool, str]:
+        if self.telegram_service and hasattr(self.telegram_service, "send_status_panel"):
+            return self.telegram_service.send_status_panel()
+        return False, "Service Telegram indisponible."
+
     def get_effective_profile_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        """Return the effective automation config shown in the preview UI.
+
+        When the websocket manager is available, the UI delegates to the runtime
+        role-resolution logic so the preview matches the actual automation
+        behaviour. Otherwise it falls back to a local approximation.
+        """
         if self.ws_manager:
             return self.ws_manager.get_effective_profile_config(role=role)
 
@@ -303,6 +361,7 @@ class LoLAssistantUI:
         self.status_label.place(relx=0.5, rely=0.34, anchor="center")
 
     def _create_feature_preview(self) -> None:
+        """Create the compact pick/ban/spells summary shown on the main window."""
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         self.feature_preview_frame = tk.Frame(self.root, bg=palette["window_bg"], bd=0, highlightthickness=0)
         self.feature_preview_frame.place(relx=0.5, rely=self.PREVIEW_TOP_RELY, anchor="n")
@@ -414,6 +473,12 @@ class LoLAssistantUI:
         return kind, name, size or self.PREVIEW_ICON_SIZE
 
     def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
+        """Populate one preview slot without blocking the Tk event loop.
+
+        The image fetch can hit memory cache, disk cache or network, so the work
+        happens in the executor and the widget update is marshalled back onto the
+        Tk thread with `after`.
+        """
         display_name = name or "..."
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         if not enabled:
@@ -485,6 +550,7 @@ class LoLAssistantUI:
         return "break"
 
     def _build_feature_preview_payload(self, params: Dict[str, Any], effective: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """Build the normalized payload consumed by the preview renderer."""
         return {
             "pick": {
                 "enabled": params.get("auto_pick_enabled", True),
@@ -514,6 +580,7 @@ class LoLAssistantUI:
         }
 
     def _toggle_main_preview_feature(self, feature_key: str) -> None:
+        """Let the compact preview act as a quick toggle for core automation flags."""
         param_key = self.FEATURE_PARAM_MAP.get(feature_key)
         if not param_key:
             return
@@ -527,6 +594,7 @@ class LoLAssistantUI:
         self.show_toast(f"{self.FEATURE_LABEL_MAP.get(feature_key, feature_key)} {state_label}.", duration=1200)
 
     def _queue_feature_preview_refresh(self, force: bool = False) -> None:
+        """Debounce preview redraws triggered by bursts of parameter updates."""
         if not hasattr(self, "root") or not self.root.winfo_exists():
             return
         if self._preview_refresh_after_id is not None:
@@ -562,12 +630,15 @@ class LoLAssistantUI:
         return ("", palette.get(accent, "#3da5ff"))
 
     def _refresh_feature_preview(self, force: bool = False) -> None:
+        """Render the current effective pick/ban/spell state on the main window."""
         if not self.feature_preview_frame or not self.feature_preview_frame.winfo_exists():
             return
 
         detected_role = "GLOBAL"
         if self.ws_manager and self.ws_manager.state.assigned_position:
             detected_role = self.ws_manager.state.assigned_position
+        # The preview intentionally mirrors the same role fallback logic used by
+        # the automation engine so the user sees what will really happen.
         effective = self.get_effective_profile_config(role=detected_role)
         params = self.get_params()
         preview_data = self._build_feature_preview_payload(params, effective)
@@ -650,6 +721,11 @@ class LoLAssistantUI:
             self.disconnect_close_after_id = None
 
     def _schedule_disconnect_close(self) -> None:
+        """Schedule a delayed auto-close when the LoL client disappears.
+
+        The delay avoids shutting down MAIN LOL during short reconnect windows or
+        client restarts.
+        """
         self._cancel_disconnect_close()
 
         def close_if_still_disconnected():
@@ -667,12 +743,15 @@ class LoLAssistantUI:
         self.audio_manager.play_accept_sound()
 
     def set_background_splash(self, champion_name: str) -> None:
+        """Load and crop a splash art in the background, then apply it on the UI."""
         def task():
             try:
                 img = self.dd.get_splash_art(champion_name)
                 if not img:
                     return
                 window_w, window_h = 420, 250
+                # Resize to fully cover the window first, then crop from center to
+                # avoid distortion while keeping the artwork visually focused.
                 base_width = window_w
                 w_percent = base_width / float(img.size[0])
                 h_size = int(float(img.size[1]) * w_percent)
@@ -703,6 +782,7 @@ class LoLAssistantUI:
         self.executor.submit(task)
 
     def create_system_tray(self) -> None:
+        """Create the tray icon if the runtime supports it."""
         self.tray_controller.setup(
             executor=self.executor,
             toggle_window=self.toggle_window,
@@ -711,6 +791,10 @@ class LoLAssistantUI:
         )
 
     def setup_hotkeys(self) -> None:
+        """Register global hotkeys from the current parameter set."""
+        if self._hotkeys_suspended:
+            self.hotkey_manager.shutdown()
+            return
         params = self.get_params()
         self.hotkey_manager.setup(
             self.toggle_window,
@@ -721,6 +805,22 @@ class LoLAssistantUI:
 
     def reload_hotkeys(self) -> None:
         self.hotkey_manager.shutdown()
+        self.setup_hotkeys()
+        self._refresh_safe_controls()
+
+    def suspend_hotkeys(self) -> None:
+        """Temporarily disable global hotkeys while the user is capturing a new one."""
+        if self._hotkeys_suspended:
+            return
+        self._hotkeys_suspended = True
+        self.hotkey_manager.shutdown()
+        self._refresh_safe_controls()
+
+    def resume_hotkeys(self) -> None:
+        """Re-register global hotkeys after a capture flow finishes or is cancelled."""
+        if not self._hotkeys_suspended:
+            return
+        self._hotkeys_suspended = False
         self.setup_hotkeys()
         self._refresh_safe_controls()
 
@@ -750,6 +850,14 @@ class LoLAssistantUI:
             self.settings_win.window.focus_force()
             return
         self.settings_win = SettingsWindow(self)
+
+    def open_telegram_settings(self) -> None:
+        if self.telegram_settings_win and self.telegram_settings_win.window.winfo_exists():
+            self.telegram_settings_win.window.lift()
+            self.telegram_settings_win.window.focus_force()
+            self.telegram_settings_win._sync_from_params()
+            return
+        self.telegram_settings_win = TelegramSettingsWindow(self)
 
     def open_history_window(self) -> None:
         if self.history_window and self.history_window.winfo_exists():
@@ -1013,6 +1121,11 @@ class LoLAssistantUI:
         self.tray_controller.shutdown()
         self.audio_manager.shutdown()
         self._close_history_window()
+        if self.telegram_settings_win and self.telegram_settings_win.window.winfo_exists():
+            try:
+                self.telegram_settings_win.window.destroy()
+            except Exception:
+                pass
 
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)

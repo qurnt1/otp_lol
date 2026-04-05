@@ -79,6 +79,7 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "gear": "config/images/app/gear.png",
     "gear_light": "config/images/app/gear_light.png",
     "gear_dark": "config/images/app/gear_dark.png",
+    "telegram_logo": "config/images/app/telegram_logo.png",
 }
 
 WEBSITE_LOGO_FILES: Dict[str, str] = {

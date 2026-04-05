@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from threading import Event, Thread, current_thread
 from time import time
 from typing import Any, Callable, Dict, Optional
@@ -29,7 +30,12 @@ from ..services.history import log_history_event
 
 
 class WebSocketManager(ChampSelectMixin):
-    """Gestionnaire WebSocket pour la communication avec le client LoL."""
+    """Bridge between the Riot LCU event stream and the Tk UI.
+
+    The manager lives on its own background thread with a dedicated asyncio loop.
+    It listens to LCU websocket events, updates the in-memory GameState, and
+    forwards higher-level events to the UI layer.
+    """
 
     EVENT_CONNECTED = "connected"
     EVENT_DISCONNECTED = "disconnected"
@@ -50,6 +56,7 @@ class WebSocketManager(ChampSelectMixin):
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
     ):
+        """Store collaborators and initialize the runtime-only connection state."""
         self.ui_callback = ui_callback
         self.dd = dd
         self.get_params = get_params
@@ -63,6 +70,64 @@ class WebSocketManager(ChampSelectMixin):
         self._stop_event = Event()
         self._cs_tick_lock = asyncio.Lock()
         self.game_start_cooldown: float = 12.0
+        self.reconnect_count: int = 0
+        self.endpoint_error_count: int = 0
+        self.retry_count: int = 0
+        self.last_error: str = ""
+        self.last_error_at: str = ""
+
+    def _record_lcu_error(self, method: str, endpoint: str, reason: str, *, retried: bool = False) -> None:
+        """Track transient and persistent LCU errors for diagnostics."""
+        self.endpoint_error_count += 1
+        if retried:
+            self.retry_count += 1
+        self.last_error = f"{method.upper()} {endpoint} -> {reason}"
+        self.last_error_at = datetime.now().strftime("%H:%M:%S")
+
+    async def _lcu_request(self, method: str, endpoint: str, **kwargs):
+        """Wrapper around `connection.request` with light retry/diagnostic logic.
+
+        Only idempotent GET requests are retried automatically to avoid replaying
+        gameplay actions such as accept, hover or lock.
+        """
+        if not self.connection:
+            return None
+
+        retryable = method.lower() == "get"
+        attempts = 2 if retryable else 1
+
+        for attempt in range(1, attempts + 1):
+            try:
+                response = await self.connection.request(method, endpoint, **kwargs)
+            except Exception as e:
+                self._record_lcu_error(method, endpoint, str(e), retried=retryable and attempt < attempts)
+                if retryable and attempt < attempts:
+                    await asyncio.sleep(0.15)
+                    continue
+                logging.debug(f"LCU request error on {method} {endpoint}: {e}")
+                return None
+
+            status = getattr(response, "status", None)
+            if retryable and isinstance(status, int) and status >= 500 and attempt < attempts:
+                self._record_lcu_error(method, endpoint, f"HTTP {status}", retried=True)
+                await asyncio.sleep(0.15)
+                continue
+            if isinstance(status, int) and status >= 400:
+                self._record_lcu_error(method, endpoint, f"HTTP {status}")
+            return response
+
+        return None
+
+    def get_diagnostics(self) -> Dict[str, Any]:
+        """Expose the current LCU health counters used by the settings screen."""
+        return {
+            "connected": self.ws_active,
+            "reconnect_count": self.reconnect_count,
+            "retry_count": self.retry_count,
+            "endpoint_error_count": self.endpoint_error_count,
+            "last_error": self.last_error,
+            "last_error_at": self.last_error_at,
+        }
 
     def _notify_ui(self, event_type: str, data: Any = None) -> None:
         self.ui_callback(event_type, data)
@@ -80,6 +145,11 @@ class WebSocketManager(ChampSelectMixin):
         log_history_event(event_type, message, details, level=level, category=category, action=action)
 
     def start(self) -> None:
+        """Start the background LCU loop once.
+
+        The UI thread stays synchronous; all connector work happens in the
+        worker thread created here.
+        """
         if Connector is None:
             self._notify_ui(self.EVENT_STATUS, ("❌ Erreur: 'lcu_driver' manquant.", ""))
             return
@@ -90,6 +160,7 @@ class WebSocketManager(ChampSelectMixin):
         self.thread.start()
 
     def stop(self) -> None:
+        """Request connector shutdown and wait briefly for the worker thread."""
         self._stop_event.set()
         if self.connector and self.connection and self.loop and not self.loop.is_closed():
             try:
@@ -151,6 +222,11 @@ class WebSocketManager(ChampSelectMixin):
         role: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """Resolve the effective champ-select config for a detected role.
+
+        Role-specific values win when present; empty role fields fall back to the
+        global configuration so the automation still has a complete payload.
+        """
         params = params or self.get_params()
         role = self._normalize_role(role or self.state.assigned_position)
         resolved_role = role if role in ROLE_PROFILE_LABELS and role != "GLOBAL" else "GLOBAL"
@@ -181,6 +257,7 @@ class WebSocketManager(ChampSelectMixin):
         }
 
     def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
+        """Persist auto-detected identity data without touching manual overrides."""
         if not self.update_param:
             return
         self.update_param("auto_detected_riot_id", riot_id or "")
@@ -194,10 +271,13 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def _ws_loop(self) -> None:
+        """Run the connector in a dedicated asyncio loop on a background thread."""
         if Connector is None:
             return
 
         try:
+            # lcu-driver expects to own the event loop used by the connector, so
+            # the worker thread creates and binds one explicitly.
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self.loop = loop
@@ -206,6 +286,8 @@ class WebSocketManager(ChampSelectMixin):
 
             @connector.ready
             async def on_ready(connection):
+                # Connection setup also refreshes account identity so the UI can
+                # switch from placeholders to live Riot ID/region data quickly.
                 self.connection = connection
                 self.ws_active = True
                 log_history_event(
@@ -223,10 +305,13 @@ class WebSocketManager(ChampSelectMixin):
 
             @connector.close
             async def on_close(connection):
+                # Reset transient identity state so reconnects never reuse stale
+                # summoner data from the previous session.
                 self.connection = None
                 self.ws_active = False
                 self.state.last_reported_summoner = None
                 if not self._stop_event.is_set():
+                    self.reconnect_count += 1
                     log_history_event(
                         "connection",
                         "Connexion au client LoL perdue, tentative de reconnexion.",
@@ -286,7 +371,7 @@ class WebSocketManager(ChampSelectMixin):
                     and data.get("state") == "InProgress"
                     and data.get("playerResponse") != "Accepted"
                 ):
-                    response = await connection.request("post", f"{EP_READY_CHECK}/accept")
+                    response = await self._lcu_request("post", f"{EP_READY_CHECK}/accept")
                     if response and response.status < 400:
                         log_history_event(
                             "ready_check",
@@ -302,6 +387,8 @@ class WebSocketManager(ChampSelectMixin):
 
             @connector.ws.register(EP_SESSION)
             async def _ws_cs_session(connection, event):
+                # Champ select emits bursts of updates. The async lock prevents
+                # overlapping ticks from racing against each other.
                 if self._cs_tick_lock.locked():
                     return
                 async with self._cs_tick_lock:
@@ -326,12 +413,18 @@ class WebSocketManager(ChampSelectMixin):
             self.loop = None
 
     async def _refresh_player_and_region(self) -> None:
+        """Refresh live account data from the client.
+
+        Chat `/me` usually exposes the richest Riot ID payload, while the
+        summoner endpoint is kept as a fallback for moments where chat is not
+        ready yet.
+        """
         if not self.connection:
             return
 
         chat_me = None
-        resp_chat = await self.connection.request("get", "/lol-chat/v1/me")
-        if resp_chat.status == 200:
+        resp_chat = await self._lcu_request("get", "/lol-chat/v1/me")
+        if resp_chat and resp_chat.status == 200:
             chat_me = await resp_chat.json()
 
         if isinstance(chat_me, dict):
@@ -344,8 +437,8 @@ class WebSocketManager(ChampSelectMixin):
             self.state.summoner_id = chat_me.get("summonerId")
             self.state.puuid = chat_me.get("puuid")
         else:
-            resp_me = await self.connection.request("get", "/lol-summoner/v1/current-summoner")
-            if resp_me.status == 200:
+            resp_me = await self._lcu_request("get", "/lol-summoner/v1/current-summoner")
+            if resp_me and resp_me.status == 200:
                 me = await resp_me.json()
                 self.state.summoner = me.get("displayName", "Inconnu")
 
@@ -356,10 +449,13 @@ class WebSocketManager(ChampSelectMixin):
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
         reg = None
-        resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
-        if resp_reg.status != 200:
-            resp_reg = await self.connection.request("get", "/riotclient/region-locale")
-        if resp_reg.status == 200:
+        # Riot has exposed both endpoint shapes depending on client/runtime
+        # version, so we probe the modern route first and keep the legacy one as
+        # a compatibility fallback.
+        resp_reg = await self._lcu_request("get", "/riotclient/get_region_locale")
+        if not resp_reg or resp_reg.status != 200:
+            resp_reg = await self._lcu_request("get", "/riotclient/region-locale")
+        if resp_reg and resp_reg.status == 200:
             reg = await resp_reg.json()
 
         if isinstance(reg, dict):

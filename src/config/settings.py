@@ -51,6 +51,16 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
+    "telegram_enabled": False,
+    "telegram_remote_control_enabled": True,
+    "telegram_bot_token": "",
+    "telegram_allowed_chat_id": "",
+    "telegram_notify_connection": True,
+    "telegram_notify_ready_check": True,
+    "telegram_notify_champ_select": True,
+    "telegram_notify_actions": True,
+    "telegram_notify_post_game": True,
+    "telegram_notify_errors": True,
 }
 
 
@@ -169,6 +179,33 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     if theme not in {"darkly", "flatly"}:
         theme = DEFAULT_PARAMS["theme"]
     merged["theme"] = theme
+
+    merged["telegram_enabled"] = bool(config.get("telegram_enabled", DEFAULT_PARAMS["telegram_enabled"]))
+    merged["telegram_remote_control_enabled"] = bool(
+        config.get("telegram_remote_control_enabled", DEFAULT_PARAMS["telegram_remote_control_enabled"])
+    )
+    merged["telegram_bot_token"] = str(config.get("telegram_bot_token", DEFAULT_PARAMS["telegram_bot_token"])).strip()
+    merged["telegram_allowed_chat_id"] = str(
+        config.get("telegram_allowed_chat_id", DEFAULT_PARAMS["telegram_allowed_chat_id"])
+    ).strip()
+    merged["telegram_notify_connection"] = bool(
+        config.get("telegram_notify_connection", DEFAULT_PARAMS["telegram_notify_connection"])
+    )
+    merged["telegram_notify_ready_check"] = bool(
+        config.get("telegram_notify_ready_check", DEFAULT_PARAMS["telegram_notify_ready_check"])
+    )
+    merged["telegram_notify_champ_select"] = bool(
+        config.get("telegram_notify_champ_select", DEFAULT_PARAMS["telegram_notify_champ_select"])
+    )
+    merged["telegram_notify_actions"] = bool(
+        config.get("telegram_notify_actions", DEFAULT_PARAMS["telegram_notify_actions"])
+    )
+    merged["telegram_notify_post_game"] = bool(
+        config.get("telegram_notify_post_game", DEFAULT_PARAMS["telegram_notify_post_game"])
+    )
+    merged["telegram_notify_errors"] = bool(
+        config.get("telegram_notify_errors", DEFAULT_PARAMS["telegram_notify_errors"])
+    )
 
     return {key: merged[key] for key in DEFAULT_PARAMS}
 

@@ -16,8 +16,9 @@ from typing import Dict, Any
 # Imports locaux depuis le package src
 from src.config import (
     load_parameters, save_parameters,
-    get_cache_dirs, CURRENT_VERSION
+    get_cache_dirs, CURRENT_VERSION, PHASE_DISPLAY_MAP
 )
+from src.services import TelegramService
 from src.utils import enable_high_dpi, check_single_instance, remove_lockfile, check_for_updates
 from src.core import DataDragon, WebSocketManager
 from src.ui import LoLAssistantUI
@@ -69,14 +70,23 @@ class MainLoLApplication:
         # Créer le gestionnaire WebSocket
         logging.info("Initialisation du WebSocket...")
         self.ws_manager = WebSocketManager(
-            ui_callback=self.ui.on_core_event,
+            ui_callback=self._handle_core_event,
             dd=self.dd,
             get_params=self._get_params,
             update_param=self._update_param
         )
+        self.telegram_service = TelegramService(
+            dd=self.dd,
+            get_params=self._get_params,
+            update_param=self._update_param,
+            save_params=self._save_params,
+            get_snapshot=self._build_runtime_snapshot,
+            commit_remote_changes=self._commit_remote_changes,
+        )
         
         # Connecter le WS à l'UI
         self.ui.set_ws_manager(self.ws_manager)
+        self.ui.set_telegram_service(self.telegram_service)
         
         # Charger DataDragon en arrière-plan (v6.1)
         self._load_datadragon_async()
@@ -86,6 +96,7 @@ class MainLoLApplication:
         
         # Démarrer le WebSocket
         self.ws_manager.start()
+        self.telegram_service.start()
     
     def _load_datadragon_async(self) -> None:
         """
@@ -124,6 +135,43 @@ class MainLoLApplication:
     def _update_param(self, key: str, value: Any) -> None:
         """Met à jour un paramètre."""
         self._params[key] = value
+
+    def _handle_core_event(self, event_type: str, data: Any = None) -> None:
+        """Diffuse les événements coeur vers l'UI et Telegram."""
+        self.ui.on_core_event(event_type, data)
+        if getattr(self, "telegram_service", None):
+            self.telegram_service.handle_core_event(event_type, data)
+
+    def _build_runtime_snapshot(self) -> Dict[str, Any]:
+        """Construit un instantané compact pour Telegram et les diagnostics."""
+        params = self._get_params()
+        phase = self.ws_manager.state.current_phase if self.ws_manager else "None"
+        return {
+            "connected": bool(self.ws_manager.is_active if self.ws_manager else False),
+            "phase": phase,
+            "phase_label": PHASE_DISPLAY_MAP.get(phase, phase),
+            "riot_id": self.ws_manager.get_riot_id() if self.ws_manager else params.get("manual_summoner_name", ""),
+            "region": self.ui.get_platform_for_websites(),
+            "detected_role": self.ws_manager.state.assigned_position if self.ws_manager else "GLOBAL",
+            "selected_profile_role": params.get("selected_profile_role", "GLOBAL"),
+            "effective": self.ws_manager.get_effective_profile_config() if self.ws_manager else {},
+            "params": params,
+            "lcu": self.ws_manager.get_diagnostics() if self.ws_manager else {},
+        }
+
+    def _commit_remote_changes(self, toast_message: str | None = None) -> None:
+        """Sauvegarde puis reflète les changements issus des commandes Telegram."""
+        self._save_params()
+
+        def refresh_ui():
+            self.ui._queue_feature_preview_refresh(force=True)
+            self.ui._refresh_stats_button()
+            if self.ui.settings_win and self.ui.settings_win.window.winfo_exists():
+                self.ui.settings_win._sync_from_params()
+            if toast_message:
+                self.ui.show_toast(toast_message, duration=2200)
+
+        self.ui.root.after(0, refresh_ui)
     
     def _save_params(self) -> None:
         """Sauvegarde les paramètres."""
@@ -170,6 +218,8 @@ class MainLoLApplication:
         logging.info("Fermeture de l'application...")
         try:
             self._save_params()
+            if getattr(self, "telegram_service", None):
+                self.telegram_service.stop()
             self.ws_manager.stop()
             self.ui.stop()
         finally:

@@ -57,6 +57,7 @@ def log_history_event(
     category: Optional[str] = None,
     action: Optional[str] = None,
 ) -> None:
+    """Append one normalized event entry to the persistent history file."""
     defaults = EVENT_DEFAULTS.get(event_type, {})
     entry = {
         "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -135,6 +136,7 @@ def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
 
 
 def format_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert a raw stored entry into the compact shape expected by the UI."""
     event_type = entry.get("type", "info")
     defaults = EVENT_DEFAULTS.get(event_type, {})
     level = entry.get("level") or defaults.get("level", "info")

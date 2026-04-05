@@ -27,7 +27,12 @@ from ..config import (
 
 
 class DataDragon:
-    """Gestionnaire des donnees Data Dragon."""
+    """Lazy loader around Data Dragon JSON payloads and cached images.
+
+    The class prefers the local cache when the version matches, falls back to the
+    network when needed, and keeps a very small offline champion list so the UI
+    remains usable even without connectivity.
+    """
 
     def __init__(self):
         self.loaded: bool = False
@@ -43,6 +48,7 @@ class DataDragon:
 
     @staticmethod
     def _normalize(s: str) -> str:
+        """Normalize champion names so user input and API ids map to one key."""
         s = s.strip().lower()
         s = unicodedata.normalize("NFD", s)
         s = "".join(c for c in s if unicodedata.category(c) != "Mn")
@@ -50,6 +56,7 @@ class DataDragon:
         return s
 
     def _load_from_cache(self, target_version: Optional[str] = None) -> bool:
+        """Hydrate champion metadata from disk when the cache is still valid."""
         try:
             if os.path.exists(DDRAGON_CACHE_FILE):
                 with open(DDRAGON_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -84,6 +91,13 @@ class DataDragon:
             logging.warning(f"DataDragon: Erreur sauvegarde cache - {e}")
 
     def load(self) -> None:
+        """Load champion metadata once.
+
+        Order of preference:
+        1. matching JSON cache
+        2. live API fetch
+        3. minimal offline fallback data
+        """
         if self.loaded:
             return
 
@@ -113,6 +127,8 @@ class DataDragon:
                 champion_id = int(info.get("key"))
                 self.by_id[champion_id] = info
                 self.name_by_id[champion_id] = champ_name
+                # Index both the public champion label and the internal Data
+                # Dragon id so user-entered names and API values resolve alike.
                 self.by_norm_name[self._normalize(champ_name)] = champion_id
                 self.by_norm_name[self._normalize(info.get("id", champ_slug))] = champion_id
 
@@ -132,6 +148,7 @@ class DataDragon:
             self._load_fallback_data()
 
     def _fetch_latest_version(self) -> Optional[str]:
+        """Return the latest published Data Dragon version string."""
         try:
             response = requests.get(URL_DD_VERSIONS, timeout=5)
             response.raise_for_status()
@@ -145,6 +162,7 @@ class DataDragon:
         return None
 
     def _add_champion_aliases(self) -> None:
+        """Register a few common aliases that do not match the official slug."""
         aliases = {
             "wukong": "monkeyking",
             "renata": "renataglasc",
@@ -156,6 +174,7 @@ class DataDragon:
                 self.by_norm_name[norm_alias] = self.by_norm_name[norm_internal]
 
     def _load_fallback_data(self) -> None:
+        """Load a tiny built-in champion set when API/cache loading fails."""
         logging.info("DataDragon: Chargement des donnees de fallback")
         basic_champions = {
             "Garen": 86,
@@ -176,6 +195,7 @@ class DataDragon:
         self.loaded = True
 
     def resolve_champion(self, name_or_id: Any) -> Optional[int]:
+        """Resolve either a numeric id or a champion name to the numeric id."""
         self.load()
         if name_or_id is None:
             return None
@@ -187,6 +207,7 @@ class DataDragon:
         return self.by_norm_name.get(normalized_name)
 
     def id_to_name(self, champion_id: int) -> Optional[str]:
+        """Return the display name for a champion id."""
         self.load()
         return self.name_by_id.get(champion_id)
 
@@ -199,6 +220,7 @@ class DataDragon:
         return [str(tag) for tag in tags if str(tag).strip()]
 
     def get_champion_icon(self, name_or_id: Any) -> Optional[Image.Image]:
+        """Return a champion icon from memory, disk cache or network."""
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
             return None
@@ -219,6 +241,8 @@ class DataDragon:
         local_path = os.path.join(ICONS_CACHE_DIR, image_filename)
         if os.path.exists(local_path):
             try:
+                # Return a copy so callers can resize/manipulate the image without
+                # mutating the cached in-memory instance.
                 img = Image.open(local_path)
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
@@ -241,6 +265,7 @@ class DataDragon:
         return None
 
     def load_summoners(self) -> None:
+        """Load the spell-name -> icon-file map once."""
         if self.summoner_loaded:
             return
         if not self.version:
@@ -261,6 +286,7 @@ class DataDragon:
             logging.warning(f"DataDragon: Erreur chargement summoners - {e}")
 
     def get_summoner_icon(self, spell_name: str) -> Optional[Image.Image]:
+        """Return a summoner spell icon from memory, disk cache or network."""
         if spell_name == "(Aucun)" or not spell_name:
             return None
 
@@ -299,6 +325,7 @@ class DataDragon:
         return None
 
     def get_splash_art(self, champion_name: str) -> Optional[Image.Image]:
+        """Fetch a champion splash image used for the main window background."""
         champion_id = self.resolve_champion(champion_name)
         if not champion_id:
             return None

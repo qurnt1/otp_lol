@@ -176,6 +176,31 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded["theme"], "flatly")
 
+    def test_load_parameters_normalizes_telegram_settings(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "telegram_enabled": True,
+                        "telegram_remote_control_enabled": False,
+                        "telegram_bot_token": " 123:ABC ",
+                        "telegram_allowed_chat_id": " 999 ",
+                        "telegram_notify_errors": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertTrue(loaded["telegram_enabled"])
+        self.assertFalse(loaded["telegram_remote_control_enabled"])
+        self.assertEqual(loaded["telegram_bot_token"], "123:ABC")
+        self.assertEqual(loaded["telegram_allowed_chat_id"], "999")
+        self.assertFalse(loaded["telegram_notify_errors"])
+
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             export_path = Path(tmpdir) / "export.json"

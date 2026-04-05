@@ -12,14 +12,15 @@ if TYPE_CHECKING:
 
 
 class ChampSelectMixin:
-    """Mixin regroupant la logique de champ select et post-game."""
+    """Reusable champ-select automation routines for the websocket manager."""
 
     async def _fetch_pickable_ids(self: "WebSocketManager") -> Optional[Set[int]]:
+        """Return the currently pickable champion ids when the endpoint is available."""
         if not self.connection:
             return None
         try:
-            response = await self.connection.request("get", EP_PICKABLE)
-            if response.status == 200:
+            response = await self._lcu_request("get", EP_PICKABLE)
+            if response and response.status == 200:
                 payload = await response.json()
                 if isinstance(payload, list):
                     return set(payload)
@@ -38,6 +39,7 @@ class ChampSelectMixin:
     def _pick_first_viable_champion(
         self: "WebSocketManager", params: Dict[str, Any], pickable_ids: Optional[Set[int]]
     ) -> Optional[tuple[str, int]]:
+        """Resolve the first configured pick that is both known and available."""
         for champion_name in self._get_pick_priority(params):
             if not champion_name:
                 continue
@@ -58,10 +60,10 @@ class ChampSelectMixin:
             return
 
         timer = None
-        resp = await self.connection.request("get", "/lol-champ-select/v1/session/timer")
-        if resp.status != 200:
-            resp = await self.connection.request("get", "/lol-champ-select-legacy/v1/session/timer")
-        if resp.status == 200:
+        resp = await self._lcu_request("get", "/lol-champ-select/v1/session/timer")
+        if not resp or resp.status != 200:
+            resp = await self._lcu_request("get", "/lol-champ-select-legacy/v1/session/timer")
+        if resp and resp.status == 200:
             timer = await resp.json()
         if isinstance(timer, dict):
             self.state.timer_phase = str(timer.get("phase") or "")
@@ -74,12 +76,13 @@ class ChampSelectMixin:
                 self.state.time_left_ms = 0
 
     async def _champ_select_tick(self: "WebSocketManager") -> None:
+        """Evaluate the current champ-select session and fire the next safe action."""
         if not self.connection:
             return
 
         try:
-            response = await self.connection.request("get", "/lol-champ-select/v1/session")
-            if response.status != 200:
+            response = await self._lcu_request("get", "/lol-champ-select/v1/session")
+            if not response or response.status != 200:
                 return
             session = await response.json()
         except Exception as e:
@@ -99,6 +102,8 @@ class ChampSelectMixin:
             my_team = session.get("myTeam", [])
             my_player_obj = next((p for p in my_team if p.get("cellId") == local_id), None)
             if my_player_obj:
+                # The assigned position is captured once and then reused by both
+                # the UI preview and the role-based automation config.
                 pos = (my_player_obj.get("assignedPosition") or "").upper()
                 if pos:
                     self.state.assigned_position = pos
@@ -121,6 +126,9 @@ class ChampSelectMixin:
                 target_champion_id = best_pick[1] if best_pick else None
                 current_hover = pick_action.get("championId")
                 if target_champion_id and current_hover != target_champion_id:
+                    # Hover early to reduce the risk of missing the lock window,
+                    # but keep a minimal throttle so websocket bursts do not spam
+                    # the LCU endpoint.
                     if time() - self.state.last_intent_try_ts > 0.5 and self._can_hover_now():
                         hover_success = await self._hover_champion(pick_action["id"], target_champion_id)
                         if not hover_success:
@@ -129,6 +137,7 @@ class ChampSelectMixin:
 
         active_action = next((a for a in my_actions if a.get("isInProgress") is True), None)
         if active_action:
+            # Only the action currently marked in progress is safe to complete.
             action_type = active_action.get("type")
             if action_type == "ban" and params.get("auto_ban_enabled"):
                 await self._logic_do_ban(active_action, effective)
@@ -137,7 +146,7 @@ class ChampSelectMixin:
 
     async def _hover_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
         url = f"/lol-champ-select/v1/session/actions/{action_id}"
-        response = await self.connection.request("patch", url, json={"championId": champion_id})
+        response = await self._lcu_request("patch", url, json={"championId": champion_id})
         success = bool(response and response.status < 400)
         if success:
             champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
@@ -223,37 +232,43 @@ class ChampSelectMixin:
         self._notify_ui(self.EVENT_STATUS, (f"Echec du lock LCU sur {champion_name}, nouvelle tentative plus tard.", "⚠️"))
 
     async def _lock_in_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
+        """Lock a champion and confirm the action actually completed.
+
+        The LCU sometimes accepts the hover patch but not the completion patch, so
+        we verify the action state and fall back to `/complete` when needed.
+        """
         url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
 
-        hover_response = await self.connection.request("patch", url_action, json={"championId": champion_id})
+        hover_response = await self._lcu_request("patch", url_action, json={"championId": champion_id})
         if not hover_response or hover_response.status >= 400:
             return False
 
         await asyncio.sleep(0.05)
 
-        patch_response = await self.connection.request(
+        patch_response = await self._lcu_request(
             "patch",
             url_action,
             json={"championId": champion_id, "completed": True},
         )
         if patch_response and patch_response.status < 400:
-            confirmation = await self.connection.request("get", url_action)
+            confirmation = await self._lcu_request("get", url_action)
             if confirmation and confirmation.status == 200:
                 payload = await confirmation.json()
                 if payload.get("championId") == champion_id and payload.get("completed") is True:
                     return True
 
-        response = await self.connection.request("post", f"{url_action}/complete")
+        response = await self._lcu_request("post", f"{url_action}/complete")
         if not response or response.status >= 400:
             return False
 
-        confirmation = await self.connection.request("get", url_action)
+        confirmation = await self._lcu_request("get", url_action)
         if confirmation and confirmation.status == 200:
             payload = await confirmation.json()
             return payload.get("championId") == champion_id and payload.get("completed") is True
         return False
 
     async def _set_spells(self: "WebSocketManager", params: Dict[str, Any]) -> None:
+        """Apply summoner spells once a pick has been confirmed."""
         if not self.connection:
             return
 
@@ -263,7 +278,7 @@ class ChampSelectMixin:
         spell1_id = SUMMONER_SPELL_MAP.get(spell1_name, 7)
         spell2_id = SUMMONER_SPELL_MAP.get(spell2_name, 4)
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
-        response = await self.connection.request("patch", "/lol-champ-select/v1/session/my-selection", json=payload)
+        response = await self._lcu_request("patch", "/lol-champ-select/v1/session/my-selection", json=payload)
 
         if response and response.status < 400:
             self._log_history(
@@ -278,6 +293,7 @@ class ChampSelectMixin:
             self._notify_ui(self.EVENT_STATUS, (f"Sorts auto-selectionnes ({spell1_name}, {spell2_name})", "🪄"))
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
+        """Retry the `play again` flow a few times while the client is in post-game."""
         params = self.get_params()
         if not params.get("auto_play_again_enabled"):
             return
@@ -286,7 +302,7 @@ class ChampSelectMixin:
             await asyncio.sleep(2)
             if self.state.current_phase not in ["EndOfGame", "WaitingForStats"]:
                 break
-            response = await self.connection.request("post", "/lol-lobby/v2/play-again")
+            response = await self._lcu_request("post", "/lol-lobby/v2/play-again")
             if response and response.status < 400:
                 self._log_history(
                     "play_again",

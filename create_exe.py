@@ -1,3 +1,10 @@
+"""Build the Windows executable with PyInstaller.
+
+This script keeps the packaging flow explicit on purpose: release issues tend to
+come from missing assets, bad relative paths, or hidden imports, so the main
+goal here is maintainability rather than clever abstraction.
+"""
+
 import os
 import subprocess
 import sys
@@ -6,6 +13,7 @@ import shutil
 from src.config import APP_BUILD_NAME, CURRENT_VERSION
 
 def main():
+    """Build the one-file executable and move it back to the repository root."""
     print("=" * 60)
     print(f"   MAIN LOL - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
@@ -47,6 +55,8 @@ def main():
         '--hidden-import=src',
         '--hidden-import=src.config',
         '--hidden-import=src.core',
+        '--hidden-import=src.services',
+        '--hidden-import=src.services.telegram',
         '--hidden-import=src.ui',
         '--hidden-import=src.utils',
         
@@ -85,6 +95,9 @@ def main():
                 if len(parts) >= 2:
                     src_path = parts[0]
                     dest_path = parts[1]
+                    # Resolve source paths early so PyInstaller does not depend on
+                    # the caller's working directory. The destination stays
+                    # relative to the packaged application layout.
                     abs_src_path = os.path.abspath(src_path)
                     processed_args.append(arg)
                     processed_args.append(f"{abs_src_path}{os.pathsep}{dest_path}")
@@ -93,6 +106,8 @@ def main():
             except StopIteration:
                 processed_args.append(arg) 
         elif arg == '--icon':
+            # Keep icon resolution separate from --add-data so packaging still
+            # works even when the icon file is missing on a local machine.
             icon_path = next(arg_iter)
             abs_icon = os.path.abspath(icon_path)
             if os.path.exists(abs_icon):
@@ -145,6 +160,8 @@ def main():
     print(f"\n📁 Déplacement de l'exécutable...")
     
     if os.path.exists(source):
+        # Keep the final exe at the project root so manual tests and release
+        # uploads always look in the same place.
         if os.path.exists(target):
             os.remove(target)
         
@@ -162,7 +179,8 @@ def main():
             spec_file = os.path.join(root_dir, f"{app_name}.spec")
             if os.path.exists(spec_file):
                 os.remove(spec_file)
-            # Nettoyage de l'ancien dossier onedir s'il existe
+            # Older local builds may have used the one-dir mode, so clean that up
+            # too to avoid leaving stale binaries around.
             old_dir = os.path.join(root_dir, app_name)
             if os.path.exists(old_dir):
                 shutil.rmtree(old_dir)
