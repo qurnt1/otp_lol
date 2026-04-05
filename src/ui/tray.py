@@ -5,7 +5,7 @@ import logging
 import pystray
 from PIL import Image
 
-from ..config import resource_path
+from ..config import APP_IMAGE_FILES, resource_path
 
 
 class TrayController:
@@ -17,7 +17,7 @@ class TrayController:
 
     def setup(self, executor, toggle_window, quit_callback, on_failure) -> bool:
         try:
-            image = Image.open(resource_path("./config/images/garen.webp")).resize((64, 64))
+            image = Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((64, 64))
             menu = pystray.Menu(
                 pystray.MenuItem("Afficher/Masquer", toggle_window),
                 pystray.MenuItem("Quitter", quit_callback),
