@@ -5,18 +5,20 @@ import os
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from tkinter import scrolledtext
 from typing import Any, Callable, Dict, Optional
 
-import keyboard
-import pystray
-import pygame
 import tkinter as tk
 import ttkbootstrap as ttk
 from PIL import Image, ImageEnhance, ImageTk
 
-from ..config import CURRENT_VERSION, GITHUB_REPO_URL, resource_path
+from ..config import CURRENT_VERSION, GITHUB_REPO_URL, ROLE_PROFILE_LABELS, ROLE_PROFILE_ORDER, resource_path
+from ..services.history import clear_history_entries, get_history_entries
 from ..utils import build_opgg_url, build_porofessor_url
+from .hotkeys import HotkeyManager
+from .media import AudioManager
 from .settings_window import SettingsWindow
+from .tray import TrayController
 
 
 class LoLAssistantUI:
@@ -44,47 +46,63 @@ class LoLAssistantUI:
         self.closing_requested = False
         self.settings_win: Optional[SettingsWindow] = None
         self.ws_manager = None
-        self.tray_available = False
-        self.hotkeys_available = False
-        self.hotkey_handles = []
         self.disconnect_close_after_id = None
+        self.history_window = None
+        self.history_text = None
+        self.history_after_id = None
         self.executor = ThreadPoolExecutor(max_workers=self.MAX_WORKERS)
-        self._init_sound()
+        self.audio_manager = AudioManager()
+        self.tray_controller = TrayController()
+        self.hotkey_manager = HotkeyManager()
         self.theme = params.get("theme", "darkly")
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
-        self.root.geometry("380x180")
+        self.root.geometry("420x250")
         self.root.resizable(False, False)
         self.theme_var = tk.StringVar(value=self.theme)
         self.bg_label: Optional[tk.Label] = None
         self.banner_label: Optional[ttk.Label] = None
         self.connection_indicator: Optional[tk.Canvas] = None
         self.status_label: Optional[ttk.Label] = None
+        self.preview_placeholder = ImageTk.PhotoImage(Image.new("RGBA", (22, 22), (0, 0, 0, 0)))
+        self.feature_preview_frame: Optional[ttk.Frame] = None
+        self.feature_status_labels: Dict[str, ttk.Label] = {}
+        self.feature_icon_labels: Dict[str, list[ttk.Label]] = {}
         self.safe_quit_btn: Optional[ttk.Button] = None
         self.create_ui()
         self.create_system_tray()
         self.setup_hotkeys()
         self._refresh_safe_controls()
 
-    def _init_sound(self) -> None:
-        try:
-            pygame.mixer.init()
-            self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
-        except Exception as e:
-            logging.debug(f"Impossible d'initialiser le son: {e}")
-            self.sound_effect = None
+    @property
+    def tray_available(self) -> bool:
+        return self.tray_controller.available
+
+    @property
+    def hotkeys_available(self) -> bool:
+        return self.hotkey_manager.available
 
     def set_ws_manager(self, ws_manager) -> None:
         self.ws_manager = ws_manager
+        self._refresh_feature_preview()
 
     def get_params(self) -> Dict[str, Any]:
         return self._get_params_callback()
 
     def update_param(self, key: str, value: Any) -> None:
         self._update_param_callback(key, value)
+        self._refresh_feature_preview()
+
+    def replace_params(self, params: Dict[str, Any]) -> None:
+        for key, value in params.items():
+            self._update_param_callback(key, value)
+        self._refresh_feature_preview()
+
+    def save_params(self) -> None:
+        self._save_callback()
 
     def save_and_notify(self) -> None:
-        self._save_callback()
+        self.save_params()
         self.show_toast("Parametres sauvegardes !")
 
     def is_ws_active(self) -> bool:
@@ -105,12 +123,55 @@ class LoLAssistantUI:
         if self.ws_manager:
             self.ws_manager.force_refresh_summoner()
 
+    def get_effective_profile_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        if self.ws_manager:
+            return self.ws_manager.get_effective_profile_config(role=role)
+
+        params = self.get_params()
+        resolved_role = (role or "GLOBAL").upper()
+        aliases = {
+            "MID": "MIDDLE",
+            "ADC": "BOTTOM",
+            "BOT": "BOTTOM",
+            "SUP": "UTILITY",
+            "SUPPORT": "UTILITY",
+            "JGL": "JUNGLE",
+        }
+        resolved_role = aliases.get(resolved_role, resolved_role)
+        if resolved_role not in ROLE_PROFILE_ORDER:
+            resolved_role = "GLOBAL"
+        role_profiles = params.get("role_profiles", {})
+        role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
+        if not isinstance(role_data, dict):
+            role_data = {}
+        return {
+            "detected_role": resolved_role,
+            "resolved_role": resolved_role,
+            "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
+            "fallback_policy": "Le profil du role detecte est prioritaire, puis la config globale prend le relais si un champ est vide.",
+            "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
+            "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
+            "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
+            "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
+            "spell_1": role_data.get("spell_1") or params.get("global_spell_1", ""),
+            "spell_2": role_data.get("spell_2") or params.get("global_spell_2", ""),
+            "sources": {
+                "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
+                "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
+                "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
+                "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
+                "spell_1": resolved_role if role_data.get("spell_1") else "GLOBAL",
+                "spell_2": resolved_role if role_data.get("spell_2") else "GLOBAL",
+            },
+        }
+
     def create_ui(self) -> None:
         self._configure_styles()
         self._create_background()
         self._create_banner()
         self._create_connection_indicator()
         self._create_status_label()
+        self._create_feature_preview()
         self._create_settings_gear()
         self._create_opgg_button()
         self._create_safe_quit_button()
@@ -138,9 +199,7 @@ class LoLAssistantUI:
             logging.debug(f"Impossible de charger les images de banniere: {e}")
 
     def _create_connection_indicator(self) -> None:
-        self.connection_indicator = tk.Canvas(
-            self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b"
-        )
+        self.connection_indicator = tk.Canvas(self.root, width=12, height=12, bd=0, highlightthickness=0, bg="#2b2b2b")
         self.connection_indicator.place(relx=0.05, rely=0.05, anchor="nw")
         self.update_connection_indicator(False)
 
@@ -150,9 +209,49 @@ class LoLAssistantUI:
             text="En attente du lancement de League of Legends...",
             style="Status.TLabel",
             justify="center",
-            wraplength=380,
+            wraplength=390,
         )
-        self.status_label.place(relx=0.5, rely=0.38, anchor="center")
+        self.status_label.place(relx=0.5, rely=0.34, anchor="center")
+
+    def _create_feature_preview(self) -> None:
+        self.feature_preview_frame = ttk.Frame(self.root, padding=(10, 6))
+        self.feature_preview_frame.place(relx=0.5, rely=0.60, anchor="center")
+
+        definitions = [
+            ("pick", "Pick", 3, "info"),
+            ("ban", "Ban", 1, "danger"),
+            ("spells", "Sorts", 2, "warning"),
+        ]
+
+        for column, (key, label_text, icon_count, status_style) in enumerate(definitions):
+            group = ttk.Frame(self.feature_preview_frame, padding=(8, 4))
+            group.grid(row=0, column=column, padx=4)
+
+            header = ttk.Frame(group)
+            header.pack(anchor="w")
+            ttk.Label(header, text=label_text, font=("Segoe UI", 9, "bold")).pack(side="left")
+            status = ttk.Label(header, text="OFF", bootstyle="secondary", width=4)
+            status.pack(side="left", padx=(6, 0))
+            self.feature_status_labels[key] = status
+
+            icons_row = ttk.Frame(group)
+            icons_row.pack(anchor="w", pady=(4, 0))
+            labels: list[ttk.Label] = []
+            for _ in range(icon_count):
+                slot = ttk.Label(
+                    icons_row,
+                    text="...",
+                    width=4,
+                    anchor="center",
+                    compound="center",
+                    image=self.preview_placeholder,
+                )
+                slot.pack(side="left", padx=2)
+                slot.image = self.preview_placeholder
+                labels.append(slot)
+            self.feature_icon_labels[key] = labels
+
+        self._refresh_feature_preview()
 
     def _create_settings_gear(self) -> None:
         gear_path = resource_path("./config/images/gear.png")
@@ -166,9 +265,6 @@ class LoLAssistantUI:
                 return
             except Exception as e:
                 logging.debug(f"Impossible de charger l'icone engrenage: {e}")
-        self._create_fallback_gear()
-
-    def _create_fallback_gear(self) -> None:
         cog = ttk.Button(self.root, text="⚙", command=self.open_settings, bootstyle="link")
         cog.place(relx=0.95, rely=0.05, anchor="ne")
 
@@ -177,11 +273,11 @@ class LoLAssistantUI:
             self.root,
             text="Voir mes stats (OP.GG)",
             bootstyle="success-outline",
-            padding=(20, 10),
+            padding=(16, 10),
             width=22,
             command=lambda: webbrowser.open(self.build_opgg_url()),
         )
-        opgg_btn.place(relx=0.5, rely=0.75, anchor="center")
+        opgg_btn.place(relx=0.5, rely=0.84, anchor="center")
 
     def _create_safe_quit_button(self) -> None:
         self.safe_quit_btn = ttk.Button(
@@ -193,6 +289,93 @@ class LoLAssistantUI:
         )
         self.safe_quit_btn.place(relx=0.98, rely=0.95, anchor="se")
         self.safe_quit_btn.place_forget()
+
+    def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
+        display_name = name or "..."
+        if not enabled:
+            widget.configure(text="OFF", image=self.preview_placeholder, compound="center", foreground="#8f8f8f")
+            widget.image = self.preview_placeholder
+            return
+        if not name:
+            widget.configure(text="...", image=self.preview_placeholder, compound="center", foreground="#8f8f8f")
+            widget.image = self.preview_placeholder
+            return
+
+        widget.configure(text="", image=self.preview_placeholder, compound="center", foreground="#f5f5f5")
+        widget.image = self.preview_placeholder
+
+        def task():
+            try:
+                image = self.dd.get_champion_icon(name) if is_champion else self.dd.get_summoner_icon(name)
+                if image:
+                    image = image.resize((22, 22), Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(image)
+
+                    def update_ui():
+                        if widget.winfo_exists():
+                            widget.configure(image=photo, text="", compound="center", foreground="#f5f5f5")
+                            widget.image = photo
+
+                    widget.after(0, update_ui)
+                else:
+                    def update_ui_no_img():
+                        if widget.winfo_exists():
+                            widget.configure(image=self.preview_placeholder, text=name[:4], compound="center", foreground="#d5d5d5")
+                            widget.image = self.preview_placeholder
+
+                    widget.after(0, update_ui_no_img)
+            except Exception as e:
+                logging.debug(f"Erreur chargement apercu principal pour {display_name}: {e}")
+
+        self.executor.submit(task)
+
+    def _refresh_feature_preview(self) -> None:
+        if not self.feature_preview_frame or not self.feature_preview_frame.winfo_exists():
+            return
+
+        detected_role = "GLOBAL"
+        if self.ws_manager and self.ws_manager.state.assigned_position:
+            detected_role = self.ws_manager.state.assigned_position
+        effective = self.get_effective_profile_config(role=detected_role)
+        params = self.get_params()
+
+        preview_data = {
+            "pick": {
+                "enabled": params.get("auto_pick_enabled", True),
+                "style": "info",
+                "is_champion": True,
+                "values": [
+                    effective.get("selected_pick_1") or "",
+                    effective.get("selected_pick_2") or "",
+                    effective.get("selected_pick_3") or "",
+                ],
+            },
+            "ban": {
+                "enabled": params.get("auto_ban_enabled", True),
+                "style": "danger",
+                "is_champion": True,
+                "values": [effective.get("selected_ban") or ""],
+            },
+            "spells": {
+                "enabled": params.get("auto_summoners_enabled", True),
+                "style": "warning",
+                "is_champion": False,
+                "values": [
+                    effective.get("spell_1") or "",
+                    effective.get("spell_2") or "",
+                ],
+            },
+        }
+
+        for key, data in preview_data.items():
+            status = self.feature_status_labels.get(key)
+            if status:
+                status.configure(
+                    text="ON" if data["enabled"] else "OFF",
+                    bootstyle=data["style"] if data["enabled"] else "secondary",
+                )
+            for widget, value in zip(self.feature_icon_labels.get(key, []), data["values"]):
+                self._set_feature_icon(widget, value, data["is_champion"], data["enabled"], data["style"])
 
     def build_opgg_url(self) -> str:
         riot_id = self._get_riot_id_display() or self.get_params().get("manual_summoner_name", "")
@@ -245,12 +428,7 @@ class LoLAssistantUI:
         self.disconnect_close_after_id = self.root.after(self.DISCONNECT_CLOSE_DELAY_MS, close_if_still_disconnected)
 
     def play_accept_sound(self) -> None:
-        if not self.sound_effect:
-            return
-        try:
-            self.sound_effect.play()
-        except Exception as e:
-            logging.debug(f"Impossible de jouer le son d'accept: {e}")
+        self.audio_manager.play_accept_sound()
 
     def set_background_splash(self, champion_name: str) -> None:
         def task():
@@ -258,12 +436,10 @@ class LoLAssistantUI:
                 img = self.dd.get_splash_art(champion_name)
                 if not img:
                     return
-
-                window_w, window_h = 380, 180
+                window_w, window_h = 420, 250
                 base_width = window_w
                 w_percent = base_width / float(img.size[0])
                 h_size = int(float(img.size[1]) * w_percent)
-
                 if h_size < window_h:
                     base_height = window_h
                     h_percent = base_height / float(img.size[1])
@@ -271,7 +447,6 @@ class LoLAssistantUI:
                     img = img.resize((w_size, base_height), Image.Resampling.LANCZOS)
                 else:
                     img = img.resize((base_width, h_size), Image.Resampling.LANCZOS)
-
                 left = (img.width - window_w) / 2
                 top = (img.height - window_h) / 2
                 right = (img.width + window_w) / 2
@@ -292,39 +467,15 @@ class LoLAssistantUI:
         self.executor.submit(task)
 
     def create_system_tray(self) -> None:
-        try:
-            image = Image.open(resource_path("./config/images/garen.webp")).resize((64, 64))
-            menu = pystray.Menu(
-                pystray.MenuItem("Afficher/Masquer", self.toggle_window),
-                pystray.MenuItem("Quitter", self._quit_callback),
-            )
-            self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
-            self.tray_available = True
-
-            def run_tray():
-                try:
-                    self.icon.run()
-                except Exception as e:
-                    self.tray_available = False
-                    logging.debug(f"Erreur system tray: {e}")
-                    self.root.after(0, self._refresh_safe_controls)
-
-            self.executor.submit(run_tray)
-        except Exception as e:
-            self.tray_available = False
-            logging.warning(f"Impossible de creer le system tray: {e}")
+        self.tray_controller.setup(
+            executor=self.executor,
+            toggle_window=self.toggle_window,
+            quit_callback=self._quit_callback,
+            on_failure=lambda: self.root.after(0, self._refresh_safe_controls),
+        )
 
     def setup_hotkeys(self) -> None:
-        try:
-            self.hotkey_handles = [
-                keyboard.add_hotkey("alt+p", self.open_porofessor),
-                keyboard.add_hotkey("alt+c", self.toggle_window),
-            ]
-            self.hotkeys_available = True
-        except Exception as e:
-            self.hotkeys_available = False
-            self.hotkey_handles = []
-            logging.debug(f"Impossible de configurer les hotkeys: {e}")
+        self.hotkey_manager.setup(self.toggle_window, self.open_porofessor)
 
     def open_porofessor(self) -> None:
         riot_id = self._get_riot_id_display()
@@ -353,6 +504,101 @@ class LoLAssistantUI:
             return
         self.settings_win = SettingsWindow(self)
 
+    def open_history_window(self) -> None:
+        if self.history_window and self.history_window.winfo_exists():
+            self.history_window.lift()
+            self.refresh_history_window()
+            return
+
+        self.history_window = ttk.Toplevel(self.root)
+        self.history_window.title("Historique des actions")
+        self.history_window.geometry("680x420")
+        self.history_window.resizable(True, True)
+        self.history_window.transient(self.root)
+        self.history_window.protocol("WM_DELETE_WINDOW", self._close_history_window)
+
+        try:
+            icon_path = resource_path("./config/images/garen.webp")
+            if os.path.exists(icon_path):
+                img = Image.open(icon_path).resize((16, 16))
+                photo = ImageTk.PhotoImage(img)
+                self.history_window.iconphoto(False, photo)
+                self.history_window._icon_ref = photo
+        except Exception as e:
+            logging.debug(f"Erreur icone historique: {e}")
+
+        container = ttk.Frame(self.history_window, padding=12)
+        container.pack(fill="both", expand=True)
+
+        controls = ttk.Frame(container)
+        controls.pack(fill="x", pady=(0, 10))
+        ttk.Button(controls, text="Effacer", bootstyle="danger-outline", command=self.clear_history_window).pack(
+            side="right"
+        )
+
+        self.history_text = scrolledtext.ScrolledText(container, wrap="word", font=("Consolas", 10))
+        self.history_text.pack(fill="both", expand=True)
+        self.history_text.configure(state="disabled")
+        self.refresh_history_window()
+        self._schedule_history_refresh()
+
+    def _schedule_history_refresh(self) -> None:
+        if self.history_after_id is not None:
+            try:
+                self.root.after_cancel(self.history_after_id)
+            except Exception:
+                pass
+            self.history_after_id = None
+
+        if not self.history_window or not self.history_window.winfo_exists():
+            return
+
+        def _tick():
+            self.history_after_id = None
+            if not self.history_window or not self.history_window.winfo_exists():
+                return
+            self.refresh_history_window()
+            self._schedule_history_refresh()
+
+        self.history_after_id = self.root.after(800, _tick)
+
+    def _close_history_window(self) -> None:
+        if self.history_after_id is not None:
+            try:
+                self.root.after_cancel(self.history_after_id)
+            except Exception:
+                pass
+            self.history_after_id = None
+        if self.history_window and self.history_window.winfo_exists():
+            self.history_window.destroy()
+        self.history_window = None
+        self.history_text = None
+
+    def refresh_history_window(self) -> None:
+        if not self.history_window or not self.history_window.winfo_exists() or not self.history_text:
+            return
+        entries = get_history_entries(limit=150)
+        self.history_text.configure(state="normal")
+        self.history_text.delete("1.0", "end")
+        if not entries:
+            self.history_text.insert("end", "Aucun evenement historique pour le moment.")
+        else:
+            for entry in entries:
+                timestamp = entry.get("timestamp", "")
+                event_type = entry.get("type", "info")
+                message = entry.get("message", "")
+                details = entry.get("details", {})
+                self.history_text.insert("end", f"[{timestamp}] {event_type.upper()} - {message}\n")
+                if details:
+                    self.history_text.insert("end", f"  details: {details}\n")
+                self.history_text.insert("end", "\n")
+        self.history_text.configure(state="disabled")
+
+    def clear_history_window(self) -> None:
+        clear_history_entries()
+        self.refresh_history_window()
+        self.show_toast("Historique vide.")
+
     def update_status(self, message: str, emoji: str = "") -> None:
         now = datetime.now().strftime("%H:%M:%S")
         log_msg = f"[{now}] {emoji} {message}" if emoji else f"[{now}] {message}"
@@ -373,14 +619,7 @@ class LoLAssistantUI:
                         return
                     radius = 4 + int(2 * abs((step % 20) - 10) / 10)
                     self.connection_indicator.delete("all")
-                    self.connection_indicator.create_oval(
-                        6 - radius,
-                        6 - radius,
-                        6 + radius,
-                        6 + radius,
-                        fill=color,
-                        outline="",
-                    )
+                    self.connection_indicator.create_oval(6 - radius, 6 - radius, 6 + radius, 6 + radius, fill=color, outline="")
                     if self.running and self.is_ws_active():
                         self.connection_indicator.after(50, lambda: pulse(step + 1))
                     elif self.connection_indicator.winfo_exists():
@@ -421,12 +660,7 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Erreur icone popup update: {e}")
 
-        title_lbl = ttk.Label(
-            popup,
-            text="Nouvelle version detectee !",
-            font=("Segoe UI Emoji", 14, "bold"),
-            bootstyle="inverse-primary",
-        )
+        title_lbl = ttk.Label(popup, text="Nouvelle version detectee !", font=("Segoe UI Emoji", 14, "bold"), bootstyle="inverse-primary")
         title_lbl.pack(fill="x", pady=(0, 15), ipady=10)
 
         info_frame = ttk.Frame(popup, padding=10)
@@ -445,16 +679,8 @@ class LoLAssistantUI:
             webbrowser.open(GITHUB_REPO_URL)
             popup.destroy()
 
-        ttk.Button(btn_frame, text="Telecharger", bootstyle="success", command=on_download, width=15).pack(
-            side="left",
-            padx=(40, 10),
-            expand=True,
-        )
-        ttk.Button(btn_frame, text="Plus tard", bootstyle="secondary", command=popup.destroy, width=15).pack(
-            side="right",
-            padx=(10, 40),
-            expand=True,
-        )
+        ttk.Button(btn_frame, text="Telecharger", bootstyle="success", command=on_download, width=15).pack(side="left", padx=(40, 10), expand=True)
+        ttk.Button(btn_frame, text="Plus tard", bootstyle="secondary", command=popup.destroy, width=15).pack(side="right", padx=(10, 40), expand=True)
         popup.attributes("-topmost", True)
         popup.focus_force()
 
@@ -485,6 +711,10 @@ class LoLAssistantUI:
         elif event_type == WebSocketManager.EVENT_READY_CHECK_ACCEPTED:
             self.play_accept_sound()
 
+        self._refresh_feature_preview()
+        if self.history_window and self.history_window.winfo_exists():
+            self.refresh_history_window()
+
     def run(self) -> None:
         self.root.mainloop()
 
@@ -494,30 +724,15 @@ class LoLAssistantUI:
         self.closing_requested = True
         self.running = False
         self._cancel_disconnect_close()
-
-        for handle in self.hotkey_handles:
-            try:
-                keyboard.remove_hotkey(handle)
-            except Exception as e:
-                logging.debug(f"Erreur suppression hotkey: {e}")
-        self.hotkey_handles = []
+        self.hotkey_manager.shutdown()
+        self.tray_controller.shutdown()
+        self.audio_manager.shutdown()
+        self._close_history_window()
 
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
             logging.debug(f"Erreur arret executor: {e}")
-
-        try:
-            if hasattr(self, "icon"):
-                self.icon.stop()
-        except Exception as e:
-            logging.debug(f"Erreur arret tray icon: {e}")
-
-        try:
-            if pygame.mixer.get_init():
-                pygame.mixer.quit()
-        except Exception as e:
-            logging.debug(f"Erreur arret mixer pygame: {e}")
 
         def destroy_root():
             if self.root.winfo_exists():
