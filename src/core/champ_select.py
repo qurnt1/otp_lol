@@ -141,7 +141,13 @@ class ChampSelectMixin:
         success = bool(response and response.status < 400)
         if success:
             champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
-            self._log_history("hover", f"Pre-pick sur {champion_name}.", {"champion_id": champion_id, "action_id": action_id})
+            self._log_history(
+                "hover",
+                f"Pre-pick envoye sur {champion_name}.",
+                {"champion": champion_name},
+                category="Champ Select",
+                action="hover",
+            )
         return success
 
     async def _logic_do_ban(self: "WebSocketManager", action: Dict[str, Any], effective: Dict[str, Any]) -> None:
@@ -166,7 +172,14 @@ class ChampSelectMixin:
         success = await self._lock_in_champion(action["id"], champion_id)
         if success:
             self.state.has_banned = True
-            self._log_history("ban", f"Ban automatique sur {selected_ban}.", {"champion_id": champion_id})
+            self._log_history(
+                "ban",
+                f"Ban automatique confirme sur {selected_ban}.",
+                {"champion": selected_ban},
+                level="success",
+                category="Champ Select",
+                action="ban",
+            )
             self._notify_ui(self.EVENT_CHAMPION_BANNED, selected_ban)
             self._notify_ui(self.EVENT_STATUS, (f"Ciao ! {selected_ban} a ete banni.", "💀"))
 
@@ -193,7 +206,14 @@ class ChampSelectMixin:
         success = await self._lock_in_champion(action["id"], champion_id)
         if success:
             self.state.has_picked = True
-            self._log_history("pick", f"Pick automatique sur {champion_name}.", {"champion_id": champion_id})
+            self._log_history(
+                "pick",
+                f"Champion verrouille automatiquement : {champion_name}.",
+                {"champion": champion_name},
+                level="success",
+                category="Champ Select",
+                action="pick",
+            )
             self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
             self._notify_ui(self.EVENT_STATUS, (f"{champion_name} securise ! A toi de jouer.", "🔒"))
             if params.get("auto_summoners_enabled"):
@@ -248,8 +268,11 @@ class ChampSelectMixin:
         if response and response.status < 400:
             self._log_history(
                 "spells",
-                f"Sorts automatiques appliques: {spell1_name} / {spell2_name}.",
+                f"Sorts automatiques appliques : {spell1_name} + {spell2_name}.",
                 {"spell_1": spell1_name, "spell_2": spell2_name, "role": effective.get("resolved_role", "GLOBAL")},
+                level="success",
+                category="Sorts",
+                action="set",
             )
             self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
             self._notify_ui(self.EVENT_STATUS, (f"Sorts auto-selectionnes ({spell1_name}, {spell2_name})", "🪄"))
@@ -265,7 +288,13 @@ class ChampSelectMixin:
                 break
             response = await self.connection.request("post", "/lol-lobby/v2/play-again")
             if response and response.status < 400:
-                self._log_history("play_again", "Retour automatique au lobby apres la partie.")
+                self._log_history(
+                    "play_again",
+                    "Retour automatique au salon apres la partie.",
+                    level="success",
+                    category="Fin de partie",
+                    action="play_again",
+                )
                 self._notify_ui(self.EVENT_PLAY_AGAIN, None)
                 self._notify_ui(self.EVENT_STATUS, ("Rejouer auto reussi !", "✅"))
                 break
