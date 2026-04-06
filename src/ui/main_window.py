@@ -13,6 +13,7 @@ import ttkbootstrap as ttk
 from PIL import Image, ImageEnhance, ImageTk
 
 from ..config import (
+    APP_NAME,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
     GITHUB_REPO_URL,
@@ -31,7 +32,7 @@ from .tray import TrayController
 
 
 class LoLAssistantUI:
-    """Interface graphique principale de MAIN LOL."""
+    """Main OTP LOL graphical interface."""
 
     MAX_WORKERS = 4
     DISCONNECT_CLOSE_DELAY_MS = 8000
@@ -85,7 +86,7 @@ class LoLAssistantUI:
         self._hotkeys_were_available = False
         self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
-        self.root.title("MAIN LOL")
+        self.root.title(APP_NAME)
         self.root.geometry("420x250")
         self.root.resizable(False, False)
         self.theme_var = tk.StringVar(value=self.theme)
@@ -942,7 +943,7 @@ class LoLAssistantUI:
 
     def show_update_popup(self, new_version: str) -> None:
         popup = ttk.Toplevel(self.root)
-        popup.title("MAIN LOL Update")
+        popup.title(f"{APP_NAME} Update")
         popup.geometry("400x250")
         popup.resizable(False, False)
         popup.update_idletasks()

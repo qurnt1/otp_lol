@@ -3,11 +3,11 @@ import subprocess
 import sys
 import shutil
 
-from src.config import APP_BUILD_NAME, CURRENT_VERSION
+from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
 def main():
     print("=" * 60)
-    print(f"   MAIN LOL - Script de Creation EXE (v{CURRENT_VERSION})")
+    print(f"   {APP_NAME} - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
     print("=" * 60)
     

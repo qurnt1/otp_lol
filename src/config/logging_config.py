@@ -1,4 +1,4 @@
-"""Logging configuration for MAIN LOL."""
+"""Logging configuration for OTP LOL."""
 
 import logging
 import os

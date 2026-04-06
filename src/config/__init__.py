@@ -1,4 +1,4 @@
-"""Configuration package for MAIN LOL."""
+"""Configuration package for OTP LOL."""
 
 from . import paths as _paths
 from . import settings as _settings

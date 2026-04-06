@@ -1,4 +1,4 @@
-"""Public core API for MAIN LOL."""
+"""Public core API for OTP LOL."""
 
 from .datadragon import DataDragon
 from .game_state import GameState

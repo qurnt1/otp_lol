@@ -1,8 +1,8 @@
-# MAIN LOL
+# OTP LOL
 
 Windows desktop assistant for League of Legends, written in Python.
 
-`MAIN LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
+`OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
 Current project version: `7.0`
 
@@ -129,8 +129,8 @@ Before running the project from source, you need:
 ## Installation From Source
 
 ```bash
-git clone https://github.com/qurnt1/main_lol_2.git
-cd main_lol_2
+git clone https://github.com/qurnt1/otp_lol.git
+cd otp_lol
 pip install -r requirements.txt
 ```
 
@@ -262,7 +262,7 @@ Default values:
 ## Project Architecture
 
 ```text
-MAIN_LOL/
+otp_lol/
 |-- launcher.py
 |-- create_exe.py
 |-- requirements.txt

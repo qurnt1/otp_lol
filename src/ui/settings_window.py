@@ -12,6 +12,7 @@ from PIL import Image, ImageTk
 from ttkbootstrap.scrolled import ScrolledFrame
 
 from ..config import (
+    APP_NAME,
     APP_IMAGE_FILES,
     HOTKEY_SITE_LABELS,
     REGION_LIST,
@@ -40,7 +41,7 @@ class SettingsWindow:
     def __init__(self, parent: "LoLAssistantUI"):
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
-        self.window.title("Settings - MAIN LOL")
+        self.window.title(f"Settings - {APP_NAME}")
         self.window.geometry("620x780")
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -361,7 +362,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             misc_frame,
-            text="Hide Main LOL when LoL starts (3 seconds)",
+            text=f"Hide {APP_NAME} when LoL starts (3 seconds)",
             variable=self.auto_hide_var,
             command=lambda: self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
@@ -369,7 +370,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             misc_frame,
-            text="Close Main LOL when LoL closes",
+            text=f"Close {APP_NAME} when LoL closes",
             variable=self.close_on_exit_var,
             command=lambda: self.parent.update_param("close_app_on_lol_exit", self.close_on_exit_var.get()),
             bootstyle="danger-round-toggle",

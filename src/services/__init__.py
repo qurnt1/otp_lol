@@ -1,1 +1,1 @@
-"""Service helpers for MAIN LOL."""
+"""Service helpers for OTP LOL."""

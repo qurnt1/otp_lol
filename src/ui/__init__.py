@@ -1,4 +1,4 @@
-"""Public UI API for MAIN LOL."""
+"""Public UI API for OTP LOL."""
 
 from .main_window import LoLAssistantUI
 from .settings_window import SettingsWindow

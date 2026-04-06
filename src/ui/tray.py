@@ -5,7 +5,7 @@ import logging
 import pystray
 from PIL import Image
 
-from ..config import APP_IMAGE_FILES, resource_path
+from ..config import APP_IMAGE_FILES, APP_NAME, resource_path
 
 
 class TrayController:
@@ -22,7 +22,7 @@ class TrayController:
                 pystray.MenuItem("Show/Hide", toggle_window),
                 pystray.MenuItem("Quit", quit_callback),
             )
-            self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
+            self.icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
             self.available = True
 
             def run_tray():
