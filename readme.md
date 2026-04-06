@@ -1,105 +1,104 @@
 # MAIN LOL
 
-Assistant desktop Windows pour League of Legends, ecrit en Python.
+Windows desktop assistant for League of Legends, written in Python.
 
-`MAIN LOL` automatise plusieurs actions autour du client LoL pour gagner du temps pendant la file, la selection des champions et l'apres-partie, tout en gardant une interface simple a configurer.
+`MAIN LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Version actuelle du projet: `7.0`
+Current project version: `7.0`
 
-## Sommaire
+## Table Of Contents
 
-- [Presentation](#presentation)
-- [Fonctionnalites](#fonctionnalites)
-- [Captures D Ecran](#captures-d-ecran)
+- [Overview](#overview)
+- [Features](#features)
+- [Screenshots](#screenshots)
 - [Technologies](#technologies)
-- [Prerequis](#prerequis)
-- [Installation Depuis Le Code Source](#installation-depuis-le-code-source)
-- [Lancement](#lancement)
-- [Build Executable](#build-executable)
-- [Configuration Et Fichiers Utilises](#configuration-et-fichiers-utilises)
-- [Utilisation](#utilisation)
-- [Raccourcis](#raccourcis)
-- [Architecture Du Projet](#architecture-du-projet)
-- [Tests Et Verification](#tests-et-verification)
-- [Depannage](#depannage)
-- [Roadmap Possible](#roadmap-possible)
+- [Requirements](#requirements)
+- [Installation From Source](#installation-from-source)
+- [Launch](#launch)
+- [Executable Build](#executable-build)
+- [Configuration And Used Files](#configuration-and-used-files)
+- [Usage](#usage)
+- [Shortcuts](#shortcuts)
+- [Project Architecture](#project-architecture)
+- [Tests And Verification](#tests-and-verification)
+- [Troubleshooting](#troubleshooting)
+- [Possible Roadmap](#possible-roadmap)
 
-## Presentation
+## Overview
 
-Le but de l'application est de servir d'assistant local pour le client League of Legends.
+The goal of the application is to act as a local assistant for the League of Legends client.
 
-Elle se connecte au client LoL via le LCU, detecte les phases importantes, puis execute automatiquement certaines actions en fonction de ta configuration:
+It connects to the LoL client through the LCU, detects important phases, then automatically performs certain actions depending on your configuration:
 
-- accepter une partie automatiquement
-- preselectionner ou lock un champion selon un ordre de priorite
-- bannir un champion choisi
-- appliquer des sorts d'invocateur
-- relancer une partie apres la fin de game
-- ouvrir rapidement des pages externes comme `OP.GG` et `Porofessor`
+- automatically accept a match
+- preselect or lock a champion according to a priority order
+- ban a selected champion
+- apply summoner spells
+- start another match after the game ends
+- quickly open external pages such as `OP.GG` and `Porofessor`
 
-L'application est concue pour fonctionner comme un outil desktop leger:
+The application is designed to work as a lightweight desktop tool:
 
-- interface graphique Tkinter via `ttkbootstrap`
-- gestion des assets en local
-- systray
-- raccourcis clavier
-- cache local pour certaines donnees Data Dragon
+- Tkinter graphical interface through `ttkbootstrap`
+- local asset management
+- system tray support
+- keyboard shortcuts
+- local cache for some Data Dragon data
 
-## Fonctionnalites
+## Features
 
-### Automatisation de la file et du champion select
+### Queue And Champion Select Automation
 
 - `Auto-Accept`
-  Accepte automatiquement le ready-check lorsqu'une partie est trouvee.
+  Automatically accepts the ready check when a match is found.
 - `Auto-Pick`
-  Tente de pick `Pick 1`, puis `Pick 2`, puis `Pick 3` si le champion precedent n'est pas disponible.
+  Tries to pick `Pick 1`, then `Pick 2`, then `Pick 3` if the previous champion is not available.
 - `Pre-hover`
-  L'application peut preselectionner ton champion principal avant le lock.
+  The application can preselect your main champion before locking it.
 - `Auto-Ban`
-  Bannit automatiquement le champion configure.
+  Automatically bans the configured champion.
 - `Auto-Spells`
-  Applique les sorts selectionnes une fois le pick verrouille.
+  Applies the selected spells once the pick is locked.
 
-### Automatisation post-game
+### Post-Game Automation
 
 - `Auto Play Again`
-  Tente de retourner automatiquement au lobby apres la fin de partie.
+  Attempts to automatically return to the lobby after the game ends.
 
-### Confort d'utilisation
+### Quality-Of-Life Features
 
-- detection automatique du compte
-- detection automatique de la region du client
-- liens rapides vers plusieurs sites de stats joueur et in-game
-- masquage de la fenetre dans le systray
-- raccourcis clavier globaux configurables
-- cache des icones champions et sorts
-- logs dans `%APPDATA%`
+- automatic account detection
+- automatic client region detection
+- quick links to several player and in-game stats websites
+- option to hide the window in the system tray
+- configurable global keyboard shortcuts
+- champion and spell icon cache
+- logs in `%APPDATA%`
 
-### Comportements de securite / robustesse
+### Safety / Robustness Behaviors
 
-Le projet contient maintenant plusieurs garde-fous utiles:
+The project now includes several useful safeguards:
 
-- separation entre valeurs `manual_*` et `auto_detected_*`
-- fermeture plus propre de l'application
-- fallback visuel si le systray ou les hotkeys ne sont pas disponibles
-- comparaison semantique des versions pour la detection de mises a jour
+- separation between `manual_*` and `auto_detected_*` values
+- cleaner application shutdown
+- visual fallback if the system tray or hotkeys are not available
+- semantic version comparison for update detection
 
-## Captures D Ecran
+## Screenshots
 
-### Fenetre principale
-
-
-```md
-![Fenetre principale](./docs/images/main-window.png)
-```
-
-### Fenetre de parametres
+### Main Window
 
 ```md
-![Parametres](./docs/images/settings-window.png)
+![Main window](./docs/images/main-window.png)
 ```
 
-### Pendant un champion select
+### Settings Window
+
+```md
+![Settings](./docs/images/settings-window.png)
+```
+
+### During Champion Select
 
 ```md
 ![Champion select](./docs/images/champ-select.png)
@@ -107,28 +106,28 @@ Le projet contient maintenant plusieurs garde-fous utiles:
 
 ## Technologies
 
-Le projet utilise principalement:
+The project mainly uses:
 
 - `Python 3.13`
-- `ttkbootstrap` pour l'interface
-- `tkinter` pour la base UI
-- `lcu-driver` pour dialoguer avec le client League of Legends
-- `Pillow` pour les images
-- `pygame` pour les effets sonores
-- `pystray` pour le systray
-- `keyboard` pour les raccourcis globaux
-- `requests` pour Data Dragon et GitHub
+- `ttkbootstrap` for the interface
+- `tkinter` for the UI base
+- `lcu-driver` to communicate with the League of Legends client
+- `Pillow` for images
+- `pygame` for sound effects
+- `pystray` for the system tray
+- `keyboard` for global shortcuts
+- `requests` for Data Dragon and GitHub
 
-## Prerequis
+## Requirements
 
-Avant de lancer le projet depuis le code source, il faut:
+Before running the project from source, you need:
 
 - Windows
 - Python `3.13`
 - `pip`
-- le client League of Legends installe
+- the League of Legends client installed
 
-## Installation Depuis Le Code Source
+## Installation From Source
 
 ```bash
 git clone https://github.com/qurnt1/main_lol_2.git
@@ -136,126 +135,126 @@ cd MAIN_LOL
 pip install -r requirements.txt
 ```
 
-## Lancement
+## Launch
 
-Pour lancer l'application en local:
+To run the application locally:
 
 ```bash
 python launcher.py
 ```
 
-Au demarrage, l'application:
+On startup, the application:
 
-1. verifie qu'une seule instance tourne
-2. charge les parametres locaux
-3. prepare les dossiers de cache
-4. lance l'interface
-5. initialise la connexion au client LoL
-6. charge Data Dragon en arriere-plan
+1. checks that only one instance is running
+2. loads local settings
+3. prepares cache folders
+4. starts the interface
+5. initializes the connection to the LoL client
+6. loads Data Dragon in the background
 
-## Build Executable
+## Executable Build
 
-Le projet fournit un script de build PyInstaller:
+The project provides a PyInstaller build script:
 
 ```bash
 python create_exe.py
 ```
 
-Ce script genere un executable portable:
+This script generates a portable executable:
 
-- nom du binaire: `OTP LOL.exe`
-- emplacement final: racine du projet
+- binary name: `OTP LOL.exe`
+- final location: project root
 
-Le script gere egalement:
+The script also handles:
 
-- l'inclusion des assets
-- l'inclusion du package `src`
-- plusieurs imports caches pour PyInstaller
-- le nettoyage des dossiers temporaires de build
+- asset inclusion
+- `src` package inclusion
+- several hidden imports for PyInstaller
+- cleanup of temporary build folders
 
-## Configuration Et Fichiers Utilises
+## Configuration And Used Files
 
-### Fichiers utilisateur
+### User Files
 
-- Parametres:
+- Settings:
   `%APPDATA%\MainLoL\parameters.json`
 - Logs:
   `%APPDATA%\MainLoL\app_debug.log`
 
-### Cache local
+### Local Cache
 
-- Cache champions:
+- Champion cache:
   `%TEMP%\mainlol_ddragon_champions.json`
-- Cache icones champions:
+- Champion icon cache:
   `%TEMP%\mainlol_icons\`
-- Cache icones sorts:
+- Spell icon cache:
   `%TEMP%\mainlol_spells\`
 
-### Parametres principaux
+### Main Settings
 
-L'application stocke notamment:
+The application stores, among other things:
 
-- les toggles d'automatisation
-- les picks `1 / 2 / 3`
-- le ban configure
-- les sorts d'invocateur
-- le mode de detection automatique
-- les valeurs manuelles du compte et de la region
-- les valeurs auto-detectees du compte et de la region
+- automation toggles
+- picks `1 / 2 / 3`
+- configured ban
+- summoner spells
+- automatic detection mode
+- manual account and region values
+- auto-detected account and region values
 
-## Utilisation
+## Usage
 
-### Premier lancement
+### First Launch
 
-Au premier lancement, tu peux:
+On first launch, you can:
 
-1. ouvrir les parametres via l'icone engrenage
-2. choisir tes picks prioritaires
-3. choisir ton ban
-4. configurer les sorts
-5. decider si tu veux la detection automatique du compte
-6. activer ou non le retour automatique au lobby
+1. open the settings through the gear icon
+2. choose your priority picks
+3. choose your ban
+4. configure spells
+5. decide whether you want automatic account detection
+6. enable or disable automatic return to lobby
 
-### Detection automatique ou mode manuel
+### Automatic Detection Or Manual Mode
 
-L'application distingue maintenant:
+The application now distinguishes between:
 
-- les valeurs manuelles
-- les valeurs detectees automatiquement par le client LoL
+- manual values
+- values automatically detected by the LoL client
 
-Cela evite qu'une detection auto ecrase ton compte ou ta region manuelle.
+This prevents automatic detection from overwriting your manual account or region.
 
-### Comportement pendant la partie
+### Behavior During The Game
 
-Quand le client est detecte:
+When the client is detected:
 
-- l'indicateur de connexion passe au vert
-- l'application peut se masquer automatiquement
-- elle suit les changements de phase du client
+- the connection indicator turns green
+- the application can hide itself automatically
+- it follows client phase changes
 
-En champion select:
+During champion select:
 
-- elle detecte tes actions
-- tente le hover
-- essaie de lock le meilleur pick disponible selon l'ordre configure
-- applique les sorts si l'option est active
+- it detects your actions
+- it attempts to hover
+- it tries to lock the best available pick according to the configured order
+- it applies spells if the option is enabled
 
-Apres la partie:
+After the game:
 
-- elle peut tenter `Play Again` automatiquement si l'option est active
+- it can automatically attempt `Play Again` if the option is enabled
 
-## Raccourcis
+## Shortcuts
 
-Les raccourcis sont configurables depuis les parametres.
+Shortcuts are configurable from the settings.
 
-Valeurs par defaut:
+Default values:
 
 - `Alt + P`
-  Ouvre le site in-game configure
+  Opens the configured in-game website
 - `Alt + C`
-  Affiche ou masque la fenetre principale
+  Shows or hides the main window
 
-## Architecture Du Projet
+## Project Architecture
 
 ```text
 MAIN_LOL/
@@ -281,87 +280,87 @@ MAIN_LOL/
     `-- test_utils.py
 ```
 
-### Role des fichiers principaux
+### Role Of Main Files
 
 - `launcher.py`
-  Point d'entree principal et orchestration du cycle de vie.
+  Main entry point and lifecycle orchestration.
 - `src/config/`
-  Constantes, chemins, version, parametres par defaut et gestion des fichiers de config.
+  Constants, paths, version, default settings, and config file handling.
 - `src/core/`
-  Logique metier, Data Dragon, WebSocket / LCU et automatisations de jeu.
+  Business logic, Data Dragon, WebSocket / LCU, and game automations.
 - `src/services/`
-  URLs externes, historique, updates, DPI et single-instance.
+  External URLs, history, updates, DPI, and single-instance handling.
 - `src/ui/`
-  Interface graphique, systray, toasts, raccourcis et gestion des interactions utilisateur.
+  Graphical interface, system tray, toasts, shortcuts, and user interaction handling.
 - `src/utils.py`
-  Fonctions utilitaires: lockfile, URLs externes, verification de mise a jour, DPI.
+  Utility functions: lockfile, external URLs, update check, DPI.
 - `create_exe.py`
-  Build Windows via PyInstaller.
+  Windows build through PyInstaller.
 
-## Tests Et Verification
+## Tests And Verification
 
-Le projet contient des tests de non-regression sur:
+The project contains regression tests for:
 
-- la gestion de configuration
-- les utilitaires
-- certaines branches de la logique de champion select
+- configuration handling
+- utilities
+- some branches of the champion select logic
 
-Pour lancer les tests:
+To run the tests:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Pour verifier rapidement que le code compile:
+To quickly verify that the code compiles:
 
 ```bash
 python -m compileall launcher.py src create_exe.py tests
 ```
 
-## Depannage
+## Troubleshooting
 
-### L'application ne detecte pas LoL
+### The Application Does Not Detect LoL
 
-Verifie que:
+Check that:
 
-- le client League of Legends est lance
-- `lcu-driver` est bien installe
-- l'application tourne sur la meme machine que le client LoL
+- the League of Legends client is running
+- `lcu-driver` is properly installed
+- the application is running on the same machine as the LoL client
 
-### Le systray ou les hotkeys ne fonctionnent pas
+### The System Tray Or Hotkeys Do Not Work
 
-L'application dispose maintenant d'un fallback:
+The application now has a fallback:
 
-- un bouton `Quitter` reste visible si le systray ou les raccourcis ne sont pas disponibles
+- a `Quit` button remains visible if the system tray or shortcuts are not available
 
-### Les images ou les icones ne se chargent pas
+### Images Or Icons Do Not Load
 
-Verifie la presence du dossier:
+Check that this folder exists:
 
 ```text
 config/
 `-- images/
 ```
 
-### Les logs
+### Logs
 
-En cas de souci, le premier fichier a consulter est:
+If something goes wrong, the first file to check is:
 
 ```text
 %APPDATA%\MainLoL\app_debug.log
 ```
 
-## Roadmap Possible
+## Possible Roadmap
 
-Quelques idees d'evolution pour la suite:
+Some ideas for future improvements:
 
-- profils par role
-- profils par mode de jeu
-- historique des actions auto
-- meilleures captures d'ecran dans le README
-- page de presentation plus visuelle
-- import / export de profils
+- profiles by role
+- profiles by game mode
+- automatic action history
+- better screenshots in the README
+- more visual presentation page
+- profile import / export
 
-## Auteur
+## Author
 
-Projet maintenu par `Qurnt1`.
+Project maintained by `Qurnt1`.
