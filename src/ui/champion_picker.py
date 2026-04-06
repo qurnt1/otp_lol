@@ -20,12 +20,12 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
     picker = ttk.Toplevel(owner.window)
     if owner.window._icon_img:
         picker.iconphoto(False, owner.window._icon_img)
-    picker.title(f"Selectionner Champion ({context.title()})")
+    picker.title(f"Select Champion ({context.title()})")
     picker.geometry(f"760x700+{owner.window.winfo_x()+20}+{owner.window.winfo_y()+20}")
 
     search_frame = ttk.Frame(picker, padding=10)
     search_frame.pack(fill="x")
-    ttk.Label(search_frame, text="Rechercher :").pack(side="left")
+    ttk.Label(search_frame, text="Search:").pack(side="left")
     search_var = tk.StringVar()
     search_entry = ttk.Entry(search_frame, textvariable=search_var, width=28)
     search_entry.pack(side="left", fill="x", expand=True, padx=5)
@@ -89,7 +89,7 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
         columns = compute_columns()
         layout_state["columns"] = columns
 
-        ttk.Label(grid_frame, text="Tous les champions", font=("Segoe UI", 10, "bold")).grid(
+        ttk.Label(grid_frame, text="All champions", font=("Segoe UI", 10, "bold")).grid(
             row=0, column=0, columnspan=columns, sticky="w", pady=(0, 8)
         )
         render_cards(filtered, 1, columns)

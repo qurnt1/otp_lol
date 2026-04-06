@@ -13,23 +13,31 @@ class HotkeyManager:
         self.handles = []
 
     def setup(self, toggle_window, open_hotkey_site, toggle_hotkey: str, stats_hotkey: str) -> bool:
+        """Register the global hotkeys through the OS-level keyboard hook."""
+        registered_handles = []
         try:
             self.shutdown()
-            self.handles = [
-                keyboard.add_hotkey(stats_hotkey, open_hotkey_site),
-                keyboard.add_hotkey(toggle_hotkey, toggle_window),
-            ]
+            registered_handles.append(keyboard.add_hotkey(stats_hotkey, open_hotkey_site))
+            registered_handles.append(keyboard.add_hotkey(toggle_hotkey, toggle_window))
+            self.handles = registered_handles
             self.available = True
         except Exception as e:
+            for handle in registered_handles:
+                try:
+                    keyboard.remove_hotkey(handle)
+                except Exception:
+                    pass
             self.available = False
             self.handles = []
-            logging.debug(f"Impossible de configurer les hotkeys: {e}")
+            logging.debug(f"Unable to configure hotkeys: {e}")
         return self.available
 
     def shutdown(self) -> None:
+        """Remove all registered global hotkeys."""
         for handle in self.handles:
             try:
                 keyboard.remove_hotkey(handle)
             except Exception as e:
-                logging.debug(f"Erreur suppression hotkey: {e}")
+                logging.debug(f"Error removing hotkey: {e}")
         self.handles = []
+        self.available = False

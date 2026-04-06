@@ -60,13 +60,13 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
     picker.bind("<Escape>", lambda e: owner._close_site_picker())
 
     if picker_type == "stats":
-        picker.title("Choisir le site du bouton principal")
+        picker.title("Choose the main button website")
         allowed_sites = STATS_SITE_ORDER
         labels = STATS_SITE_LABELS
         current_site = owner.preferred_stats_site_var.get()
         on_select = owner._select_stats_site
     else:
-        picker.title("Choisir le site ouvert par le raccourci")
+        picker.title("Choose the shortcut website")
         allowed_sites = HOTKEY_SITE_ORDER
         labels = HOTKEY_SITE_LABELS
         current_site = owner.preferred_hotkey_site_var.get()
@@ -79,7 +79,7 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
 
     ttk.Label(
         container,
-        text="Choisis le site a utiliser",
+        text="Choose the website to use",
         font=("Segoe UI", 10, "bold"),
     ).pack(anchor="w", pady=(0, 10))
 

@@ -16,7 +16,7 @@ class HistoryFormattingTests(unittest.TestCase):
 
         self.assertEqual(formatted["time"], "21:34:08")
         self.assertEqual(formatted["level"], "success")
-        self.assertEqual(formatted["level_label"], "Succes")
+        self.assertEqual(formatted["level_label"], "Success")
         self.assertEqual(formatted["message"], "Pick automatique sur Garen.")
         self.assertEqual(formatted["detail_lines"], [])
 
@@ -25,7 +25,7 @@ class HistoryFormattingTests(unittest.TestCase):
             "timestamp": "2026-04-05T21:34:08+02:00",
             "type": "spells",
             "level": "success",
-            "message": "Sorts automatiques appliques : Flash + Ignite.",
+            "message": "Automatic spells applied: Flash + Ignite.",
             "details": {"spell_1": "Flash", "spell_2": "Ignite", "role": "MIDDLE"},
         }
 
@@ -33,7 +33,7 @@ class HistoryFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             formatted["detail_lines"],
-            ["Sorts : Flash + Ignite", "Profil : MIDDLE"],
+            ["Spells: Flash + Ignite", "Profile: MIDDLE"],
         )
 
 

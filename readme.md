@@ -88,21 +88,15 @@ The project now includes several useful safeguards:
 
 ### Main Window
 
-```md
 ![Main window](./docs/images/main-window.png)
-```
 
 ### Settings Window
 
-```md
 ![Settings](./docs/images/settings-window.png)
-```
 
 ### During Champion Select
 
-```md
 ![Champion select](./docs/images/champ-select.png)
-```
 
 ## Technologies
 

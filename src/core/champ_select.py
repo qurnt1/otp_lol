@@ -24,7 +24,7 @@ class ChampSelectMixin:
                 if isinstance(payload, list):
                     return set(payload)
         except Exception as e:
-            logging.debug(f"Erreur recuperation champions pickables: {e}")
+            logging.debug(f"Error fetching pickable champions: {e}")
         return None
 
     def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[str]:
@@ -74,6 +74,7 @@ class ChampSelectMixin:
                 self.state.time_left_ms = 0
 
     async def _champ_select_tick(self: "WebSocketManager") -> None:
+        """Read the current champ-select session and perform the next safe automation step."""
         if not self.connection:
             return
 
@@ -83,7 +84,7 @@ class ChampSelectMixin:
                 return
             session = await response.json()
         except Exception as e:
-            logging.debug(f"Erreur recuperation session champ select: {e}")
+            logging.debug(f"Error fetching champ select session: {e}")
             return
 
         if session.get("benchEnabled") is True:
@@ -102,7 +103,7 @@ class ChampSelectMixin:
                 pos = (my_player_obj.get("assignedPosition") or "").upper()
                 if pos:
                     self.state.assigned_position = pos
-                    self._notify_ui(self.EVENT_STATUS, (f"Role assigne detecte : {pos}", "ℹ️"))
+                    self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {pos}", "ℹ️"))
 
         actions_groups = session.get("actions", [])
         my_actions = []
@@ -145,7 +146,7 @@ class ChampSelectMixin:
                 "hover",
                 f"Pre-pick envoye sur {champion_name}.",
                 {"champion": champion_name},
-                category="Champ Select",
+                category="Champion Select",
                 action="hover",
             )
         return success
@@ -159,7 +160,7 @@ class ChampSelectMixin:
             effective.get("selected_pick_2"),
             effective.get("selected_pick_3"),
         }:
-            logging.warning("Auto-ban ignore: le champion banni est aussi configure dans les picks.")
+            logging.warning("Auto-ban ignored: the banned champion is also configured as a pick.")
             return
         if time() - self.state.last_action_try_ts < 0.1:
             return
@@ -174,14 +175,14 @@ class ChampSelectMixin:
             self.state.has_banned = True
             self._log_history(
                 "ban",
-                f"Ban automatique confirme sur {selected_ban}.",
+                f"Automatic ban confirmed on {selected_ban}.",
                 {"champion": selected_ban},
                 level="success",
-                category="Champ Select",
+                category="Champion Select",
                 action="ban",
             )
             self._notify_ui(self.EVENT_CHAMPION_BANNED, selected_ban)
-            self._notify_ui(self.EVENT_STATUS, (f"Ciao ! {selected_ban} a ete banni.", "💀"))
+            self._notify_ui(self.EVENT_STATUS, (f"Ciao! {selected_ban} has been banned.", "💀"))
 
     async def _logic_do_pick(
         self: "WebSocketManager",
@@ -197,9 +198,9 @@ class ChampSelectMixin:
         viable_pick = self._pick_first_viable_champion(params, pickable_set)
         if not viable_pick:
             if pickable_set is None:
-                self._notify_ui(self.EVENT_STATUS, ("Impossible de verifier les champions pickables pour l'instant.", "⚠️"))
+                self._notify_ui(self.EVENT_STATUS, ("Unable to check pickable champions right now.", "⚠️"))
             else:
-                self._notify_ui(self.EVENT_STATUS, ("Aucun champion dispo ou configure (ou tous bannis) !", "⚠️"))
+                self._notify_ui(self.EVENT_STATUS, ("No configured champion is available (or all are banned)!", "⚠️"))
             return
 
         champion_name, champion_id = viable_pick
@@ -208,21 +209,22 @@ class ChampSelectMixin:
             self.state.has_picked = True
             self._log_history(
                 "pick",
-                f"Champion verrouille automatiquement : {champion_name}.",
+                f"Champion automatically locked in: {champion_name}.",
                 {"champion": champion_name},
                 level="success",
-                category="Champ Select",
+                category="Champion Select",
                 action="pick",
             )
             self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
-            self._notify_ui(self.EVENT_STATUS, (f"{champion_name} securise ! A toi de jouer.", "🔒"))
+            self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in! Your turn to play.", "🔒"))
             if params.get("auto_summoners_enabled"):
                 asyncio.create_task(self._set_spells(params))
             return
 
-        self._notify_ui(self.EVENT_STATUS, (f"Echec du lock LCU sur {champion_name}, nouvelle tentative plus tard.", "⚠️"))
+        self._notify_ui(self.EVENT_STATUS, (f"LCU lock failed for {champion_name}, will retry later.", "⚠️"))
 
     async def _lock_in_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
+        """Hover then lock a champion, with confirmation because the LCU can accept partial updates."""
         url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
 
         hover_response = await self.connection.request("patch", url_action, json={"championId": champion_id})
@@ -260,6 +262,8 @@ class ChampSelectMixin:
         effective = self.get_effective_profile_config(params=params)
         spell1_name = effective.get("spell_1") or params.get("global_spell_1", "Heal")
         spell2_name = effective.get("spell_2") or params.get("global_spell_2", "Flash")
+        spell1_name = "(None)" if spell1_name == "(Aucun)" else spell1_name
+        spell2_name = "(None)" if spell2_name == "(Aucun)" else spell2_name
         spell1_id = SUMMONER_SPELL_MAP.get(spell1_name, 7)
         spell2_id = SUMMONER_SPELL_MAP.get(spell2_name, 4)
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
@@ -268,14 +272,14 @@ class ChampSelectMixin:
         if response and response.status < 400:
             self._log_history(
                 "spells",
-                f"Sorts automatiques appliques : {spell1_name} + {spell2_name}.",
+                f"Automatic spells applied: {spell1_name} + {spell2_name}.",
                 {"spell_1": spell1_name, "spell_2": spell2_name, "role": effective.get("resolved_role", "GLOBAL")},
                 level="success",
-                category="Sorts",
+                category="Spells",
                 action="set",
             )
             self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
-            self._notify_ui(self.EVENT_STATUS, (f"Sorts auto-selectionnes ({spell1_name}, {spell2_name})", "🪄"))
+            self._notify_ui(self.EVENT_STATUS, (f"Spells auto-selected ({spell1_name}, {spell2_name})", "🪄"))
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         params = self.get_params()
@@ -290,11 +294,11 @@ class ChampSelectMixin:
             if response and response.status < 400:
                 self._log_history(
                     "play_again",
-                    "Retour automatique au salon apres la partie.",
+                    "Automatically returned to lobby after the game.",
                     level="success",
-                    category="Fin de partie",
+                    category="End game",
                     action="play_again",
                 )
                 self._notify_ui(self.EVENT_PLAY_AGAIN, None)
-                self._notify_ui(self.EVENT_STATUS, ("Rejouer auto reussi !", "✅"))
+                self._notify_ui(self.EVENT_STATUS, ("Auto play again succeeded!", "✅"))
                 break

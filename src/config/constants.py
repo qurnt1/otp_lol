@@ -30,7 +30,7 @@ REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "
 
 SUMMONER_SPELL_MAP: Dict[str, int] = {
     "Barrier": 21, "Cleanse": 1, "Exhaust": 3, "Flash": 4, "Ghost": 6,
-    "Heal": 7, "Ignite": 14, "Smite": 11, "Teleport": 12, "(Aucun)": 0
+    "Heal": 7, "Ignite": 14, "Smite": 11, "Teleport": 12, "(None)": 0
 }
 
 SUMMONER_SPELL_LIST: list[str] = sorted(list(SUMMONER_SPELL_MAP.keys()))
@@ -42,15 +42,15 @@ PLATFORM_TO_REGION: Dict[str, str] = {
 }
 
 PHASE_DISPLAY_MAP: Dict[str, str] = {
-    "Lobby": "Au Salon (Lobby)",
-    "Matchmaking": "Recherche de partie...",
-    "ReadyCheck": "Partie trouvée !",
-    "ChampSelect": "Sélection des champions",
-    "InProgress": "Partie en cours",
-    "EndOfGame": "Fin de partie",
-    "WaitingForStats": "En attente des stats",
-    "PreEndOfGame": "Nexus détruit",
-    "None": "Inactif"
+    "Lobby": "In Lobby",
+    "Matchmaking": "Searching for a match...",
+    "ReadyCheck": "Match found!",
+    "ChampSelect": "Champion select",
+    "InProgress": "Game in progress",
+    "EndOfGame": "End of game",
+    "WaitingForStats": "Waiting for stats",
+    "PreEndOfGame": "Nexus destroyed",
+    "None": "Inactive"
 }
 
 ROLE_PROFILE_ORDER: list[str] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
@@ -105,8 +105,8 @@ HOTKEY_SITE_LABELS: Dict[str, str] = {
 HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "opgg"]
 
 THEME_LABELS: Dict[str, str] = {
-    "darkly": "Sombre",
-    "flatly": "Clair",
+    "darkly": "Dark",
+    "flatly": "Light",
 }
 
 THEME_ORDER: list[str] = ["darkly", "flatly"]

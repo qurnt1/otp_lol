@@ -41,7 +41,7 @@ class LoLAssistantUI:
     FEATURE_PREVIEW_DEFINITIONS = (
         ("pick", "Pick", 3, "info"),
         ("ban", "Ban", 1, "danger"),
-        ("spells", "Sorts", 2, "warning"),
+        ("spells", "Spells", 2, "warning"),
     )
     FEATURE_PARAM_MAP = {
         "pick": "auto_pick_enabled",
@@ -51,7 +51,7 @@ class LoLAssistantUI:
     FEATURE_LABEL_MAP = {
         "pick": "Auto-pick",
         "ban": "Auto-ban",
-        "spells": "Auto-sorts",
+        "spells": "Auto-spells",
     }
 
     def __init__(
@@ -81,6 +81,8 @@ class LoLAssistantUI:
         self.audio_manager = AudioManager()
         self.tray_controller = TrayController()
         self.hotkey_manager = HotkeyManager()
+        self._hotkeys_suspended = False
+        self._hotkeys_were_available = False
         self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
         self.root.title("MAIN LOL")
@@ -103,7 +105,7 @@ class LoLAssistantUI:
         self._preview_refresh_after_id = None
         self.stats_btn: Optional[ttk.Button] = None
         self.settings_gear_label: Optional[ttk.Label] = None
-        self.history_filter_var = tk.StringVar(value="Tout")
+        self.history_filter_var = tk.StringVar(value="All")
         self.create_ui()
         self.apply_theme(self.theme)
         self.create_system_tray()
@@ -132,7 +134,7 @@ class LoLAssistantUI:
         self._refresh_stats_button()
         if key == "theme":
             self.apply_theme(value)
-        if key in {"hotkey_toggle_window", "hotkey_open_site"}:
+        if key in {"hotkey_toggle_window", "hotkey_open_site"} and not self._hotkeys_suspended:
             self.reload_hotkeys()
 
     def replace_params(self, params: Dict[str, Any]) -> None:
@@ -142,7 +144,7 @@ class LoLAssistantUI:
                 self.apply_theme(value)
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
-        if {"hotkey_toggle_window", "hotkey_open_site"} & set(params):
+        if {"hotkey_toggle_window", "hotkey_open_site"} & set(params) and not self._hotkeys_suspended:
             self.reload_hotkeys()
 
     def save_params(self) -> None:
@@ -150,7 +152,7 @@ class LoLAssistantUI:
 
     def save_and_notify(self) -> None:
         self.save_params()
-        self.show_toast("Parametres sauvegardes !")
+        self.show_toast("Settings saved!")
 
     def apply_theme(self, theme_name: str) -> None:
         theme_name = theme_name if theme_name in THEME_PALETTE else "darkly"
@@ -161,7 +163,7 @@ class LoLAssistantUI:
         try:
             self.root.style.theme_use(theme_name)
         except Exception as e:
-            logging.debug(f"Impossible d'appliquer le theme {theme_name}: {e}")
+            logging.debug(f"Unable to apply theme {theme_name}: {e}")
 
         self._configure_styles()
 
@@ -226,7 +228,7 @@ class LoLAssistantUI:
             "detected_role": resolved_role,
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
-            "fallback_policy": "Le profil du role detecte est prioritaire, puis la config globale prend le relais si un champ est vide.",
+            "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
             "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
             "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
             "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
@@ -281,7 +283,7 @@ class LoLAssistantUI:
             self.banner_label.image = banner_img
             self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
         except Exception as e:
-            logging.debug(f"Impossible de charger les images de banniere: {e}")
+            logging.debug(f"Unable to load banner images: {e}")
 
     def _create_connection_indicator(self) -> None:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
@@ -293,7 +295,7 @@ class LoLAssistantUI:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         self.status_label = tk.Label(
             self.root,
-            text="En attente du lancement de League of Legends...",
+            text="Waiting for League of Legends to launch...",
             justify="center",
             wraplength=390,
             bg=palette["window_bg"],
@@ -373,7 +375,7 @@ class LoLAssistantUI:
                 self.settings_gear_label.image = gear_img
                 return
             except Exception as e:
-                logging.debug(f"Impossible de charger l'icone engrenage: {e}")
+                logging.debug(f"Unable to load gear icon: {e}")
         self.settings_gear_label.configure(image="", text="⚙")
         self.settings_gear_label.image = None
 
@@ -463,7 +465,7 @@ class LoLAssistantUI:
 
                     widget.after(0, update_ui_no_img)
             except Exception as e:
-                logging.debug(f"Erreur chargement apercu principal pour {display_name}: {e}")
+                logging.debug(f"Main preview loading error for {display_name}: {e}")
 
         self.executor.submit(task)
 
@@ -606,7 +608,7 @@ class LoLAssistantUI:
         return STATS_SITE_LABELS.get(site, STATS_SITE_LABELS["opgg"])
 
     def _get_stats_button_text(self) -> str:
-        return f"Voir mes stats ({self.get_preferred_stats_site_label()})"
+        return f"View my stats ({self.get_preferred_stats_site_label()})"
 
     def _has_valid_riot_id(self) -> bool:
         return is_valid_riot_id(self._get_riot_id_display() or self.get_params().get("manual_summoner_name", ""))
@@ -622,7 +624,7 @@ class LoLAssistantUI:
 
     def open_preferred_stats_site(self) -> None:
         if not self._has_valid_riot_id():
-            self.show_toast("Riot ID invalide.")
+            self.show_toast("Invalid Riot ID.")
             return
         webbrowser.open(self.build_preferred_stats_url())
 
@@ -698,7 +700,7 @@ class LoLAssistantUI:
 
                 self.root.after(0, update_ui)
             except Exception as e:
-                logging.warning(f"Erreur Splash Art pour {champion_name}: {e}")
+                logging.warning(f"Splash art error for {champion_name}: {e}")
 
         self.executor.submit(task)
 
@@ -720,8 +722,30 @@ class LoLAssistantUI:
         )
 
     def reload_hotkeys(self) -> None:
+        if self._hotkeys_suspended:
+            return
         self.hotkey_manager.shutdown()
         self.setup_hotkeys()
+        self._refresh_safe_controls()
+
+    def suspend_hotkeys(self) -> None:
+        """Temporarily disable global shortcuts while the settings window captures a new shortcut."""
+        if self._hotkeys_suspended:
+            return
+        self._hotkeys_suspended = True
+        self._hotkeys_were_available = self.hotkey_manager.available
+        self.hotkey_manager.shutdown()
+        self._refresh_safe_controls()
+
+    def resume_hotkeys(self) -> None:
+        """Restore global shortcuts after shortcut capture has finished or been cancelled."""
+        if not self._hotkeys_suspended:
+            return
+        should_restore = self._hotkeys_were_available and self.running and not self.closing_requested
+        self._hotkeys_suspended = False
+        self._hotkeys_were_available = False
+        if should_restore:
+            self.setup_hotkeys()
         self._refresh_safe_controls()
 
     def open_preferred_hotkey_site(self) -> None:
@@ -758,7 +782,7 @@ class LoLAssistantUI:
             return
 
         self.history_window = ttk.Toplevel(self.root)
-        self.history_window.title("Historique des actions")
+        self.history_window.title("Action history")
         self.history_window.geometry("680x420")
         self.history_window.resizable(True, True)
         self.history_window.transient(self.root)
@@ -772,24 +796,24 @@ class LoLAssistantUI:
                 self.history_window.iconphoto(False, photo)
                 self.history_window._icon_ref = photo
         except Exception as e:
-            logging.debug(f"Erreur icone historique: {e}")
+            logging.debug(f"History icon error: {e}")
 
         container = ttk.Frame(self.history_window, padding=12)
         container.pack(fill="both", expand=True)
 
         controls = ttk.Frame(container)
         controls.pack(fill="x", pady=(0, 10))
-        ttk.Label(controls, text="Filtre :", style="Status.TLabel").pack(side="left")
+        ttk.Label(controls, text="Filter:", style="Status.TLabel").pack(side="left")
         history_filter_cb = ttk.Combobox(
             controls,
-            values=["Tout", "Connexion", "Champ Select", "Sorts", "Erreur"],
+            values=["All", "Connection", "Champion Select", "Spells", "Error"],
             textvariable=self.history_filter_var,
             state="readonly",
             width=16,
         )
         history_filter_cb.pack(side="left", padx=(8, 0))
         history_filter_cb.bind("<<ComboboxSelected>>", lambda e: self.refresh_history_window())
-        ttk.Button(controls, text="Effacer", bootstyle="danger-outline", command=self.clear_history_window).pack(
+        ttk.Button(controls, text="Clear", bootstyle="danger-outline", command=self.clear_history_window).pack(
             side="right"
         )
 
@@ -854,12 +878,12 @@ class LoLAssistantUI:
             return
         entries = get_history_entries(limit=150)
         selected_filter = self.history_filter_var.get()
-        if selected_filter != "Tout":
+        if selected_filter != "All":
             entries = [entry for entry in entries if format_history_entry(entry)["category"] == selected_filter]
         self.history_text.configure(state="normal")
         self.history_text.delete("1.0", "end")
         if not entries:
-            self.history_text.insert("end", "Aucun evenement historique pour le moment.", "history_detail")
+            self.history_text.insert("end", "No history events yet.", "history_detail")
         else:
             for entry in entries:
                 formatted = format_history_entry(entry)
@@ -875,7 +899,7 @@ class LoLAssistantUI:
     def clear_history_window(self) -> None:
         clear_history_entries()
         self.refresh_history_window()
-        self.show_toast("Historique vide.")
+        self.show_toast("History cleared.")
 
     def update_status(self, message: str, emoji: str = "") -> None:
         now = datetime.now().strftime("%H:%M:%S")
@@ -914,11 +938,11 @@ class LoLAssistantUI:
             toast.place(relx=0.5, rely=0.98, anchor="s")
             self.root.after(duration, toast.destroy)
         except Exception as e:
-            logging.debug(f"Erreur affichage toast: {e}")
+            logging.debug(f"Toast display error: {e}")
 
     def show_update_popup(self, new_version: str) -> None:
         popup = ttk.Toplevel(self.root)
-        popup.title("Mise a jour MAIN LOL")
+        popup.title("MAIN LOL Update")
         popup.geometry("400x250")
         popup.resizable(False, False)
         popup.update_idletasks()
@@ -936,17 +960,17 @@ class LoLAssistantUI:
                 popup.iconphoto(False, photo)
                 popup._icon_ref = photo
         except Exception as e:
-            logging.debug(f"Erreur icone popup update: {e}")
+            logging.debug(f"Update popup icon error: {e}")
 
-        title_lbl = ttk.Label(popup, text="Nouvelle version detectee !", font=("Segoe UI Emoji", 14, "bold"), bootstyle="inverse-primary")
+        title_lbl = ttk.Label(popup, text="New version detected!", font=("Segoe UI Emoji", 14, "bold"), bootstyle="inverse-primary")
         title_lbl.pack(fill="x", pady=(0, 15), ipady=10)
 
         info_frame = ttk.Frame(popup, padding=10)
         info_frame.pack(fill="both", expand=True)
         info_text = (
-            "Une mise a jour est disponible sur GitHub.\n\n"
-            f"Version actuelle : {CURRENT_VERSION}\n"
-            f"Nouvelle version : {new_version}"
+            "An update is available on GitHub.\n\n"
+            f"Current version: {CURRENT_VERSION}\n"
+            f"New version: {new_version}"
         )
         ttk.Label(info_frame, text=info_text, justify="center", font=("Segoe UI", 11)).pack(pady=5)
 
@@ -957,8 +981,8 @@ class LoLAssistantUI:
             webbrowser.open(GITHUB_REPO_URL)
             popup.destroy()
 
-        ttk.Button(btn_frame, text="Telecharger", bootstyle="success", command=on_download, width=15).pack(side="left", padx=(40, 10), expand=True)
-        ttk.Button(btn_frame, text="Plus tard", bootstyle="secondary", command=popup.destroy, width=15).pack(side="right", padx=(10, 40), expand=True)
+        ttk.Button(btn_frame, text="Download", bootstyle="success", command=on_download, width=15).pack(side="left", padx=(40, 10), expand=True)
+        ttk.Button(btn_frame, text="Later", bootstyle="secondary", command=popup.destroy, width=15).pack(side="right", padx=(10, 40), expand=True)
         popup.attributes("-topmost", True)
         popup.focus_force()
 
@@ -1017,7 +1041,7 @@ class LoLAssistantUI:
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
-            logging.debug(f"Erreur arret executor: {e}")
+            logging.debug(f"Executor shutdown error: {e}")
 
         def destroy_root():
             if self.root.winfo_exists():

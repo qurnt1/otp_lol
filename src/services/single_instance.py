@@ -15,7 +15,7 @@ def check_single_instance() -> bool:
             with open(LOCKFILE_PATH, "r") as f:
                 pid = int(f.read())
             if pid != os.getpid() and psutil.pid_exists(pid):
-                logging.info(f"Instance existante détectée (PID: {pid})")
+                logging.info(f"Existing instance detected (PID: {pid})")
                 return False
         except (ValueError, IOError):
             pass

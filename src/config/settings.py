@@ -5,7 +5,7 @@ import logging
 import os
 from typing import Any, Dict
 
-from .constants import ROLE_PROFILE_ORDER
+from .constants import ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
 
 
@@ -64,7 +64,7 @@ def load_parameters() -> Dict[str, Any]:
             config = json.load(f)
         return _normalize_parameters(config)
     except (json.JSONDecodeError, IOError) as e:
-        logging.warning(f"Erreur chargement parametres: {e}")
+        logging.warning(f"Error loading settings: {e}")
         return DEFAULT_PARAMS.copy()
 
 
@@ -77,7 +77,7 @@ def save_parameters(params: Dict[str, Any]) -> bool:
             json.dump(sanitized, f, indent=4, ensure_ascii=False)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Erreur sauvegarde parametres: {e}")
+        logging.error(f"Error saving settings: {e}")
         return False
 
 
@@ -89,7 +89,7 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
             json.dump(sanitized, f, indent=4, ensure_ascii=False)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Erreur export parametres: {e}")
+        logging.error(f"Error exporting settings: {e}")
         return False
 
 
@@ -98,8 +98,16 @@ def import_parameters_from_file(path: str) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
-        raise ValueError("Le fichier de configuration est invalide.")
+        raise ValueError("The configuration file is invalid.")
     return _normalize_parameters(payload)
+
+
+def _normalize_spell_value(value: Any) -> str:
+    """Normalize legacy spell labels while preserving valid Riot spell names."""
+    spell_name = str(value or "")
+    if spell_name == "(Aucun)":
+        return "(None)"
+    return spell_name if spell_name in SUMMONER_SPELL_MAP or not spell_name else spell_name
 
 
 def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,11 +152,13 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
                 "selected_pick_2": str(role_data.get("selected_pick_2", "")),
                 "selected_pick_3": str(role_data.get("selected_pick_3", "")),
                 "selected_ban": str(role_data.get("selected_ban", "")),
-                "spell_1": str(role_data.get("spell_1", "")),
-                "spell_2": str(role_data.get("spell_2", "")),
+                "spell_1": _normalize_spell_value(role_data.get("spell_1", "")),
+                "spell_2": _normalize_spell_value(role_data.get("spell_2", "")),
             }
         )
     merged["role_profiles"] = normalized_profiles
+    merged["global_spell_1"] = _normalize_spell_value(config.get("global_spell_1", DEFAULT_PARAMS["global_spell_1"]))
+    merged["global_spell_2"] = _normalize_spell_value(config.get("global_spell_2", DEFAULT_PARAMS["global_spell_2"]))
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in {"opgg", "deeplol", "leagueofgraphs"}:

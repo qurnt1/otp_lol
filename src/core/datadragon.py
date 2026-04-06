@@ -65,7 +65,7 @@ class DataDragon:
                 self.loaded = True
                 return True
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur cache - {e}")
+            logging.warning(f"DataDragon: Cache error - {e}")
         return False
 
     def _save_cache(self) -> None:
@@ -81,20 +81,21 @@ class DataDragon:
                     f,
                 )
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur sauvegarde cache - {e}")
+            logging.warning(f"DataDragon: Cache save error - {e}")
 
     def load(self) -> None:
+        """Load champion metadata, preferring fresh Data Dragon data, then cache, then fallback."""
         if self.loaded:
             return
 
         get_cache_dirs()
         online_version = self._fetch_latest_version()
         if self._load_from_cache(target_version=online_version):
-            logging.info(f"DataDragon: Charge depuis cache (version {self.version})")
+            logging.info(f"DataDragon: Loaded from cache (version {self.version})")
             return
 
         if not online_version:
-            logging.warning("DataDragon: Pas de version en ligne et cache invalide, utilisation du fallback")
+            logging.warning("DataDragon: No online version and invalid cache, using fallback data")
             self._load_fallback_data()
             return
 
@@ -122,13 +123,13 @@ class DataDragon:
             self.loaded = True
             self._save_cache()
             logging.info(
-                f"DataDragon: Charge depuis API (version {online_version}, {len(self.all_names)} champions)"
+                f"DataDragon: Loaded from API (version {online_version}, {len(self.all_names)} champions)"
             )
         except requests.RequestException as e:
-            logging.error(f"DataDragon: Erreur reseau lors du chargement - {e}")
+            logging.error(f"DataDragon: Network error while loading - {e}")
             self._load_fallback_data()
         except Exception as e:
-            logging.error(f"DataDragon: Erreur inattendue - {e}")
+            logging.error(f"DataDragon: Unexpected error - {e}")
             self._load_fallback_data()
 
     def _fetch_latest_version(self) -> Optional[str]:
@@ -139,9 +140,9 @@ class DataDragon:
             if versions:
                 return versions[0]
         except requests.RequestException as e:
-            logging.warning(f"DataDragon: Impossible de recuperer la version en ligne - {e}")
+            logging.warning(f"DataDragon: Unable to fetch online version - {e}")
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur parsing versions - {e}")
+            logging.warning(f"DataDragon: Version parsing error - {e}")
         return None
 
     def _add_champion_aliases(self) -> None:
@@ -156,7 +157,7 @@ class DataDragon:
                 self.by_norm_name[norm_alias] = self.by_norm_name[norm_internal]
 
     def _load_fallback_data(self) -> None:
-        logging.info("DataDragon: Chargement des donnees de fallback")
+        logging.info("DataDragon: Loading fallback data")
         basic_champions = {
             "Garen": 86,
             "Teemo": 17,
@@ -224,7 +225,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
             except Exception as e:
-                logging.debug(f"Erreur lecture cache icone {image_filename}: {e}")
+                logging.debug(f"Icon cache read error for {image_filename}: {e}")
 
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
         try:
@@ -237,7 +238,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur telechargement icone champion - {e}")
+            logging.warning(f"DataDragon: Champion icon download error - {e}")
         return None
 
     def load_summoners(self) -> None:
@@ -258,10 +259,10 @@ class DataDragon:
                         self.summoner_data[name] = image_full
                 self.summoner_loaded = True
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur chargement summoners - {e}")
+            logging.warning(f"DataDragon: Summoner spell loading error - {e}")
 
     def get_summoner_icon(self, spell_name: str) -> Optional[Image.Image]:
-        if spell_name == "(Aucun)" or not spell_name:
+        if spell_name in {"(None)", "(Aucun)"} or not spell_name:
             return None
 
         cache_key = f"spell_{spell_name}"
@@ -282,7 +283,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
             except Exception as e:
-                logging.debug(f"Erreur lecture cache icone spell {image_filename}: {e}")
+                logging.debug(f"Spell icon cache read error for {image_filename}: {e}")
 
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
@@ -295,7 +296,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur telechargement icone summoner - {e}")
+            logging.warning(f"DataDragon: Summoner spell icon download error - {e}")
         return None
 
     def get_splash_art(self, champion_name: str) -> Optional[Image.Image]:
@@ -311,5 +312,5 @@ class DataDragon:
             if response.status_code == 200:
                 return Image.open(BytesIO(response.content))
         except Exception as e:
-            logging.warning(f"DataDragon: Erreur splash art pour {champion_name} - {e}")
+            logging.warning(f"DataDragon: Splash art error for {champion_name} - {e}")
         return None

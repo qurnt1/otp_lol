@@ -19,8 +19,8 @@ class TrayController:
         try:
             image = Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((64, 64))
             menu = pystray.Menu(
-                pystray.MenuItem("Afficher/Masquer", toggle_window),
-                pystray.MenuItem("Quitter", quit_callback),
+                pystray.MenuItem("Show/Hide", toggle_window),
+                pystray.MenuItem("Quit", quit_callback),
             )
             self.icon = pystray.Icon("MAIN LOL", image, "MAIN LOL", menu)
             self.available = True
@@ -30,13 +30,13 @@ class TrayController:
                     self.icon.run()
                 except Exception as e:
                     self.available = False
-                    logging.debug(f"Erreur system tray: {e}")
+                    logging.debug(f"System tray error: {e}")
                     on_failure()
 
             executor.submit(run_tray)
         except Exception as e:
             self.available = False
-            logging.warning(f"Impossible de creer le system tray: {e}")
+            logging.warning(f"Unable to create system tray: {e}")
         return self.available
 
     def shutdown(self) -> None:
@@ -44,4 +44,4 @@ class TrayController:
             if self.icon:
                 self.icon.stop()
         except Exception as e:
-            logging.debug(f"Erreur arret tray icon: {e}")
+            logging.debug(f"Error stopping tray icon: {e}")

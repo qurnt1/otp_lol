@@ -29,7 +29,7 @@ from ..services.history import log_history_event
 
 
 class WebSocketManager(ChampSelectMixin):
-    """Gestionnaire WebSocket pour la communication avec le client LoL."""
+    """WebSocket manager for communication with the LoL client."""
 
     EVENT_CONNECTED = "connected"
     EVENT_DISCONNECTED = "disconnected"
@@ -81,7 +81,7 @@ class WebSocketManager(ChampSelectMixin):
 
     def start(self) -> None:
         if Connector is None:
-            self._notify_ui(self.EVENT_STATUS, ("❌ Erreur: 'lcu_driver' manquant.", ""))
+            self._notify_ui(self.EVENT_STATUS, ("❌ Error: 'lcu_driver' is missing.", ""))
             return
         if self.thread and self.thread.is_alive():
             return
@@ -163,7 +163,7 @@ class WebSocketManager(ChampSelectMixin):
             "detected_role": self._normalize_role(self.state.assigned_position) or "GLOBAL",
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
-            "fallback_policy": "Le profil du role detecte est prioritaire, puis la config globale prend le relais si un champ est vide.",
+            "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
             "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
             "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
             "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
@@ -194,6 +194,7 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def _ws_loop(self) -> None:
+        """Run the LCU connector in its own asyncio loop and forward LCU events to the UI thread."""
         if Connector is None:
             return
 
@@ -210,15 +211,15 @@ class WebSocketManager(ChampSelectMixin):
                 self.ws_active = True
                 log_history_event(
                     "connection",
-                    "Client LoL detecte et connexion etablie.",
+                    "LoL client detected and connection established.",
                     {"region": self.get_platform_for_websites()},
                     level="success",
-                    category="Connexion",
+                    category="Connection",
                     action="connected",
                 )
                 self._notify_ui(self.EVENT_CONNECTED, None)
-                self._notify_ui(self.EVENT_STATUS, ("Client LoL detecte ! Pret a vous aider.", "⚡"))
-                logging.info("WebSocket: Connecte au client LCU.")
+                self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "⚡"))
+                logging.info("WebSocket: Connected to the LCU client.")
                 await self._refresh_player_and_region()
 
             @connector.close
@@ -229,16 +230,16 @@ class WebSocketManager(ChampSelectMixin):
                 if not self._stop_event.is_set():
                     log_history_event(
                         "connection",
-                        "Connexion au client LoL perdue, tentative de reconnexion.",
+                        "LoL client connection lost, trying to reconnect.",
                         level="warning",
-                        category="Connexion",
+                        category="Connection",
                         action="disconnected",
                     )
                     self._notify_ui(self.EVENT_DISCONNECTED, None)
-                    self._notify_ui(self.EVENT_STATUS, ("Client LoL deconnecte. Tentative de reconnexion...", "💤"))
-                    logging.info("WebSocket: Deconnecte.")
+                    self._notify_ui(self.EVENT_STATUS, ("LoL client disconnected. Trying to reconnect...", "💤"))
+                    logging.info("WebSocket: Disconnected.")
                 else:
-                    logging.info("WebSocket: Arret demande.")
+                    logging.info("WebSocket: Stop requested.")
 
             @connector.ws.register(EP_CURRENT_SUMMONER)
             async def _ws_summoner_change(connection, event):
@@ -252,7 +253,7 @@ class WebSocketManager(ChampSelectMixin):
             async def _ws_login_session(connection, event):
                 data = event.data or {}
                 if data.get("status") == "SUCCEEDED":
-                    self._notify_ui(self.EVENT_STATUS, ("Login detecte...", "🔄"))
+                    self._notify_ui(self.EVENT_STATUS, ("Login detected...", "🔄"))
                     await self._refresh_player_and_region()
 
             @connector.ws.register(EP_GAMEFLOW)
@@ -267,7 +268,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
                 self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
-                self._notify_ui(self.EVENT_STATUS, (f"Statut : {friendly_phase}", "ℹ️"))
+                self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "ℹ️"))
 
                 if phase == "ChampSelect":
                     self.state.reset_between_games()
@@ -290,12 +291,12 @@ class WebSocketManager(ChampSelectMixin):
                     if response and response.status < 400:
                         log_history_event(
                             "ready_check",
-                            "Partie acceptee automatiquement.",
+                            "Match automatically accepted.",
                             level="success",
-                            category="Partie trouvee",
+                            category="Match found",
                             action="accepted",
                         )
-                        self._notify_ui(self.EVENT_STATUS, ("Partie acceptee !", "✅"))
+                        self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "✅"))
                         if not self.state.has_played_accept_sound:
                             self.state.has_played_accept_sound = True
                             self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
@@ -315,7 +316,7 @@ class WebSocketManager(ChampSelectMixin):
 
             connector.start()
         except Exception as e:
-            logging.critical(f"[WS] Erreur critique dans la boucle WebSocket : {e}", exc_info=True)
+            logging.critical(f"[WS] Critical error in the WebSocket loop: {e}", exc_info=True)
             self.ws_active = False
             if not self._stop_event.is_set():
                 self._notify_ui(self.EVENT_DISCONNECTED, None)
@@ -351,7 +352,7 @@ class WebSocketManager(ChampSelectMixin):
 
         if self.state.summoner != self.state.last_reported_summoner:
             self._notify_ui(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
-            self._notify_ui(self.EVENT_STATUS, (f"Connecte : {self.get_riot_id()}", "👤"))
+            self._notify_ui(self.EVENT_STATUS, (f"Connected: {self.get_riot_id()}", "👤"))
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
