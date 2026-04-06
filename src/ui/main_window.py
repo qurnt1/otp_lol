@@ -2,6 +2,7 @@
 
 import logging
 import os
+from queue import Empty, Queue
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -26,6 +27,7 @@ from ..services.history import clear_history_entries, format_history_entry, get_
 from ..utils import build_hotkey_site_url, build_stats_site_url, is_valid_riot_id
 from .hotkeys import HotkeyManager
 from .media import AudioManager
+from .overlay_manager import OverlayManager
 from .settings_window import SettingsWindow
 from .telegram_window import TelegramSettingsWindow
 from .tray import TrayController
@@ -75,6 +77,8 @@ class LoLAssistantUI:
         self._update_param_callback = update_param_callback
         self._get_params_callback = get_params_callback
         self._quit_callback = quit_callback
+        self._ui_task_queue: Queue = Queue()
+        self._ui_task_after_id = None
         self.running = True
         self.closing_requested = False
         self.settings_win: Optional[SettingsWindow] = None
@@ -89,6 +93,7 @@ class LoLAssistantUI:
         self.audio_manager = AudioManager()
         self.tray_controller = TrayController()
         self.hotkey_manager = HotkeyManager()
+        self.overlay_manager = OverlayManager()
         self._hotkeys_suspended = False
         self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
@@ -114,6 +119,7 @@ class LoLAssistantUI:
         self.settings_gear_label: Optional[ttk.Label] = None
         self.history_filter_var = tk.StringVar(value="Tout")
         self.create_ui()
+        self._schedule_ui_task_drain()
         self.apply_theme(self.theme)
         self.create_system_tray()
         self.setup_hotkeys()
@@ -147,7 +153,7 @@ class LoLAssistantUI:
         self._refresh_stats_button()
         if key == "theme":
             self.apply_theme(value)
-        if key in {"hotkey_toggle_window", "hotkey_open_site"}:
+        if key in {"hotkey_toggle_window", "hotkey_open_site", "hotkey_overlay_mode"}:
             self.reload_hotkeys()
 
     def replace_params(self, params: Dict[str, Any]) -> None:
@@ -157,7 +163,7 @@ class LoLAssistantUI:
                 self.apply_theme(value)
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
-        if {"hotkey_toggle_window", "hotkey_open_site"} & set(params):
+        if {"hotkey_toggle_window", "hotkey_open_site", "hotkey_overlay_mode"} & set(params):
             self.reload_hotkeys()
 
     def save_params(self) -> None:
@@ -796,12 +802,20 @@ class LoLAssistantUI:
             self.hotkey_manager.shutdown()
             return
         params = self.get_params()
-        self.hotkey_manager.setup(
-            self.toggle_window,
-            self.open_preferred_hotkey_site,
+        available = self.hotkey_manager.setup(
+            self.request_toggle_window,
+            self.request_open_hotkey_overlay,
+            self.request_toggle_overlay_mode,
             params.get("hotkey_toggle_window", "alt+c"),
             params.get("hotkey_open_site", "alt+p"),
+            params.get("hotkey_overlay_mode", "alt+o"),
         )
+        if not available:
+            logging.warning("Les raccourcis globaux n'ont pas pu etre configures.")
+            try:
+                self.show_toast("Raccourcis globaux indisponibles.", duration=3500)
+            except Exception:
+                pass
 
     def reload_hotkeys(self) -> None:
         self.hotkey_manager.shutdown()
@@ -825,9 +839,69 @@ class LoLAssistantUI:
         self._refresh_safe_controls()
 
     def open_preferred_hotkey_site(self) -> None:
+        self._toggle_hotkey_stats_overlay()
+
+    def _toggle_hotkey_stats_overlay(self) -> None:
+        """Toggle the stats overlay used by the dedicated global hotkey."""
         riot_id = self._get_riot_id_display()
-        if riot_id and is_valid_riot_id(riot_id):
-            webbrowser.open(self.build_preferred_hotkey_url())
+        if not (riot_id and is_valid_riot_id(riot_id)):
+            self.show_toast("Riot ID invalide.", duration=1800)
+            return
+
+        overlay_url = self.build_preferred_hotkey_url()
+        ok, message = self.overlay_manager.toggle(overlay_url, mode="passive")
+        if ok:
+            self.show_toast(message, duration=1400)
+            return
+
+        self.show_toast(f"{message} Fallback navigateur.", duration=2600)
+        webbrowser.open(overlay_url)
+
+    def toggle_overlay_mode(self) -> None:
+        self._toggle_hotkey_overlay_mode()
+
+    def _toggle_hotkey_overlay_mode(self) -> None:
+        riot_id = self._get_riot_id_display()
+        overlay_url = self.build_preferred_hotkey_url() if riot_id and is_valid_riot_id(riot_id) else ""
+        if not overlay_url:
+            self.show_toast("Riot ID invalide.", duration=1800)
+            return
+        ok, message = self.overlay_manager.show(overlay_url, mode="passive")
+        self.show_toast(message, duration=1600 if ok else 2200)
+
+    def request_toggle_window(self) -> None:
+        self._dispatch_to_ui(self.toggle_window)
+
+    def request_open_hotkey_overlay(self) -> None:
+        self._dispatch_to_ui(self.open_preferred_hotkey_site)
+
+    def request_toggle_overlay_mode(self) -> None:
+        self._dispatch_to_ui(self.toggle_overlay_mode)
+
+    def _dispatch_to_ui(self, callback, *args, **kwargs) -> None:
+        """Queue work that must execute on the Tk thread.
+
+        Global hotkeys are triggered by the `keyboard` library on worker threads,
+        so they must not touch Tk directly.
+        """
+        self._ui_task_queue.put((callback, args, kwargs))
+
+    def _schedule_ui_task_drain(self) -> None:
+        if not hasattr(self, "root") or not self.root.winfo_exists():
+            return
+        self._drain_ui_task_queue()
+        self._ui_task_after_id = self.root.after(40, self._schedule_ui_task_drain)
+
+    def _drain_ui_task_queue(self) -> None:
+        while True:
+            try:
+                callback, args, kwargs = self._ui_task_queue.get_nowait()
+            except Empty:
+                break
+            try:
+                callback(*args, **kwargs)
+            except Exception as e:
+                logging.debug(f"Erreur execution tache UI via hotkey: {e}")
 
     def show_window(self) -> None:
         if self.root.state() == "withdrawn":
@@ -1116,8 +1190,15 @@ class LoLAssistantUI:
             except Exception:
                 pass
             self._preview_refresh_after_id = None
+        if self._ui_task_after_id is not None:
+            try:
+                self.root.after_cancel(self._ui_task_after_id)
+            except Exception:
+                pass
+            self._ui_task_after_id = None
         self._cancel_disconnect_close()
         self.hotkey_manager.shutdown()
+        self.overlay_manager.shutdown()
         self.tray_controller.shutdown()
         self.audio_manager.shutdown()
         self._close_history_window()

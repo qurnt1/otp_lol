@@ -49,6 +49,10 @@ def main():
         
         # ─── DÉPENDANCES UI ───
         '--collect-all', 'ttkbootstrap',
+        '--collect-all', 'PySide6',
+        '--collect-all', 'PySide6.QtWebEngineWidgets',
+        '--collect-all', 'PySide6.QtWebEngineCore',
+        '--collect-all', 'webview',
         
         # ─── HIDDEN IMPORTS (Modules non détectés automatiquement) ───
         # Modules du package src (pour être sûr qu'ils sont inclus)
@@ -58,6 +62,14 @@ def main():
         '--hidden-import=src.services',
         '--hidden-import=src.services.telegram',
         '--hidden-import=src.ui',
+        '--hidden-import=src.ui.overlay_runtime',
+        '--hidden-import=src.ui.overlay_window',
+        '--hidden-import=src.ui.overlay_host',
+        '--hidden-import=src.ui.overlay_manager',
+        '--hidden-import=src.ui.qt_overlay',
+        '--hidden-import=src.ui.qt_overlay_host',
+        '--hidden-import=src.ui.stats_overlay',
+        '--hidden-import=src.ui.stats_overlay_host',
         '--hidden-import=src.utils',
         
         # Dépendances tierces
@@ -73,7 +85,14 @@ def main():
         '--hidden-import=PIL.ImageEnhance',
         '--hidden-import=lcu_driver',
         '--hidden-import=packaging',
+        '--hidden-import=PySide6',
+        '--hidden-import=PySide6.QtCore',
+        '--hidden-import=PySide6.QtGui',
+        '--hidden-import=PySide6.QtWidgets',
+        '--hidden-import=PySide6.QtWebEngineCore',
+        '--hidden-import=PySide6.QtWebEngineWidgets',
         '--hidden-import=requests',
+        '--hidden-import=webview',
         
         # ─── POINT D'ENTRÉE ───
         'launcher.py'

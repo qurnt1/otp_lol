@@ -26,6 +26,9 @@ class FakeParent:
             "global_spell_2": "Flash",
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
+            "hotkey_toggle_window": "alt+c",
+            "hotkey_open_site": "alt+p",
+            "hotkey_overlay_mode": "alt+o",
             "theme": "darkly",
             "role_profiles": {
                 "MIDDLE": {
@@ -158,8 +161,10 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._pressed_modifiers = set()
         window.hotkey_toggle_var = DummyVar("alt+c")
         window.hotkey_open_site_var = DummyVar("alt+p")
+        window.hotkey_overlay_mode_var = DummyVar("alt+o")
         window.hotkey_toggle_btn = DummyButton()
         window.hotkey_open_btn = DummyButton()
+        window.hotkey_overlay_mode_btn = DummyButton()
 
         class DummyFocusWindow:
             def __init__(self):
@@ -176,6 +181,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(window._capture_target, "toggle")
         self.assertEqual(window.hotkey_toggle_btn.config["state"], "normal")
         self.assertEqual(window.hotkey_open_btn.config["state"], "disabled")
+        self.assertEqual(window.hotkey_overlay_mode_btn.config["state"], "disabled")
         self.assertEqual(window.window.focus_calls, 1)
 
         window._cancel_hotkey_capture()
@@ -184,6 +190,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertIsNone(window._capture_target)
         self.assertEqual(window.hotkey_toggle_btn.config["state"], "normal")
         self.assertEqual(window.hotkey_open_btn.config["state"], "normal")
+        self.assertEqual(window.hotkey_overlay_mode_btn.config["state"], "normal")
 
     def test_finish_hotkey_capture_updates_value_then_resumes_hotkeys(self):
         window = self.make_window()
@@ -191,14 +198,32 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._pressed_modifiers = {"ctrl"}
         window.hotkey_toggle_var = DummyVar("alt+c")
         window.hotkey_open_site_var = DummyVar("alt+p")
+        window.hotkey_overlay_mode_var = DummyVar("alt+o")
         window.hotkey_toggle_btn = DummyButton()
         window.hotkey_open_btn = DummyButton()
+        window.hotkey_overlay_mode_btn = DummyButton()
 
         window._finish_hotkey_capture("ctrl+shift+p")
 
         self.assertEqual(window.parent.params["hotkey_open_site"], "ctrl+shift+p")
         self.assertEqual(window.parent.resume_hotkeys_calls, 1)
         self.assertIsNone(window._capture_target)
+
+    def test_finish_hotkey_capture_updates_overlay_mode_hotkey(self):
+        window = self.make_window()
+        window._capture_target = "overlay_mode"
+        window._pressed_modifiers = {"ctrl"}
+        window.hotkey_toggle_var = DummyVar("alt+c")
+        window.hotkey_open_site_var = DummyVar("alt+p")
+        window.hotkey_overlay_mode_var = DummyVar("alt+o")
+        window.hotkey_toggle_btn = DummyButton()
+        window.hotkey_open_btn = DummyButton()
+        window.hotkey_overlay_mode_btn = DummyButton()
+
+        window._finish_hotkey_capture("ctrl+shift+o")
+
+        self.assertEqual(window.parent.params["hotkey_overlay_mode"], "ctrl+shift+o")
+        self.assertEqual(window.parent.resume_hotkeys_calls, 1)
 
 
 if __name__ == "__main__":

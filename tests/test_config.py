@@ -148,6 +148,8 @@ class ConfigTests(unittest.TestCase):
                     {
                         "hotkey_toggle_window": " ALT+SHIFT+C ",
                         "hotkey_open_site": " CTRL+ALT+P ",
+                        "hotkey_overlay_mode": " CTRL+SHIFT+O ",
+                        "overlay_mode_default": " PASSIVE ",
                     }
                 ),
                 encoding="utf-8",
@@ -158,6 +160,8 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(loaded["hotkey_open_site"], "ctrl+alt+p")
+        self.assertEqual(loaded["hotkey_overlay_mode"], "ctrl+shift+o")
+        self.assertEqual(loaded["overlay_mode_default"], "passive")
 
     def test_load_parameters_normalizes_theme(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -209,6 +213,8 @@ class ConfigTests(unittest.TestCase):
             payload["preferred_hotkey_site"] = "porofessor"
             payload["hotkey_toggle_window"] = "alt+shift+c"
             payload["hotkey_open_site"] = "ctrl+alt+p"
+            payload["hotkey_overlay_mode"] = "ctrl+shift+o"
+            payload["overlay_mode_default"] = "passive"
             payload["role_profiles"]["TOP"]["spell_1"] = "Teleport"
             payload["role_profiles"]["TOP"]["spell_2"] = "Flash"
 
@@ -221,6 +227,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(imported["preferred_hotkey_site"], "porofessor")
         self.assertEqual(imported["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(imported["hotkey_open_site"], "ctrl+alt+p")
+        self.assertEqual(imported["hotkey_overlay_mode"], "ctrl+shift+o")
+        self.assertEqual(imported["overlay_mode_default"], "passive")
         self.assertEqual(imported["role_profiles"]["TOP"]["spell_1"], "Teleport")
         self.assertEqual(imported["role_profiles"]["TOP"]["spell_2"], "Flash")
 

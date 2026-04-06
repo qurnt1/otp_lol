@@ -102,6 +102,7 @@ class SettingsWindow:
         self.preferred_hotkey_site_var = tk.StringVar(value=params.get("preferred_hotkey_site", "porofessor"))
         self.hotkey_toggle_var = tk.StringVar(value=params.get("hotkey_toggle_window", "alt+c"))
         self.hotkey_open_site_var = tk.StringVar(value=params.get("hotkey_open_site", "alt+p"))
+        self.hotkey_overlay_mode_var = tk.StringVar(value=params.get("hotkey_overlay_mode", "alt+o"))
         self.theme_var = tk.StringVar(value=params.get("theme", "darkly"))
         self.play_again_var = tk.BooleanVar(value=params.get("auto_play_again_enabled", False))
         self.auto_hide_var = tk.BooleanVar(value=params.get("auto_hide_on_connect", True))
@@ -344,7 +345,7 @@ class SettingsWindow:
 
         hotkey_frame = ttk.Frame(misc_frame)
         hotkey_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(hotkey_frame, text="Site du raccourci site :").pack(side="left", padx=(0, 10))
+        ttk.Label(hotkey_frame, text="Site de l'overlay stats :").pack(side="left", padx=(0, 10))
         self.hotkey_site_btn = ttk.Button(
             hotkey_frame,
             bootstyle="secondary-outline",
@@ -372,7 +373,7 @@ class SettingsWindow:
 
         shortcut_site_frame = ttk.Frame(misc_frame)
         shortcut_site_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(shortcut_site_frame, text="Raccourci ouvrir le site :").pack(side="left", padx=(0, 10))
+        ttk.Label(shortcut_site_frame, text="Raccourci overlay stats :").pack(side="left", padx=(0, 10))
         self.hotkey_open_btn = ttk.Button(
             shortcut_site_frame,
             text=self._format_hotkey_display(self.hotkey_open_site_var.get()),
@@ -382,6 +383,19 @@ class SettingsWindow:
             padding=(10, 8),
         )
         self.hotkey_open_btn.pack(side="left")
+
+        shortcut_mode_frame = ttk.Frame(misc_frame)
+        shortcut_mode_frame.pack(anchor="w", pady=(0, 8), fill="x")
+        ttk.Label(shortcut_mode_frame, text="Raccourci overlay lecture :").pack(side="left", padx=(0, 10))
+        self.hotkey_overlay_mode_btn = ttk.Button(
+            shortcut_mode_frame,
+            text=self._format_hotkey_display(self.hotkey_overlay_mode_var.get()),
+            bootstyle="secondary-outline",
+            width=22,
+            command=lambda: self._start_hotkey_capture("overlay_mode"),
+            padding=(10, 8),
+        )
+        self.hotkey_overlay_mode_btn.pack(side="left")
 
         ttk.Checkbutton(
             misc_frame,
@@ -581,12 +595,16 @@ class SettingsWindow:
             self.hotkey_toggle_btn.configure(text=self._format_hotkey_display(self.hotkey_toggle_var.get()))
         if hasattr(self, "hotkey_open_btn"):
             self.hotkey_open_btn.configure(text=self._format_hotkey_display(self.hotkey_open_site_var.get()))
+        if hasattr(self, "hotkey_overlay_mode_btn"):
+            self.hotkey_overlay_mode_btn.configure(text=self._format_hotkey_display(self.hotkey_overlay_mode_var.get()))
 
     def _set_hotkey_capture_buttons_state(self, state: str) -> None:
         if hasattr(self, "hotkey_toggle_btn"):
             self.hotkey_toggle_btn.configure(state=state)
         if hasattr(self, "hotkey_open_btn"):
             self.hotkey_open_btn.configure(state=state)
+        if hasattr(self, "hotkey_overlay_mode_btn"):
+            self.hotkey_overlay_mode_btn.configure(state=state)
 
     def _start_hotkey_capture(self, target: str) -> None:
         """Put the window into hotkey-capture mode for one shortcut button."""
@@ -601,6 +619,8 @@ class SettingsWindow:
             self.hotkey_toggle_btn.configure(text="Appuie sur un raccourci...", state="normal")
         if target == "site" and hasattr(self, "hotkey_open_btn"):
             self.hotkey_open_btn.configure(text="Appuie sur un raccourci...", state="normal")
+        if target == "overlay_mode" and hasattr(self, "hotkey_overlay_mode_btn"):
+            self.hotkey_overlay_mode_btn.configure(text="Appuie sur un raccourci...", state="normal")
         self.window.focus_force()
 
     def _cancel_hotkey_capture(self) -> None:
@@ -613,15 +633,26 @@ class SettingsWindow:
 
     def _finish_hotkey_capture(self, sequence: str) -> None:
         """Persist a validated shortcut, unless it collides with the other one."""
-        target_var = self.hotkey_toggle_var if self._capture_target == "toggle" else self.hotkey_open_site_var
-        other_var = self.hotkey_open_site_var if self._capture_target == "toggle" else self.hotkey_toggle_var
-        if sequence == other_var.get():
+        target_map = {
+            "toggle": ("hotkey_toggle_window", self.hotkey_toggle_var),
+            "site": ("hotkey_open_site", self.hotkey_open_site_var),
+            "overlay_mode": ("hotkey_overlay_mode", self.hotkey_overlay_mode_var),
+        }
+        target_key, target_var = target_map.get(self._capture_target, ("hotkey_open_site", self.hotkey_open_site_var))
+        other_values = [
+            self.hotkey_toggle_var.get(),
+            self.hotkey_open_site_var.get(),
+            self.hotkey_overlay_mode_var.get(),
+        ]
+        current_target_value = target_var.get()
+        if current_target_value in other_values:
+            other_values.remove(current_target_value)
+        if sequence in other_values:
             self.parent.show_toast("Raccourci deja utilise.")
             self._cancel_hotkey_capture()
             return
 
         target_var.set(sequence)
-        target_key = "hotkey_toggle_window" if self._capture_target == "toggle" else "hotkey_open_site"
         self.parent.update_param(target_key, sequence)
         self._cancel_hotkey_capture()
 
@@ -892,6 +923,7 @@ class SettingsWindow:
         self.preferred_hotkey_site_var.set(params.get("preferred_hotkey_site", "porofessor"))
         self.hotkey_toggle_var.set(params.get("hotkey_toggle_window", "alt+c"))
         self.hotkey_open_site_var.set(params.get("hotkey_open_site", "alt+p"))
+        self.hotkey_overlay_mode_var.set(params.get("hotkey_overlay_mode", "alt+o"))
         self.theme_var.set(params.get("theme", "darkly"))
         self.play_again_var.set(params.get("auto_play_again_enabled", False))
         self.auto_hide_var.set(params.get("auto_hide_on_connect", True))
@@ -996,6 +1028,7 @@ class SettingsWindow:
         self.parent.update_param("preferred_hotkey_site", self.preferred_hotkey_site_var.get())
         self.parent.update_param("hotkey_toggle_window", self.hotkey_toggle_var.get())
         self.parent.update_param("hotkey_open_site", self.hotkey_open_site_var.get())
+        self.parent.update_param("hotkey_overlay_mode", self.hotkey_overlay_mode_var.get())
         self.parent.update_param("theme", self.theme_var.get())
         self.parent.save_and_notify()
         self.window.destroy()

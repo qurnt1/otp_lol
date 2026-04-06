@@ -234,7 +234,19 @@ class MainLoLApplication:
         logging.info("Nettoyage terminé.")
 
 
-def main() -> None:
+def main() -> int:
+    if "--overlay-host" in sys.argv:
+        from src.ui.overlay_host import main as overlay_main
+
+        return overlay_main(sys.argv[1:])
+    if "--stats-overlay" in sys.argv:
+        from src.ui.stats_overlay_host import main as overlay_main
+
+        return overlay_main(sys.argv[1:])
+    if "--qt-overlay" in sys.argv:
+        from src.ui.qt_overlay_host import main as overlay_main
+
+        return overlay_main(sys.argv[1:])
     """Point d'entrée principal."""
     try:
         app = MainLoLApplication()
@@ -243,9 +255,11 @@ def main() -> None:
         logging.info("Interruption clavier détectée.")
     except Exception as e:
         logging.critical(f"Erreur fatale: {e}", exc_info=True)
+        return 1
     finally:
         remove_lockfile()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

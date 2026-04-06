@@ -48,6 +48,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "preferred_hotkey_site": "porofessor",
     "hotkey_toggle_window": "alt+c",
     "hotkey_open_site": "alt+p",
+    "hotkey_overlay_mode": "alt+o",
+    "overlay_mode_default": "passive",
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
@@ -172,8 +174,15 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     hotkey_toggle_window = str(config.get("hotkey_toggle_window", DEFAULT_PARAMS["hotkey_toggle_window"])).strip().lower()
     hotkey_open_site = str(config.get("hotkey_open_site", DEFAULT_PARAMS["hotkey_open_site"])).strip().lower()
+    hotkey_overlay_mode = str(config.get("hotkey_overlay_mode", DEFAULT_PARAMS["hotkey_overlay_mode"])).strip().lower()
     merged["hotkey_toggle_window"] = hotkey_toggle_window or DEFAULT_PARAMS["hotkey_toggle_window"]
     merged["hotkey_open_site"] = hotkey_open_site or DEFAULT_PARAMS["hotkey_open_site"]
+    merged["hotkey_overlay_mode"] = hotkey_overlay_mode or DEFAULT_PARAMS["hotkey_overlay_mode"]
+
+    overlay_mode_default = str(config.get("overlay_mode_default", DEFAULT_PARAMS["overlay_mode_default"])).strip().lower()
+    if overlay_mode_default not in {"interactive", "passive"}:
+        overlay_mode_default = DEFAULT_PARAMS["overlay_mode_default"]
+    merged["overlay_mode_default"] = overlay_mode_default
 
     theme = str(config.get("theme", DEFAULT_PARAMS["theme"])).strip().lower()
     if theme not in {"darkly", "flatly"}:
