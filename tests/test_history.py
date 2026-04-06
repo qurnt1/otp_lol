@@ -25,7 +25,7 @@ class HistoryFormattingTests(unittest.TestCase):
             "timestamp": "2026-04-05T21:34:08+02:00",
             "type": "spells",
             "level": "success",
-            "message": "Automatic spells applied: Flash + Ignite.",
+            "message": "Automatic summs applied: Flash + Ignite.",
             "details": {"spell_1": "Flash", "spell_2": "Ignite", "role": "MIDDLE"},
         }
 
@@ -33,7 +33,7 @@ class HistoryFormattingTests(unittest.TestCase):
 
         self.assertEqual(
             formatted["detail_lines"],
-            ["Spells: Flash + Ignite", "Profile: MIDDLE"],
+            ["Summs: Flash + Ignite", "Profile: MIDDLE"],
         )
 
 

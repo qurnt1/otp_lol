@@ -42,7 +42,7 @@ class LoLAssistantUI:
     FEATURE_PREVIEW_DEFINITIONS = (
         ("pick", "Pick", 3, "info"),
         ("ban", "Ban", 1, "danger"),
-        ("spells", "Spells", 2, "warning"),
+        ("spells", "Summs", 2, "warning"),
     )
     FEATURE_PARAM_MAP = {
         "pick": "auto_pick_enabled",
@@ -52,7 +52,7 @@ class LoLAssistantUI:
     FEATURE_LABEL_MAP = {
         "pick": "Auto-pick",
         "ban": "Auto-ban",
-        "spells": "Auto-spells",
+        "spells": "Auto-summs",
     }
 
     def __init__(
@@ -807,7 +807,7 @@ class LoLAssistantUI:
         ttk.Label(controls, text="Filter:", style="Status.TLabel").pack(side="left")
         history_filter_cb = ttk.Combobox(
             controls,
-            values=["All", "Connection", "Champion Select", "Spells", "Error"],
+            values=["All", "Connection", "Champion Select", "Summs", "Error"],
             textvariable=self.history_filter_var,
             state="readonly",
             width=16,

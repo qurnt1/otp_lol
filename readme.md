@@ -33,7 +33,7 @@ It connects to the LoL client through the LCU, detects important phases, then au
 - automatically accept a match
 - preselect or lock a champion according to a priority order
 - ban a selected champion
-- apply summoner spells
+- apply summs
 - start another match after the game ends
 - quickly open external pages such as `OP.GG` and `Porofessor`
 
@@ -57,8 +57,8 @@ The application is designed to work as a lightweight desktop tool:
   The application can preselect your main champion before locking it.
 - `Auto-Ban`
   Automatically bans the configured champion.
-- `Auto-Spells`
-  Applies the selected spells once the pick is locked.
+- `Auto-Summs`
+  Applies the selected summs once the pick is locked.
 
 ### Post-Game Automation
 
@@ -70,11 +70,11 @@ The application is designed to work as a lightweight desktop tool:
 - automatic account detection
 - automatic client region detection
 - quick links to several player and in-game stats websites
-- per-role champion and spell profiles
+- per-role champion and summs profiles
 - local action history window
 - option to hide the window in the system tray
 - configurable global keyboard shortcuts
-- champion and spell icon cache
+- champion and summs icon cache
 - logs in `%APPDATA%`
 
 ### Safety / Robustness Behaviors
@@ -188,7 +188,7 @@ The script also handles:
   `%TEMP%\mainlol_ddragon_champions.json`
 - Champion icon cache:
   `%TEMP%\mainlol_icons\`
-- Spell icon cache:
+- Summs icon cache:
   `%TEMP%\mainlol_spells\`
 
 ### Main Settings
@@ -198,7 +198,7 @@ The application stores, among other things:
 - automation toggles
 - picks `1 / 2 / 3`
 - configured ban
-- summoner spells
+- summs
 - selected role profile and per-role profile data
 - automatic detection mode
 - manual account and region values
@@ -216,7 +216,7 @@ On first launch, you can:
 1. open the settings through the gear icon
 2. choose your priority picks
 3. choose your ban
-4. configure spells
+4. configure summs
 5. decide whether you want automatic account detection
 6. enable or disable automatic return to lobby
 
@@ -242,7 +242,7 @@ During champion select:
 - it detects your actions
 - it attempts to hover
 - it tries to lock the best available pick according to the configured order
-- it applies spells if the option is enabled
+- it applies summs if the option is enabled
 
 After the game:
 

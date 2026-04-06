@@ -272,14 +272,14 @@ class ChampSelectMixin:
         if response and response.status < 400:
             self._log_history(
                 "spells",
-                f"Automatic spells applied: {spell1_name} + {spell2_name}.",
+                f"Automatic summs applied: {spell1_name} + {spell2_name}.",
                 {"spell_1": spell1_name, "spell_2": spell2_name, "role": effective.get("resolved_role", "GLOBAL")},
                 level="success",
-                category="Spells",
+                category="Summs",
                 action="set",
             )
             self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
-            self._notify_ui(self.EVENT_STATUS, (f"Spells auto-selected ({spell1_name}, {spell2_name})", "🪄"))
+            self._notify_ui(self.EVENT_STATUS, (f"Summs auto-selected ({spell1_name}, {spell2_name})", "🪄"))
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         params = self.get_params()

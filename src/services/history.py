@@ -16,7 +16,7 @@ EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "hover": {"level": "info", "category": "Champion Select", "action": "hover"},
     "ban": {"level": "success", "category": "Champion Select", "action": "ban"},
     "pick": {"level": "success", "category": "Champion Select", "action": "pick"},
-    "spells": {"level": "success", "category": "Spells", "action": "set"},
+    "spells": {"level": "success", "category": "Summs", "action": "set"},
     "play_again": {"level": "success", "category": "End game", "action": "play_again"},
     "error": {"level": "error", "category": "Error", "action": "error"},
 }
@@ -32,7 +32,8 @@ CATEGORY_LABELS = {
     "Connexion": "Connection",
     "Partie trouvee": "Match found",
     "Champ Select": "Champion Select",
-    "Sorts": "Spells",
+    "Sorts": "Summs",
+    "Spells": "Summs",
     "Fin de partie": "End game",
     "Erreur": "Error",
 }
@@ -117,7 +118,7 @@ def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
     spell_1 = details.get("spell_1")
     spell_2 = details.get("spell_2")
     if spell_1 or spell_2:
-        lines.append(f"Spells: {spell_1 or '?'} + {spell_2 or '?'}")
+        lines.append(f"Summs: {spell_1 or '?'} + {spell_2 or '?'}")
 
     role = details.get("role") or details.get("resolved_role")
     if role:

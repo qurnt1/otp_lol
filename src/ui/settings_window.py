@@ -229,7 +229,7 @@ class SettingsWindow:
     def _create_spells_section(self, start_row: int) -> int:
         ttk.Checkbutton(
             self.main_frame,
-            text="Configure spells",
+            text="Configure summs",
             variable=self.auto_summoners_var,
             command=lambda: (
                 self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get()),
@@ -238,8 +238,8 @@ class SettingsWindow:
             bootstyle="warning-round-toggle",
         ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        ttk.Label(self.main_frame, text="Spell 1:").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
-        ttk.Label(self.main_frame, text="Spell 2:").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Summ 1:").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Summ 2:").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
 
         self.btn_spell_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_spell_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
@@ -693,7 +693,7 @@ class SettingsWindow:
         picker = ttk.Toplevel(self.window)
         if self.window._icon_img:
             picker.iconphoto(False, self.window._icon_img)
-        picker.title(f"Choose Spell {spell_slot_num}")
+        picker.title(f"Choose Summ {spell_slot_num}")
         picker.geometry(f"380x420+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
         picker.resizable(False, False)
         container = ttk.Frame(picker, padding=10)

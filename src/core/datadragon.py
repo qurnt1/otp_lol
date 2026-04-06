@@ -259,7 +259,7 @@ class DataDragon:
                         self.summoner_data[name] = image_full
                 self.summoner_loaded = True
         except Exception as e:
-            logging.warning(f"DataDragon: Summoner spell loading error - {e}")
+            logging.warning(f"DataDragon: Summoner data loading error - {e}")
 
     def get_summoner_icon(self, spell_name: str) -> Optional[Image.Image]:
         if spell_name in {"(None)", "(Aucun)"} or not spell_name:
@@ -283,7 +283,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
             except Exception as e:
-                logging.debug(f"Spell icon cache read error for {image_filename}: {e}")
+                logging.debug(f"Summ icon cache read error for {image_filename}: {e}")
 
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
@@ -296,7 +296,7 @@ class DataDragon:
                     self._image_cache[cache_key] = img.copy()
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Summoner spell icon download error - {e}")
+            logging.warning(f"DataDragon: Summ icon download error - {e}")
         return None
 
     def get_splash_art(self, champion_name: str) -> Optional[Image.Image]:
