@@ -70,6 +70,8 @@ The application is designed to work as a lightweight desktop tool:
 - automatic account detection
 - automatic client region detection
 - quick links to several player and in-game stats websites
+- per-role champion and spell profiles
+- local action history window
 - option to hide the window in the system tray
 - configurable global keyboard shortcuts
 - champion and spell icon cache
@@ -81,7 +83,7 @@ The project now includes several useful safeguards:
 
 - separation between `manual_*` and `auto_detected_*` values
 - cleaner application shutdown
-- visual fallback if the system tray or hotkeys are not available
+- safer shortcut capture that temporarily disables existing global hotkeys
 - semantic version comparison for update detection
 
 ## Screenshots
@@ -110,7 +112,10 @@ The project mainly uses:
 - `pygame` for sound effects
 - `pystray` for the system tray
 - `keyboard` for global shortcuts
+- `psutil` for single-instance checks
+- `packaging` for semantic version comparisons
 - `requests` for Data Dragon and GitHub
+- `PyInstaller` for executable builds
 
 ## Requirements
 
@@ -125,7 +130,7 @@ Before running the project from source, you need:
 
 ```bash
 git clone https://github.com/qurnt1/main_lol_2.git
-cd MAIN_LOL
+cd main_lol_2
 pip install -r requirements.txt
 ```
 
@@ -172,6 +177,8 @@ The script also handles:
 
 - Settings:
   `%APPDATA%\MainLoL\parameters.json`
+- Action history:
+  `%APPDATA%\MainLoL\history.json`
 - Logs:
   `%APPDATA%\MainLoL\app_debug.log`
 
@@ -192,9 +199,13 @@ The application stores, among other things:
 - picks `1 / 2 / 3`
 - configured ban
 - summoner spells
+- selected role profile and per-role profile data
 - automatic detection mode
 - manual account and region values
 - auto-detected account and region values
+- preferred stats and shortcut websites
+- global keyboard shortcuts
+- theme, auto-hide, auto-play-again, and close-on-LoL-exit options
 
 ## Usage
 
@@ -266,10 +277,14 @@ MAIN_LOL/
 |-- config/
 |   |-- son.wav
 |   `-- images/
+|-- docs/
+|   `-- images/
 `-- tests/
     |-- test_config.py
     |-- test_core_champ_select.py
     |-- test_history.py
+    |-- test_main_window.py
+    |-- test_release_metadata.py
     |-- test_ui_settings.py
     `-- test_utils.py
 ```
@@ -297,7 +312,11 @@ The project contains regression tests for:
 
 - configuration handling
 - utilities
-- some branches of the champion select logic
+- champion select automation logic
+- history formatting
+- main window preview logic
+- settings window behavior
+- release metadata consistency
 
 To run the tests:
 
@@ -323,9 +342,9 @@ Check that:
 
 ### The System Tray Or Hotkeys Do Not Work
 
-The application now has a fallback:
-
-- a `Quit` button remains visible if the system tray or shortcuts are not available
+- If the system tray is unavailable, closing the window exits the app instead of hiding it.
+- If global hotkeys are unavailable, the app still works through the main window and settings UI.
+- When editing a shortcut, existing global hotkeys are temporarily disabled so the old shortcut does not trigger while the app is waiting for the new one.
 
 ### Images Or Icons Do Not Load
 
@@ -348,12 +367,11 @@ If something goes wrong, the first file to check is:
 
 Some ideas for future improvements:
 
-- profiles by role
 - profiles by game mode
-- automatic action history
 - better screenshots in the README
 - more visual presentation page
-- profile import / export
+- multi-language support
+- release automation
 
 ## Author
 
