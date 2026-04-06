@@ -21,7 +21,7 @@ def open_role_picker(owner: "SettingsWindow") -> None:
     owner.role_picker_window = picker
     if owner.window._icon_img:
         picker.iconphoto(False, owner.window._icon_img)
-    picker.title("Choisir un profil de role")
+    picker.title("Choose a role profile")
     picker.resizable(False, False)
     picker.transient(owner.window)
     picker.geometry(f"310x360+{owner.window.winfo_x()+60}+{owner.window.winfo_y()+80}")
@@ -33,7 +33,7 @@ def open_role_picker(owner: "SettingsWindow") -> None:
 
     ttk.Label(
         container,
-        text="Choisis le profil a modifier",
+        text="Choose the profile to edit",
         font=("Segoe UI", 10, "bold"),
     ).pack(anchor="w", pady=(0, 10))
 

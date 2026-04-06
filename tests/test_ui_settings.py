@@ -26,6 +26,8 @@ class FakeParent:
             "global_spell_2": "Flash",
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
+            "hotkey_toggle_window": "alt+c",
+            "hotkey_open_site": "alt+p",
             "theme": "darkly",
             "role_profiles": {
                 "MIDDLE": {
@@ -38,12 +40,24 @@ class FakeParent:
                 }
             },
         }
+        self.suspend_calls = 0
+        self.resume_calls = 0
+        self.toasts = []
 
     def get_params(self):
         return self.params
 
     def update_param(self, key, value):
         self.params[key] = value
+
+    def suspend_hotkeys(self):
+        self.suspend_calls += 1
+
+    def resume_hotkeys(self):
+        self.resume_calls += 1
+
+    def show_toast(self, message):
+        self.toasts.append(message)
 
 
 class SettingsWindowLogicTests(unittest.TestCase):
@@ -108,6 +122,51 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
     def test_format_hotkey_display_is_human_readable(self):
         self.assertEqual(SettingsWindow._format_hotkey_display("ctrl+alt+p"), "CTRL + ALT + P")
+
+    def test_hotkey_capture_suspends_and_resumes_global_hotkeys_on_cancel(self):
+        window = self.make_window()
+        window.hotkey_toggle_var = DummyVar("alt+c")
+        window.hotkey_open_site_var = DummyVar("alt+p")
+        window._capture_target = None
+        window._pressed_modifiers = set()
+        window.window = type("DummyTkWindow", (), {"focus_force": lambda self: None})()
+
+        window._start_hotkey_capture("site")
+        window._cancel_hotkey_capture()
+
+        self.assertEqual(window.parent.suspend_calls, 1)
+        self.assertEqual(window.parent.resume_calls, 1)
+        self.assertIsNone(window._capture_target)
+
+    def test_hotkey_capture_resumes_after_successful_shortcut_update(self):
+        window = self.make_window()
+        window.hotkey_toggle_var = DummyVar("alt+c")
+        window.hotkey_open_site_var = DummyVar("alt+p")
+        window._capture_target = None
+        window._pressed_modifiers = set()
+        window.window = type("DummyTkWindow", (), {"focus_force": lambda self: None})()
+
+        window._start_hotkey_capture("toggle")
+        window._finish_hotkey_capture("ctrl+alt+x")
+
+        self.assertEqual(window.hotkey_toggle_var.get(), "ctrl+alt+x")
+        self.assertEqual(window.parent.params["hotkey_toggle_window"], "ctrl+alt+x")
+        self.assertEqual(window.parent.resume_calls, 1)
+
+    def test_hotkey_capture_resumes_when_shortcut_is_already_used(self):
+        window = self.make_window()
+        window.hotkey_toggle_var = DummyVar("alt+c")
+        window.hotkey_open_site_var = DummyVar("alt+p")
+        window._capture_target = None
+        window._pressed_modifiers = set()
+        window.window = type("DummyTkWindow", (), {"focus_force": lambda self: None})()
+
+        window._start_hotkey_capture("toggle")
+        window._finish_hotkey_capture("alt+p")
+
+        self.assertEqual(window.hotkey_toggle_var.get(), "alt+c")
+        self.assertEqual(window.parent.toasts, ["Shortcut already in use."])
+        self.assertEqual(window.parent.resume_calls, 1)
 
     def test_toggle_theme_updates_parent_once_and_cycles_theme(self):
         window = self.make_window()

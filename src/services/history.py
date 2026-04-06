@@ -11,21 +11,30 @@ from ..config import HISTORY_PATH
 MAX_HISTORY_ENTRIES = 250
 
 EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
-    "connection": {"level": "info", "category": "Connexion", "action": "client"},
-    "ready_check": {"level": "success", "category": "Partie trouvee", "action": "accept"},
-    "hover": {"level": "info", "category": "Champ Select", "action": "hover"},
-    "ban": {"level": "success", "category": "Champ Select", "action": "ban"},
-    "pick": {"level": "success", "category": "Champ Select", "action": "pick"},
-    "spells": {"level": "success", "category": "Sorts", "action": "set"},
-    "play_again": {"level": "success", "category": "Fin de partie", "action": "play_again"},
-    "error": {"level": "error", "category": "Erreur", "action": "error"},
+    "connection": {"level": "info", "category": "Connection", "action": "client"},
+    "ready_check": {"level": "success", "category": "Match found", "action": "accept"},
+    "hover": {"level": "info", "category": "Champion Select", "action": "hover"},
+    "ban": {"level": "success", "category": "Champion Select", "action": "ban"},
+    "pick": {"level": "success", "category": "Champion Select", "action": "pick"},
+    "spells": {"level": "success", "category": "Spells", "action": "set"},
+    "play_again": {"level": "success", "category": "End game", "action": "play_again"},
+    "error": {"level": "error", "category": "Error", "action": "error"},
 }
 
 LEVEL_LABELS = {
     "info": "Info",
-    "success": "Succes",
-    "warning": "Attention",
-    "error": "Erreur",
+    "success": "Success",
+    "warning": "Warning",
+    "error": "Error",
+}
+
+CATEGORY_LABELS = {
+    "Connexion": "Connection",
+    "Partie trouvee": "Match found",
+    "Champ Select": "Champion Select",
+    "Sorts": "Spells",
+    "Fin de partie": "End game",
+    "Erreur": "Error",
 }
 
 
@@ -38,7 +47,7 @@ def _read_history() -> List[Dict[str, Any]]:
         if isinstance(payload, list):
             return [entry for entry in payload if isinstance(entry, dict)]
     except (OSError, json.JSONDecodeError) as e:
-        logging.debug(f"Historique illisible: {e}")
+        logging.debug(f"Unreadable history: {e}")
     return []
 
 
@@ -72,7 +81,7 @@ def log_history_event(
     try:
         _write_history(entries)
     except OSError as e:
-        logging.debug(f"Impossible d'ecrire l'historique: {e}")
+        logging.debug(f"Unable to write history: {e}")
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
@@ -84,7 +93,7 @@ def clear_history_entries() -> None:
     try:
         _write_history([])
     except OSError as e:
-        logging.debug(f"Impossible de vider l'historique: {e}")
+        logging.debug(f"Unable to clear history: {e}")
 
 
 def _format_timestamp(timestamp: str) -> str:
@@ -103,24 +112,24 @@ def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
     lines: List[str] = []
     champion = details.get("champion") or details.get("champion_name")
     if champion:
-        lines.append(f"Champion : {champion}")
+        lines.append(f"Champion: {champion}")
 
     spell_1 = details.get("spell_1")
     spell_2 = details.get("spell_2")
     if spell_1 or spell_2:
-        lines.append(f"Sorts : {spell_1 or '?'} + {spell_2 or '?'}")
+        lines.append(f"Spells: {spell_1 or '?'} + {spell_2 or '?'}")
 
     role = details.get("role") or details.get("resolved_role")
     if role:
-        lines.append(f"Profil : {role}")
+        lines.append(f"Profile: {role}")
 
     region = details.get("region")
     if region:
-        lines.append(f"Region : {region}")
+        lines.append(f"Region: {region}")
 
     reason = details.get("reason")
     if reason:
-        lines.append(f"Raison : {reason}")
+        lines.append(f"Reason: {reason}")
 
     for key, value in details.items():
         if key in {"champion", "champion_name", "spell_1", "spell_2", "role", "resolved_role", "region", "reason"}:
@@ -129,7 +138,7 @@ def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
             continue
         if value in ("", None, {}, []):
             continue
-        lines.append(f"{str(key).replace('_', ' ').capitalize()} : {value}")
+        lines.append(f"{str(key).replace('_', ' ').capitalize()}: {value}")
 
     return lines
 
@@ -139,11 +148,12 @@ def format_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     defaults = EVENT_DEFAULTS.get(event_type, {})
     level = entry.get("level") or defaults.get("level", "info")
     category = entry.get("category") or defaults.get("category", "General")
+    category = CATEGORY_LABELS.get(category, category)
     return {
         "time": _format_timestamp(entry.get("timestamp", "")),
         "level": level,
         "level_label": LEVEL_LABELS.get(level, LEVEL_LABELS["info"]),
         "category": category,
-        "message": entry.get("message", "Evenement"),
+        "message": entry.get("message", "Event"),
         "detail_lines": _build_detail_lines(entry.get("details", {})),
     }

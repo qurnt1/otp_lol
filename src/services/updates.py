@@ -12,7 +12,7 @@ from src.config import CURRENT_VERSION, GITHUB_RELEASES_API
 def check_for_updates() -> Optional[str]:
     """Check GitHub Releases for a newer version."""
     try:
-        logging.info("[Update] Vérification via GitHub Releases API...")
+        logging.info("[Update] Checking GitHub Releases API...")
 
         headers = {
             "Accept": "application/vnd.github.v3+json",
@@ -26,20 +26,20 @@ def check_for_updates() -> Optional[str]:
             tag_name = data.get("tag_name", "")
             remote_version = normalize_version(tag_name)
 
-            logging.info(f"[Update] Version en ligne: {remote_version}, locale: {CURRENT_VERSION}")
+            logging.info(f"[Update] Remote version: {remote_version}, local: {CURRENT_VERSION}")
 
             if remote_version and is_newer_version(remote_version, CURRENT_VERSION):
                 return remote_version
 
         elif resp.status_code == 404:
-            logging.warning("[Update] Aucune release trouvée sur le repo")
+            logging.warning("[Update] No release found in the repository")
         else:
-            logging.warning(f"[Update] Réponse API: {resp.status_code}")
+            logging.warning(f"[Update] API response: {resp.status_code}")
 
     except requests.RequestException as e:
-        logging.warning(f"[Update] Erreur réseau: {e}")
+        logging.warning(f"[Update] Network error: {e}")
     except Exception as e:
-        logging.error(f"[Update] Erreur inattendue: {e}")
+        logging.error(f"[Update] Unexpected error: {e}")
 
     return None
 
@@ -53,7 +53,7 @@ def parse_version(version: str) -> Version:
     """Parse a comparable semantic version object."""
     normalized = normalize_version(version)
     if not normalized:
-        raise InvalidVersion("Version vide")
+        raise InvalidVersion("Empty version")
     return Version(normalized)
 
 
@@ -62,5 +62,5 @@ def is_newer_version(remote_version: str, current_version: str) -> bool:
     try:
         return parse_version(remote_version) > parse_version(current_version)
     except InvalidVersion as e:
-        logging.warning(f"[Update] Version invalide ignorée: {e}")
+        logging.warning(f"[Update] Invalid version ignored: {e}")
         return False

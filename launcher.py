@@ -41,7 +41,7 @@ class MainLoLApplication:
         
         # Vérifier instance unique
         if not check_single_instance():
-            logging.info("Une autre instance est déjà en cours. Fermeture.")
+            logging.info("Another instance is already running. Closing.")
             sys.exit(0)
         
         # Charger les paramètres
@@ -51,12 +51,12 @@ class MainLoLApplication:
         get_cache_dirs()
         
         # Initialiser DataDragon (NE PAS CHARGER ICI - fait en async)
-        logging.info("Initialisation de DataDragon...")
+        logging.info("Initializing DataDragon...")
         self.dd = DataDragon()
         # Note: dd.load() sera appelé en arrière-plan
         
         # Créer l'interface AVANT de charger DataDragon
-        logging.info("Création de l'interface...")
+        logging.info("Creating UI...")
         self.ui = LoLAssistantUI(
             dd=self.dd,
             params=self._params,
@@ -67,7 +67,7 @@ class MainLoLApplication:
         )
         
         # Créer le gestionnaire WebSocket
-        logging.info("Initialisation du WebSocket...")
+        logging.info("Initializing WebSocket...")
         self.ws_manager = WebSocketManager(
             ui_callback=self.ui.on_core_event,
             dd=self.dd,
@@ -95,23 +95,23 @@ class MainLoLApplication:
         """
         def load_task():
             try:
-                logging.info("Chargement de DataDragon en arrière-plan...")
+                logging.info("Loading DataDragon in the background...")
                 self.dd.load()
                 
                 # Notifier l'UI que le chargement est terminé
                 champion_count = len(self.dd.all_names)
                 if champion_count > 0:
-                    message = f"Champions chargés ({champion_count})"
+                    message = f"Champions loaded ({champion_count})"
                     self.ui.root.after(0, lambda: self.ui.show_toast(message, duration=1500))
-                    logging.info(f"DataDragon chargé: {champion_count} champions")
+                    logging.info(f"DataDragon loaded: {champion_count} champions")
                 else:
-                    logging.warning("DataDragon chargé mais sans champions")
+                    logging.warning("DataDragon loaded without champions")
                     
             except Exception as e:
-                logging.error(f"Erreur lors du chargement de DataDragon: {e}")
-                self.ui.root.after(0, lambda: self.ui.show_toast("Erreur chargement champions", duration=3000))
+                logging.error(f"Error while loading DataDragon: {e}")
+                self.ui.root.after(0, lambda: self.ui.show_toast("Champion loading error", duration=3000))
         
-        # Utiliser le ThreadPoolExecutor de l'UI si disponible
+        # Use the UI ThreadPoolExecutor when available.
         if hasattr(self.ui, 'executor'):
             self.ui.executor.submit(load_task)
         else:
@@ -128,9 +128,9 @@ class MainLoLApplication:
     def _save_params(self) -> None:
         """Sauvegarde les paramètres."""
         if save_parameters(self._params):
-            logging.info("Paramètres sauvegardés avec succès.")
+            logging.info("Settings saved successfully.")
         else:
-            logging.error("Échec de la sauvegarde des paramètres.")
+            logging.error("Failed to save settings.")
     
     def _check_updates_async(self) -> None:
         """Vérifie les mises à jour en arrière-plan."""
@@ -138,15 +138,15 @@ class MainLoLApplication:
             try:
                 new_version = check_for_updates()
                 if new_version:
-                    logging.info(f"Nouvelle version disponible: {new_version}")
+                    logging.info(f"New version available: {new_version}")
                     # Planifier l'affichage du popup sur le thread UI
                     self.ui.root.after(0, lambda: self.ui.show_update_popup(new_version))
                 else:
-                    logging.info("Application à jour.")
+                    logging.info("Application is up to date.")
             except Exception as e:
-                logging.warning(f"Erreur lors de la vérification des mises à jour: {e}")
+                logging.warning(f"Error while checking for updates: {e}")
         
-        # Utiliser le ThreadPoolExecutor de l'UI si disponible
+        # Use the UI ThreadPoolExecutor when available.
         if hasattr(self.ui, 'executor'):
             self.ui.executor.submit(check_task)
         else:
@@ -154,7 +154,7 @@ class MainLoLApplication:
     
     def run(self) -> None:
         """Lance la boucle principale de l'application."""
-        logging.info(f"MAIN LOL v{CURRENT_VERSION} démarré.")
+        logging.info(f"MAIN LOL v{CURRENT_VERSION} started.")
         try:
             self.ui.run()
         finally:
@@ -167,7 +167,7 @@ class MainLoLApplication:
                 return
             self._shutdown_started = True
 
-        logging.info("Fermeture de l'application...")
+        logging.info("Closing application...")
         try:
             self._save_params()
             self.ws_manager.stop()
@@ -181,7 +181,7 @@ class MainLoLApplication:
             return
         self._cleanup_done = True
         remove_lockfile()
-        logging.info("Nettoyage terminé.")
+        logging.info("Cleanup complete.")
 
 
 def main() -> None:
@@ -190,9 +190,9 @@ def main() -> None:
         app = MainLoLApplication()
         app.run()
     except KeyboardInterrupt:
-        logging.info("Interruption clavier détectée.")
+        logging.info("Keyboard interrupt detected.")
     except Exception as e:
-        logging.critical(f"Erreur fatale: {e}", exc_info=True)
+        logging.critical(f"Fatal error: {e}", exc_info=True)
     finally:
         remove_lockfile()
 

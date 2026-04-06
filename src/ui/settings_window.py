@@ -35,12 +35,12 @@ if TYPE_CHECKING:
 
 
 class SettingsWindow:
-    """Fenetre de parametres de l'application."""
+    """Application settings window."""
 
     def __init__(self, parent: "LoLAssistantUI"):
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
-        self.window.title("Parametres - MAIN LOL")
+        self.window.title("Settings - MAIN LOL")
         self.window.geometry("620x780")
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -71,7 +71,7 @@ class SettingsWindow:
             self.window.iconphoto(False, photo)
             self.window._icon_img = photo
         except Exception as e:
-            logging.debug(f"Impossible de charger l'icone de la fenetre Settings: {e}")
+            logging.debug(f"Unable to load the settings window icon: {e}")
             self.window._icon_img = None
 
     def _init_variables(self) -> None:
@@ -133,21 +133,21 @@ class SettingsWindow:
         self.theme_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         ttk.Button(
             top_frame,
-            text="Historique",
+            text="History",
             bootstyle="secondary-outline",
             command=self.parent.open_history_window,
             padding=(10, 8),
         ).grid(row=0, column=1, sticky="ew", padx=2)
         ttk.Button(
             top_frame,
-            text="Exporter config",
+            text="Export config",
             bootstyle="secondary-outline",
             command=self._export_config,
             padding=(10, 8),
         ).grid(row=0, column=2, sticky="ew", padx=2)
         ttk.Button(
             top_frame,
-            text="Importer config",
+            text="Import config",
             bootstyle="primary-outline",
             command=self._import_config,
             padding=(10, 8),
@@ -155,7 +155,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             top_frame,
-            text="Accepter la partie automatiquement",
+            text="Automatically accept match",
             variable=self.auto_accept_var,
             command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_accept_var.get()),
             bootstyle="success-round-toggle",
@@ -165,7 +165,7 @@ class SettingsWindow:
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
         role_frame.grid(row=start_row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-        ttk.Label(role_frame, text="Profil de role :").pack(side="left")
+        ttk.Label(role_frame, text="Role profile:").pack(side="left")
         self.role_selector_btn = ttk.Button(
             role_frame,
             text=ROLE_PROFILE_LABELS.get(self.profile_role_var.get().upper(), ROLE_PROFILE_LABELS["GLOBAL"]),
@@ -182,7 +182,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             self.main_frame,
-            text="Securiser mon Champion",
+            text="Lock my champion",
             variable=self.auto_pick_var,
             command=lambda: (
                 self.parent.update_param("auto_pick_enabled", self.auto_pick_var.get()),
@@ -210,7 +210,7 @@ class SettingsWindow:
     def _create_ban_section(self, start_row: int) -> int:
         ttk.Checkbutton(
             self.main_frame,
-            text="Bannir un Champion",
+            text="Ban a champion",
             variable=self.auto_ban_var,
             command=lambda: (
                 self.parent.update_param("auto_ban_enabled", self.auto_ban_var.get()),
@@ -219,7 +219,7 @@ class SettingsWindow:
             bootstyle="danger-round-toggle",
         ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        ttk.Label(self.main_frame, text="Bannir :").grid(row=start_row + 1, column=0, sticky="e", padx=5)
+        ttk.Label(self.main_frame, text="Ban:").grid(row=start_row + 1, column=0, sticky="e", padx=5)
         self.btn_ban = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_ban.grid(row=start_row + 1, column=1, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
@@ -228,7 +228,7 @@ class SettingsWindow:
     def _create_spells_section(self, start_row: int) -> int:
         ttk.Checkbutton(
             self.main_frame,
-            text="Configurer Sorts",
+            text="Configure spells",
             variable=self.auto_summoners_var,
             command=lambda: (
                 self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get()),
@@ -237,8 +237,8 @@ class SettingsWindow:
             bootstyle="warning-round-toggle",
         ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
 
-        ttk.Label(self.main_frame, text="Sort 1 :").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
-        ttk.Label(self.main_frame, text="Sort 2 :").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Spell 1:").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
+        ttk.Label(self.main_frame, text="Spell 2:").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
 
         self.btn_spell_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
         self.btn_spell_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
@@ -258,7 +258,7 @@ class SettingsWindow:
         def on_auto_toggle():
             if self.summoner_auto_detect_var.get():
                 manual_name = self.summoner_entry_var.get().strip()
-                if manual_name and manual_name != "(detection auto...)":
+                if manual_name and manual_name != "(auto detection...)":
                     self.saved_manual_name = manual_name
                 manual_region = self.region_var.get().strip().lower()
                 if manual_region in REGION_LIST:
@@ -278,14 +278,14 @@ class SettingsWindow:
         )
         self.switch_auto.pack(side="left", padx=(0, 10))
 
-        self.lbl_auto_detect = ttk.Label(detect_frame, text="Detection auto du compte")
+        self.lbl_auto_detect = ttk.Label(detect_frame, text="Automatic account detection")
         self.lbl_auto_detect.pack(side="left")
 
-        ttk.Label(self.main_frame, text="Pseudo :", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(self.main_frame, text="Riot ID:", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(self.main_frame, textvariable=self.summoner_entry_var, state="readonly")
         self.summ_entry.grid(row=start_row + 2, column=1, sticky="ew", padx=5)
 
-        ttk.Label(self.main_frame, text="Region :", anchor="w").grid(row=start_row + 3, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(self.main_frame, text="Region:", anchor="w").grid(row=start_row + 3, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=params.get("manual_region", "euw"))
         self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
         self.region_cb.grid(row=start_row + 3, column=1, sticky="ew", padx=5)
@@ -299,7 +299,7 @@ class SettingsWindow:
 
         site_frame = ttk.Frame(misc_frame)
         site_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(site_frame, text="Site de stats prefere :").pack(side="left", padx=(0, 10))
+        ttk.Label(site_frame, text="Preferred stats site:").pack(side="left", padx=(0, 10))
         self.stats_site_btn = ttk.Button(
             site_frame,
             bootstyle="secondary-outline",
@@ -312,7 +312,7 @@ class SettingsWindow:
 
         hotkey_frame = ttk.Frame(misc_frame)
         hotkey_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(hotkey_frame, text="Site du raccourci site :").pack(side="left", padx=(0, 10))
+        ttk.Label(hotkey_frame, text="Shortcut website:").pack(side="left", padx=(0, 10))
         self.hotkey_site_btn = ttk.Button(
             hotkey_frame,
             bootstyle="secondary-outline",
@@ -327,7 +327,7 @@ class SettingsWindow:
 
         shortcut_frame = ttk.Frame(misc_frame)
         shortcut_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(shortcut_frame, text="Raccourci afficher/masquer :").pack(side="left", padx=(0, 10))
+        ttk.Label(shortcut_frame, text="Show/hide shortcut:").pack(side="left", padx=(0, 10))
         self.hotkey_toggle_btn = ttk.Button(
             shortcut_frame,
             text=self._format_hotkey_display(self.hotkey_toggle_var.get()),
@@ -340,7 +340,7 @@ class SettingsWindow:
 
         shortcut_site_frame = ttk.Frame(misc_frame)
         shortcut_site_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(shortcut_site_frame, text="Raccourci ouvrir le site :").pack(side="left", padx=(0, 10))
+        ttk.Label(shortcut_site_frame, text="Open website shortcut:").pack(side="left", padx=(0, 10))
         self.hotkey_open_btn = ttk.Button(
             shortcut_site_frame,
             text=self._format_hotkey_display(self.hotkey_open_site_var.get()),
@@ -353,7 +353,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             misc_frame,
-            text="Retour au salon automatique a la fin de la partie",
+            text="Automatically return to lobby after the game",
             variable=self.play_again_var,
             command=lambda: self.parent.update_param("auto_play_again_enabled", self.play_again_var.get()),
             bootstyle="info-round-toggle",
@@ -361,7 +361,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             misc_frame,
-            text="Masquer Main LOL au lancement de LoL (3 secondes)",
+            text="Hide Main LOL when LoL starts (3 seconds)",
             variable=self.auto_hide_var,
             command=lambda: self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
@@ -369,7 +369,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             misc_frame,
-            text="Fermer Main LOL a la fermeture de LoL",
+            text="Close Main LOL when LoL closes",
             variable=self.close_on_exit_var,
             command=lambda: self.parent.update_param("close_app_on_lol_exit", self.close_on_exit_var.get()),
             bootstyle="danger-round-toggle",
@@ -491,7 +491,7 @@ class SettingsWindow:
             self.role_icon_cache[cache_key] = photo
             return photo
         except Exception as e:
-            logging.debug(f"Impossible de charger l'icone du role {role}: {e}")
+            logging.debug(f"Unable to load role icon {role}: {e}")
             return None
 
     def _refresh_role_selector_button(self) -> None:
@@ -515,7 +515,7 @@ class SettingsWindow:
             self.hotkey_site_btn.configure(text=label)
 
     def _get_theme_button_text(self) -> str:
-        return f"Theme : {THEME_LABELS.get(self.theme_var.get(), THEME_LABELS['darkly'])}"
+        return f"Theme: {THEME_LABELS.get(self.theme_var.get(), THEME_LABELS['darkly'])}"
 
     def _refresh_theme_button(self) -> None:
         if hasattr(self, "theme_btn"):
@@ -531,7 +531,7 @@ class SettingsWindow:
 
     @staticmethod
     def _format_hotkey_display(value: str) -> str:
-        return (value or "Definir").replace("+", " + ").upper()
+        return (value or "Set").replace("+", " + ").upper()
 
     def _refresh_hotkey_buttons(self) -> None:
         if hasattr(self, "hotkey_toggle_btn"):
@@ -540,24 +540,35 @@ class SettingsWindow:
             self.hotkey_open_btn.configure(text=self._format_hotkey_display(self.hotkey_open_site_var.get()))
 
     def _start_hotkey_capture(self, target: str) -> None:
+        """Enter the one-shot shortcut capture mode for the selected hotkey button."""
+        # While capturing a new shortcut, the already registered global hotkeys
+        # must be disabled so pressing the old shortcut does not trigger its action.
+        if self._capture_target and self._capture_target != target:
+            self._refresh_hotkey_buttons()
+        if not self._capture_target and hasattr(self.parent, "suspend_hotkeys"):
+            self.parent.suspend_hotkeys()
         self._capture_target = target
         self._pressed_modifiers.clear()
         if target == "toggle" and hasattr(self, "hotkey_toggle_btn"):
-            self.hotkey_toggle_btn.configure(text="Appuie sur un raccourci...")
+            self.hotkey_toggle_btn.configure(text="Press a shortcut...")
         if target == "site" and hasattr(self, "hotkey_open_btn"):
-            self.hotkey_open_btn.configure(text="Appuie sur un raccourci...")
+            self.hotkey_open_btn.configure(text="Press a shortcut...")
         self.window.focus_force()
 
     def _cancel_hotkey_capture(self) -> None:
+        """Leave shortcut capture mode without changing the saved shortcut."""
         self._capture_target = None
         self._pressed_modifiers.clear()
         self._refresh_hotkey_buttons()
+        if hasattr(self.parent, "resume_hotkeys"):
+            self.parent.resume_hotkeys()
 
     def _finish_hotkey_capture(self, sequence: str) -> None:
+        """Persist the captured shortcut and let the main window re-register global hotkeys."""
         target_var = self.hotkey_toggle_var if self._capture_target == "toggle" else self.hotkey_open_site_var
         other_var = self.hotkey_open_site_var if self._capture_target == "toggle" else self.hotkey_toggle_var
         if sequence == other_var.get():
-            self.parent.show_toast("Raccourci deja utilise.")
+            self.parent.show_toast("Shortcut already in use.")
             self._cancel_hotkey_capture()
             return
 
@@ -584,6 +595,7 @@ class SettingsWindow:
         return mapping.get(key, key if key else None)
 
     def _on_hotkey_capture_keypress(self, event) -> Optional[str]:
+        """Build a normalized hotkey sequence from Tk key events."""
         if not self._capture_target:
             return None
 
@@ -600,7 +612,7 @@ class SettingsWindow:
 
         modifiers = [modifier for modifier in ("ctrl", "alt", "shift") if modifier in self._pressed_modifiers]
         if not modifiers:
-            self.parent.show_toast("Utilise au moins Ctrl, Alt ou Shift.")
+            self.parent.show_toast("Use at least Ctrl, Alt, or Shift.")
             self._cancel_hotkey_capture()
             return "break"
 
@@ -680,7 +692,7 @@ class SettingsWindow:
         picker = ttk.Toplevel(self.window)
         if self.window._icon_img:
             picker.iconphoto(False, self.window._icon_img)
-        picker.title(f"Choisir Sort {spell_slot_num}")
+        picker.title(f"Choose Spell {spell_slot_num}")
         picker.geometry(f"380x420+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
         picker.resizable(False, False)
         container = ttk.Frame(picker, padding=10)
@@ -689,8 +701,8 @@ class SettingsWindow:
         def on_pick(spell_name: str) -> None:
             other_key = "spell_2" if spell_slot_num == 1 else "spell_1"
             current_other = self._get_profile_value(other_key) or self._get_global_fallback_value(other_key)
-            if spell_name == current_other and spell_name != "(Aucun)":
-                self._set_profile_value(other_key, "(Aucun)")
+            if spell_name == current_other and spell_name != "(None)":
+                self._set_profile_value(other_key, "(None)")
 
             target_key = "spell_1" if spell_slot_num == 1 else "spell_2"
             self._set_profile_value(target_key, spell_name)
@@ -733,7 +745,7 @@ class SettingsWindow:
 
                     btn_widget.after(0, update_ui_no_img)
             except Exception as e:
-                logging.debug(f"Erreur chargement icone pour {display_name}: {e}")
+                logging.debug(f"Icon loading error for {display_name}: {e}")
 
         self.parent.executor.submit(task)
 
@@ -752,7 +764,7 @@ class SettingsWindow:
 
                     btn_widget.after(0, update_ui)
             except Exception as e:
-                logging.debug(f"Erreur chargement image pour {name}: {e}")
+                logging.debug(f"Image loading error for {name}: {e}")
 
         self.parent.executor.submit(task)
 
@@ -773,7 +785,7 @@ class SettingsWindow:
             self.region_cb.configure(state="disabled")
             self.parent.force_refresh_summoner()
             auto_name = self.parent.get_auto_summoner_name()
-            self.summoner_entry_var.set(auto_name if auto_name else "(detection auto...)")
+            self.summoner_entry_var.set(auto_name if auto_name else "(auto detection...)")
             self.region_var.set(self.parent.get_platform_for_websites())
         else:
             self.summ_entry.configure(state="normal")
@@ -800,9 +812,9 @@ class SettingsWindow:
     def _update_detect_label_text(self) -> None:
         detected = self.parent.get_auto_summoner_name()
         if self.parent.is_ws_active() and detected:
-            self.lbl_auto_detect.configure(text=f"Detection auto du compte (compte detecte : {detected})")
+            self.lbl_auto_detect.configure(text=f"Automatic account detection (detected account: {detected})")
         else:
-            self.lbl_auto_detect.configure(text="Detection auto du compte")
+            self.lbl_auto_detect.configure(text="Automatic account detection")
 
     def _sync_from_params(self) -> None:
         params = self.parent.get_params()
@@ -855,38 +867,38 @@ class SettingsWindow:
         default_name = f"main_lol_config_{datetime.now().strftime('%Y-%m-%d')}.json"
         path = filedialog.asksaveasfilename(
             parent=self.window,
-            title="Exporter la configuration",
+            title="Export configuration",
             defaultextension=".json",
             initialfile=default_name,
-            filetypes=[("Fichier JSON", "*.json")],
+            filetypes=[("JSON file", "*.json")],
         )
         if not path:
             return
         if export_parameters_to_file(path, self.parent.get_params()):
-            self.parent.show_toast("Configuration exportee !")
+            self.parent.show_toast("Configuration exported!")
         else:
-            self.parent.show_toast("Echec de l'export.")
+            self.parent.show_toast("Export failed.")
 
     def _import_config(self) -> None:
         path = filedialog.askopenfilename(
             parent=self.window,
-            title="Importer une configuration",
-            filetypes=[("Fichier JSON", "*.json")],
+            title="Import configuration",
+            filetypes=[("JSON file", "*.json")],
         )
         if not path:
             return
         try:
             imported = import_parameters_from_file(path)
         except Exception as e:
-            logging.warning(f"Import impossible: {e}")
-            self.parent.show_toast("Configuration invalide.")
+            logging.warning(f"Import failed: {e}")
+            self.parent.show_toast("Invalid configuration.")
             return
 
         self.parent.replace_params(imported)
         self.parent.save_params()
         self.parent.apply_theme(imported.get("theme", "darkly"))
         self._sync_from_params()
-        self.parent.show_toast("Configuration importee !")
+        self.parent.show_toast("Configuration imported!")
 
     def _poll_summoner_label(self) -> None:
         if not self.window.winfo_exists():
@@ -894,7 +906,7 @@ class SettingsWindow:
 
         self._update_detect_label_text()
         if self.summoner_auto_detect_var.get():
-            current = self.parent.get_auto_summoner_name() or "(detection auto...)"
+            current = self.parent.get_auto_summoner_name() or "(auto detection...)"
             if self.summoner_entry_var.get() != current:
                 self.summoner_entry_var.set(current)
             region = self.parent.get_platform_for_websites()
@@ -908,6 +920,8 @@ class SettingsWindow:
         self.window.after(1000, self._poll_summoner_label)
 
     def on_close(self) -> None:
+        if self._capture_target:
+            self._cancel_hotkey_capture()
         self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get())
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
         if not self.summoner_auto_detect_var.get():
