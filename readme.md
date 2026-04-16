@@ -31,9 +31,9 @@ The goal of the application is to act as a local assistant for the League of Leg
 It connects to the LoL client through the LCU, detects important phases, then automatically performs certain actions depending on your configuration:
 
 - automatically accept a match
-- preselect or lock a champion according to a priority order
+- pre-pick and lock a champion according to a preset priority order
 - ban a selected champion
-- apply summs
+- apply preset-based summs
 - start another match after the game ends
 - quickly open external pages such as `OP.GG` and `Porofessor`
 
@@ -51,14 +51,16 @@ The application is designed to work as a lightweight desktop tool:
 
 - `Auto-Accept`
   Automatically accepts the ready check when a match is found.
-- `Auto-Pick`
-  Tries to pick `Pick 1`, then `Pick 2`, then `Pick 3` if the previous champion is not available.
-- `Pre-hover`
-  The application can preselect your main champion before locking it.
+- `Preset Priority`
+  Tries `Preset 1`, then `Preset 2`, then `Preset 3` if the previous preset champion is unavailable or banned.
+- `Pre-pick`
+  The application can preselect your priority champion before the actual lock phase.
 - `Auto-Ban`
   Automatically bans the configured champion.
 - `Auto-Summs`
-  Applies the selected summs once the pick is locked.
+  Applies the summs configured for the preset that is actually picked.
+- `Champion Select Recovery`
+  Confirms picks and summs through the LCU session, retries when Riot overwrites state, and falls back when needed.
 
 ### Post-Game Automation
 
@@ -70,7 +72,8 @@ The application is designed to work as a lightweight desktop tool:
 - automatic account detection
 - automatic client region detection
 - quick links to several player and in-game stats websites
-- per-role champion and summs profiles
+- per-role preset profiles
+- visual preset editor with champion and summoner icons
 - local action history window
 - option to hide the window in the system tray
 - configurable global keyboard shortcuts
@@ -83,6 +86,7 @@ The project now includes several useful safeguards:
 
 - separation between `manual_*` and `auto_detected_*` values
 - cleaner application shutdown
+- safer tray callbacks that are marshalled back to the Tk UI thread
 - safer shortcut capture that temporarily disables existing global hotkeys
 - semantic version comparison for update detection
 
@@ -115,7 +119,10 @@ The project mainly uses:
 - `psutil` for single-instance checks
 - `packaging` for semantic version comparisons
 - `requests` for Data Dragon and GitHub
-- `PyInstaller` for executable builds
+
+For executable builds:
+
+- `PyInstaller`
 
 ## Requirements
 
@@ -156,6 +163,7 @@ On startup, the application:
 The project provides a PyInstaller build script:
 
 ```bash
+pip install -r requirements-build.txt
 python create_exe.py
 ```
 
@@ -196,9 +204,9 @@ The script also handles:
 The application stores, among other things:
 
 - automation toggles
-- picks `1 / 2 / 3`
+- presets `1 / 2 / 3`
 - configured ban
-- summs
+- one champion plus two summs for each preset
 - selected role profile and per-role profile data
 - automatic detection mode
 - manual account and region values
@@ -214,11 +222,21 @@ The application stores, among other things:
 On first launch, you can:
 
 1. open the settings through the gear icon
-2. choose your priority picks
+2. configure `Preset 1`, `Preset 2`, and `Preset 3`
 3. choose your ban
-4. configure summs
+4. choose summs for each preset
 5. decide whether you want automatic account detection
 6. enable or disable automatic return to lobby
+
+### Settings UI
+
+The settings window now exposes champion-select automation through visual presets:
+
+- each preset row shows champion icon, `Summ 1`, and `Summ 2`
+- clicking a preset row opens a dedicated preset editor
+- the preset editor lets you select champion or spells directly from visual pickers
+- champion and summoner pickers include a `None` option to leave a field empty
+- ban remains a separate global configuration
 
 ### Automatic Detection Or Manual Mode
 
@@ -239,10 +257,12 @@ When the client is detected:
 
 During champion select:
 
-- it detects your actions
-- it attempts to hover
-- it tries to lock the best available pick according to the configured order
-- it applies summs if the option is enabled
+- it detects your role and current action
+- it pre-picks the best available preset champion
+- it skips champions already banned in the current session
+- it falls back from `Preset 1` to `Preset 2` to `Preset 3`
+- it confirms the final lock through the LCU session state
+- it applies summs for the preset that was actually selected
 
 After the game:
 
@@ -266,6 +286,7 @@ otp_lol/
 |-- launcher.py
 |-- create_exe.py
 |-- requirements.txt
+|-- requirements-build.txt
 |-- readme.md
 |-- src/
 |   |-- __init__.py
@@ -343,6 +364,7 @@ Check that:
 ### The System Tray Or Hotkeys Do Not Work
 
 - If the system tray is unavailable, closing the window exits the app instead of hiding it.
+- `Quit` from the tray is designed to close the app cleanly, including in the PyInstaller executable.
 - If global hotkeys are unavailable, the app still works through the main window and settings UI.
 - When editing a shortcut, existing global hotkeys are temporarily disabled so the old shortcut does not trigger while the app is waiting for the new one.
 
