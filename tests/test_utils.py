@@ -30,7 +30,7 @@ class UtilsTests(unittest.TestCase):
         )
         self.assertEqual(
             build_porofessor_url("euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
         self.assertEqual(
             build_leagueofgraphs_url("euw", "MonCompte#EUW"),
@@ -70,7 +70,7 @@ class UtilsTests(unittest.TestCase):
     def test_build_hotkey_site_url_uses_selected_provider(self):
         self.assertEqual(
             build_hotkey_site_url("porofessor", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
         self.assertEqual(
             build_hotkey_site_url("deeplol", "euw", "MonCompte#EUW"),
@@ -82,7 +82,7 @@ class UtilsTests(unittest.TestCase):
         )
         self.assertEqual(
             build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
 
     def test_build_player_and_ingame_aliases(self):

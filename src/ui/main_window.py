@@ -4,19 +4,19 @@ import logging
 import os
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from tkinter import scrolledtext
 from typing import Any, Callable, Dict, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
-from PIL import Image, ImageEnhance, ImageTk
+from PIL import Image, ImageTk
 
 from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
     GITHUB_REPO_URL,
+    PICK_SLOT_ORDER,
     ROLE_PROFILE_LABELS,
     ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
@@ -90,7 +90,6 @@ class LoLAssistantUI:
         self.root.geometry("420x250")
         self.root.resizable(False, False)
         self.theme_var = tk.StringVar(value=self.theme)
-        self.bg_label: Optional[tk.Label] = None
         self.banner_label: Optional[ttk.Label] = None
         self.connection_indicator: Optional[tk.Canvas] = None
         self.status_label: Optional[ttk.Label] = None
@@ -168,8 +167,6 @@ class LoLAssistantUI:
 
         self._configure_styles()
 
-        if self.bg_label and self.bg_label.winfo_exists():
-            self.bg_label.configure(bg=palette["window_bg"])
         if self.connection_indicator and self.connection_indicator.winfo_exists():
             self.connection_indicator.configure(bg=palette["window_bg"])
 
@@ -225,30 +222,47 @@ class LoLAssistantUI:
         role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
         if not isinstance(role_data, dict):
             role_data = {}
+        global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
+        role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
+
+        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, str]:
+            global_slot = global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
+            role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            return {
+                "champion": role_data.get(pick_key) or params.get(pick_key, ""),
+                "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
+                "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
+            }
+
+        pick_slots = {
+            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
+            for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
+        }
+        first_slot = pick_slots["pick_1"]
         return {
             "detected_role": resolved_role,
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
             "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
-            "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
-            "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
-            "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
+            "pick_slots": pick_slots,
+            "selected_pick_1": pick_slots["pick_1"]["champion"],
+            "selected_pick_2": pick_slots["pick_2"]["champion"],
+            "selected_pick_3": pick_slots["pick_3"]["champion"],
             "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
-            "spell_1": role_data.get("spell_1") or params.get("global_spell_1", ""),
-            "spell_2": role_data.get("spell_2") or params.get("global_spell_2", ""),
+            "spell_1": first_slot.get("spell_1", ""),
+            "spell_2": first_slot.get("spell_2", ""),
             "sources": {
                 "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
                 "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
                 "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
                 "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
-                "spell_1": resolved_role if role_data.get("spell_1") else "GLOBAL",
-                "spell_2": resolved_role if role_data.get("spell_2") else "GLOBAL",
+                "spell_1": resolved_role if role_pick_slots.get("pick_1", {}).get("spell_1") else "GLOBAL",
+                "spell_2": resolved_role if role_pick_slots.get("pick_1", {}).get("spell_2") else "GLOBAL",
             },
         }
 
     def create_ui(self) -> None:
         self._configure_styles()
-        self._create_background()
         self._create_banner()
         self._create_connection_indicator()
         self._create_status_label()
@@ -268,12 +282,6 @@ class LoLAssistantUI:
         style.configure("Feature.TFrame", background=palette["surface_bg"])
         style.configure("FeatureSlot.TLabel", font=("Segoe UI", 9), background=palette["surface_bg"], foreground=palette["muted"])
         style.configure("AppSecondary.TButton", padding=(10, 8))
-
-    def _create_background(self) -> None:
-        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
-        self.bg_label = tk.Label(self.root, bg=palette["window_bg"])
-        self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-        self.bg_label.lower()
 
     def _create_banner(self) -> None:
         try:
@@ -488,6 +496,7 @@ class LoLAssistantUI:
         return "break"
 
     def _build_feature_preview_payload(self, params: Dict[str, Any], effective: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        preview_slot = effective.get("pick_slots", {}).get("pick_1", {}) if isinstance(effective.get("pick_slots", {}), dict) else {}
         return {
             "pick": {
                 "enabled": params.get("auto_pick_enabled", True),
@@ -510,8 +519,8 @@ class LoLAssistantUI:
                 "style": "warning",
                 "is_champion": False,
                 "values": [
-                    effective.get("spell_1") or "",
-                    effective.get("spell_2") or "",
+                    preview_slot.get("spell_1") or effective.get("spell_1") or "",
+                    preview_slot.get("spell_2") or effective.get("spell_2") or "",
                 ],
             },
         }
@@ -669,47 +678,11 @@ class LoLAssistantUI:
     def play_accept_sound(self) -> None:
         self.audio_manager.play_accept_sound()
 
-    def set_background_splash(self, champion_name: str) -> None:
-        def task():
-            try:
-                img = self.dd.get_splash_art(champion_name)
-                if not img:
-                    return
-                window_w, window_h = 420, 250
-                base_width = window_w
-                w_percent = base_width / float(img.size[0])
-                h_size = int(float(img.size[1]) * w_percent)
-                if h_size < window_h:
-                    base_height = window_h
-                    h_percent = base_height / float(img.size[1])
-                    w_size = int(float(img.size[0]) * h_percent)
-                    img = img.resize((w_size, base_height), Image.Resampling.LANCZOS)
-                else:
-                    img = img.resize((base_width, h_size), Image.Resampling.LANCZOS)
-                left = (img.width - window_w) / 2
-                top = (img.height - window_h) / 2
-                right = (img.width + window_w) / 2
-                bottom = (img.height + window_h) / 2
-                img = img.crop((left, top, right, bottom))
-                img = ImageEnhance.Brightness(img).enhance(0.4)
-                tk_img = ImageTk.PhotoImage(img)
-
-                def update_ui():
-                    if self.root.winfo_exists() and self.bg_label:
-                        self.bg_label.configure(image=tk_img)
-                        self.bg_label.image = tk_img
-
-                self.root.after(0, update_ui)
-            except Exception as e:
-                logging.warning(f"Splash art error for {champion_name}: {e}")
-
-        self.executor.submit(task)
-
     def create_system_tray(self) -> None:
         self.tray_controller.setup(
             executor=self.executor,
-            toggle_window=self.toggle_window,
-            quit_callback=self._quit_callback,
+            toggle_window=self.request_toggle_window_from_external_thread,
+            quit_callback=self.request_quit_from_external_thread,
             on_failure=lambda: self.root.after(0, self._refresh_safe_controls),
         )
 
@@ -768,6 +741,20 @@ class LoLAssistantUI:
             self.show_window()
         else:
             self.hide_window()
+
+    def request_toggle_window_from_external_thread(self) -> None:
+        logging.info("[TRAY] Show/Hide requested from tray thread.")
+        try:
+            self.root.after(0, self.toggle_window)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray toggle on UI thread: {e}")
+
+    def request_quit_from_external_thread(self) -> None:
+        logging.info("[TRAY] Quit requested from tray thread.")
+        try:
+            self.root.after(0, self._quit_callback)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray quit on UI thread: {e}")
 
     def open_settings(self) -> None:
         if self.settings_win and self.settings_win.window.winfo_exists():
@@ -903,9 +890,8 @@ class LoLAssistantUI:
         self.show_toast("History cleared.")
 
     def update_status(self, message: str, emoji: str = "") -> None:
-        now = datetime.now().strftime("%H:%M:%S")
-        log_msg = f"[{now}] {emoji} {message}" if emoji else f"[{now}] {message}"
-        print(log_msg, flush=True)
+        marker = f"[{emoji}] " if emoji else ""
+        logging.info("[STATUS] %s%s", marker, message)
         self.root.after(0, lambda: self.status_label.config(text=message))
 
     def update_connection_indicator(self, connected: bool) -> None:
@@ -1007,8 +993,6 @@ class LoLAssistantUI:
         elif event_type == WebSocketManager.EVENT_STATUS:
             message, emoji = data
             self.update_status(message, emoji)
-        elif event_type == WebSocketManager.EVENT_CHAMPION_PICKED:
-            self.set_background_splash(data)
         elif event_type == WebSocketManager.EVENT_TOAST:
             self.show_toast(data)
         elif event_type == WebSocketManager.EVENT_READY_CHECK_ACCEPTED:

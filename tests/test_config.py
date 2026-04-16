@@ -1,3 +1,4 @@
+import copy
 import json
 import tempfile
 import unittest
@@ -12,10 +13,12 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text(
-                json.dumps({
-                    "region": "na",
-                    "manual_summoner_name": "Testeur#EUW",
-                }),
+                json.dumps(
+                    {
+                        "region": "na",
+                        "manual_summoner_name": "Testeur#EUW",
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -28,12 +31,14 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["auto_detected_riot_id"], "")
         self.assertIn("TOP", loaded["role_profiles"])
         self.assertEqual(loaded["role_profiles"]["TOP"]["selected_pick_1"], "")
+        self.assertEqual(loaded["role_profiles"]["TOP"]["pick_slots"]["pick_1"]["spell_1"], "")
 
     def test_save_parameters_filters_unknown_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
-            payload = config.DEFAULT_PARAMS.copy()
+            payload = copy.deepcopy(config.DEFAULT_PARAMS)
             payload["manual_region"] = "kr"
+            payload["pick_slots"]["pick_2"]["spell_1"] = "Ignite"
             payload["unexpected_key"] = "should_not_be_saved"
 
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
@@ -42,6 +47,7 @@ class ConfigTests(unittest.TestCase):
                 written = json.loads(params_path.read_text(encoding="utf-8"))
 
         self.assertEqual(written["manual_region"], "kr")
+        self.assertEqual(written["pick_slots"]["pick_2"]["spell_1"], "Ignite")
         self.assertNotIn("unexpected_key", written)
         self.assertEqual(set(written), set(config.DEFAULT_PARAMS))
 
@@ -49,15 +55,17 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text(
-                json.dumps({
-                    "selected_profile_role": "mid",
-                    "role_profiles": {
-                        "MIDDLE": {
-                            "selected_pick_1": "Ahri",
-                            "selected_ban": "Zed",
-                        }
-                    },
-                }),
+                json.dumps(
+                    {
+                        "selected_profile_role": "mid",
+                        "role_profiles": {
+                            "MIDDLE": {
+                                "selected_pick_1": "Ahri",
+                                "selected_ban": "Zed",
+                            }
+                        },
+                    }
+                ),
                 encoding="utf-8",
             )
 
@@ -68,16 +76,35 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_1"], "Ahri")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_ban"], "Zed")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_2"], "")
-        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_1"], "")
-        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["spell_2"], "")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_1"], "")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "")
 
-    def test_load_parameters_normalizes_role_spells_and_ignores_legacy_favorites(self):
+    def test_load_parameters_migrates_legacy_global_spells_to_pick_slots(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text(
                 json.dumps(
                     {
-                        "favorite_champions": ["Lux", "Lux", " Ahri "],
+                        "global_spell_1": "Smite",
+                        "global_spell_2": "Flash",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        for slot_key in ("pick_1", "pick_2", "pick_3"):
+            self.assertEqual(loaded["pick_slots"][slot_key]["spell_1"], "Smite")
+            self.assertEqual(loaded["pick_slots"][slot_key]["spell_2"], "Flash")
+
+    def test_load_parameters_migrates_legacy_role_spells_to_pick_slots(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
                         "role_profiles": {
                             "JUNGLE": {
                                 "spell_1": "Smite",
@@ -92,21 +119,14 @@ class ConfigTests(unittest.TestCase):
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
-        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_1"], "Smite")
-        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["spell_2"], "Flash")
-        self.assertNotIn("favorite_champions", loaded)
+        for slot_key in ("pick_1", "pick_2", "pick_3"):
+            self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"][slot_key]["spell_1"], "Smite")
+            self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"][slot_key]["spell_2"], "Flash")
 
     def test_load_parameters_normalizes_preferred_stats_site(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
-            params_path.write_text(
-                json.dumps(
-                    {
-                        "preferred_stats_site": "LeagueOfGraphs",
-                    }
-                ),
-                encoding="utf-8",
-            )
+            params_path.write_text(json.dumps({"preferred_stats_site": "LeagueOfGraphs"}), encoding="utf-8")
 
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
@@ -116,14 +136,7 @@ class ConfigTests(unittest.TestCase):
     def test_load_parameters_normalizes_preferred_hotkey_site(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
-            params_path.write_text(
-                json.dumps(
-                    {
-                        "preferred_hotkey_site": "DeepLOL",
-                    }
-                ),
-                encoding="utf-8",
-            )
+            params_path.write_text(json.dumps({"preferred_hotkey_site": "DeepLOL"}), encoding="utf-8")
 
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
@@ -162,14 +175,7 @@ class ConfigTests(unittest.TestCase):
     def test_load_parameters_normalizes_theme(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
-            params_path.write_text(
-                json.dumps(
-                    {
-                        "theme": "FLATLY",
-                    }
-                ),
-                encoding="utf-8",
-            )
+            params_path.write_text(json.dumps({"theme": "FLATLY"}), encoding="utf-8")
 
             with patch.object(config, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
@@ -179,13 +185,13 @@ class ConfigTests(unittest.TestCase):
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             export_path = Path(tmpdir) / "export.json"
-            payload = config.DEFAULT_PARAMS.copy()
+            payload = copy.deepcopy(config.DEFAULT_PARAMS)
             payload["preferred_stats_site"] = "deeplol"
             payload["preferred_hotkey_site"] = "porofessor"
             payload["hotkey_toggle_window"] = "alt+shift+c"
             payload["hotkey_open_site"] = "ctrl+alt+p"
-            payload["role_profiles"]["TOP"]["spell_1"] = "Teleport"
-            payload["role_profiles"]["TOP"]["spell_2"] = "Flash"
+            payload["role_profiles"]["TOP"]["pick_slots"]["pick_1"]["spell_1"] = "Teleport"
+            payload["role_profiles"]["TOP"]["pick_slots"]["pick_1"]["spell_2"] = "Flash"
 
             exported = config.export_parameters_to_file(str(export_path), payload)
             self.assertTrue(exported)
@@ -196,8 +202,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(imported["preferred_hotkey_site"], "porofessor")
         self.assertEqual(imported["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(imported["hotkey_open_site"], "ctrl+alt+p")
-        self.assertEqual(imported["role_profiles"]["TOP"]["spell_1"], "Teleport")
-        self.assertEqual(imported["role_profiles"]["TOP"]["spell_2"], "Flash")
+        self.assertEqual(imported["role_profiles"]["TOP"]["pick_slots"]["pick_1"]["spell_1"], "Teleport")
+        self.assertEqual(imported["role_profiles"]["TOP"]["pick_slots"]["pick_1"]["spell_2"], "Flash")
 
 
 if __name__ == "__main__":

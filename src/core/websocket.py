@@ -20,12 +20,13 @@ from ..config import (
     EP_SESSION,
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
+    PICK_SLOT_ORDER,
     PLATFORM_TO_REGION,
     ROLE_PROFILE_LABELS,
 )
+from ..services.history import log_history_event
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
-from ..services.history import log_history_event
 
 
 class WebSocketManager(ChampSelectMixin):
@@ -81,7 +82,7 @@ class WebSocketManager(ChampSelectMixin):
 
     def start(self) -> None:
         if Connector is None:
-            self._notify_ui(self.EVENT_STATUS, ("❌ Error: 'lcu_driver' is missing.", ""))
+            self._notify_ui(self.EVENT_STATUS, ("Error: 'lcu_driver' is missing.", "ERROR"))
             return
         if self.thread and self.thread.is_alive():
             return
@@ -96,7 +97,7 @@ class WebSocketManager(ChampSelectMixin):
                 future = asyncio.run_coroutine_threadsafe(self.connector.stop(), self.loop)
                 future.result(timeout=3)
             except Exception as e:
-                logging.debug(f"WebSocket: arret du connector incomplet - {e}")
+                logging.debug("WebSocket: incomplete connector stop - %s", e)
 
         if self.thread and self.thread.is_alive() and self.thread is not current_thread():
             self.thread.join(timeout=3)
@@ -158,25 +159,53 @@ class WebSocketManager(ChampSelectMixin):
         role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
         if not isinstance(role_data, dict):
             role_data = {}
+        global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
+        role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
+
+        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, str]:
+            global_slot = (
+                global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
+            )
+            role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            return {
+                "champion": role_data.get(pick_key) or params.get(pick_key, ""),
+                "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
+                "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
+            }
+
+        pick_slots = {
+            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
+            for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
+        }
+        first_slot = pick_slots["pick_1"]
 
         return {
             "detected_role": self._normalize_role(self.state.assigned_position) or "GLOBAL",
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
             "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
-            "selected_pick_1": role_data.get("selected_pick_1") or params.get("selected_pick_1", ""),
-            "selected_pick_2": role_data.get("selected_pick_2") or params.get("selected_pick_2", ""),
-            "selected_pick_3": role_data.get("selected_pick_3") or params.get("selected_pick_3", ""),
+            "pick_slots": pick_slots,
+            "selected_pick_1": pick_slots["pick_1"]["champion"],
+            "selected_pick_2": pick_slots["pick_2"]["champion"],
+            "selected_pick_3": pick_slots["pick_3"]["champion"],
             "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
-            "spell_1": role_data.get("spell_1") or params.get("global_spell_1", ""),
-            "spell_2": role_data.get("spell_2") or params.get("global_spell_2", ""),
+            "spell_1": first_slot.get("spell_1", ""),
+            "spell_2": first_slot.get("spell_2", ""),
             "sources": {
                 "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
                 "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
                 "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
                 "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
-                "spell_1": resolved_role if role_data.get("spell_1") else "GLOBAL",
-                "spell_2": resolved_role if role_data.get("spell_2") else "GLOBAL",
+                "spell_1": (
+                    resolved_role
+                    if pick_slots["pick_1"].get("spell_1") and role_pick_slots.get("pick_1", {}).get("spell_1")
+                    else "GLOBAL"
+                ),
+                "spell_2": (
+                    resolved_role
+                    if pick_slots["pick_1"].get("spell_2") and role_pick_slots.get("pick_1", {}).get("spell_2")
+                    else "GLOBAL"
+                ),
             },
         }
 
@@ -218,8 +247,8 @@ class WebSocketManager(ChampSelectMixin):
                     action="connected",
                 )
                 self._notify_ui(self.EVENT_CONNECTED, None)
-                self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "⚡"))
-                logging.info("WebSocket: Connected to the LCU client.")
+                self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "WS"))
+                logging.info("[WS] Connected to the LCU client.")
                 await self._refresh_player_and_region()
 
             @connector.close
@@ -236,10 +265,10 @@ class WebSocketManager(ChampSelectMixin):
                         action="disconnected",
                     )
                     self._notify_ui(self.EVENT_DISCONNECTED, None)
-                    self._notify_ui(self.EVENT_STATUS, ("LoL client disconnected. Trying to reconnect...", "💤"))
-                    logging.info("WebSocket: Disconnected.")
+                    self._notify_ui(self.EVENT_STATUS, ("LoL client disconnected. Trying to reconnect...", "WARN"))
+                    logging.info("[WS] Disconnected.")
                 else:
-                    logging.info("WebSocket: Stop requested.")
+                    logging.info("[WS] Stop requested.")
 
             @connector.ws.register(EP_CURRENT_SUMMONER)
             async def _ws_summoner_change(connection, event):
@@ -253,7 +282,7 @@ class WebSocketManager(ChampSelectMixin):
             async def _ws_login_session(connection, event):
                 data = event.data or {}
                 if data.get("status") == "SUCCEEDED":
-                    self._notify_ui(self.EVENT_STATUS, ("Login detected...", "🔄"))
+                    self._notify_ui(self.EVENT_STATUS, ("Login detected...", "INFO"))
                     await self._refresh_player_and_region()
 
             @connector.ws.register(EP_GAMEFLOW)
@@ -263,12 +292,12 @@ class WebSocketManager(ChampSelectMixin):
                     return
 
                 if phase != self.state.current_phase:
-                    logging.info(f"Phase changee : {self.state.current_phase} -> {phase}")
+                    logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
                 self.state.current_phase = phase
 
                 friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
                 self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
-                self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "ℹ️"))
+                self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
 
                 if phase == "ChampSelect":
                     self.state.reset_between_games()
@@ -287,7 +316,10 @@ class WebSocketManager(ChampSelectMixin):
                     and data.get("state") == "InProgress"
                     and data.get("playerResponse") != "Accepted"
                 ):
-                    response = await connection.request("post", f"{EP_READY_CHECK}/accept")
+                    accept_url = f"{EP_READY_CHECK}/accept"
+                    logging.info("[READY] POST %s", accept_url)
+                    response = await connection.request("post", accept_url)
+                    logging.info("[READY] POST %s -> %s", accept_url, getattr(response, "status", "no-response"))
                     if response and response.status < 400:
                         log_history_event(
                             "ready_check",
@@ -296,7 +328,7 @@ class WebSocketManager(ChampSelectMixin):
                             category="Match found",
                             action="accepted",
                         )
-                        self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "✅"))
+                        self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "OK"))
                         if not self.state.has_played_accept_sound:
                             self.state.has_played_accept_sound = True
                             self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
@@ -316,7 +348,7 @@ class WebSocketManager(ChampSelectMixin):
 
             connector.start()
         except Exception as e:
-            logging.critical(f"[WS] Critical error in the WebSocket loop: {e}", exc_info=True)
+            logging.critical("[WS] Critical error in the WebSocket loop: %s", e, exc_info=True)
             self.ws_active = False
             if not self._stop_event.is_set():
                 self._notify_ui(self.EVENT_DISCONNECTED, None)
@@ -341,18 +373,18 @@ class WebSocketManager(ChampSelectMixin):
             if self.state.auto_game_name and self.state.auto_tag_line:
                 self.state.summoner = f"{self.state.auto_game_name}#{self.state.auto_tag_line}"
             else:
-                self.state.summoner = chat_me.get("name", "Inconnu")
+                self.state.summoner = chat_me.get("name", "Unknown")
             self.state.summoner_id = chat_me.get("summonerId")
             self.state.puuid = chat_me.get("puuid")
         else:
             resp_me = await self.connection.request("get", "/lol-summoner/v1/current-summoner")
             if resp_me.status == 200:
                 me = await resp_me.json()
-                self.state.summoner = me.get("displayName", "Inconnu")
+                self.state.summoner = me.get("displayName", "Unknown")
 
         if self.state.summoner != self.state.last_reported_summoner:
             self._notify_ui(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
-            self._notify_ui(self.EVENT_STATUS, (f"Connected: {self.get_riot_id()}", "👤"))
+            self._notify_ui(self.EVENT_STATUS, (f"Connected: {self.get_riot_id()}", "USER"))
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 

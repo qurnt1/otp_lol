@@ -22,8 +22,11 @@ class FakeParent:
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
-            "global_spell_1": "Heal",
-            "global_spell_2": "Flash",
+            "pick_slots": {
+                "pick_1": {"spell_1": "Heal", "spell_2": "Flash"},
+                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash"},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite"},
+            },
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
             "hotkey_toggle_window": "alt+c",
@@ -35,8 +38,11 @@ class FakeParent:
                     "selected_pick_2": "",
                     "selected_pick_3": "",
                     "selected_ban": "Zed",
-                    "spell_1": "Ignite",
-                    "spell_2": "",
+                    "pick_slots": {
+                        "pick_1": {"spell_1": "Ignite", "spell_2": ""},
+                        "pick_2": {"spell_1": "", "spell_2": ""},
+                        "pick_3": {"spell_1": "", "spell_2": ""},
+                    },
                 }
             },
         }
@@ -65,16 +71,18 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window = SettingsWindow.__new__(SettingsWindow)
         window.parent = FakeParent()
         window.profile_role_var = DummyVar("MIDDLE")
+        window.pick_buttons = {}
+        window.pick_spell_buttons = {}
         return window
 
-    def test_get_profile_role_data_includes_spells(self):
+    def test_get_profile_role_data_includes_pick_slots(self):
         window = self.make_window()
 
         data = window._get_profile_role_data()
 
         self.assertEqual(data["selected_pick_1"], "Ahri")
-        self.assertEqual(data["spell_1"], "Ignite")
-        self.assertEqual(data["spell_2"], "")
+        self.assertEqual(data["pick_slots"]["pick_1"]["spell_1"], "Ignite")
+        self.assertEqual(data["pick_slots"]["pick_1"]["spell_2"], "")
 
     def test_get_excluded_champions_for_ban_includes_picks(self):
         window = self.make_window()
@@ -83,12 +91,19 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
         self.assertEqual(excluded, {"Ahri"})
 
-    def test_set_profile_value_updates_role_profile_payload(self):
+    def test_set_pick_slot_value_updates_role_profile_payload(self):
         window = self.make_window()
 
-        window._set_profile_value("spell_2", "Flash")
+        window._set_pick_slot_value("pick_1", "spell_2", "Flash")
 
-        self.assertEqual(window.parent.params["role_profiles"]["MIDDLE"]["spell_2"], "Flash")
+        self.assertEqual(window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "Flash")
+
+    def test_pick_slot_display_uses_global_fallback(self):
+        window = self.make_window()
+
+        display = window._get_pick_slot_display_value("pick_1", "spell_2")
+
+        self.assertEqual(display, "Fallback: Flash")
 
     def test_stats_site_selection_updates_parent_config(self):
         window = self.make_window()

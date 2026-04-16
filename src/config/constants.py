@@ -54,6 +54,12 @@ PHASE_DISPLAY_MAP: Dict[str, str] = {
 }
 
 ROLE_PROFILE_ORDER: list[str] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+PICK_SLOT_ORDER: list[str] = ["pick_1", "pick_2", "pick_3"]
+PICK_SLOT_LABELS: Dict[str, str] = {
+    "pick_1": "Pick 1",
+    "pick_2": "Pick 2",
+    "pick_3": "Pick 3",
+}
 
 ROLE_PROFILE_LABELS: Dict[str, str] = {
     "GLOBAL": "Global",

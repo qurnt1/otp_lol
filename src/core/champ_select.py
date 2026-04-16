@@ -1,9 +1,10 @@
 """Champion select logic extracted from the LCU manager."""
 
 import asyncio
+import json
 import logging
 from time import time
-from typing import Any, Dict, List, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from ..config import EP_PICKABLE, SUMMONER_SPELL_MAP
 
@@ -13,6 +14,47 @@ if TYPE_CHECKING:
 
 class ChampSelectMixin:
     """Mixin regroupant la logique de champ select et post-game."""
+
+    SPELL_CONFIRM_RETRIES = 5
+    SPELL_CONFIRM_DELAY_S = 0.18
+    SPELL_RETRY_COOLDOWN_S = 0.45
+
+    @staticmethod
+    def _format_debug_value(payload: Any, limit: int = 240) -> str:
+        try:
+            text = json.dumps(payload, ensure_ascii=True, sort_keys=True)
+        except TypeError:
+            text = repr(payload)
+        if len(text) > limit:
+            return f"{text[:limit]}..."
+        return text
+
+    def _log_lcu_request(
+        self: "WebSocketManager",
+        area: str,
+        method: str,
+        endpoint: str,
+        payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        suffix = ""
+        if payload is not None:
+            suffix = f" payload={self._format_debug_value(payload)}"
+        logging.info("[%s] %s %s%s", area, method.upper(), endpoint, suffix)
+
+    def _log_lcu_response(
+        self: "WebSocketManager",
+        area: str,
+        method: str,
+        endpoint: str,
+        response: Any,
+        *,
+        body: Optional[Any] = None,
+    ) -> None:
+        status = getattr(response, "status", "no-response")
+        suffix = ""
+        if body is not None:
+            suffix = f" body={self._format_debug_value(body)}"
+        logging.info("[%s] %s %s -> %s%s", area, method.upper(), endpoint, status, suffix)
 
     async def _fetch_pickable_ids(self: "WebSocketManager") -> Optional[Set[int]]:
         if not self.connection:
@@ -24,29 +66,48 @@ class ChampSelectMixin:
                 if isinstance(payload, list):
                     return set(payload)
         except Exception as e:
-            logging.debug(f"Error fetching pickable champions: {e}")
+            logging.debug("Error fetching pickable champions: %s", e)
         return None
 
-    def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[str]:
+    def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[tuple[str, str]]:
         effective = self._get_effective_champ_select_config(params)
         return [
-            effective.get("selected_pick_1", ""),
-            effective.get("selected_pick_2", ""),
-            effective.get("selected_pick_3", ""),
+            ("pick_1", effective.get("selected_pick_1", "")),
+            ("pick_2", effective.get("selected_pick_2", "")),
+            ("pick_3", effective.get("selected_pick_3", "")),
         ]
 
     def _pick_first_viable_champion(
-        self: "WebSocketManager", params: Dict[str, Any], pickable_ids: Optional[Set[int]]
-    ) -> Optional[tuple[str, int]]:
-        for champion_name in self._get_pick_priority(params):
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        pickable_ids: Optional[Set[int]],
+        banned_ids: Optional[Set[int]] = None,
+    ) -> Optional[tuple[str, str, int]]:
+        banned_ids = banned_ids or set()
+        for slot_key, champion_name in self._get_pick_priority(params):
             if not champion_name:
                 continue
             champion_id = self.dd.resolve_champion(champion_name)
             if not champion_id:
                 continue
+            if champion_id in banned_ids:
+                logging.info("[PICK] Skipping %s (%s): champion is banned in the current session.", champion_name, champion_id)
+                continue
             if pickable_ids is None or champion_id in pickable_ids:
-                return champion_name, champion_id
+                return slot_key, champion_name, champion_id
         return None
+
+    def _resolve_pick_slot_from_champion_id(
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        champion_id: int,
+    ) -> tuple[Optional[str], Optional[str]]:
+        for slot_key, champion_name in self._get_pick_priority(params):
+            if not champion_name:
+                continue
+            if self.dd.resolve_champion(champion_name) == champion_id:
+                return slot_key, champion_name
+        return None, None
 
     def _can_hover_now(self: "WebSocketManager") -> bool:
         if self.state.time_left_ms <= 0:
@@ -84,7 +145,7 @@ class ChampSelectMixin:
                 return
             session = await response.json()
         except Exception as e:
-            logging.debug(f"Error fetching champ select session: {e}")
+            logging.debug("Error fetching champ select session: %s", e)
             return
 
         if session.get("benchEnabled") is True:
@@ -103,7 +164,7 @@ class ChampSelectMixin:
                 pos = (my_player_obj.get("assignedPosition") or "").upper()
                 if pos:
                     self.state.assigned_position = pos
-                    self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {pos}", "ℹ️"))
+                    self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {pos}", "ROLE"))
 
         actions_groups = session.get("actions", [])
         my_actions = []
@@ -114,41 +175,79 @@ class ChampSelectMixin:
 
         effective = self._get_effective_champ_select_config(params)
         pickable_set = await self._fetch_pickable_ids()
+        banned_ids = self._extract_banned_champion_ids(session)
+        self._sync_prepick_state_from_session(session, params)
+
+        prepick_action = next(
+            (a for a in my_actions if a.get("type") == "pick" and not a.get("isInProgress")),
+            None,
+        )
+        active_ban_action = next(
+            (a for a in my_actions if a.get("type") == "ban" and a.get("isInProgress") is True),
+            None,
+        )
+        active_pick_action = next(
+            (a for a in my_actions if a.get("type") == "pick" and a.get("isInProgress") is True),
+            None,
+        )
 
         if params.get("auto_pick_enabled") and effective.get("selected_pick_1"):
-            pick_action = next((a for a in my_actions if a.get("type") == "pick"), None)
-            if pick_action:
-                best_pick = self._pick_first_viable_champion(params, pickable_set)
-                target_champion_id = best_pick[1] if best_pick else None
-                current_hover = pick_action.get("championId")
+            if prepick_action:
+                best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
+                target_champion_id = best_pick[2] if best_pick else None
+                current_hover = prepick_action.get("championId")
                 if target_champion_id and current_hover != target_champion_id:
                     if time() - self.state.last_intent_try_ts > 0.5 and self._can_hover_now():
-                        hover_success = await self._hover_champion(pick_action["id"], target_champion_id)
-                        if not hover_success:
-                            logging.debug("Pre-pick ignore: le hover LCU n'a pas ete confirme.")
                         self.state.last_intent_try_ts = time()
+                        logging.info(
+                            "[PICK] Pre-pick action detected on id=%s before ban/pick resolution.",
+                            prepick_action.get("id"),
+                        )
+                        hover_success = await self._hover_champion(prepick_action["id"], target_champion_id)
+                        if not hover_success:
+                            logging.info("[PICK] Hover was not confirmed by the LCU; retry will stay active.")
 
-        active_action = next((a for a in my_actions if a.get("isInProgress") is True), None)
-        if active_action:
-            action_type = active_action.get("type")
-            if action_type == "ban" and params.get("auto_ban_enabled"):
-                await self._logic_do_ban(active_action, effective)
-            elif action_type == "pick" and params.get("auto_pick_enabled"):
-                await self._logic_do_pick(active_action, params, pickable_set)
+        prepick_required = params.get("auto_pick_enabled") and effective.get("selected_pick_1") and prepick_action is not None
+        if prepick_required and not self.state.has_prepicked:
+            logging.info("[PICK] Waiting for pre-pick confirmation before ban/pick actions.")
+            return
+
+        prepick_sequence_active = params.get("auto_pick_enabled") and effective.get("selected_pick_1") and (
+            prepick_required or (self.state.has_prepicked and not self.state.has_picked)
+        )
+        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
+        if params.get("auto_summoners_enabled") and prepick_sequence_active:
+            if not self._selection_has_expected_spells(session, params, slot_key=prepick_slot):
+                logging.info("[SPELLS] Waiting for prepick summs on %s before ban/pick actions.", prepick_slot)
+                self._ensure_spells_are_applied(session, params, slot_key=prepick_slot)
+                return
+
+        if active_ban_action and params.get("auto_ban_enabled"):
+            await self._logic_do_ban(active_ban_action, effective)
+        elif active_pick_action and params.get("auto_pick_enabled"):
+            await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
+
+        if self.state.has_picked and params.get("auto_summoners_enabled"):
+            self._ensure_spells_are_applied(session, params)
 
     async def _hover_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
         url = f"/lol-champ-select/v1/session/actions/{action_id}"
-        response = await self.connection.request("patch", url, json={"championId": champion_id})
+        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+        payload = {"championId": champion_id}
+        self._log_lcu_request("PICK", "patch", url, payload)
+        response = await self.connection.request("patch", url, json=payload)
+        self._log_lcu_response("PICK", "patch", url, response)
         success = bool(response and response.status < 400)
         if success:
-            champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
             self._log_history(
                 "hover",
-                f"Pre-pick envoye sur {champion_name}.",
+                f"Pre-pick sent for {champion_name}.",
                 {"champion": champion_name},
                 category="Champion Select",
                 action="hover",
             )
+        else:
+            logging.warning("[PICK] Hover request was rejected for %s (%s).", champion_name, champion_id)
         return success
 
     async def _logic_do_ban(self: "WebSocketManager", action: Dict[str, Any], effective: Dict[str, Any]) -> None:
@@ -170,7 +269,7 @@ class ChampSelectMixin:
         if not champion_id:
             return
 
-        success = await self._lock_in_champion(action["id"], champion_id)
+        success = await self._lock_in_champion(action["id"], champion_id, action_type="ban")
         if success:
             self.state.has_banned = True
             self._log_history(
@@ -182,31 +281,36 @@ class ChampSelectMixin:
                 action="ban",
             )
             self._notify_ui(self.EVENT_CHAMPION_BANNED, selected_ban)
-            self._notify_ui(self.EVENT_STATUS, (f"Ciao! {selected_ban} has been banned.", "💀"))
+            self._notify_ui(self.EVENT_STATUS, (f"Ban confirmed: {selected_ban}.", "BAN"))
 
     async def _logic_do_pick(
         self: "WebSocketManager",
         action: Dict[str, Any],
         params: Dict[str, Any],
         pickable_set: Optional[Set[int]] = None,
+        banned_ids: Optional[Set[int]] = None,
     ) -> None:
         if time() - self.state.last_action_try_ts < 0.1:
             return
         self.state.last_action_try_ts = time()
         if pickable_set is None:
             pickable_set = await self._fetch_pickable_ids()
-        viable_pick = self._pick_first_viable_champion(params, pickable_set)
+        viable_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
         if not viable_pick:
             if pickable_set is None:
-                self._notify_ui(self.EVENT_STATUS, ("Unable to check pickable champions right now.", "⚠️"))
+                self._notify_ui(self.EVENT_STATUS, ("Unable to check pickable champions right now.", "WARN"))
             else:
-                self._notify_ui(self.EVENT_STATUS, ("No configured champion is available (or all are banned)!", "⚠️"))
+                self._notify_ui(
+                    self.EVENT_STATUS,
+                    ("No configured champion is available (or all are banned).", "WARN"),
+                )
             return
 
-        champion_name, champion_id = viable_pick
-        success = await self._lock_in_champion(action["id"], champion_id)
+        slot_key, champion_name, champion_id = viable_pick
+        success = await self._lock_in_champion(action["id"], champion_id, action_type="pick")
         if success:
             self.state.has_picked = True
+            self.state.last_locked_pick_slot = slot_key
             self._log_history(
                 "pick",
                 f"Champion automatically locked in: {champion_name}.",
@@ -216,70 +320,442 @@ class ChampSelectMixin:
                 action="pick",
             )
             self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
-            self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in! Your turn to play.", "🔒"))
+            self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in. Ready to play.", "PICK"))
             if params.get("auto_summoners_enabled"):
-                asyncio.create_task(self._set_spells(params))
+                asyncio.create_task(self._set_spells(params, slot_key=slot_key))
             return
 
-        self._notify_ui(self.EVENT_STATUS, (f"LCU lock failed for {champion_name}, will retry later.", "⚠️"))
-
-    async def _lock_in_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
-        """Hover then lock a champion, with confirmation because the LCU can accept partial updates."""
-        url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
-
-        hover_response = await self.connection.request("patch", url_action, json={"championId": champion_id})
-        if not hover_response or hover_response.status >= 400:
-            return False
-
-        await asyncio.sleep(0.05)
-
-        patch_response = await self.connection.request(
-            "patch",
-            url_action,
-            json={"championId": champion_id, "completed": True},
+        self._notify_ui(
+            self.EVENT_STATUS,
+            (f"Pick not yet confirmed for {champion_name}; retry scheduled.", "WARN"),
         )
-        if patch_response and patch_response.status < 400:
-            confirmation = await self.connection.request("get", url_action)
-            if confirmation and confirmation.status == 200:
-                payload = await confirmation.json()
-                if payload.get("championId") == champion_id and payload.get("completed") is True:
-                    return True
 
-        response = await self.connection.request("post", f"{url_action}/complete")
-        if not response or response.status >= 400:
-            return False
-
-        confirmation = await self.connection.request("get", url_action)
-        if confirmation and confirmation.status == 200:
-            payload = await confirmation.json()
-            return payload.get("championId") == champion_id and payload.get("completed") is True
-        return False
-
-    async def _set_spells(self: "WebSocketManager", params: Dict[str, Any]) -> None:
-        if not self.connection:
-            return
-
+    def _resolve_spell_selection(
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> tuple[str, str, int, int, str]:
         effective = self.get_effective_profile_config(params=params)
-        spell1_name = effective.get("spell_1") or params.get("global_spell_1", "Heal")
-        spell2_name = effective.get("spell_2") or params.get("global_spell_2", "Flash")
+        chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
+        pick_slots = effective.get("pick_slots", {})
+        slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
+        fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
+        spell1_name = slot_data.get("spell_1") or fallback_slot.get("spell_1") or "Heal"
+        spell2_name = slot_data.get("spell_2") or fallback_slot.get("spell_2") or "Flash"
         spell1_name = "(None)" if spell1_name == "(Aucun)" else spell1_name
         spell2_name = "(None)" if spell2_name == "(Aucun)" else spell2_name
         spell1_id = SUMMONER_SPELL_MAP.get(spell1_name, 7)
         spell2_id = SUMMONER_SPELL_MAP.get(spell2_name, 4)
-        payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
-        response = await self.connection.request("patch", "/lol-champ-select/v1/session/my-selection", json=payload)
+        return spell1_name, spell2_name, spell1_id, spell2_id, chosen_slot
 
-        if response and response.status < 400:
-            self._log_history(
-                "spells",
-                f"Automatic summs applied: {spell1_name} + {spell2_name}.",
-                {"spell_1": spell1_name, "spell_2": spell2_name, "role": effective.get("resolved_role", "GLOBAL")},
-                level="success",
-                category="Summs",
-                action="set",
+    def _extract_local_player_selection(
+        self: "WebSocketManager",
+        session: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        if not isinstance(session, dict):
+            return None
+        local_id = session.get("localPlayerCellId")
+        if local_id is None:
+            return None
+        my_team = session.get("myTeam", [])
+        return next((player for player in my_team if player.get("cellId") == local_id), None)
+
+    def _build_selection_debug_snapshot(self, session: Dict[str, Any]) -> Dict[str, Any]:
+        my_team = session.get("myTeam", [])
+        compact_team = []
+        for player in my_team:
+            compact_team.append(
+                {
+                    "cellId": player.get("cellId"),
+                    "championId": player.get("championId"),
+                    "assignedPosition": player.get("assignedPosition"),
+                    "spell1Id": player.get("spell1Id"),
+                    "spell2Id": player.get("spell2Id"),
+                }
             )
-            self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
-            self._notify_ui(self.EVENT_STATUS, (f"Summs auto-selected ({spell1_name}, {spell2_name})", "🪄"))
+        return {
+            "localPlayerCellId": session.get("localPlayerCellId"),
+            "myTeam": compact_team,
+        }
+
+    def _iter_session_actions(self, session: Dict[str, Any]) -> List[Dict[str, Any]]:
+        actions: List[Dict[str, Any]] = []
+        for group in session.get("actions", []):
+            for action in group:
+                if isinstance(action, dict):
+                    actions.append(action)
+        return actions
+
+    def _extract_banned_champion_ids(self, session: Optional[Dict[str, Any]]) -> Set[int]:
+        if not isinstance(session, dict):
+            return set()
+
+        banned_ids: Set[int] = set()
+        for action in self._iter_session_actions(session):
+            if action.get("type") != "ban" or action.get("completed") is not True:
+                continue
+            champion_id = int(action.get("championId") or 0)
+            if champion_id > 0:
+                banned_ids.add(champion_id)
+
+        bans_block = session.get("bans")
+        if isinstance(bans_block, dict):
+            for key in ("myTeamBans", "theirTeamBans"):
+                values = bans_block.get(key, [])
+                if isinstance(values, list):
+                    for champion_id in values:
+                        try:
+                            champion_id = int(champion_id or 0)
+                        except (TypeError, ValueError):
+                            champion_id = 0
+                        if champion_id > 0:
+                            banned_ids.add(champion_id)
+        return banned_ids
+
+    def _sync_prepick_state_from_session(
+        self: "WebSocketManager",
+        session: Optional[Dict[str, Any]],
+        params: Dict[str, Any],
+    ) -> bool:
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return False
+        champion_id = int(local_selection.get("championId") or 0)
+        if champion_id <= 0:
+            return False
+
+        slot_key, champion_name = self._resolve_pick_slot_from_champion_id(params, champion_id)
+        if not slot_key or not champion_name:
+            return False
+
+        was_confirmed = self.state.has_prepicked and self.state.last_prepick_slot == slot_key
+        self.state.has_prepicked = True
+        self.state.last_prepick_slot = slot_key
+        if not was_confirmed:
+            logging.info(
+                "[PICK] Session confirms pre-pick champion %s (%s) on %s.",
+                champion_name,
+                champion_id,
+                slot_key,
+            )
+        return True
+
+    def _selection_has_expected_spells(
+        self: "WebSocketManager",
+        session: Optional[Dict[str, Any]],
+        params: Dict[str, Any],
+        *,
+        slot_key: Optional[str] = None,
+    ) -> bool:
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return False
+        _, _, spell1_id, spell2_id, _ = self._resolve_spell_selection(params, slot_key=slot_key)
+        return (
+            int(local_selection.get("spell1Id") or 0) == spell1_id
+            and int(local_selection.get("spell2Id") or 0) == spell2_id
+        )
+
+    async def _fetch_current_champ_select_session(
+        self: "WebSocketManager",
+        *,
+        area: str = "SPELLS",
+        include_actions: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.connection:
+            return None
+        try:
+            endpoint = "/lol-champ-select/v1/session"
+            self._log_lcu_request(area, "get", endpoint)
+            response = await self.connection.request("get", endpoint)
+            if response and response.status == 200:
+                payload = await response.json()
+                if isinstance(payload, dict):
+                    body = self._build_selection_debug_snapshot(payload)
+                    if include_actions:
+                        body["actions"] = [
+                            {
+                                "id": action.get("id"),
+                                "actorCellId": action.get("actorCellId"),
+                                "type": action.get("type"),
+                                "completed": action.get("completed"),
+                                "isInProgress": action.get("isInProgress"),
+                                "championId": action.get("championId"),
+                            }
+                            for action in self._iter_session_actions(payload)
+                        ]
+                    self._log_lcu_response(
+                        area,
+                        "get",
+                        endpoint,
+                        response,
+                        body=body,
+                    )
+                    return payload
+
+            endpoint = "/lol-champ-select-legacy/v1/session"
+            self._log_lcu_request(area, "get", endpoint)
+            response = await self.connection.request("get", endpoint)
+            if response and response.status == 200:
+                payload = await response.json()
+                if isinstance(payload, dict):
+                    body = self._build_selection_debug_snapshot(payload)
+                    if include_actions:
+                        body["actions"] = [
+                            {
+                                "id": action.get("id"),
+                                "actorCellId": action.get("actorCellId"),
+                                "type": action.get("type"),
+                                "completed": action.get("completed"),
+                                "isInProgress": action.get("isInProgress"),
+                                "championId": action.get("championId"),
+                            }
+                            for action in self._iter_session_actions(payload)
+                        ]
+                    self._log_lcu_response(
+                        area,
+                        "get",
+                        endpoint,
+                        response,
+                        body=body,
+                    )
+                    return payload
+        except Exception as e:
+            logging.warning("[%s] Unable to fetch champ-select session for confirmation: %s", area, e)
+        return None
+
+    async def _confirm_action_completed_from_session(
+        self: "WebSocketManager",
+        action_id: int,
+        champion_id: int,
+        *,
+        action_type: str,
+    ) -> bool:
+        for attempt in range(self.SPELL_CONFIRM_RETRIES + 1):
+            url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
+            self._log_lcu_request("PICK", "get", url_action)
+            confirmation = await self.connection.request("get", url_action)
+            if confirmation and confirmation.status == 200:
+                payload = await confirmation.json()
+                self._log_lcu_response("PICK", "get", url_action, confirmation, body=payload)
+                if payload.get("championId") == champion_id and payload.get("completed") is True:
+                    return True
+                logging.warning(
+                    "[PICK] Action endpoint mismatch for action=%s expected championId=%s completed=True, got %s.",
+                    action_id,
+                    champion_id,
+                    self._format_debug_value(
+                        {
+                            "championId": payload.get("championId"),
+                            "completed": payload.get("completed"),
+                        }
+                    ),
+                )
+            else:
+                logging.info(
+                    "[PICK] Action endpoint unavailable for action=%s; checking session snapshot fallback.",
+                    action_id,
+                )
+
+            session = await self._fetch_current_champ_select_session(area="PICK", include_actions=True)
+            if isinstance(session, dict):
+                action_payload = next(
+                    (action for action in self._iter_session_actions(session) if action.get("id") == action_id),
+                    None,
+                )
+                if (
+                    isinstance(action_payload, dict)
+                    and action_payload.get("championId") == champion_id
+                    and action_payload.get("completed") is True
+                ):
+                    logging.info(
+                        "[PICK] Session actions confirm action=%s championId=%s type=%s.",
+                        action_id,
+                        champion_id,
+                        action_type,
+                    )
+                    return True
+            if attempt < self.SPELL_CONFIRM_RETRIES:
+                await asyncio.sleep(self.SPELL_CONFIRM_DELAY_S)
+        return False
+
+    async def _confirm_spells_applied(
+        self: "WebSocketManager",
+        spell1_id: int,
+        spell2_id: int,
+    ) -> bool:
+        for attempt in range(self.SPELL_CONFIRM_RETRIES + 1):
+            session = await self._fetch_current_champ_select_session(area="SPELLS")
+            local_selection = self._extract_local_player_selection(session)
+            if local_selection:
+                current_spell1 = int(local_selection.get("spell1Id") or 0)
+                current_spell2 = int(local_selection.get("spell2Id") or 0)
+                logging.info(
+                    "[SPELLS] Confirmation %s/%s current=(%s,%s) expected=(%s,%s)",
+                    attempt + 1,
+                    self.SPELL_CONFIRM_RETRIES + 1,
+                    current_spell1,
+                    current_spell2,
+                    spell1_id,
+                    spell2_id,
+                )
+                if current_spell1 == spell1_id and current_spell2 == spell2_id:
+                    return True
+            if attempt < self.SPELL_CONFIRM_RETRIES:
+                await asyncio.sleep(self.SPELL_CONFIRM_DELAY_S)
+        return False
+
+    def _ensure_spells_are_applied(
+        self: "WebSocketManager",
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> None:
+        if self.state.spell_apply_in_progress or not self.connection:
+            return
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return
+        _, _, spell1_id, spell2_id, chosen_slot = self._resolve_spell_selection(params, slot_key=slot_key)
+        self.state.desired_spell_ids = (spell1_id, spell2_id)
+        current_spell1 = int(local_selection.get("spell1Id") or 0)
+        current_spell2 = int(local_selection.get("spell2Id") or 0)
+        if (current_spell1, current_spell2) == (spell1_id, spell2_id):
+            self.state.last_confirmed_spell_ids = (spell1_id, spell2_id)
+            return
+        if time() - self.state.last_spell_try_ts < self.SPELL_RETRY_COOLDOWN_S:
+            return
+        logging.info(
+            "[SPELLS] Mismatch detected for %s: current=(%s,%s) expected=(%s,%s). Retrying.",
+            chosen_slot,
+            current_spell1,
+            current_spell2,
+            spell1_id,
+            spell2_id,
+        )
+        asyncio.create_task(self._set_spells(params, slot_key=chosen_slot))
+
+    async def _lock_in_champion(
+        self: "WebSocketManager",
+        action_id: int,
+        champion_id: int,
+        *,
+        action_type: str = "pick",
+    ) -> bool:
+        """Hover then lock a champion, with confirmation because the LCU can accept partial updates."""
+        url_action = f"/lol-champ-select/v1/session/actions/{action_id}"
+        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+        hover_payload = {"championId": champion_id}
+        patch_payload = {"championId": champion_id, "completed": True}
+
+        logging.info("[PICK] Starting lock flow for %s (%s) on action %s.", champion_name, champion_id, action_id)
+        self._log_lcu_request("PICK", "patch", url_action, hover_payload)
+        hover_response = await self.connection.request("patch", url_action, json=hover_payload)
+        self._log_lcu_response("PICK", "patch", url_action, hover_response)
+        if not hover_response or hover_response.status >= 400:
+            logging.warning("[PICK] Hover patch rejected for %s (%s).", champion_name, champion_id)
+            return False
+
+        await asyncio.sleep(0.05)
+
+        self._log_lcu_request("PICK", "patch", url_action, patch_payload)
+        patch_response = await self.connection.request("patch", url_action, json=patch_payload)
+        self._log_lcu_response("PICK", "patch", url_action, patch_response)
+        if not patch_response or patch_response.status >= 400:
+            logging.warning("[PICK] Complete patch was rejected for %s (%s).", champion_name, champion_id)
+        elif await self._confirm_action_completed_from_session(action_id, champion_id, action_type=action_type):
+            return True
+
+        complete_url = f"{url_action}/complete"
+        self._log_lcu_request("PICK", "post", complete_url)
+        response = await self.connection.request("post", complete_url)
+        self._log_lcu_response("PICK", "post", complete_url, response)
+        if not response or response.status >= 400:
+            logging.warning("[PICK] /complete request failed for %s (%s).", champion_name, champion_id)
+
+        confirmed = await self._confirm_action_completed_from_session(action_id, champion_id, action_type=action_type)
+        if not confirmed:
+            logging.warning(
+                "[PICK] Final confirmation fallback failed for %s (%s) after checking action and session state.",
+                champion_name,
+                champion_id,
+            )
+        return confirmed
+
+    async def _set_spells(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
+        if not self.connection or self.state.spell_apply_in_progress:
+            return
+
+        self.state.spell_apply_in_progress = True
+        spell1_name, spell2_name, spell1_id, spell2_id, chosen_slot = self._resolve_spell_selection(
+            params,
+            slot_key=slot_key,
+        )
+        payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
+        self.state.desired_spell_ids = (spell1_id, spell2_id)
+        self.state.last_spell_try_ts = time()
+        effective = self.get_effective_profile_config(params=params)
+        logging.info(
+            "[SPELLS] Applying %s for %s: %s(%s) + %s(%s).",
+            chosen_slot,
+            effective.get("resolved_role", "GLOBAL"),
+            spell1_name,
+            spell1_id,
+            spell2_name,
+            spell2_id,
+        )
+
+        try:
+            for endpoint in (
+                "/lol-champ-select/v1/session/my-selection",
+                "/lol-champ-select-legacy/v1/session/my-selection",
+            ):
+                try:
+                    self._log_lcu_request("SPELLS", "patch", endpoint, payload)
+                    response = await self.connection.request("patch", endpoint, json=payload)
+                except Exception as e:
+                    logging.warning("[SPELLS] Patch request failed on %s: %s", endpoint, e)
+                    response = None
+
+                self._log_lcu_response("SPELLS", "patch", endpoint, response)
+                if response and response.status < 400 and await self._confirm_spells_applied(spell1_id, spell2_id):
+                    previous_confirmed = self.state.last_confirmed_spell_ids
+                    self.state.last_confirmed_spell_ids = (spell1_id, spell2_id)
+                    if previous_confirmed != (spell1_id, spell2_id):
+                        self._log_history(
+                            "spells",
+                            f"Automatic summs applied: {spell1_name} + {spell2_name}.",
+                            {
+                                "spell_1": spell1_name,
+                                "spell_2": spell2_name,
+                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "pick_slot": chosen_slot,
+                                "endpoint": endpoint,
+                            },
+                            level="success",
+                            category="Summs",
+                            action="set",
+                        )
+                        self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
+                        self._notify_ui(
+                            self.EVENT_STATUS,
+                            (f"Summs auto-selected: {spell1_name} + {spell2_name}.", "SUMMS"),
+                        )
+                    logging.info("[SPELLS] Confirmed on %s for %s.", endpoint, chosen_slot)
+                    return
+
+            logging.warning(
+                "[SPELLS] Unable to confirm summoner spells for %s after patch attempts. Expected (%s,%s).",
+                chosen_slot,
+                spell1_id,
+                spell2_id,
+            )
+            self._notify_ui(
+                self.EVENT_STATUS,
+                (f"Summs not confirmed yet for {chosen_slot}; retry will continue if possible.", "WARN"),
+            )
+        finally:
+            self.state.spell_apply_in_progress = False
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         params = self.get_params()
@@ -300,5 +776,5 @@ class ChampSelectMixin:
                     action="play_again",
                 )
                 self._notify_ui(self.EVENT_PLAY_AGAIN, None)
-                self._notify_ui(self.EVENT_STATUS, ("Auto play again succeeded!", "✅"))
+                self._notify_ui(self.EVENT_STATUS, ("Auto play again succeeded.", "OK"))
                 break

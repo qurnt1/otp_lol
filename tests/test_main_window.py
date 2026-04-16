@@ -34,6 +34,14 @@ class DummySettingsWindow:
         self.sync_calls += 1
 
 
+class DummyRoot:
+    def __init__(self):
+        self.calls = []
+
+    def after(self, delay, callback):
+        self.calls.append((delay, callback))
+
+
 class MainWindowLogicTests(unittest.TestCase):
     def test_build_feature_preview_payload_uses_global_flags_and_effective_values(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
@@ -47,8 +55,9 @@ class MainWindowLogicTests(unittest.TestCase):
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
-            "spell_1": "Flash",
-            "spell_2": "Ignite",
+            "pick_slots": {
+                "pick_1": {"spell_1": "Flash", "spell_2": "Ignite"},
+            },
         }
 
         payload = window._build_feature_preview_payload(params, effective)
@@ -111,6 +120,28 @@ class MainWindowLogicTests(unittest.TestCase):
 
         self.assertNotEqual(champion_key, spell_key)
         self.assertEqual(champion_key, ("champ", "Garen", 30))
+
+    def test_request_quit_from_external_thread_schedules_ui_callback(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window._quit_callback = lambda: None
+
+        window.request_quit_from_external_thread()
+
+        self.assertEqual(len(window.root.calls), 1)
+        self.assertEqual(window.root.calls[0][0], 0)
+        self.assertIs(window.root.calls[0][1], window._quit_callback)
+
+    def test_request_toggle_from_external_thread_schedules_toggle(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.toggle_window = lambda: None
+
+        window.request_toggle_window_from_external_thread()
+
+        self.assertEqual(len(window.root.calls), 1)
+        self.assertEqual(window.root.calls[0][0], 0)
+        self.assertIs(window.root.calls[0][1], window.toggle_window)
 
 
 if __name__ == "__main__":

@@ -18,9 +18,22 @@ class TrayController:
     def setup(self, executor, toggle_window, quit_callback, on_failure) -> bool:
         try:
             image = Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((64, 64))
+
+            def on_toggle(icon=None, item=None):
+                try:
+                    toggle_window()
+                except Exception as e:
+                    logging.debug(f"Tray toggle callback error: {e}")
+
+            def on_quit(icon=None, item=None):
+                try:
+                    quit_callback()
+                except Exception as e:
+                    logging.debug(f"Tray quit callback error: {e}")
+
             menu = pystray.Menu(
-                pystray.MenuItem("Show/Hide", toggle_window),
-                pystray.MenuItem("Quit", quit_callback),
+                pystray.MenuItem("Show/Hide", on_toggle),
+                pystray.MenuItem("Quit", on_quit),
             )
             self.icon = pystray.Icon(APP_NAME, image, APP_NAME, menu)
             self.available = True
