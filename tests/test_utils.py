@@ -103,14 +103,14 @@ class UtilsTests(unittest.TestCase):
     def test_check_for_updates_uses_semantic_comparison(self):
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"tag_name": "v7.0.0"}
+        response.json.return_value = {"tag_name": "v9.0.0"}
 
         with patch("src.utils.requests.get", return_value=response):
             self.assertIsNone(check_for_updates())
 
-        response.json.return_value = {"tag_name": "v7.1.0"}
+        response.json.return_value = {"tag_name": "v9.1.0"}
         with patch("src.utils.requests.get", return_value=response):
-            self.assertEqual(check_for_updates(), normalize_version("v7.1.0"))
+            self.assertEqual(check_for_updates(), normalize_version("v9.1.0"))
 
 
 if __name__ == "__main__":

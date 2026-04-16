@@ -46,14 +46,13 @@ class SettingsWindow:
         "pick_2": "Preset 2",
         "pick_3": "Preset 3",
     }
-    PICK_ICON_SIZE = (36, 36)
-    EDITOR_ICON_SIZE = (36, 36)
+    PICK_ICON_SIZE = (30, 30)
 
     def __init__(self, parent: "LoLAssistantUI"):
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title(f"Settings - {APP_NAME}")
-        self.window.geometry("880x780")
+        self.window.geometry("620x780")
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -65,16 +64,8 @@ class SettingsWindow:
         self.site_picker_window: Optional[ttk.Toplevel] = None
         self._capture_target: Optional[str] = None
         self._pressed_modifiers: set[str] = set()
-        self.pick_buttons: Dict[str, tk.Widget] = {}
-        self.pick_row_frames: Dict[str, tk.Frame] = {}
-        self.pick_row_cells: Dict[tuple[str, str], tk.Frame] = {}
-        self.pick_summary_icons: Dict[tuple[str, str], tk.Label] = {}
+        self.pick_buttons: Dict[str, ttk.Button] = {}
         self.pick_spell_buttons: Dict[tuple[str, int], ttk.Button] = {}
-        self.pick_summary_labels: Dict[tuple[str, str], tk.Label] = {}
-        self.pick_editor_window: Optional[ttk.Toplevel] = None
-        self.pick_editor_slot_key: Optional[str] = None
-        self.pick_editor_value_labels: Dict[str, tk.Label] = {}
-        self.pick_editor_icon_labels: Dict[str, tk.Label] = {}
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
@@ -126,7 +117,6 @@ class SettingsWindow:
         self.main_frame.columnconfigure(1, weight=1)
         self.main_frame.columnconfigure(2, weight=1)
         self.main_frame.columnconfigure(3, weight=1)
-        self.main_frame.columnconfigure(4, weight=0)
 
         current_row = 0
         current_row = self._create_top_actions_section(current_row)
@@ -186,89 +176,8 @@ class SettingsWindow:
         ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(10, 0))
         return start_row + 1
 
-    def _get_pick_ui_palette(self) -> Dict[str, str]:
-        theme_name = getattr(self.parent, "theme", self.theme_var.get() if hasattr(self, "theme_var") else "darkly")
-        return THEME_PALETTE.get(theme_name, THEME_PALETTE["darkly"])
-
     def _get_preset_label(self, slot_key: str) -> str:
         return self.PRESET_LABELS.get(slot_key, PICK_SLOT_LABELS.get(slot_key, slot_key))
-
-    def _make_pick_cell(self, parent: tk.Frame, slot_key: str, field: str) -> tk.Frame:
-        palette = self._get_pick_ui_palette()
-        cell = tk.Frame(parent, bg=palette["window_bg"], cursor="hand2", padx=8, pady=8)
-        cell.pack(side="left", fill="x", expand=True, padx=4)
-
-        value_row = tk.Frame(cell, bg=palette["window_bg"], cursor="hand2")
-        value_row.pack(fill="x")
-
-        icon_label = tk.Label(
-            value_row,
-            bg=palette["window_bg"],
-            anchor="center",
-            cursor="hand2",
-        )
-        icon_label.pack(side="left")
-
-        text_label = tk.Label(
-            value_row,
-            text="...",
-            bg=palette["window_bg"],
-            fg=palette["text"],
-            font=("Segoe UI", 10),
-            anchor="w",
-            justify="left",
-            cursor="hand2",
-            padx=8,
-        )
-        text_label.pack(side="left", fill="x", expand=True)
-
-        self.pick_row_cells[(slot_key, field)] = cell
-        self.pick_summary_icons[(slot_key, field)] = icon_label
-        self.pick_summary_labels[(slot_key, field)] = text_label
-        return cell
-
-    def _bind_pick_row_click(self, widget: tk.Misc, slot_key: str) -> None:
-        widget.bind(
-            "<Button-1>",
-            lambda event, key=slot_key: self._open_pick_slot_editor(key) if self.auto_pick_var.get() else None,
-        )
-        for child in widget.winfo_children():
-            self._bind_pick_row_click(child, slot_key)
-
-    def _bind_editor_card_click(self, widget: tk.Misc, callback) -> None:
-        widget.bind("<Button-1>", lambda event: callback())
-        for child in widget.winfo_children():
-            self._bind_editor_card_click(child, callback)
-
-    def _set_pick_row_enabled(self, slot_key: str, enabled: bool) -> None:
-        palette = self._get_pick_ui_palette()
-        border = palette.get("border", palette["muted"])
-        bg = palette["window_bg"]
-        text_fg = palette["text"] if enabled else palette["muted"]
-        cursor = "hand2" if enabled else "arrow"
-        row = self.pick_row_frames.get(slot_key)
-        if not row or not row.winfo_exists():
-            return
-
-        def apply_recursive(widget: tk.Misc) -> None:
-            try:
-                if isinstance(widget, (tk.Frame, tk.Label)):
-                    widget.configure(bg=bg, cursor=cursor)
-                    if isinstance(widget, tk.Label):
-                        current_fg = str(widget.cget("fg"))
-                        if current_fg not in {palette["muted"], palette["text"]}:
-                            return
-                        widget.configure(fg=text_fg if current_fg != palette["muted"] else palette["muted"])
-            except Exception:
-                pass
-            for child in widget.winfo_children():
-                apply_recursive(child)
-
-        try:
-            row.configure(bg=bg, cursor=cursor, highlightbackground=border, highlightcolor=border)
-        except Exception:
-            pass
-        apply_recursive(row)
 
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
@@ -287,38 +196,46 @@ class SettingsWindow:
         self._refresh_role_selector_button()
 
         ttk.Separator(self.main_frame).grid(row=start_row + 1, column=0, columnspan=4, sticky="we", pady=(4, 8))
-        palette = self._get_pick_ui_palette()
-        border = palette.get("border", palette["muted"])
-
         for offset, slot_key in enumerate(PICK_SLOT_ORDER, start=2):
             ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
                 row=start_row + offset,
                 column=0,
                 sticky="e",
                 padx=5,
-                pady=5,
-            )
-            row_frame = tk.Frame(
-                self.main_frame,
-                bg=palette["window_bg"],
-                bd=1,
-                relief="solid",
-                highlightthickness=1,
-                highlightbackground=border,
-                highlightcolor=border,
-                cursor="hand2",
-                padx=6,
                 pady=4,
             )
-            row_frame.grid(row=start_row + offset, column=1, columnspan=3, sticky="ew", padx=5, pady=5)
-            self.pick_row_frames[slot_key] = row_frame
-            self.pick_buttons[slot_key] = row_frame
+            champion_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=16,
+                command=lambda number=offset - 1: self._open_champion_picker("pick", number),
+            )
+            champion_btn.grid(row=start_row + offset, column=1, sticky="ew", padx=5, pady=4)
+            self.pick_buttons[slot_key] = champion_btn
 
-            self._make_pick_cell(row_frame, slot_key, "champion")
-            self._make_pick_cell(row_frame, slot_key, "spell_1")
-            self._make_pick_cell(row_frame, slot_key, "spell_2")
-            self._bind_pick_row_click(row_frame, slot_key)
-        return start_row + 5
+            spell_1_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=13,
+                command=lambda key=slot_key: self._open_spell_picker(key, 1),
+            )
+            spell_1_btn.grid(row=start_row + offset, column=2, sticky="ew", padx=5, pady=4)
+            self.pick_spell_buttons[(slot_key, 1)] = spell_1_btn
+
+            spell_2_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=13,
+                command=lambda key=slot_key: self._open_spell_picker(key, 2),
+            )
+            spell_2_btn.grid(row=start_row + offset, column=3, sticky="ew", padx=5, pady=4)
+            self.pick_spell_buttons[(slot_key, 2)] = spell_2_btn
+
+        ttk.Separator(self.main_frame).grid(row=start_row + 5, column=0, columnspan=4, sticky="we", pady=(10, 8))
+        return start_row + 6
 
     def _create_ban_section(self, start_row: int) -> int:
         ttk.Checkbutton(
@@ -594,7 +511,6 @@ class SettingsWindow:
             slot_data[field] = value
             new_slots[slot_key] = slot_data
             self.parent.update_param("pick_slots", new_slots)
-            self._refresh_pick_editor_state()
             return
 
         params = self.parent.get_params()
@@ -613,7 +529,6 @@ class SettingsWindow:
         role_data["pick_slots"] = new_slots
         new_profiles[role] = role_data
         self.parent.update_param("role_profiles", new_profiles)
-        self._refresh_pick_editor_state()
 
     def _select_champion(self, context: str, champ_name: str, slot_num: int = 1) -> None:
         if context == "ban":
@@ -625,7 +540,6 @@ class SettingsWindow:
         elif slot_num == 3:
             self._set_profile_value("selected_pick_3", champ_name)
         self._refresh_profile_buttons()
-        self._refresh_pick_editor_state()
 
     def _load_role_icon(self, role: str, size: int = 24) -> Optional[ImageTk.PhotoImage]:
         cache_key = (role, size)
@@ -837,135 +751,6 @@ class SettingsWindow:
             excluded.update({pick_1, pick_2, pick_3})
         return {champion for champion in excluded if champion and champion != "(None)"}
 
-    def _refresh_pick_summary_rows(self) -> None:
-        for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
-            values = {
-                "champion": self._get_display_value(f"selected_pick_{index}"),
-                "spell_1": self._get_pick_slot_display_value(slot_key, "spell_1"),
-                "spell_2": self._get_pick_slot_display_value(slot_key, "spell_2"),
-            }
-            for field, text in values.items():
-                self._update_value_display(
-                    self.pick_summary_icons.get((slot_key, field)),
-                    self.pick_summary_labels.get((slot_key, field)),
-                    text,
-                    is_champ=(field == "champion"),
-                )
-
-    def _refresh_pick_editor_state(self) -> None:
-        editor_window = getattr(self, "pick_editor_window", None)
-        editor_slot = getattr(self, "pick_editor_slot_key", None)
-        if not editor_window or not editor_window.winfo_exists() or not editor_slot:
-            return
-        slot_key = editor_slot
-        slot_num = self._slot_number_from_key(slot_key)
-        values = {
-            "champion": self._get_display_value(f"selected_pick_{slot_num}"),
-            "spell_1": self._get_pick_slot_display_value(slot_key, "spell_1"),
-            "spell_2": self._get_pick_slot_display_value(slot_key, "spell_2"),
-        }
-        for field, text in values.items():
-            self._update_value_display(
-                self.pick_editor_icon_labels.get(field),
-                self.pick_editor_value_labels.get(field),
-                text,
-                is_champ=(field == "champion"),
-                size=self.EDITOR_ICON_SIZE,
-            )
-
-    def _close_pick_slot_editor(self) -> None:
-        editor_window = getattr(self, "pick_editor_window", None)
-        if editor_window and editor_window.winfo_exists():
-            editor_window.destroy()
-        self.pick_editor_window = None
-        self.pick_editor_slot_key = None
-        self.pick_editor_value_labels = {}
-        self.pick_editor_icon_labels = {}
-
-    def _open_pick_slot_editor(self, slot_key: str) -> None:
-        if self.pick_editor_window and self.pick_editor_window.winfo_exists():
-            self.pick_editor_window.destroy()
-
-        self.pick_editor_window = ttk.Toplevel(self.window)
-        self.pick_editor_slot_key = slot_key
-        self.pick_editor_value_labels = {}
-        self.pick_editor_icon_labels = {}
-        if self.window._icon_img:
-            self.pick_editor_window.iconphoto(False, self.window._icon_img)
-        self.pick_editor_window.title(self._get_preset_label(slot_key))
-        self.pick_editor_window.geometry(f"560x250+{self.window.winfo_x()+60}+{self.window.winfo_y()+80}")
-        self.pick_editor_window.resizable(False, False)
-        self.pick_editor_window.transient(self.window)
-        self.pick_editor_window.protocol("WM_DELETE_WINDOW", self._close_pick_slot_editor)
-
-        palette = self._get_pick_ui_palette()
-        border = palette.get("border", palette["muted"])
-        self.pick_editor_window.configure(bg=palette["window_bg"])
-
-        container = ttk.Frame(self.pick_editor_window, padding=14)
-        container.pack(fill="both", expand=True)
-        container.columnconfigure(0, weight=1)
-        container.columnconfigure(1, weight=1)
-        container.columnconfigure(2, weight=1)
-
-        ttk.Label(
-            container,
-            text=f"{self._get_preset_label(slot_key)} configuration",
-            font=("Segoe UI", 11, "bold"),
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-        slot_num = self._slot_number_from_key(slot_key)
-        field_specs = (
-            ("champion", "Champion", lambda: self._open_champion_picker("pick", slot_num)),
-            ("spell_1", "Summ 1", lambda: self._open_spell_picker(slot_key, 1)),
-            ("spell_2", "Summ 2", lambda: self._open_spell_picker(slot_key, 2)),
-        )
-
-        for column_index, (field_key, field_label, choose_command) in enumerate(field_specs):
-            card = tk.Frame(
-                container,
-                bg=palette["window_bg"],
-                bd=1,
-                relief="solid",
-                highlightthickness=1,
-                highlightbackground=border,
-                highlightcolor=border,
-                padx=12,
-                pady=12,
-                cursor="hand2",
-            )
-            card.grid(row=1, column=column_index, sticky="nsew", padx=6, pady=(0, 8))
-
-            tk.Label(
-                card,
-                text=field_label,
-                bg=palette["window_bg"],
-                fg=palette["muted"],
-                font=("Segoe UI", 9, "bold"),
-                cursor="hand2",
-            ).pack(anchor="w")
-
-            icon_label = tk.Label(card, bg=palette["window_bg"], cursor="hand2")
-            icon_label.pack(pady=(10, 6))
-            self.pick_editor_icon_labels[field_key] = icon_label
-
-            value_label = tk.Label(
-                card,
-                text="...",
-                bg=palette["window_bg"],
-                fg=palette["text"],
-                font=("Segoe UI", 10),
-                justify="center",
-                wraplength=150,
-                cursor="hand2",
-            )
-            value_label.pack(fill="x")
-            self.pick_editor_value_labels[field_key] = value_label
-
-            self._bind_editor_card_click(card, choose_command)
-
-        self._refresh_pick_editor_state()
-
     def _open_champion_picker(self, context: str, slot_num: int = 1) -> None:
         open_champion_picker(self, context, slot_num)
 
@@ -1055,60 +840,24 @@ class SettingsWindow:
 
         self.parent.executor.submit(task)
 
-    def _update_value_display(
-        self,
-        icon_widget: Optional[tk.Label],
-        text_widget: Optional[tk.Label],
-        display_name: str,
-        *,
-        is_champ: bool,
-        size: tuple[int, int] = PICK_ICON_SIZE,
-    ) -> None:
-        if text_widget and text_widget.winfo_exists():
-            text_widget.configure(text=display_name)
-
-        if not icon_widget or not icon_widget.winfo_exists():
-            return
-
-        raw_name = (display_name or "").replace("Fallback: ", "").strip()
-        if raw_name in {"", "...", "None"}:
-            icon_widget.configure(image="", text="")
-            icon_widget.image = None
-            return
-
-        def task():
-            try:
-                img = self.parent.dd.get_champion_icon(raw_name) if is_champ else self.parent.dd.get_summoner_icon(raw_name)
-                if img:
-                    img = img.resize(size, Image.LANCZOS)
-                    photo = ImageTk.PhotoImage(img)
-
-                    def update_ui():
-                        if icon_widget.winfo_exists():
-                            icon_widget.configure(image=photo, text="")
-                            icon_widget.image = photo
-
-                    icon_widget.after(0, update_ui)
-                else:
-                    def clear_ui():
-                        if icon_widget.winfo_exists():
-                            icon_widget.configure(image="", text="")
-                            icon_widget.image = None
-
-                    icon_widget.after(0, clear_ui)
-            except Exception as e:
-                logging.debug(f"Value display icon loading error for {display_name}: {e}")
-
-        self.parent.executor.submit(task)
-
     def _refresh_profile_buttons(self) -> None:
         self._update_btn_content(self.btn_ban, self._get_display_value("selected_ban"), True)
-        self._refresh_pick_summary_rows()
+        for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
+            button = self.pick_buttons.get(slot_key)
+            if button and button.winfo_exists():
+                self._update_btn_content(button, self._get_display_value(f"selected_pick_{index}"), True)
         self._refresh_role_selector_button()
 
     def _refresh_spell_buttons(self) -> None:
-        self._refresh_pick_summary_rows()
-        self._refresh_pick_editor_state()
+        for slot_key in PICK_SLOT_ORDER:
+            for spell_slot_num in (1, 2):
+                button = self.pick_spell_buttons.get((slot_key, spell_slot_num))
+                if button and button.winfo_exists():
+                    self._update_btn_content(
+                        button,
+                        self._get_pick_slot_display_value(slot_key, f"spell_{spell_slot_num}"),
+                        False,
+                    )
 
     def toggle_summoner_entry(self) -> None:
         if self.summoner_auto_detect_var.get():
@@ -1127,15 +876,17 @@ class SettingsWindow:
         self._update_detect_label_text()
 
     def toggle_pick(self) -> None:
-        enabled = self.auto_pick_var.get()
-        for slot_key in getattr(self, "pick_row_frames", {}):
-            self._set_pick_row_enabled(slot_key, enabled)
+        state = "normal" if self.auto_pick_var.get() else "disabled"
+        for button in getattr(self, "pick_buttons", {}).values():
+            button.configure(state=state)
 
     def toggle_ban(self) -> None:
         self.btn_ban.configure(state="normal" if self.auto_ban_var.get() else "disabled")
 
     def toggle_spells(self) -> None:
-        return
+        state = "normal" if self.auto_summoners_var.get() else "disabled"
+        for button in getattr(self, "pick_spell_buttons", {}).values():
+            button.configure(state=state)
 
     def _update_detect_label_text(self) -> None:
         detected = self.parent.get_auto_summoner_name()
@@ -1250,7 +1001,6 @@ class SettingsWindow:
     def on_close(self) -> None:
         if self._capture_target:
             self._cancel_hotkey_capture()
-        self._close_pick_slot_editor()
         self.parent.update_param("auto_pick_enabled", True)
         self.parent.update_param("auto_summoners_enabled", True)
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())

@@ -4,11 +4,12 @@ Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Current project version: `7.0`
+Current project version: `9.0`
 
 ## Table Of Contents
 
 - [Overview](#overview)
+- [Version 9.0 Highlights](#version-90-highlights)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Technologies](#technologies)
@@ -45,6 +46,21 @@ The application is designed to work as a lightweight desktop tool:
 - keyboard shortcuts
 - local cache for some Data Dragon data
 
+## Version 9.0 Highlights
+
+Version `9.0` focuses on champion select reliability, cleaner settings, and better runtime behavior.
+
+- `Preset-based picks`
+  Each preset now stores one champion plus two summs, and the app uses the preset that is actually selected in champion select.
+- `More reliable champion select flow`
+  The app now handles pre-pick, skips banned or unavailable champions, falls back from `Preset 1` to `Preset 2` then `Preset 3`, and confirms actions directly from the LCU session.
+- `Direct preset editing`
+  The settings window now exposes three direct buttons per preset: champion, `Summ 1`, and `Summ 2`, with icon-based pickers and support for `None`.
+- `Cleaner tray and shutdown behavior`
+  Tray actions are marshalled back to the Tk thread so hiding and quitting behave correctly, including in the PyInstaller executable.
+- `Better diagnostics`
+  Logs are more explicit around ready check, pre-pick, ban, pick, summs, and update checks.
+
 ## Features
 
 ### Queue And Champion Select Automation
@@ -73,11 +89,12 @@ The application is designed to work as a lightweight desktop tool:
 - automatic client region detection
 - quick links to several player and in-game stats websites
 - per-role preset profiles
-- visual preset editor with champion and summoner icons
+- direct preset buttons with champion and summoner icons
 - local action history window
 - option to hide the window in the system tray
 - configurable global keyboard shortcuts
 - champion and summs icon cache
+- GitHub release update prompt when a newer version is available
 - logs in `%APPDATA%`
 
 ### Safety / Robustness Behaviors
@@ -230,11 +247,12 @@ On first launch, you can:
 
 ### Settings UI
 
-The settings window now exposes champion-select automation through visual presets:
+The settings window now exposes champion-select automation through direct preset buttons:
 
-- each preset row shows champion icon, `Summ 1`, and `Summ 2`
-- clicking a preset row opens a dedicated preset editor
-- the preset editor lets you select champion or spells directly from visual pickers
+- each preset row includes three direct buttons: champion, `Summ 1`, and `Summ 2`
+- each button shows its icon and current value directly in the settings window
+- clicking a champion button opens the champion picker immediately
+- clicking a summ button opens the summoner spell picker immediately
 - champion and summoner pickers include a `None` option to leave a field empty
 - ban remains a separate global configuration
 
