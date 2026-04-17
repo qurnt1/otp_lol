@@ -31,3 +31,8 @@ Thumbs.db
 
 # Local app/runtime files
 app_debug.log
+
+# Local planning / temp files
+a implémenter.txt
+.tmp_appdata/
+.tmp_temp/

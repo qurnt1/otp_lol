@@ -33,10 +33,15 @@ class GameState:
         self.has_prepicked: bool = False
         self.last_prepick_slot: Optional[str] = None
         self.last_locked_pick_slot: Optional[str] = None
+        self.prepick_wait_started_ts: float = 0.0
+        self.last_prepick_try_ts: float = 0.0
+        self.last_ban_try_ts: float = 0.0
+        self.last_pick_try_ts: float = 0.0
         self.desired_spell_ids: Optional[tuple[int, int]] = None
         self.last_confirmed_spell_ids: Optional[tuple[int, int]] = None
         self.last_spell_try_ts: float = 0.0
         self.spell_apply_in_progress: bool = False
+        self.last_flow_note: str = ""
         self.cache_lock = Lock()
 
     def reset_between_games(self) -> None:
@@ -55,7 +60,12 @@ class GameState:
         self.has_prepicked = False
         self.last_prepick_slot = None
         self.last_locked_pick_slot = None
+        self.prepick_wait_started_ts = 0.0
+        self.last_prepick_try_ts = 0.0
+        self.last_ban_try_ts = 0.0
+        self.last_pick_try_ts = 0.0
         self.desired_spell_ids = None
         self.last_confirmed_spell_ids = None
         self.last_spell_try_ts = 0.0
         self.spell_apply_in_progress = False
+        self.last_flow_note = ""

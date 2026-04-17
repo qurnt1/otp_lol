@@ -1,5 +1,0 @@
-En fait je me suis rendu compte que créer un seul bouton pour toute une ligne pour redemander la même chose juste après si ça va rien Final faut remettre les **** Et juste retirer l'interface preset configuration
-
-quand c'est le prmeir lancement mettre une opupmerci d'avoir installé main lol
-
-voir pr la release auto (ouvrir, ne plus me le rapeler,ok)

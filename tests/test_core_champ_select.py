@@ -1,5 +1,6 @@
 import asyncio
 import unittest
+from time import time
 from unittest.mock import AsyncMock
 
 from src.core import WebSocketManager
@@ -102,6 +103,29 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
         self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
 
+    async def test_logic_do_pick_tries_next_viable_preset_when_first_lock_fails(self):
+        self.manager._lock_in_champion = AsyncMock(side_effect=[False, True])
+
+        await self.manager._logic_do_pick(
+            {"id": 123},
+            self.params,
+            pickable_set={86, 99, 22},
+            banned_ids=set(),
+        )
+
+        self.assertEqual(
+            self.manager._lock_in_champion.await_args_list[0].args,
+            (123, 86),
+        )
+        self.assertEqual(
+            self.manager._lock_in_champion.await_args_list[1].args,
+            (123, 99),
+        )
+        self.assertEqual(self.manager._lock_in_champion.await_args_list[0].kwargs, {"action_type": "pick"})
+        self.assertEqual(self.manager._lock_in_champion.await_args_list[1].kwargs, {"action_type": "pick"})
+        self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
+        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+
     async def test_pick_priority_uses_role_profile_with_global_fallback(self):
         self.manager.state.assigned_position = "MID"
         self.params["role_profiles"]["MIDDLE"]["selected_pick_2"] = ""
@@ -195,6 +219,53 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.manager._hover_champion.assert_awaited_once_with(2, 86)
         self.manager._logic_do_ban.assert_not_awaited()
         self.manager._logic_do_pick.assert_not_awaited()
+
+    async def test_champ_select_tick_allows_ban_after_prepick_timeout(self):
+        self.manager.state.assigned_position = "TOP"
+        self.manager.state.time_left_ms = 5000
+        self.manager.state.prepick_wait_started_ts = time() - (self.manager.PREPICK_SOFT_TIMEOUT_S + 0.5)
+        self.manager._hover_champion = AsyncMock(return_value=True)
+        self.manager._logic_do_ban = AsyncMock()
+        self.manager._logic_do_pick = AsyncMock()
+
+        async def request(method, url, **kwargs):
+            if url == "/lol-champ-select/v1/session":
+                return FakeResponse(
+                    200,
+                    {
+                        "benchEnabled": False,
+                        "localPlayerCellId": 1,
+                        "myTeam": [{"cellId": 1, "assignedPosition": "TOP", "championId": 0}],
+                        "actions": [[
+                            {
+                                "id": 1,
+                                "actorCellId": 1,
+                                "completed": False,
+                                "type": "ban",
+                                "isInProgress": True,
+                                "championId": 0,
+                            },
+                            {
+                                "id": 2,
+                                "actorCellId": 1,
+                                "completed": False,
+                                "type": "pick",
+                                "isInProgress": False,
+                                "championId": 86,
+                            },
+                        ]],
+                    },
+                )
+            if url == "/lol-champ-select/v1/pickable-champion-ids":
+                return FakeResponse(200, [86, 99, 22])
+            raise AssertionError(f"Unexpected request: {method} {url}")
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+
+        await self.manager._champ_select_tick()
+
+        self.manager._logic_do_ban.assert_awaited_once()
 
     async def test_logic_do_ban_ignores_same_champion_as_pick(self):
         self.params["selected_ban"] = "Garen"
@@ -424,7 +495,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.state.last_prepick_slot, "pick_1")
         self.manager._set_spells.assert_awaited_once()
 
-    async def test_ban_waits_for_prepick_summs_confirmation(self):
+    async def test_ban_does_not_wait_for_prepick_summs_confirmation(self):
         self.manager.state.assigned_position = "TOP"
         self.manager.state.has_prepicked = True
         self.manager.state.last_prepick_slot = "pick_1"
@@ -471,7 +542,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         await self.manager._champ_select_tick()
         await asyncio.sleep(0)
 
-        self.manager._logic_do_ban.assert_not_awaited()
+        self.manager._logic_do_ban.assert_awaited_once()
         self.manager._set_spells.assert_awaited_once()
 
 
