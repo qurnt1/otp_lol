@@ -5,6 +5,8 @@
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
 </p>
 
+---
+
 <h1 align="center">OTP LOL</h1>
 
 ---
