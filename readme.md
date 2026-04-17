@@ -8,10 +8,6 @@ Windows desktop assistant for League of Legends, written in Python.
 [![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](./requirements.txt)
 [![Game](https://img.shields.io/badge/game-League%20of%20Legends-C28F2C)](https://www.leagueoflegends.com/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](./readme.md)
-[![Stack](https://img.shields.io/badge/stack-LCU%20%2F%20Tkinter-4C8CBF)](./readme.md)
-[![Build](https://img.shields.io/badge/build-PyInstaller-5A3E85)](./requirements-build.txt)
-[![Send Ideas](https://img.shields.io/badge/send%20ideas-email-1f883d)](mailto:chbtquentinpro@gmail.com?subject=OTP%20LOL%20Idea)
-[![Bug Report](https://img.shields.io/badge/bug%20report-email-d73a49)](mailto:chbtquentinpro@gmail.com?subject=OTP%20LOL%20Bug%20Report)
 
 Current project version: `9.0`
 
