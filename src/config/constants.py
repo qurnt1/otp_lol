@@ -5,7 +5,7 @@ from typing import Any, Dict
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-CURRENT_VERSION: str = "7.0"
+CURRENT_VERSION: str = "9.0"
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
 
@@ -54,6 +54,12 @@ PHASE_DISPLAY_MAP: Dict[str, str] = {
 }
 
 ROLE_PROFILE_ORDER: list[str] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+PICK_SLOT_ORDER: list[str] = ["pick_1", "pick_2", "pick_3"]
+PICK_SLOT_LABELS: Dict[str, str] = {
+    "pick_1": "Pick 1",
+    "pick_2": "Pick 2",
+    "pick_3": "Pick 3",
+}
 
 ROLE_PROFILE_LABELS: Dict[str, str] = {
     "GLOBAL": "Global",

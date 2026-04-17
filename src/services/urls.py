@@ -24,7 +24,7 @@ def build_opgg_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
 def build_porofessor_url(region: str, riot_id: str) -> str:
     """Build the Porofessor in-game URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name)}/"
+    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name)}/ranked-only"
 
 
 def build_leagueofgraphs_url(region: str, riot_id: str) -> str:

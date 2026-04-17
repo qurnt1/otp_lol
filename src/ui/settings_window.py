@@ -15,6 +15,8 @@ from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
     HOTKEY_SITE_LABELS,
+    PICK_SLOT_LABELS,
+    PICK_SLOT_ORDER,
     REGION_LIST,
     ROLE_PROFILE_ICON_FILES,
     ROLE_PROFILE_LABELS,
@@ -23,6 +25,7 @@ from ..config import (
     SUMMONER_SPELL_LIST,
     THEME_LABELS,
     THEME_ORDER,
+    THEME_PALETTE,
     export_parameters_to_file,
     import_parameters_from_file,
     resource_path,
@@ -37,6 +40,13 @@ if TYPE_CHECKING:
 
 class SettingsWindow:
     """Application settings window."""
+
+    PRESET_LABELS = {
+        "pick_1": "Preset 1",
+        "pick_2": "Preset 2",
+        "pick_3": "Preset 3",
+    }
+    PICK_ICON_SIZE = (30, 30)
 
     def __init__(self, parent: "LoLAssistantUI"):
         self.parent = parent
@@ -54,6 +64,8 @@ class SettingsWindow:
         self.site_picker_window: Optional[ttk.Toplevel] = None
         self._capture_target: Optional[str] = None
         self._pressed_modifiers: set[str] = set()
+        self.pick_buttons: Dict[str, ttk.Button] = {}
+        self.pick_spell_buttons: Dict[tuple[str, int], ttk.Button] = {}
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
@@ -78,9 +90,9 @@ class SettingsWindow:
     def _init_variables(self) -> None:
         params = self.parent.get_params()
         self.auto_accept_var = tk.BooleanVar(value=params.get("auto_accept_enabled", True))
-        self.auto_pick_var = tk.BooleanVar(value=params.get("auto_pick_enabled", True))
+        self.auto_pick_var = tk.BooleanVar(value=True)
         self.auto_ban_var = tk.BooleanVar(value=params.get("auto_ban_enabled", True))
-        self.auto_summoners_var = tk.BooleanVar(value=params.get("auto_summoners_enabled", True))
+        self.auto_summoners_var = tk.BooleanVar(value=True)
         self.summoner_auto_detect_var = tk.BooleanVar(value=params.get("summoner_name_auto_detect", True))
         self.summoner_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
@@ -103,12 +115,13 @@ class SettingsWindow:
         self.main_frame.pack(fill="both", expand=True)
         self.main_frame.columnconfigure(0, weight=0)
         self.main_frame.columnconfigure(1, weight=1)
+        self.main_frame.columnconfigure(2, weight=1)
+        self.main_frame.columnconfigure(3, weight=1)
 
         current_row = 0
         current_row = self._create_top_actions_section(current_row)
         current_row = self._create_pick_section(current_row)
         current_row = self._create_ban_section(current_row)
-        current_row = self._create_spells_section(current_row)
         current_row = self._create_summoner_detection_section(current_row)
         self._create_misc_section(current_row)
 
@@ -120,7 +133,7 @@ class SettingsWindow:
 
     def _create_top_actions_section(self, start_row: int) -> int:
         top_frame = ttk.Frame(self.main_frame)
-        top_frame.grid(row=start_row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        top_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 10))
         for column in range(4):
             top_frame.columnconfigure(column, weight=1, uniform="top-actions")
 
@@ -163,9 +176,12 @@ class SettingsWindow:
         ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(10, 0))
         return start_row + 1
 
+    def _get_preset_label(self, slot_key: str) -> str:
+        return self.PRESET_LABELS.get(slot_key, PICK_SLOT_LABELS.get(slot_key, slot_key))
+
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
-        role_frame.grid(row=start_row, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        role_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 10))
         ttk.Label(role_frame, text="Role profile:").pack(side="left")
         self.role_selector_btn = ttk.Button(
             role_frame,
@@ -179,33 +195,46 @@ class SettingsWindow:
         self.role_selector_btn.pack(side="left", padx=(10, 0))
         self._refresh_role_selector_button()
 
-        ttk.Separator(self.main_frame).grid(row=start_row + 1, column=0, columnspan=2, sticky="we", pady=(4, 8))
+        ttk.Separator(self.main_frame).grid(row=start_row + 1, column=0, columnspan=4, sticky="we", pady=(4, 8))
+        for offset, slot_key in enumerate(PICK_SLOT_ORDER, start=2):
+            ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
+                row=start_row + offset,
+                column=0,
+                sticky="e",
+                padx=5,
+                pady=4,
+            )
+            champion_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=16,
+                command=lambda number=offset - 1: self._open_champion_picker("pick", number),
+            )
+            champion_btn.grid(row=start_row + offset, column=1, sticky="ew", padx=5, pady=4)
+            self.pick_buttons[slot_key] = champion_btn
 
-        ttk.Checkbutton(
-            self.main_frame,
-            text="Lock my champion",
-            variable=self.auto_pick_var,
-            command=lambda: (
-                self.parent.update_param("auto_pick_enabled", self.auto_pick_var.get()),
-                self.toggle_pick(),
-            ),
-            bootstyle="info-round-toggle",
-        ).grid(row=start_row + 2, column=0, columnspan=2, sticky="w", pady=(4, 5))
+            spell_1_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=13,
+                command=lambda key=slot_key: self._open_spell_picker(key, 1),
+            )
+            spell_1_btn.grid(row=start_row + offset, column=2, sticky="ew", padx=5, pady=4)
+            self.pick_spell_buttons[(slot_key, 1)] = spell_1_btn
 
-        for offset, label_text in enumerate(["Pick 1 :", "Pick 2 :", "Pick 3 :"], start=3):
-            ttk.Label(self.main_frame, text=label_text).grid(row=start_row + offset, column=0, sticky="e", padx=5, pady=3)
+            spell_2_btn = ttk.Button(
+                self.main_frame,
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=13,
+                command=lambda key=slot_key: self._open_spell_picker(key, 2),
+            )
+            spell_2_btn.grid(row=start_row + offset, column=3, sticky="ew", padx=5, pady=4)
+            self.pick_spell_buttons[(slot_key, 2)] = spell_2_btn
 
-        self.btn_pick_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_pick_1.grid(row=start_row + 3, column=1, sticky="ew", padx=5, pady=3)
-        self.btn_pick_1.configure(command=lambda: self._open_champion_picker("pick", 1))
-
-        self.btn_pick_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_pick_2.grid(row=start_row + 4, column=1, sticky="ew", padx=5, pady=3)
-        self.btn_pick_2.configure(command=lambda: self._open_champion_picker("pick", 2))
-
-        self.btn_pick_3 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_pick_3.grid(row=start_row + 5, column=1, sticky="ew", padx=5, pady=3)
-        self.btn_pick_3.configure(command=lambda: self._open_champion_picker("pick", 3))
+        ttk.Separator(self.main_frame).grid(row=start_row + 5, column=0, columnspan=4, sticky="we", pady=(10, 8))
         return start_row + 6
 
     def _create_ban_section(self, start_row: int) -> int:
@@ -218,43 +247,19 @@ class SettingsWindow:
                 self.toggle_ban(),
             ),
             bootstyle="danger-round-toggle",
-        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
+        ).grid(row=start_row, column=0, columnspan=4, sticky="w", pady=(15, 5))
 
         ttk.Label(self.main_frame, text="Ban:").grid(row=start_row + 1, column=0, sticky="e", padx=5)
         self.btn_ban = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_ban.grid(row=start_row + 1, column=1, sticky="ew", padx=5)
+        self.btn_ban.grid(row=start_row + 1, column=1, columnspan=3, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
         return start_row + 2
 
-    def _create_spells_section(self, start_row: int) -> int:
-        ttk.Checkbutton(
-            self.main_frame,
-            text="Configure summs",
-            variable=self.auto_summoners_var,
-            command=lambda: (
-                self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get()),
-                self.toggle_spells(),
-            ),
-            bootstyle="warning-round-toggle",
-        ).grid(row=start_row, column=0, columnspan=2, sticky="w", pady=(15, 5))
-
-        ttk.Label(self.main_frame, text="Summ 1:").grid(row=start_row + 1, column=0, sticky="e", padx=5, pady=3)
-        ttk.Label(self.main_frame, text="Summ 2:").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=3)
-
-        self.btn_spell_1 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_spell_1.grid(row=start_row + 1, column=1, sticky="ew", padx=5, pady=3)
-        self.btn_spell_1.configure(command=lambda: self._open_spell_picker(1))
-
-        self.btn_spell_2 = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_spell_2.grid(row=start_row + 2, column=1, sticky="ew", padx=5, pady=3)
-        self.btn_spell_2.configure(command=lambda: self._open_spell_picker(2))
-        return start_row + 3
-
     def _create_summoner_detection_section(self, start_row: int) -> int:
         params = self.parent.get_params()
-        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=2, sticky="we", pady=(15, 10))
+        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=4, sticky="we", pady=(15, 10))
         detect_frame = ttk.Frame(self.main_frame)
-        detect_frame.grid(row=start_row + 1, column=0, columnspan=2, sticky="w", pady=(0, 5))
+        detect_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="w", pady=(0, 5))
 
         def on_auto_toggle():
             if self.summoner_auto_detect_var.get():
@@ -284,19 +289,19 @@ class SettingsWindow:
 
         ttk.Label(self.main_frame, text="Riot ID:", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
         self.summ_entry = ttk.Entry(self.main_frame, textvariable=self.summoner_entry_var, state="readonly")
-        self.summ_entry.grid(row=start_row + 2, column=1, sticky="ew", padx=5)
+        self.summ_entry.grid(row=start_row + 2, column=1, columnspan=3, sticky="ew", padx=5)
 
         ttk.Label(self.main_frame, text="Region:", anchor="w").grid(row=start_row + 3, column=0, sticky="e", padx=5, pady=5)
         self.region_var = tk.StringVar(value=params.get("manual_region", "euw"))
         self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=start_row + 3, column=1, sticky="ew", padx=5)
+        self.region_cb.grid(row=start_row + 3, column=1, columnspan=3, sticky="ew", padx=5)
         self.region_cb.bind("<<ComboboxSelected>>", self._on_manual_region_selected)
         return start_row + 4
 
     def _create_misc_section(self, start_row: int) -> None:
-        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=2, sticky="we", pady=(15, 8))
+        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=4, sticky="we", pady=(15, 8))
         misc_frame = ttk.Frame(self.main_frame)
-        misc_frame.grid(row=start_row + 1, column=0, columnspan=2, sticky="ew")
+        misc_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="ew")
 
         site_frame = ttk.Frame(misc_frame)
         site_frame.pack(anchor="w", pady=(0, 8), fill="x")
@@ -395,7 +400,7 @@ class SettingsWindow:
     def _get_selected_profile_role(self) -> str:
         return self._normalize_role(self.profile_role_var.get())
 
-    def _get_profile_role_data(self, role: Optional[str] = None) -> Dict[str, str]:
+    def _get_profile_role_data(self, role: Optional[str] = None) -> Dict[str, object]:
         params = self.parent.get_params()
         target_role = self._normalize_role(role or self._get_selected_profile_role())
         if target_role == "GLOBAL":
@@ -404,8 +409,7 @@ class SettingsWindow:
                 "selected_pick_2": params.get("selected_pick_2", ""),
                 "selected_pick_3": params.get("selected_pick_3", ""),
                 "selected_ban": params.get("selected_ban", ""),
-                "spell_1": params.get("global_spell_1", ""),
-                "spell_2": params.get("global_spell_2", ""),
+                "pick_slots": params.get("pick_slots", {}),
             }
         role_profiles = params.get("role_profiles", {})
         role_data = role_profiles.get(target_role, {}) if isinstance(role_profiles, dict) else {}
@@ -416,12 +420,27 @@ class SettingsWindow:
             "selected_pick_2": role_data.get("selected_pick_2", ""),
             "selected_pick_3": role_data.get("selected_pick_3", ""),
             "selected_ban": role_data.get("selected_ban", ""),
-            "spell_1": role_data.get("spell_1", ""),
-            "spell_2": role_data.get("spell_2", ""),
+            "pick_slots": role_data.get("pick_slots", {}),
         }
 
     def _get_profile_value(self, key: str) -> str:
         return self._get_profile_role_data().get(key, "")
+
+    @staticmethod
+    def _normalize_empty_choice(value: str) -> str:
+        return "(None)" if value in {"", "..."} else value
+
+    @staticmethod
+    def _format_visible_value(value: str) -> str:
+        if value == "(None)":
+            return "None"
+        if not value:
+            return "..."
+        return value
+
+    @staticmethod
+    def _slot_number_from_key(slot_key: str) -> int:
+        return PICK_SLOT_ORDER.index(slot_key) + 1
 
     def _get_global_fallback_value(self, key: str) -> str:
         params = self.parent.get_params()
@@ -430,26 +449,23 @@ class SettingsWindow:
             "selected_pick_2": params.get("selected_pick_2", ""),
             "selected_pick_3": params.get("selected_pick_3", ""),
             "selected_ban": params.get("selected_ban", ""),
-            "spell_1": params.get("global_spell_1", ""),
-            "spell_2": params.get("global_spell_2", ""),
         }
         return global_map.get(key, "")
 
     def _get_display_value(self, key: str) -> str:
         value = self._get_profile_value(key)
         if value:
-            return value
+            return self._format_visible_value(value)
         if self._get_selected_profile_role() != "GLOBAL":
             fallback = self._get_global_fallback_value(key)
             if fallback:
-                return f"Fallback: {fallback}"
+                return f"Fallback: {self._format_visible_value(fallback)}"
         return "..."
 
     def _set_profile_value(self, key: str, value: str) -> None:
         role = self._get_selected_profile_role()
         if role == "GLOBAL":
-            key_map = {"spell_1": "global_spell_1", "spell_2": "global_spell_2"}
-            self.parent.update_param(key_map.get(key, key), value)
+            self.parent.update_param(key, value)
             return
 
         params = self.parent.get_params()
@@ -459,6 +475,58 @@ class SettingsWindow:
         new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
         role_data = new_profiles.get(role, {})
         role_data[key] = value
+        new_profiles[role] = role_data
+        self.parent.update_param("role_profiles", new_profiles)
+
+    def _get_pick_slot_value(self, slot_key: str, field: str) -> str:
+        pick_slots = self._get_profile_role_data().get("pick_slots", {})
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        return str(slot_data.get(field, "")) if isinstance(slot_data, dict) else ""
+
+    def _get_global_pick_slot_value(self, slot_key: str, field: str) -> str:
+        params = self.parent.get_params()
+        pick_slots = params.get("pick_slots", {})
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        return str(slot_data.get(field, "")) if isinstance(slot_data, dict) else ""
+
+    def _get_pick_slot_display_value(self, slot_key: str, field: str) -> str:
+        value = self._get_pick_slot_value(slot_key, field)
+        if value:
+            return self._format_visible_value(value)
+        if self._get_selected_profile_role() != "GLOBAL":
+            fallback = self._get_global_pick_slot_value(slot_key, field)
+            if fallback:
+                return f"Fallback: {self._format_visible_value(fallback)}"
+        return "..."
+
+    def _set_pick_slot_value(self, slot_key: str, field: str, value: str) -> None:
+        role = self._get_selected_profile_role()
+        if role == "GLOBAL":
+            params = self.parent.get_params()
+            pick_slots = params.get("pick_slots", {})
+            if not isinstance(pick_slots, dict):
+                pick_slots = {}
+            new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
+            slot_data = new_slots.get(slot_key, {})
+            slot_data[field] = value
+            new_slots[slot_key] = slot_data
+            self.parent.update_param("pick_slots", new_slots)
+            return
+
+        params = self.parent.get_params()
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+        role_data = new_profiles.get(role, {})
+        pick_slots = role_data.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
+        new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
+        slot_data = new_slots.get(slot_key, {})
+        slot_data[field] = value
+        new_slots[slot_key] = slot_data
+        role_data["pick_slots"] = new_slots
         new_profiles[role] = role_data
         self.parent.update_param("role_profiles", new_profiles)
 
@@ -681,19 +749,19 @@ class SettingsWindow:
                 excluded.update({pick_1, pick_2})
         elif context == "ban":
             excluded.update({pick_1, pick_2, pick_3})
-        return {champion for champion in excluded if champion}
+        return {champion for champion in excluded if champion and champion != "(None)"}
 
     def _open_champion_picker(self, context: str, slot_num: int = 1) -> None:
         open_champion_picker(self, context, slot_num)
 
-    def _open_spell_picker(self, spell_slot_num: int) -> None:
+    def _open_spell_picker(self, pick_slot_key: str, spell_slot_num: int) -> None:
         if not self.auto_summoners_var.get():
             return
 
         picker = ttk.Toplevel(self.window)
         if self.window._icon_img:
             picker.iconphoto(False, self.window._icon_img)
-        picker.title(f"Choose Summ {spell_slot_num}")
+        picker.title(f"{self._get_preset_label(pick_slot_key)} - Summ {spell_slot_num}")
         picker.geometry(f"380x420+{self.window.winfo_x()+50}+{self.window.winfo_y()+100}")
         picker.resizable(False, False)
         container = ttk.Frame(picker, padding=10)
@@ -701,22 +769,25 @@ class SettingsWindow:
 
         def on_pick(spell_name: str) -> None:
             other_key = "spell_2" if spell_slot_num == 1 else "spell_1"
-            current_other = self._get_profile_value(other_key) or self._get_global_fallback_value(other_key)
+            current_other = self._get_pick_slot_value(pick_slot_key, other_key) or self._get_global_pick_slot_value(
+                pick_slot_key, other_key
+            )
             if spell_name == current_other and spell_name != "(None)":
-                self._set_profile_value(other_key, "(None)")
+                self._set_pick_slot_value(pick_slot_key, other_key, "(None)")
 
             target_key = "spell_1" if spell_slot_num == 1 else "spell_2"
-            self._set_profile_value(target_key, spell_name)
+            self._set_pick_slot_value(pick_slot_key, target_key, spell_name)
             self._refresh_spell_buttons()
             picker.destroy()
 
         row, col = 0, 0
-        for spell in self.spell_list:
+        for spell in ["(None)", *self.spell_list]:
             spell_frame = ttk.Frame(container)
             spell_frame.grid(row=row, column=col, padx=5, pady=5)
-            btn = ttk.Button(spell_frame, text=spell, bootstyle="link", command=lambda s=spell: on_pick(s), compound="top")
+            btn = ttk.Button(spell_frame, text="None" if spell == "(None)" else spell, bootstyle="link", command=lambda s=spell: on_pick(s), compound="top")
             btn.pack()
-            self._load_img_into_btn(btn, spell, False, size=(42, 42))
+            if spell != "(None)":
+                self._load_img_into_btn(btn, spell, False, size=self.PICK_ICON_SIZE)
             col += 1
             if col > 3:
                 col = 0
@@ -771,14 +842,22 @@ class SettingsWindow:
 
     def _refresh_profile_buttons(self) -> None:
         self._update_btn_content(self.btn_ban, self._get_display_value("selected_ban"), True)
-        self._update_btn_content(self.btn_pick_1, self._get_display_value("selected_pick_1"), True)
-        self._update_btn_content(self.btn_pick_2, self._get_display_value("selected_pick_2"), True)
-        self._update_btn_content(self.btn_pick_3, self._get_display_value("selected_pick_3"), True)
+        for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
+            button = self.pick_buttons.get(slot_key)
+            if button and button.winfo_exists():
+                self._update_btn_content(button, self._get_display_value(f"selected_pick_{index}"), True)
         self._refresh_role_selector_button()
 
     def _refresh_spell_buttons(self) -> None:
-        self._update_btn_content(self.btn_spell_1, self._get_display_value("spell_1"), False)
-        self._update_btn_content(self.btn_spell_2, self._get_display_value("spell_2"), False)
+        for slot_key in PICK_SLOT_ORDER:
+            for spell_slot_num in (1, 2):
+                button = self.pick_spell_buttons.get((slot_key, spell_slot_num))
+                if button and button.winfo_exists():
+                    self._update_btn_content(
+                        button,
+                        self._get_pick_slot_display_value(slot_key, f"spell_{spell_slot_num}"),
+                        False,
+                    )
 
     def toggle_summoner_entry(self) -> None:
         if self.summoner_auto_detect_var.get():
@@ -798,17 +877,16 @@ class SettingsWindow:
 
     def toggle_pick(self) -> None:
         state = "normal" if self.auto_pick_var.get() else "disabled"
-        self.btn_pick_1.configure(state=state)
-        self.btn_pick_2.configure(state=state)
-        self.btn_pick_3.configure(state=state)
+        for button in getattr(self, "pick_buttons", {}).values():
+            button.configure(state=state)
 
     def toggle_ban(self) -> None:
         self.btn_ban.configure(state="normal" if self.auto_ban_var.get() else "disabled")
 
     def toggle_spells(self) -> None:
         state = "normal" if self.auto_summoners_var.get() else "disabled"
-        self.btn_spell_1.configure(state=state)
-        self.btn_spell_2.configure(state=state)
+        for button in getattr(self, "pick_spell_buttons", {}).values():
+            button.configure(state=state)
 
     def _update_detect_label_text(self) -> None:
         detected = self.parent.get_auto_summoner_name()
@@ -820,9 +898,9 @@ class SettingsWindow:
     def _sync_from_params(self) -> None:
         params = self.parent.get_params()
         self.auto_accept_var.set(params.get("auto_accept_enabled", True))
-        self.auto_pick_var.set(params.get("auto_pick_enabled", True))
+        self.auto_pick_var.set(True)
         self.auto_ban_var.set(params.get("auto_ban_enabled", True))
-        self.auto_summoners_var.set(params.get("auto_summoners_enabled", True))
+        self.auto_summoners_var.set(True)
         self.summoner_auto_detect_var.set(params.get("summoner_name_auto_detect", True))
         self.summoner_entry_var.set(params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
@@ -923,7 +1001,8 @@ class SettingsWindow:
     def on_close(self) -> None:
         if self._capture_target:
             self._cancel_hotkey_capture()
-        self.parent.update_param("auto_summoners_enabled", self.auto_summoners_var.get())
+        self.parent.update_param("auto_pick_enabled", True)
+        self.parent.update_param("auto_summoners_enabled", True)
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
         if not self.summoner_auto_detect_var.get():
             self.parent.update_param("manual_summoner_name", self.summoner_entry_var.get())

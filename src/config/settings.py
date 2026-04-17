@@ -1,15 +1,27 @@
 """Settings loading, defaults and migration helpers."""
 
+import copy
 import json
 import logging
 import os
 from typing import Any, Dict
 
-from .constants import ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
+from .constants import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
 
 
-def build_role_profile_defaults() -> Dict[str, Dict[str, str]]:
+def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, str]]:
+    """Return a pick-slot payload with optional default summs."""
+    return {
+        slot: {
+            "spell_1": spell_1,
+            "spell_2": spell_2,
+        }
+        for slot in PICK_SLOT_ORDER
+    }
+
+
+def build_role_profile_defaults() -> Dict[str, Dict[str, Any]]:
     """Return a fully initialized role profile payload."""
     return {
         role: {
@@ -17,8 +29,7 @@ def build_role_profile_defaults() -> Dict[str, Dict[str, str]]:
             "selected_pick_2": "",
             "selected_pick_3": "",
             "selected_ban": "",
-            "spell_1": "",
-            "spell_2": "",
+            "pick_slots": build_pick_slot_defaults(),
         }
         for role in ROLE_PROFILE_ORDER
     }
@@ -33,6 +44,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
     "selected_ban": "Teemo",
+    "pick_slots": build_pick_slot_defaults(spell_1="Heal", spell_2="Flash"),
     "theme": "darkly",
     "summoner_name_auto_detect": True,
     "manual_summoner_name": "VotrePseudo#VotreTag",
@@ -42,8 +54,6 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_detected_platform": "",
     "selected_profile_role": "GLOBAL",
     "role_profiles": build_role_profile_defaults(),
-    "global_spell_1": "Heal",
-    "global_spell_2": "Flash",
     "preferred_stats_site": "opgg",
     "preferred_hotkey_site": "porofessor",
     "hotkey_toggle_window": "alt+c",
@@ -57,7 +67,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
 def load_parameters() -> Dict[str, Any]:
     """Load parameters from the JSON file."""
     if not os.path.exists(PARAMETERS_PATH):
-        return DEFAULT_PARAMS.copy()
+        return copy.deepcopy(DEFAULT_PARAMS)
 
     try:
         with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
@@ -65,7 +75,7 @@ def load_parameters() -> Dict[str, Any]:
         return _normalize_parameters(config)
     except (json.JSONDecodeError, IOError) as e:
         logging.warning(f"Error loading settings: {e}")
-        return DEFAULT_PARAMS.copy()
+        return copy.deepcopy(DEFAULT_PARAMS)
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
@@ -110,10 +120,40 @@ def _normalize_spell_value(value: Any) -> str:
     return spell_name if spell_name in SUMMONER_SPELL_MAP or not spell_name else spell_name
 
 
+def _build_normalized_pick_slots(
+    raw_slots: Any,
+    *,
+    fallback_spell_1: Any = "",
+    fallback_spell_2: Any = "",
+) -> Dict[str, Dict[str, str]]:
+    """Normalize a pick-slot payload while supporting legacy global spell fallbacks."""
+    fallback_1 = _normalize_spell_value(fallback_spell_1)
+    fallback_2 = _normalize_spell_value(fallback_spell_2)
+    slots = build_pick_slot_defaults(spell_1=fallback_1, spell_2=fallback_2)
+
+    if not isinstance(raw_slots, dict):
+        return slots
+
+    for slot in PICK_SLOT_ORDER:
+        slot_data = raw_slots.get(slot, {})
+        if not isinstance(slot_data, dict):
+            slot_data = {}
+        slots[slot].update(
+            {
+                "spell_1": _normalize_spell_value(slot_data.get("spell_1", slots[slot]["spell_1"])),
+                "spell_2": _normalize_spell_value(slot_data.get("spell_2", slots[slot]["spell_2"])),
+            }
+        )
+    return slots
+
+
 def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize loaded parameters and migrate old keys."""
-    merged = DEFAULT_PARAMS.copy()
-    merged.update(config)
+    merged = copy.deepcopy(DEFAULT_PARAMS)
+    for key, value in config.items():
+        if key in {"pick_slots", "role_profiles"}:
+            continue
+        merged[key] = value
 
     if "manual_region" not in config:
         merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])
@@ -140,6 +180,16 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         selected_profile_role if selected_profile_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
     )
 
+    merged["selected_pick_1"] = str(config.get("selected_pick_1", DEFAULT_PARAMS["selected_pick_1"]))
+    merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
+    merged["selected_pick_3"] = str(config.get("selected_pick_3", DEFAULT_PARAMS["selected_pick_3"]))
+    merged["selected_ban"] = str(config.get("selected_ban", DEFAULT_PARAMS["selected_ban"]))
+    merged["pick_slots"] = _build_normalized_pick_slots(
+        config.get("pick_slots"),
+        fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
+        fallback_spell_2=config.get("global_spell_2", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_2"]),
+    )
+
     raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
     normalized_profiles = build_role_profile_defaults()
     for role in ROLE_PROFILE_ORDER:
@@ -152,13 +202,14 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
                 "selected_pick_2": str(role_data.get("selected_pick_2", "")),
                 "selected_pick_3": str(role_data.get("selected_pick_3", "")),
                 "selected_ban": str(role_data.get("selected_ban", "")),
-                "spell_1": _normalize_spell_value(role_data.get("spell_1", "")),
-                "spell_2": _normalize_spell_value(role_data.get("spell_2", "")),
+                "pick_slots": _build_normalized_pick_slots(
+                    role_data.get("pick_slots"),
+                    fallback_spell_1=role_data.get("spell_1", ""),
+                    fallback_spell_2=role_data.get("spell_2", ""),
+                ),
             }
         )
     merged["role_profiles"] = normalized_profiles
-    merged["global_spell_1"] = _normalize_spell_value(config.get("global_spell_1", DEFAULT_PARAMS["global_spell_1"]))
-    merged["global_spell_2"] = _normalize_spell_value(config.get("global_spell_2", DEFAULT_PARAMS["global_spell_2"]))
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in {"opgg", "deeplol", "leagueofgraphs"}:
@@ -180,7 +231,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         theme = DEFAULT_PARAMS["theme"]
     merged["theme"] = theme
 
-    return {key: merged[key] for key in DEFAULT_PARAMS}
+    return {key: copy.deepcopy(merged[key]) for key in DEFAULT_PARAMS}
 
 
 def get_cache_dirs() -> None:

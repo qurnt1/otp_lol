@@ -30,7 +30,7 @@ class UtilsTests(unittest.TestCase):
         )
         self.assertEqual(
             build_porofessor_url("euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
         self.assertEqual(
             build_leagueofgraphs_url("euw", "MonCompte#EUW"),
@@ -70,7 +70,7 @@ class UtilsTests(unittest.TestCase):
     def test_build_hotkey_site_url_uses_selected_provider(self):
         self.assertEqual(
             build_hotkey_site_url("porofessor", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
         self.assertEqual(
             build_hotkey_site_url("deeplol", "euw", "MonCompte#EUW"),
@@ -82,7 +82,7 @@ class UtilsTests(unittest.TestCase):
         )
         self.assertEqual(
             build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/",
+            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
 
     def test_build_player_and_ingame_aliases(self):
@@ -103,14 +103,14 @@ class UtilsTests(unittest.TestCase):
     def test_check_for_updates_uses_semantic_comparison(self):
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"tag_name": "v7.0.0"}
+        response.json.return_value = {"tag_name": "v9.0.0"}
 
         with patch("src.utils.requests.get", return_value=response):
             self.assertIsNone(check_for_updates())
 
-        response.json.return_value = {"tag_name": "v7.1.0"}
+        response.json.return_value = {"tag_name": "v9.1.0"}
         with patch("src.utils.requests.get", return_value=response):
-            self.assertEqual(check_for_updates(), normalize_version("v7.1.0"))
+            self.assertEqual(check_for_updates(), normalize_version("v9.1.0"))
 
 
 if __name__ == "__main__":

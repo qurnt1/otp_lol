@@ -20,7 +20,10 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
     picker = ttk.Toplevel(owner.window)
     if owner.window._icon_img:
         picker.iconphoto(False, owner.window._icon_img)
-    picker.title(f"Select Champion ({context.title()})")
+    if is_pick_context:
+        picker.title(f"{owner._get_preset_label(f'pick_{slot_num}')} - Champion")
+    else:
+        picker.title(f"Select Champion ({context.title()})")
     picker.geometry(f"760x700+{owner.window.winfo_x()+20}+{owner.window.winfo_y()+20}")
 
     search_frame = ttk.Frame(picker, padding=10)
@@ -79,6 +82,24 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
                 col = 0
                 row += 1
 
+    def render_none_card(columns: int) -> None:
+        ttk.Label(grid_frame, text="No selection", font=("Segoe UI", 10, "bold")).grid(
+            row=0, column=0, columnspan=columns, sticky="w", pady=(0, 8)
+        )
+        card = ttk.Frame(grid_frame, padding=8)
+        card.grid(row=1, column=0, padx=6, pady=6, sticky="nsew")
+        select_btn = ttk.Button(
+            card,
+            text="None",
+            bootstyle="secondary-outline",
+            compound="top",
+            width=18,
+            padding=(8, 10),
+            command=lambda: on_select("(None)"),
+        )
+        select_btn.pack(fill="x")
+        ttk.Label(card, text="Leave this slot empty", bootstyle="secondary").pack(pady=(6, 0))
+
     def populate_grid(filter_text: str = "") -> None:
         for widget in grid_frame.winfo_children():
             widget.destroy()
@@ -89,10 +110,11 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
         columns = compute_columns()
         layout_state["columns"] = columns
 
+        render_none_card(columns)
         ttk.Label(grid_frame, text="All champions", font=("Segoe UI", 10, "bold")).grid(
-            row=0, column=0, columnspan=columns, sticky="w", pady=(0, 8)
+            row=2, column=0, columnspan=columns, sticky="w", pady=(14, 8)
         )
-        render_cards(filtered, 1, columns)
+        render_cards(filtered, 3, columns)
 
     def schedule_relayout(event=None) -> None:
         new_columns = compute_columns()

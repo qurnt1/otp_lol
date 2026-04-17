@@ -8,12 +8,13 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_current_version_targets_v7(self):
-        self.assertEqual(CURRENT_VERSION, "7.0")
+    def test_current_version_targets_v9(self):
+        self.assertEqual(CURRENT_VERSION, "9.0")
 
     def test_readme_mentions_current_version(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
         self.assertIn(f"Current project version: `{CURRENT_VERSION}`", readme_text)
+        self.assertIn(f"https://img.shields.io/badge/version-{CURRENT_VERSION}-", readme_text)
         self.assertIn(f"https://github.com/{GITHUB_REPO_NAME}.git", readme_text)
 
     def test_build_script_uses_current_version_constant(self):

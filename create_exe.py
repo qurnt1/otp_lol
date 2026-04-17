@@ -5,11 +5,68 @@ import shutil
 
 from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
+
+def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
+    """Ask a yes/no question in the console and return the normalized answer."""
+    yes_values = {"y", "yes", "o", "oui"}
+    no_values = {"n", "no", "non"}
+    suffix = "[Y/n]" if default else "[y/N]"
+
+    while True:
+        raw = input(f"{prompt} {suffix} ").strip().lower()
+        if not raw:
+            return default
+        if raw in yes_values:
+            return True
+        if raw in no_values:
+            return False
+        print("Please answer with yes/no or oui/non.")
+
+
+def _create_desktop_shortcut(target_exe: str, app_name: str) -> bool:
+    """Create a Windows desktop shortcut to the generated executable."""
+    powershell = shutil.which("powershell") or shutil.which("powershell.exe")
+    if not powershell:
+        print("⚠️  PowerShell not found. Desktop shortcut skipped.")
+        return False
+
+    target_exe = os.path.abspath(target_exe)
+    working_dir = os.path.dirname(target_exe)
+    shortcut_name = f"{app_name}.lnk"
+
+    ps_script = f"""
+$desktop = [Environment]::GetFolderPath('Desktop')
+if (-not $desktop) {{ throw 'Desktop path not found.' }}
+$shortcutPath = Join-Path $desktop '{shortcut_name}'
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = '{target_exe}'
+$shortcut.WorkingDirectory = '{working_dir}'
+$shortcut.IconLocation = '{target_exe},0'
+$shortcut.Save()
+"""
+
+    try:
+        subprocess.run(
+            [powershell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_script],
+            check=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        print(f"   ✓ Desktop shortcut created for {app_name}")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"   ⚠️  Desktop shortcut creation failed: {e}")
+        return False
+
 def main():
     print("=" * 60)
     print(f"   {APP_NAME} - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
     print("=" * 60)
+
+    create_shortcut = _prompt_yes_no("Create a desktop shortcut after build?", default=True)
     
     # Définition des chemins
     try:
@@ -151,6 +208,12 @@ def main():
         shutil.move(source, target)
         print(f"\n✅ SUCCÈS : {target}")
         print(f"   Taille : {os.path.getsize(target) / (1024*1024):.1f} Mo")
+
+        if create_shortcut:
+            print("\n🔗 Creating desktop shortcut...")
+            _create_desktop_shortcut(target, APP_BUILD_NAME)
+        else:
+            print("\nℹ️  Desktop shortcut skipped by user choice.")
         
         # Nettoyage
         print("\n🧹 Nettoyage des fichiers temporaires...")
