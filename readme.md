@@ -1,13 +1,21 @@
-# OTP LOL
+<p align="center">
+  <a href="./readme.md"><img src="https://img.shields.io/badge/version-9.0-2f81f7" alt="Version"></a>
+  <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
+  <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/stack-LCU%20%2F%20Tkinter-4C8CBF" alt="Stack"></a>
+  <a href="./requirements-build.txt"><img src="https://img.shields.io/badge/build-PyInstaller-5A3E85" alt="Build"></a>
+  <a href="mailto:chbtquentinpro@gmail.com?subject=OTP%20LOL%20Idea"><img src="https://img.shields.io/badge/send%20ideas-email-1f883d" alt="Send Ideas"></a>
+  <a href="mailto:chbtquentinpro@gmail.com?subject=OTP%20LOL%20Bug%20Report"><img src="https://img.shields.io/badge/bug%20report-email-d73a49" alt="Bug Report"></a>
+</p>
+
+<h1 align="center">OTP LOL</h1>
+
+---
 
 Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
-
-[![Version](https://img.shields.io/badge/version-9.0-2f81f7)](./readme.md)
-[![Python](https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white)](./requirements.txt)
-[![Game](https://img.shields.io/badge/game-League%20of%20Legends-C28F2C)](https://www.leagueoflegends.com/)
-[![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](./readme.md)
 
 Current project version: `9.0`
 
