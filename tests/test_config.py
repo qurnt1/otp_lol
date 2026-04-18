@@ -9,6 +9,27 @@ from src import config
 
 
 class ConfigTests(unittest.TestCase):
+    def test_load_parameters_first_launch_is_safe_but_keeps_demo_values(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertFalse(loaded["auto_accept_enabled"])
+        self.assertFalse(loaded["auto_pick_enabled"])
+        self.assertFalse(loaded["auto_ban_enabled"])
+        self.assertFalse(loaded["auto_summoners_enabled"])
+        self.assertFalse(loaded["presets_enabled"])
+        self.assertFalse(loaded["auto_play_again_enabled"])
+        self.assertEqual(loaded["selected_pick_1"], "Garen")
+        self.assertEqual(loaded["selected_pick_2"], "Lux")
+        self.assertEqual(loaded["selected_pick_3"], "Ashe")
+        self.assertEqual(loaded["selected_ban"], "Teemo")
+        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_1"], "Heal")
+        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Flash")
+        self.assertFalse(loaded["role_profiles"]["TOP"]["presets_enabled"])
+
     def test_load_parameters_migrates_legacy_region_to_manual_region(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
@@ -75,9 +96,34 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["selected_profile_role"], "MIDDLE")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_1"], "Ahri")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_ban"], "Zed")
+        self.assertTrue(loaded["role_profiles"]["MIDDLE"]["presets_enabled"])
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_2"], "")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_1"], "")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "")
+
+    def test_load_parameters_supports_global_and_role_presets_toggle(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps(
+                    {
+                        "presets_enabled": False,
+                        "role_profiles": {
+                            "TOP": {
+                                "presets_enabled": True,
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertFalse(loaded["presets_enabled"])
+        self.assertTrue(loaded["role_profiles"]["TOP"]["presets_enabled"])
+        self.assertFalse(loaded["role_profiles"]["JUNGLE"]["presets_enabled"])
 
     def test_load_parameters_migrates_legacy_global_spells_to_pick_slots(self):
         with tempfile.TemporaryDirectory() as tmpdir:

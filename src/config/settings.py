@@ -10,7 +10,7 @@ from .constants import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
 
 
-def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, str]]:
+def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
     """Return a pick-slot payload with optional default summs."""
     return {
         slot: {
@@ -21,10 +21,11 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
     }
 
 
-def build_role_profile_defaults() -> Dict[str, Dict[str, Any]]:
+def build_role_profile_defaults(*, presets_enabled: bool = True) -> Dict[str, Dict[str, Any]]:
     """Return a fully initialized role profile payload."""
     return {
         role: {
+            "presets_enabled": presets_enabled,
             "selected_pick_1": "",
             "selected_pick_2": "",
             "selected_pick_3": "",
@@ -40,6 +41,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_pick_enabled": True,
     "auto_ban_enabled": True,
     "auto_summoners_enabled": True,
+    "presets_enabled": True,
     "selected_pick_1": "Garen",
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
@@ -63,11 +65,24 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "close_app_on_lol_exit": True,
 }
 
+FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
+FIRST_LAUNCH_PARAMS.update(
+    {
+        "auto_accept_enabled": False,
+        "auto_pick_enabled": False,
+        "auto_ban_enabled": False,
+        "auto_summoners_enabled": False,
+        "presets_enabled": False,
+        "auto_play_again_enabled": False,
+        "role_profiles": build_role_profile_defaults(presets_enabled=False),
+    }
+)
+
 
 def load_parameters() -> Dict[str, Any]:
     """Load parameters from the JSON file."""
     if not os.path.exists(PARAMETERS_PATH):
-        return copy.deepcopy(DEFAULT_PARAMS)
+        return copy.deepcopy(FIRST_LAUNCH_PARAMS)
 
     try:
         with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
@@ -184,6 +199,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
     merged["selected_pick_3"] = str(config.get("selected_pick_3", DEFAULT_PARAMS["selected_pick_3"]))
     merged["selected_ban"] = str(config.get("selected_ban", DEFAULT_PARAMS["selected_ban"]))
+    merged["presets_enabled"] = bool(config.get("presets_enabled", DEFAULT_PARAMS["presets_enabled"]))
     merged["pick_slots"] = _build_normalized_pick_slots(
         config.get("pick_slots"),
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
@@ -191,13 +207,14 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
-    normalized_profiles = build_role_profile_defaults()
+    normalized_profiles = build_role_profile_defaults(presets_enabled=merged["presets_enabled"])
     for role in ROLE_PROFILE_ORDER:
         role_data = raw_profiles.get(role, {})
         if not isinstance(role_data, dict):
             role_data = {}
         normalized_profiles[role].update(
             {
+                "presets_enabled": bool(role_data.get("presets_enabled", merged["presets_enabled"])),
                 "selected_pick_1": str(role_data.get("selected_pick_1", "")),
                 "selected_pick_2": str(role_data.get("selected_pick_2", "")),
                 "selected_pick_3": str(role_data.get("selected_pick_3", "")),

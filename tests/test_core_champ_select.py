@@ -37,6 +37,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             "auto_pick_enabled": True,
             "auto_ban_enabled": True,
             "auto_summoners_enabled": False,
+            "presets_enabled": True,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
@@ -48,6 +49,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             },
             "role_profiles": {
                 "MIDDLE": {
+                    "presets_enabled": False,
                     "selected_pick_1": "Lux",
                     "selected_pick_2": "Ashe",
                     "selected_pick_3": "",
@@ -128,6 +130,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pick_priority_uses_role_profile_with_global_fallback(self):
         self.manager.state.assigned_position = "MID"
+        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.params["role_profiles"]["MIDDLE"]["selected_pick_2"] = ""
 
         effective = self.manager._get_effective_champ_select_config(self.params)
@@ -136,8 +139,14 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(effective["selected_pick_2"], "Lux")
         self.assertEqual(effective["selected_pick_3"], "Ashe")
 
+    async def test_pick_priority_returns_no_candidate_when_role_presets_are_disabled(self):
+        self.manager.state.assigned_position = "MID"
+
+        self.assertEqual(self.manager._get_pick_priority(self.params), [])
+
     async def test_prepick_uses_first_pickable_champion_in_priority(self):
         self.manager.state.assigned_position = "MID"
+        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager.state.time_left_ms = 5000
         self.manager._hover_champion = AsyncMock(return_value=True)
 
@@ -436,6 +445,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.manager.state.last_locked_pick_slot = "pick_2"
         self.manager.state.last_spell_try_ts = 0
         self.params["auto_summoners_enabled"] = True
+        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._set_spells = AsyncMock()
 
         async def request(method, url, **kwargs):
@@ -466,6 +476,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
     async def test_champ_select_tick_confirms_prepick_from_session_and_triggers_spells(self):
         self.manager.state.assigned_position = "MID"
         self.params["auto_summoners_enabled"] = True
+        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._set_spells = AsyncMock()
 
         async def request(method, url, **kwargs):
@@ -500,6 +511,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.manager.state.has_prepicked = True
         self.manager.state.last_prepick_slot = "pick_1"
         self.params["auto_summoners_enabled"] = True
+        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._logic_do_ban = AsyncMock()
         self.manager._logic_do_pick = AsyncMock()
         self.manager._set_spells = AsyncMock()

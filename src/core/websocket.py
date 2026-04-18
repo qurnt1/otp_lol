@@ -141,6 +141,7 @@ class WebSocketManager(ChampSelectMixin):
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
         effective = self.get_effective_profile_config(params=params)
         return {
+            "presets_enabled": effective["presets_enabled"],
             "selected_pick_1": effective["selected_pick_1"],
             "selected_pick_2": effective["selected_pick_2"],
             "selected_pick_3": effective["selected_pick_3"],
@@ -159,6 +160,7 @@ class WebSocketManager(ChampSelectMixin):
         role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
         if not isinstance(role_data, dict):
             role_data = {}
+        role_has_presets_override = "presets_enabled" in role_data
         global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
         role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
 
@@ -184,6 +186,11 @@ class WebSocketManager(ChampSelectMixin):
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
             "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
+            "presets_enabled": (
+                bool(role_data.get("presets_enabled"))
+                if role_has_presets_override
+                else bool(params.get("presets_enabled", True))
+            ),
             "pick_slots": pick_slots,
             "selected_pick_1": pick_slots["pick_1"]["champion"],
             "selected_pick_2": pick_slots["pick_2"]["champion"],
@@ -192,6 +199,7 @@ class WebSocketManager(ChampSelectMixin):
             "spell_1": first_slot.get("spell_1", ""),
             "spell_2": first_slot.get("spell_2", ""),
             "sources": {
+                "presets_enabled": resolved_role if role_has_presets_override else "GLOBAL",
                 "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
                 "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
                 "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",

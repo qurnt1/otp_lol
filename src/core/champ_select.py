@@ -80,6 +80,8 @@ class ChampSelectMixin:
 
     def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[tuple[str, str]]:
         effective = self._get_effective_champ_select_config(params)
+        if not effective.get("presets_enabled", True):
+            return []
         return [
             ("pick_1", effective.get("selected_pick_1", "")),
             ("pick_2", effective.get("selected_pick_2", "")),
@@ -196,6 +198,7 @@ class ChampSelectMixin:
                     my_actions.append(action)
 
         effective = self._get_effective_champ_select_config(params)
+        presets_enabled = bool(effective.get("presets_enabled", True))
         pickable_set = await self._fetch_pickable_ids()
         banned_ids = self._extract_banned_champion_ids(session)
         self._sync_prepick_state_from_session(session, params)
@@ -213,7 +216,7 @@ class ChampSelectMixin:
             None,
         )
 
-        if params.get("auto_pick_enabled") and effective.get("selected_pick_1"):
+        if params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1"):
             if prepick_action:
                 best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
                 target_champion_id = best_pick[2] if best_pick else None
@@ -229,7 +232,12 @@ class ChampSelectMixin:
                         if not hover_success:
                             self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
-        prepick_required = params.get("auto_pick_enabled") and effective.get("selected_pick_1") and prepick_action is not None
+        prepick_required = (
+            params.get("auto_pick_enabled")
+            and presets_enabled
+            and effective.get("selected_pick_1")
+            and prepick_action is not None
+        )
         if prepick_required and not self.state.has_prepicked:
             if self.state.prepick_wait_started_ts <= 0:
                 self.state.prepick_wait_started_ts = time()
@@ -239,11 +247,11 @@ class ChampSelectMixin:
                 return
             self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
 
-        prepick_sequence_active = params.get("auto_pick_enabled") and effective.get("selected_pick_1") and (
+        prepick_sequence_active = params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and (
             prepick_required or (self.state.has_prepicked and not self.state.has_picked)
         )
         prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
-        if params.get("auto_summoners_enabled") and prepick_sequence_active:
+        if params.get("auto_summoners_enabled") and presets_enabled and prepick_sequence_active:
             if not self._selection_has_expected_spells(session, params, slot_key=prepick_slot):
                 self._log_flow_once(
                     f"Pre-pick summs are not confirmed on {prepick_slot}; retries continue without blocking ban/pick."
@@ -252,10 +260,10 @@ class ChampSelectMixin:
 
         if active_ban_action and params.get("auto_ban_enabled"):
             await self._logic_do_ban(active_ban_action, effective)
-        elif active_pick_action and params.get("auto_pick_enabled"):
+        elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
             await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
 
-        if self.state.has_picked and params.get("auto_summoners_enabled"):
+        if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
 
     async def _hover_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:

@@ -55,7 +55,7 @@ from .paths import (
     get_appdata_path,
     resource_path,
 )
-from .settings import DEFAULT_PARAMS
+from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
 
 
 def _sync_runtime_paths() -> None:
@@ -142,6 +142,7 @@ __all__ = [
     "ICONS_CACHE_DIR",
     "SPELLS_CACHE_DIR",
     "DEFAULT_PARAMS",
+    "FIRST_LAUNCH_PARAMS",
     "load_parameters",
     "save_parameters",
     "export_parameters_to_file",
