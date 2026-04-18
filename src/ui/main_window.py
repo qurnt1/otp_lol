@@ -40,19 +40,15 @@ class LoLAssistantUI:
     PREVIEW_TOP_RELY = 0.47
     STATS_BUTTON_TOP_RELY = 0.79
     FEATURE_PREVIEW_DEFINITIONS = (
-        ("pick", "Pick", 3, "info"),
+        ("presets", "Presets", 3, "info"),
         ("ban", "Ban", 1, "danger"),
-        ("spells", "Summs", 2, "warning"),
     )
     FEATURE_PARAM_MAP = {
-        "pick": "auto_pick_enabled",
         "ban": "auto_ban_enabled",
-        "spells": "auto_summoners_enabled",
     }
     FEATURE_LABEL_MAP = {
-        "pick": "Auto-pick",
+        "presets": "Presets",
         "ban": "Auto-ban",
-        "spells": "Auto-summs",
     }
 
     def __init__(
@@ -244,6 +240,11 @@ class LoLAssistantUI:
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
             "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
+            "presets_enabled": (
+                bool(role_data.get("presets_enabled"))
+                if "presets_enabled" in role_data
+                else bool(params.get("presets_enabled", True))
+            ),
             "pick_slots": pick_slots,
             "selected_pick_1": pick_slots["pick_1"]["champion"],
             "selected_pick_2": pick_slots["pick_2"]["champion"],
@@ -252,6 +253,7 @@ class LoLAssistantUI:
             "spell_1": first_slot.get("spell_1", ""),
             "spell_2": first_slot.get("spell_2", ""),
             "sources": {
+                "presets_enabled": resolved_role if "presets_enabled" in role_data else "GLOBAL",
                 "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
                 "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
                 "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
@@ -496,10 +498,14 @@ class LoLAssistantUI:
         return "break"
 
     def _build_feature_preview_payload(self, params: Dict[str, Any], effective: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        preview_slot = effective.get("pick_slots", {}).get("pick_1", {}) if isinstance(effective.get("pick_slots", {}), dict) else {}
+        presets_enabled = bool(effective.get("presets_enabled", True))
         return {
-            "pick": {
-                "enabled": params.get("auto_pick_enabled", True),
+            "presets": {
+                "enabled": (
+                    params.get("auto_pick_enabled", True)
+                    and params.get("auto_summoners_enabled", True)
+                    and presets_enabled
+                ),
                 "style": "info",
                 "is_champion": True,
                 "values": [
@@ -514,18 +520,17 @@ class LoLAssistantUI:
                 "is_champion": True,
                 "values": [effective.get("selected_ban") or ""],
             },
-            "spells": {
-                "enabled": params.get("auto_summoners_enabled", True),
-                "style": "warning",
-                "is_champion": False,
-                "values": [
-                    preview_slot.get("spell_1") or effective.get("spell_1") or "",
-                    preview_slot.get("spell_2") or effective.get("spell_2") or "",
-                ],
-            },
         }
 
     def _toggle_main_preview_feature(self, feature_key: str) -> None:
+        if feature_key == "presets":
+            next_value = not self.is_main_preview_presets_enabled()
+            self.set_main_preview_presets_enabled(next_value)
+            self._sync_settings_window_if_open()
+            state_label = "active" if next_value else "desactive"
+            self.show_toast(f"{self.FEATURE_LABEL_MAP.get(feature_key, feature_key)} {state_label}.", duration=1200)
+            return
+
         param_key = self.FEATURE_PARAM_MAP.get(feature_key)
         if not param_key:
             return
@@ -552,7 +557,7 @@ class LoLAssistantUI:
 
     def _build_preview_signature(self, preview_data: Dict[str, Dict[str, Any]]) -> tuple:
         signature = []
-        for key in ("pick", "ban", "spells"):
+        for key in ("presets", "ban"):
             data = preview_data.get(key, {})
             signature.append(
                 (
@@ -569,7 +574,6 @@ class LoLAssistantUI:
         palette = {
             "info": "#3da5ff",
             "danger": "#ff6b5a",
-            "warning": "#f5b84c",
         }
         return ("", palette.get(accent, "#3da5ff"))
 
@@ -682,6 +686,11 @@ class LoLAssistantUI:
         self.tray_controller.setup(
             executor=self.executor,
             toggle_window=self.request_toggle_window_from_external_thread,
+            open_settings=self.request_open_settings_from_external_thread,
+            toggle_presets_automation=self.request_toggle_presets_automation_from_external_thread,
+            toggle_auto_ban=self.request_toggle_auto_ban_from_external_thread,
+            is_presets_automation_enabled=self.is_tray_presets_automation_enabled,
+            is_auto_ban_enabled=self.is_tray_auto_ban_enabled,
             quit_callback=self.request_quit_from_external_thread,
             on_failure=lambda: self.root.after(0, self._refresh_safe_controls),
         )
@@ -755,6 +764,125 @@ class LoLAssistantUI:
             self.root.after(0, self._quit_callback)
         except Exception as e:
             logging.debug(f"Unable to schedule tray quit on UI thread: {e}")
+
+    @staticmethod
+    def _normalize_profile_role(role: str) -> str:
+        normalized_role = (role or "GLOBAL").upper()
+        aliases = {
+            "MID": "MIDDLE",
+            "ADC": "BOTTOM",
+            "BOT": "BOTTOM",
+            "SUP": "UTILITY",
+            "SUPPORT": "UTILITY",
+            "JGL": "JUNGLE",
+        }
+        normalized_role = aliases.get(normalized_role, normalized_role)
+        return normalized_role if normalized_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
+
+    def _get_selected_profile_role(self) -> str:
+        return self._normalize_profile_role(self.get_params().get("selected_profile_role", "GLOBAL"))
+
+    def _sync_settings_window_if_open(self) -> None:
+        if self.settings_win and self.settings_win.window.winfo_exists():
+            self.settings_win._sync_from_params()
+
+    def _get_main_preview_role(self) -> str:
+        if self.ws_manager and self.ws_manager.state.assigned_position:
+            return self._normalize_profile_role(self.ws_manager.state.assigned_position)
+        return "GLOBAL"
+
+    def is_main_preview_presets_enabled(self) -> bool:
+        params = self.get_params()
+        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        return (
+            bool(params.get("auto_pick_enabled", True))
+            and bool(params.get("auto_summoners_enabled", True))
+            and bool(effective.get("presets_enabled", True))
+        )
+
+    def set_main_preview_presets_enabled(self, enabled: bool) -> None:
+        params = self.get_params()
+        target_role = self._get_main_preview_role()
+        self.update_param("auto_pick_enabled", enabled)
+        self.update_param("auto_summoners_enabled", enabled)
+
+        if target_role == "GLOBAL":
+            self.update_param("presets_enabled", enabled)
+            return
+
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+        role_data = new_profiles.get(target_role, {})
+        role_data["presets_enabled"] = enabled
+        new_profiles[target_role] = role_data
+        self.update_param("role_profiles", new_profiles)
+
+    def is_tray_presets_automation_enabled(self) -> bool:
+        params = self.get_params()
+        selected_role = self._get_selected_profile_role()
+        if selected_role == "GLOBAL":
+            return bool(params.get("presets_enabled", True))
+
+        role_profiles = params.get("role_profiles", {})
+        role_data = role_profiles.get(selected_role, {}) if isinstance(role_profiles, dict) else {}
+        if not isinstance(role_data, dict):
+            role_data = {}
+        return bool(role_data.get("presets_enabled", params.get("presets_enabled", True)))
+
+    def is_tray_auto_ban_enabled(self) -> bool:
+        return bool(self.get_params().get("auto_ban_enabled", True))
+
+    def toggle_tray_presets_automation(self) -> None:
+        params = self.get_params()
+        selected_role = self._get_selected_profile_role()
+        next_value = not self.is_tray_presets_automation_enabled()
+
+        if selected_role == "GLOBAL":
+            self.update_param("presets_enabled", next_value)
+        else:
+            role_profiles = params.get("role_profiles", {})
+            if not isinstance(role_profiles, dict):
+                role_profiles = {}
+            new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+            role_data = new_profiles.get(selected_role, {})
+            role_data["presets_enabled"] = next_value
+            new_profiles[selected_role] = role_data
+            self.update_param("role_profiles", new_profiles)
+
+        self._sync_settings_window_if_open()
+        state_label = "active" if next_value else "desactive"
+        role_label = ROLE_PROFILE_LABELS.get(selected_role, "Global")
+        self.show_toast(f"Presets automation {state_label} for {role_label}.", duration=1200)
+
+    def toggle_tray_auto_ban(self) -> None:
+        next_value = not self.is_tray_auto_ban_enabled()
+        self.update_param("auto_ban_enabled", next_value)
+        self._sync_settings_window_if_open()
+        state_label = "active" if next_value else "desactive"
+        self.show_toast(f"Auto-ban {state_label}.", duration=1200)
+
+    def request_open_settings_from_external_thread(self) -> None:
+        logging.info("[TRAY] Settings requested from tray thread.")
+        try:
+            self.root.after(0, self.open_settings)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray settings on UI thread: {e}")
+
+    def request_toggle_presets_automation_from_external_thread(self) -> None:
+        logging.info("[TRAY] Presets automation requested from tray thread.")
+        try:
+            self.root.after(0, self.toggle_tray_presets_automation)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray presets toggle on UI thread: {e}")
+
+    def request_toggle_auto_ban_from_external_thread(self) -> None:
+        logging.info("[TRAY] Auto-ban requested from tray thread.")
+        try:
+            self.root.after(0, self.toggle_tray_auto_ban)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray auto-ban toggle on UI thread: {e}")
 
     def open_settings(self) -> None:
         if self.settings_win and self.settings_win.window.winfo_exists():

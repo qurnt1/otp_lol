@@ -34,6 +34,22 @@ class DummySettingsWindow:
         self.sync_calls += 1
 
 
+class MutableParamsWindow:
+    def __init__(self, params):
+        self._params = params
+        self.settings_win = DummySettingsWindow()
+        self.toasts = []
+
+    def get_params(self):
+        return self._params
+
+    def update_param(self, key, value):
+        self._params[key] = value
+
+    def show_toast(self, message, duration=0):
+        self.toasts.append((message, duration))
+
+
 class DummyRoot:
     def __init__(self):
         self.calls = []
@@ -51,26 +67,27 @@ class MainWindowLogicTests(unittest.TestCase):
             "auto_summoners_enabled": True,
         }
         effective = {
+            "presets_enabled": False,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
-            "pick_slots": {
-                "pick_1": {"spell_1": "Flash", "spell_2": "Ignite"},
-            },
         }
 
         payload = window._build_feature_preview_payload(params, effective)
 
-        self.assertTrue(payload["pick"]["enabled"])
+        self.assertFalse(payload["presets"]["enabled"])
         self.assertFalse(payload["ban"]["enabled"])
-        self.assertEqual(payload["pick"]["values"], ["Garen", "Lux", "Ashe"])
+        self.assertEqual(payload["presets"]["values"], ["Garen", "Lux", "Ashe"])
         self.assertEqual(payload["ban"]["values"], ["Teemo"])
-        self.assertEqual(payload["spells"]["values"], ["Flash", "Ignite"])
 
     def test_toggle_main_preview_feature_updates_param_and_syncs_settings(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
-        params = {"auto_pick_enabled": True}
+        params = {
+            "auto_pick_enabled": True,
+            "auto_summoners_enabled": True,
+            "presets_enabled": True,
+        }
         updates = []
         recorder = DummyToastRecorder()
         settings = DummySettingsWindow()
@@ -79,12 +96,28 @@ class MainWindowLogicTests(unittest.TestCase):
         window.update_param = lambda key, value: updates.append((key, value))
         window.show_toast = recorder
         window.settings_win = settings
+        window.is_main_preview_presets_enabled = lambda: True
+        window.set_main_preview_presets_enabled = lambda enabled: updates.extend(
+            [
+                ("auto_pick_enabled", enabled),
+                ("auto_summoners_enabled", enabled),
+                ("presets_enabled", enabled),
+            ]
+        )
+        window._sync_settings_window_if_open = lambda: settings._sync_from_params()
 
-        window._toggle_main_preview_feature("pick")
+        window._toggle_main_preview_feature("presets")
 
-        self.assertEqual(updates, [("auto_pick_enabled", False)])
+        self.assertEqual(
+            updates,
+            [
+                ("auto_pick_enabled", False),
+                ("auto_summoners_enabled", False),
+                ("presets_enabled", False),
+            ],
+        )
         self.assertEqual(settings.sync_calls, 1)
-        self.assertEqual(recorder.messages[0][0], "Auto-pick desactive.")
+        self.assertEqual(recorder.messages[0][0], "Presets desactive.")
 
     def test_set_feature_icon_hides_slot_text_when_section_disabled(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
@@ -100,14 +133,12 @@ class MainWindowLogicTests(unittest.TestCase):
     def test_build_preview_signature_changes_when_values_change(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
         preview_a = {
-            "pick": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
+            "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
             "ban": {"enabled": True, "values": ["Teemo"]},
-            "spells": {"enabled": False, "values": ["Flash", "Ignite"]},
         }
         preview_b = {
-            "pick": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
+            "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
             "ban": {"enabled": False, "values": ["Teemo"]},
-            "spells": {"enabled": False, "values": ["Flash", "Ignite"]},
         }
 
         self.assertNotEqual(window._build_preview_signature(preview_a), window._build_preview_signature(preview_b))
@@ -142,6 +173,118 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertEqual(len(window.root.calls), 1)
         self.assertEqual(window.root.calls[0][0], 0)
         self.assertIs(window.root.calls[0][1], window.toggle_window)
+
+    def test_request_open_settings_from_external_thread_schedules_open(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.open_settings = lambda: None
+
+        window.request_open_settings_from_external_thread()
+
+        self.assertEqual(len(window.root.calls), 1)
+        self.assertEqual(window.root.calls[0][0], 0)
+        self.assertIs(window.root.calls[0][1], window.open_settings)
+
+    def test_request_toggle_presets_from_external_thread_schedules_toggle(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.toggle_tray_presets_automation = lambda: None
+
+        window.request_toggle_presets_automation_from_external_thread()
+
+        self.assertEqual(len(window.root.calls), 1)
+        self.assertEqual(window.root.calls[0][0], 0)
+        self.assertIs(window.root.calls[0][1], window.toggle_tray_presets_automation)
+
+    def test_request_toggle_auto_ban_from_external_thread_schedules_toggle(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.toggle_tray_auto_ban = lambda: None
+
+        window.request_toggle_auto_ban_from_external_thread()
+
+        self.assertEqual(len(window.root.calls), 1)
+        self.assertEqual(window.root.calls[0][0], 0)
+        self.assertIs(window.root.calls[0][1], window.toggle_tray_auto_ban)
+
+    def test_toggle_tray_presets_automation_updates_selected_role(self):
+        params = {
+            "selected_profile_role": "MIDDLE",
+            "presets_enabled": False,
+            "role_profiles": {
+                "MIDDLE": {
+                    "presets_enabled": True,
+                }
+            },
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window.show_toast = mutable.show_toast
+        window.settings_win = mutable.settings_win
+
+        window.toggle_tray_presets_automation()
+
+        self.assertFalse(params["role_profiles"]["MIDDLE"]["presets_enabled"])
+        self.assertEqual(window.settings_win.sync_calls, 1)
+        self.assertEqual(mutable.toasts[0][0], "Presets automation desactive for Mid.")
+
+    def test_toggle_tray_auto_ban_updates_global_setting(self):
+        params = {"auto_ban_enabled": True}
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window.show_toast = mutable.show_toast
+        window.settings_win = mutable.settings_win
+
+        window.toggle_tray_auto_ban()
+
+        self.assertFalse(params["auto_ban_enabled"])
+        self.assertEqual(window.settings_win.sync_calls, 1)
+        self.assertEqual(mutable.toasts[0][0], "Auto-ban desactive.")
+
+    def test_set_main_preview_presets_enabled_updates_global_flags_and_global_role(self):
+        params = {
+            "auto_pick_enabled": False,
+            "auto_summoners_enabled": False,
+            "presets_enabled": False,
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window._get_main_preview_role = lambda: "GLOBAL"
+
+        window.set_main_preview_presets_enabled(True)
+
+        self.assertTrue(params["auto_pick_enabled"])
+        self.assertTrue(params["auto_summoners_enabled"])
+        self.assertTrue(params["presets_enabled"])
+
+    def test_set_main_preview_presets_enabled_updates_detected_role_profile(self):
+        params = {
+            "auto_pick_enabled": False,
+            "auto_summoners_enabled": False,
+            "presets_enabled": False,
+            "role_profiles": {
+                "MIDDLE": {
+                    "presets_enabled": False,
+                }
+            },
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window._get_main_preview_role = lambda: "MIDDLE"
+
+        window.set_main_preview_presets_enabled(True)
+
+        self.assertTrue(params["auto_pick_enabled"])
+        self.assertTrue(params["auto_summoners_enabled"])
+        self.assertTrue(params["role_profiles"]["MIDDLE"]["presets_enabled"])
 
 
 if __name__ == "__main__":
