@@ -2,9 +2,10 @@
 
 import logging
 import os
+import random
 from datetime import datetime
 from tkinter import filedialog
-from typing import TYPE_CHECKING, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -23,6 +24,7 @@ from ..config import (
     ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
     SUMMONER_SPELL_LIST,
+    URL_PHASE_RUSH_ICON,
     THEME_LABELS,
     THEME_ORDER,
     THEME_PALETTE,
@@ -32,6 +34,7 @@ from ..config import (
 )
 from .champion_picker import open_champion_picker
 from .role_picker import open_role_picker
+from .skin_picker import open_skin_picker
 from .site_picker import open_site_picker
 
 if TYPE_CHECKING:
@@ -52,7 +55,7 @@ class SettingsWindow:
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title(f"Settings - {APP_NAME}")
-        self.window.geometry("620x780")
+        self.window.geometry("980x820")
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self.on_close)
 
@@ -66,6 +69,9 @@ class SettingsWindow:
         self._pressed_modifiers: set[str] = set()
         self.pick_buttons: Dict[str, ttk.Button] = {}
         self.pick_spell_buttons: Dict[tuple[str, int], ttk.Button] = {}
+        self.pick_rune_buttons: Dict[str, ttk.Button] = {}
+        self.pick_skin_buttons: Dict[str, ttk.Button] = {}
+        self.skin_picker_window: Optional[ttk.Toplevel] = None
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
@@ -217,35 +223,64 @@ class SettingsWindow:
                 padx=5,
                 pady=4,
             )
+            row_frame = ttk.Frame(self.main_frame)
+            row_frame.grid(row=start_row + offset, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
+            row_frame.columnconfigure(0, weight=2)
+            row_frame.columnconfigure(1, weight=1)
+            row_frame.columnconfigure(2, weight=1)
+            row_frame.columnconfigure(3, weight=1)
+            row_frame.columnconfigure(4, weight=2)
+
             champion_btn = ttk.Button(
-                self.main_frame,
+                row_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=16,
                 command=lambda number=offset - 1: self._open_champion_picker("pick", number),
             )
-            champion_btn.grid(row=start_row + offset, column=1, sticky="ew", padx=5, pady=4)
+            champion_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
             self.pick_buttons[slot_key] = champion_btn
 
             spell_1_btn = ttk.Button(
-                self.main_frame,
+                row_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
                 command=lambda key=slot_key: self._open_spell_picker(key, 1),
             )
-            spell_1_btn.grid(row=start_row + offset, column=2, sticky="ew", padx=5, pady=4)
+            spell_1_btn.grid(row=0, column=1, sticky="ew", padx=3)
             self.pick_spell_buttons[(slot_key, 1)] = spell_1_btn
 
             spell_2_btn = ttk.Button(
-                self.main_frame,
+                row_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
                 command=lambda key=slot_key: self._open_spell_picker(key, 2),
             )
-            spell_2_btn.grid(row=start_row + offset, column=3, sticky="ew", padx=5, pady=4)
+            spell_2_btn.grid(row=0, column=2, sticky="ew", padx=3)
             self.pick_spell_buttons[(slot_key, 2)] = spell_2_btn
+
+            rune_btn = ttk.Button(
+                row_frame,
+                text="Rune",
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=13,
+            )
+            rune_btn.grid(row=0, column=3, sticky="ew", padx=3)
+            self.pick_rune_buttons[slot_key] = rune_btn
+
+            skin_btn = ttk.Button(
+                row_frame,
+                text="Skin",
+                bootstyle="secondary-outline",
+                padding=(8, 8),
+                width=18,
+                command=lambda key=slot_key: self._open_skin_picker(key),
+            )
+            skin_btn.grid(row=0, column=4, sticky="ew", padx=(6, 0))
+            self.pick_skin_buttons[slot_key] = skin_btn
 
         ttk.Separator(self.main_frame).grid(row=start_row + 6, column=0, columnspan=4, sticky="we", pady=(10, 8))
         return start_row + 7
@@ -533,6 +568,33 @@ class SettingsWindow:
                 return f"Fallback: {self._format_visible_value(fallback)}"
         return "..."
 
+    def _get_effective_pick_slot_config(self, slot_key: str) -> Dict[str, Any]:
+        slot_data = self._get_profile_role_data().get("pick_slots", {})
+        slot_data = slot_data.get(slot_key, {}) if isinstance(slot_data, dict) else {}
+        global_slot = self.parent.get_params().get("pick_slots", {})
+        global_slot = global_slot.get(slot_key, {}) if isinstance(global_slot, dict) else {}
+
+        def _pick(field: str, default: Any = "") -> Any:
+            value = slot_data.get(field) if isinstance(slot_data, dict) else ""
+            if value not in {"", 0, None}:
+                return value
+            fallback = global_slot.get(field) if isinstance(global_slot, dict) else ""
+            if fallback not in {"", 0, None}:
+                return fallback
+            return default
+
+        return {
+            "spell_1": _pick("spell_1", ""),
+            "spell_2": _pick("spell_2", ""),
+            "skin_mode": _pick("skin_mode", "none"),
+            "skin_id": int(_pick("skin_id", 0) or 0),
+            "skin_name": str(_pick("skin_name", "") or ""),
+            "skin_num": int(_pick("skin_num", 0) or 0),
+            "random_skin_id": int(_pick("random_skin_id", 0) or 0),
+            "random_skin_name": str(_pick("random_skin_name", "") or ""),
+            "random_skin_num": int(_pick("random_skin_num", 0) or 0),
+        }
+
     def _set_pick_slot_value(self, slot_key: str, field: str, value: str) -> None:
         role = self._get_selected_profile_role()
         if role == "GLOBAL":
@@ -564,16 +626,91 @@ class SettingsWindow:
         new_profiles[role] = role_data
         self.parent.update_param("role_profiles", new_profiles)
 
+    def _clear_pick_slot_skin(self, slot_key: str) -> None:
+        self._set_pick_slot_skin_selection(slot_key, mode="none")
+
+    def _set_pick_slot_skin_selection(
+        self,
+        slot_key: str,
+        *,
+        mode: str,
+        fixed_skin: Optional[Dict[str, Any]] = None,
+        random_skin: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        normalized_mode = str(mode or "none").strip().lower()
+        if normalized_mode not in {"none", "fixed", "random"}:
+            normalized_mode = "none"
+
+        if normalized_mode == "fixed" and fixed_skin:
+            self._set_pick_slot_value(slot_key, "skin_mode", "fixed")
+            self._set_pick_slot_value(slot_key, "skin_id", int(fixed_skin.get("skin_id") or 0))
+            self._set_pick_slot_value(slot_key, "skin_name", str(fixed_skin.get("skin_name") or ""))
+            self._set_pick_slot_value(slot_key, "skin_num", int(fixed_skin.get("skin_num") or 0))
+            self._set_pick_slot_value(slot_key, "random_skin_id", 0)
+            self._set_pick_slot_value(slot_key, "random_skin_name", "")
+            self._set_pick_slot_value(slot_key, "random_skin_num", 0)
+            return
+
+        if normalized_mode == "random" and random_skin:
+            self._set_pick_slot_value(slot_key, "skin_mode", "random")
+            self._set_pick_slot_value(slot_key, "skin_id", 0)
+            self._set_pick_slot_value(slot_key, "skin_name", "")
+            self._set_pick_slot_value(slot_key, "skin_num", 0)
+            self._set_pick_slot_value(slot_key, "random_skin_id", int(random_skin.get("skin_id") or 0))
+            self._set_pick_slot_value(slot_key, "random_skin_name", str(random_skin.get("skin_name") or ""))
+            self._set_pick_slot_value(slot_key, "random_skin_num", int(random_skin.get("skin_num") or 0))
+            return
+
+        self._set_pick_slot_value(slot_key, "skin_mode", "none")
+        self._set_pick_slot_value(slot_key, "skin_id", 0)
+        self._set_pick_slot_value(slot_key, "skin_name", "")
+        self._set_pick_slot_value(slot_key, "skin_num", 0)
+        self._set_pick_slot_value(slot_key, "random_skin_id", 0)
+        self._set_pick_slot_value(slot_key, "random_skin_name", "")
+        self._set_pick_slot_value(slot_key, "random_skin_num", 0)
+
+    @staticmethod
+    def _choose_random_skin_entry(
+        skins: list[Dict[str, Any]],
+        *,
+        exclude_skin_id: int = 0,
+    ) -> Optional[Dict[str, Any]]:
+        available = [skin for skin in skins if int(skin.get("skin_id") or 0) != int(exclude_skin_id or 0)]
+        pool = available or skins
+        return random.choice(pool) if pool else None
+
+    def _get_slot_champion_name(self, slot_key: str) -> str:
+        slot_number = self._slot_number_from_key(slot_key)
+        value = self._get_profile_value(f"selected_pick_{slot_number}")
+        if value:
+            return value
+        return self._get_global_fallback_value(f"selected_pick_{slot_number}")
+
+    def _get_skin_button_label(self, slot_key: str) -> str:
+        skin_config = self._get_effective_pick_slot_config(slot_key)
+        skin_mode = str(skin_config.get("skin_mode") or "none")
+        if skin_mode == "fixed" and skin_config.get("skin_name"):
+            return str(skin_config["skin_name"])
+        if skin_mode == "random" and skin_config.get("random_skin_name"):
+            return f"Random: {skin_config['random_skin_name']}"
+        if skin_mode == "random":
+            return "Random skin"
+        return "Skin"
+
     def _select_champion(self, context: str, champ_name: str, slot_num: int = 1) -> None:
         if context == "ban":
             self._set_profile_value("selected_ban", champ_name)
         elif slot_num == 1:
             self._set_profile_value("selected_pick_1", champ_name)
+            self._clear_pick_slot_skin("pick_1")
         elif slot_num == 2:
             self._set_profile_value("selected_pick_2", champ_name)
+            self._clear_pick_slot_skin("pick_2")
         elif slot_num == 3:
             self._set_profile_value("selected_pick_3", champ_name)
+            self._clear_pick_slot_skin("pick_3")
         self._refresh_profile_buttons()
+        self._refresh_skin_buttons()
 
     def _load_role_icon(self, role: str, size: int = 24) -> Optional[ImageTk.PhotoImage]:
         cache_key = (role, size)
@@ -799,6 +936,11 @@ class SettingsWindow:
             return
         open_champion_picker(self, context, slot_num)
 
+    def _open_skin_picker(self, slot_key: str) -> None:
+        if not self.presets_enabled_var.get():
+            return
+        open_skin_picker(self, slot_key)
+
     def _open_spell_picker(self, pick_slot_key: str, spell_slot_num: int) -> None:
         if not self.auto_summoners_var.get() or not self.presets_enabled_var.get():
             return
@@ -866,6 +1008,19 @@ class SettingsWindow:
 
         self.parent.executor.submit(task)
 
+    @staticmethod
+    def _resize_cover_image(img: Image.Image, size: tuple[int, int]) -> Image.Image:
+        source = img.convert("RGBA")
+        src_w, src_h = source.size
+        target_w, target_h = size
+        if src_w <= 0 or src_h <= 0 or target_w <= 0 or target_h <= 0:
+            return source.resize(size, Image.LANCZOS)
+        scale = max(target_w / src_w, target_h / src_h)
+        resized = source.resize((max(1, int(src_w * scale)), max(1, int(src_h * scale))), Image.LANCZOS)
+        left = max(0, (resized.width - target_w) // 2)
+        top = max(0, (resized.height - target_h) // 2)
+        return resized.crop((left, top, left + target_w, top + target_h))
+
     def _load_img_into_btn(self, btn_widget: ttk.Button, name: str, is_champ: bool = True, size: tuple[int, int] = (40, 40)) -> None:
         def task():
             try:
@@ -885,6 +1040,88 @@ class SettingsWindow:
 
         self.parent.executor.submit(task)
 
+    def _load_remote_img_into_btn(
+        self,
+        btn_widget: ttk.Button,
+        url: str,
+        *,
+        cache_key: str,
+        size: tuple[int, int] = (40, 40),
+        cover: bool = False,
+    ) -> None:
+        def task():
+            try:
+                img = self.parent.dd.get_remote_image(url, cache_key=cache_key)
+                if img:
+                    img = self._resize_cover_image(img, size) if cover else img.resize(size, Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+
+                    def update_ui():
+                        if btn_widget.winfo_exists():
+                            btn_widget.configure(image=photo)
+                            btn_widget.image = photo
+
+                    btn_widget.after(0, update_ui)
+            except Exception as e:
+                logging.debug(f"Remote image loading error for {url}: {e}")
+
+        self.parent.executor.submit(task)
+
+    def _refresh_rune_buttons(self) -> None:
+        for slot_key, button in self.pick_rune_buttons.items():
+            if not button.winfo_exists():
+                continue
+            button.configure(text="  Phase Rush", image="", compound="left")
+            self._load_remote_img_into_btn(
+                button,
+                URL_PHASE_RUSH_ICON,
+                cache_key=f"rune_phase_rush_{slot_key}",
+                size=self.PICK_ICON_SIZE,
+            )
+
+    def _refresh_skin_buttons(self) -> None:
+        for slot_key, button in self.pick_skin_buttons.items():
+            if not button.winfo_exists():
+                continue
+            champion_name = self._get_slot_champion_name(slot_key)
+            skin_config = self._get_effective_pick_slot_config(slot_key)
+            skin_mode = str(skin_config.get("skin_mode") or "none")
+            button.configure(
+                text=f"  {self._get_skin_button_label(slot_key)}",
+                image="",
+                compound="left",
+                bootstyle="info-outline" if skin_mode in {"fixed", "random"} else "secondary-outline",
+            )
+
+            if champion_name in {"", "(None)"} or skin_mode == "none":
+                continue
+
+            skin_kwargs: Dict[str, Any] = {}
+            if skin_mode == "fixed":
+                skin_kwargs = {
+                    "skin_id": skin_config.get("skin_id"),
+                    "skin_num": skin_config.get("skin_num"),
+                    "skin_name": skin_config.get("skin_name"),
+                }
+            elif skin_mode == "random":
+                skin_kwargs = {
+                    "skin_id": skin_config.get("random_skin_id"),
+                    "skin_num": skin_config.get("random_skin_num"),
+                    "skin_name": skin_config.get("random_skin_name"),
+                }
+
+            splash_url = self.parent.dd.get_skin_splash_url(champion_name, **skin_kwargs)
+            if not splash_url:
+                continue
+            cache_suffix = skin_kwargs.get("skin_num") or skin_kwargs.get("skin_id") or skin_kwargs.get("skin_name") or "0"
+            self._load_remote_img_into_btn(
+                button,
+                splash_url,
+                cache_key=f"skin_btn_{champion_name}_{cache_suffix}",
+                size=(52, 30),
+                cover=True,
+            )
+
     def _refresh_profile_buttons(self) -> None:
         self._update_btn_content(self.btn_ban, self._get_display_value("selected_ban"), True)
         for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
@@ -903,6 +1140,8 @@ class SettingsWindow:
                         self._get_pick_slot_display_value(slot_key, f"spell_{spell_slot_num}"),
                         False,
                     )
+        self._refresh_rune_buttons()
+        self._refresh_skin_buttons()
 
     def toggle_summoner_entry(self) -> None:
         if self.summoner_auto_detect_var.get():
@@ -923,6 +1162,10 @@ class SettingsWindow:
     def toggle_pick(self) -> None:
         state = "normal" if self.auto_pick_var.get() and self.presets_enabled_var.get() else "disabled"
         for button in getattr(self, "pick_buttons", {}).values():
+            button.configure(state=state)
+        for button in getattr(self, "pick_rune_buttons", {}).values():
+            button.configure(state=state)
+        for button in getattr(self, "pick_skin_buttons", {}).values():
             button.configure(state=state)
 
     def toggle_ban(self) -> None:
@@ -1047,6 +1290,8 @@ class SettingsWindow:
     def on_close(self) -> None:
         if self._capture_target:
             self._cancel_hotkey_capture()
+        if getattr(self, "skin_picker_window", None) and self.skin_picker_window.winfo_exists():
+            self.skin_picker_window.destroy()
         self.parent.update_param("auto_pick_enabled", True)
         self.parent.update_param("auto_summoners_enabled", True)
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())

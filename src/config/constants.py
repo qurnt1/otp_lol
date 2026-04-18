@@ -15,6 +15,11 @@ URL_DD_SUMMONERS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/
 URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
 URL_DD_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
+URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
+URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
+URL_PHASE_RUSH_ICON: str = (
+    "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
+)
 
 EP_SESSION: str = "/lol-champ-select/v1/session"
 EP_SESSION_TIMER: str = "/lol-champ-select/v1/session/timer"

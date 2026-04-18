@@ -7,7 +7,7 @@ import os
 from typing import Any, Dict
 
 from .constants import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
-from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
+from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
 
 
 def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
@@ -16,6 +16,13 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
         slot: {
             "spell_1": spell_1,
             "spell_2": spell_2,
+            "skin_mode": "none",
+            "skin_id": 0,
+            "skin_name": "",
+            "skin_num": 0,
+            "random_skin_id": 0,
+            "random_skin_name": "",
+            "random_skin_num": 0,
         }
         for slot in PICK_SLOT_ORDER
     }
@@ -135,12 +142,25 @@ def _normalize_spell_value(value: Any) -> str:
     return spell_name if spell_name in SUMMONER_SPELL_MAP or not spell_name else spell_name
 
 
+def _normalize_skin_mode(value: Any) -> str:
+    mode = str(value or "none").strip().lower()
+    return mode if mode in {"none", "fixed", "random"} else "none"
+
+
+def _normalize_skin_id(value: Any) -> int:
+    try:
+        skin_id = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return skin_id if skin_id >= 0 else 0
+
+
 def _build_normalized_pick_slots(
     raw_slots: Any,
     *,
     fallback_spell_1: Any = "",
     fallback_spell_2: Any = "",
-) -> Dict[str, Dict[str, str]]:
+) -> Dict[str, Dict[str, Any]]:
     """Normalize a pick-slot payload while supporting legacy global spell fallbacks."""
     fallback_1 = _normalize_spell_value(fallback_spell_1)
     fallback_2 = _normalize_spell_value(fallback_spell_2)
@@ -157,6 +177,17 @@ def _build_normalized_pick_slots(
             {
                 "spell_1": _normalize_spell_value(slot_data.get("spell_1", slots[slot]["spell_1"])),
                 "spell_2": _normalize_spell_value(slot_data.get("spell_2", slots[slot]["spell_2"])),
+                "skin_mode": _normalize_skin_mode(slot_data.get("skin_mode", slots[slot]["skin_mode"])),
+                "skin_id": _normalize_skin_id(slot_data.get("skin_id", slots[slot]["skin_id"])),
+                "skin_name": str(slot_data.get("skin_name", slots[slot]["skin_name"]) or ""),
+                "skin_num": _normalize_skin_id(slot_data.get("skin_num", slots[slot]["skin_num"])),
+                "random_skin_id": _normalize_skin_id(
+                    slot_data.get("random_skin_id", slots[slot]["random_skin_id"])
+                ),
+                "random_skin_name": str(slot_data.get("random_skin_name", slots[slot]["random_skin_name"]) or ""),
+                "random_skin_num": _normalize_skin_id(
+                    slot_data.get("random_skin_num", slots[slot]["random_skin_num"])
+                ),
             }
         )
     return slots
@@ -253,6 +284,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
-    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR]:
+    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)

@@ -28,6 +28,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["selected_ban"], "Teemo")
         self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_1"], "Heal")
         self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Flash")
+        self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_mode"], "none")
+        self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_id"], 0)
         self.assertFalse(loaded["role_profiles"]["TOP"]["presets_enabled"])
 
     def test_load_parameters_migrates_legacy_region_to_manual_region(self):
@@ -100,6 +102,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["selected_pick_2"], "")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_1"], "")
         self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "")
+        self.assertEqual(loaded["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_mode"], "none")
 
     def test_load_parameters_supports_global_and_role_presets_toggle(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -155,6 +158,14 @@ class ConfigTests(unittest.TestCase):
                             "JUNGLE": {
                                 "spell_1": "Smite",
                                 "spell_2": "Flash",
+                                "pick_slots": {
+                                    "pick_1": {
+                                        "skin_mode": "fixed",
+                                        "skin_id": 1234,
+                                        "skin_name": "Soul Fighter",
+                                        "skin_num": 10,
+                                    }
+                                },
                             }
                         },
                     }
@@ -168,6 +179,8 @@ class ConfigTests(unittest.TestCase):
         for slot_key in ("pick_1", "pick_2", "pick_3"):
             self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"][slot_key]["spell_1"], "Smite")
             self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"][slot_key]["spell_2"], "Flash")
+        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"]["pick_1"]["skin_mode"], "fixed")
+        self.assertEqual(loaded["role_profiles"]["JUNGLE"]["pick_slots"]["pick_1"]["skin_id"], 1234)
 
     def test_load_parameters_normalizes_preferred_stats_site(self):
         with tempfile.TemporaryDirectory() as tmpdir:

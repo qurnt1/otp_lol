@@ -24,9 +24,9 @@ class FakeParent:
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
             "pick_slots": {
-                "pick_1": {"spell_1": "Heal", "spell_2": "Flash"},
-                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash"},
-                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite"},
+                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
+                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
             },
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
@@ -41,9 +41,9 @@ class FakeParent:
                     "selected_pick_3": "",
                     "selected_ban": "Zed",
                     "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": ""},
-                        "pick_2": {"spell_1": "", "spell_2": ""},
-                        "pick_3": {"spell_1": "", "spell_2": ""},
+                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 9999, "random_skin_name": "Star Guardian Ahri", "random_skin_num": 7},
+                        "pick_2": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
+                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
                     },
                 }
             },
@@ -107,6 +107,28 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._set_profile_presets_enabled(False)
 
         self.assertFalse(window.parent.params["role_profiles"]["MIDDLE"]["presets_enabled"])
+
+    def test_set_pick_slot_skin_selection_updates_role_profile_payload(self):
+        window = self.make_window()
+
+        window._set_pick_slot_skin_selection(
+            "pick_1",
+            mode="fixed",
+            fixed_skin={"skin_id": 1234, "skin_name": "Elementalist Lux", "skin_num": 7},
+        )
+
+        slot = window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]
+        self.assertEqual(slot["skin_mode"], "fixed")
+        self.assertEqual(slot["skin_id"], 1234)
+        self.assertEqual(slot["skin_name"], "Elementalist Lux")
+        self.assertEqual(slot["skin_num"], 7)
+
+    def test_get_skin_button_label_prefers_next_random_skin_name(self):
+        window = self.make_window()
+
+        label = window._get_skin_button_label("pick_1")
+
+        self.assertEqual(label, "Random: Star Guardian Ahri")
 
     def test_pick_slot_display_uses_global_fallback(self):
         window = self.make_window()

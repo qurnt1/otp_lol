@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
@@ -18,6 +19,9 @@ class ChampSelectMixin:
     SPELL_CONFIRM_RETRIES = 5
     SPELL_CONFIRM_DELAY_S = 0.18
     SPELL_RETRY_COOLDOWN_S = 0.45
+    SKIN_CONFIRM_RETRIES = 4
+    SKIN_CONFIRM_DELAY_S = 0.18
+    SKIN_RETRY_COOLDOWN_S = 0.45
     PREPICK_RETRY_COOLDOWN_S = 0.5
     PREPICK_SOFT_TIMEOUT_S = 2.2
     ACTION_RETRY_COOLDOWN_S = 0.25
@@ -265,6 +269,8 @@ class ChampSelectMixin:
 
         if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
+        if self.state.has_picked and presets_enabled:
+            self._ensure_skin_is_applied(session, params)
 
     async def _hover_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
         area = "PREPICK"
@@ -368,6 +374,7 @@ class ChampSelectMixin:
                 self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in. Ready to play.", "PICK"))
                 if params.get("auto_summoners_enabled"):
                     asyncio.create_task(self._set_spells(params, slot_key=slot_key))
+                asyncio.create_task(self._set_skin(params, slot_key=slot_key))
                 return
 
             logging.warning(
@@ -400,6 +407,58 @@ class ChampSelectMixin:
         spell1_id = SUMMONER_SPELL_MAP.get(spell1_name, 7)
         spell2_id = SUMMONER_SPELL_MAP.get(spell2_name, 4)
         return spell1_name, spell2_name, spell1_id, spell2_id, chosen_slot
+
+    def _resolve_skin_selection(
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> tuple[Optional[Dict[str, Any]], str]:
+        effective = self.get_effective_profile_config(params=params)
+        chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
+        pick_slots = effective.get("pick_slots", {})
+        slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
+        fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
+        champion_name = slot_data.get("champion") or fallback_slot.get("champion") or effective.get("selected_pick_1", "")
+        if not champion_name:
+            return None, chosen_slot
+
+        skin_mode = str(slot_data.get("skin_mode") or fallback_slot.get("skin_mode") or "none").strip().lower()
+        if skin_mode not in {"fixed", "random"}:
+            return None, chosen_slot
+
+        if skin_mode == "fixed":
+            return (
+                {
+                    "mode": "fixed",
+                    "champion_name": champion_name,
+                    "skin_id": int(slot_data.get("skin_id") or fallback_slot.get("skin_id") or 0),
+                    "skin_name": slot_data.get("skin_name") or fallback_slot.get("skin_name") or "",
+                    "skin_num": int(slot_data.get("skin_num") or fallback_slot.get("skin_num") or 0),
+                    "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+                },
+                chosen_slot,
+            )
+
+        return (
+            {
+                "mode": "random",
+                "champion_name": champion_name,
+                "skin_id": int(slot_data.get("random_skin_id") or fallback_slot.get("random_skin_id") or 0),
+                "skin_name": slot_data.get("random_skin_name") or fallback_slot.get("random_skin_name") or "",
+                "skin_num": int(slot_data.get("random_skin_num") or fallback_slot.get("random_skin_num") or 0),
+                "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+            },
+            chosen_slot,
+        )
+
+    @staticmethod
+    def _choose_random_skin_entry(
+        skins: List[Dict[str, Any]],
+        *,
+        exclude_skin_id: int = 0,
+    ) -> Optional[Dict[str, Any]]:
+        pool = [skin for skin in skins if int(skin.get("skin_id") or 0) != int(exclude_skin_id or 0)] or skins
+        return random.choice(pool) if pool else None
 
     def _extract_local_player_selection(
         self: "WebSocketManager",
@@ -694,6 +753,193 @@ class ChampSelectMixin:
         )
         asyncio.create_task(self._set_spells(params, slot_key=chosen_slot))
 
+    async def _fetch_pickable_skins(
+        self: "WebSocketManager",
+        champion_id: int,
+    ) -> List[Dict[str, Any]]:
+        if not self.connection:
+            return []
+        try:
+            response = await self.connection.request("get", "/lol-champ-select/v1/pickable-skins")
+            if not response or response.status != 200:
+                return []
+            payload = await response.json()
+        except Exception as e:
+            logging.debug("[SKIN] Unable to fetch pickable skins: %s", e)
+            return []
+
+        if isinstance(payload, dict):
+            payload = payload.get("skins") or payload.get("pickableSkins") or []
+        if not isinstance(payload, list):
+            return []
+
+        skins: List[Dict[str, Any]] = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            raw_champion_id = item.get("championId")
+            try:
+                item_champion_id = int(raw_champion_id or champion_id or 0)
+            except (TypeError, ValueError):
+                item_champion_id = champion_id
+            if champion_id and raw_champion_id not in {None, ""} and item_champion_id != champion_id:
+                continue
+
+            try:
+                skin_id = int(item.get("id") or item.get("skinId") or item.get("selectedSkinId") or 0)
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = self.dd.resolve_skin_data(champion_id, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                continue
+            skins.append(
+                {
+                    "skin_id": int(skin_data.get("skin_id") or skin_id or 0),
+                    "skin_num": int(skin_data.get("skin_num") or 0),
+                    "skin_name": str(skin_data.get("skin_name") or skin_name or ""),
+                    "splash_url": skin_data.get("splash_url", ""),
+                }
+            )
+
+        unique_skins: List[Dict[str, Any]] = []
+        seen_ids = set()
+        for skin in skins:
+            skin_id = int(skin.get("skin_id") or 0)
+            if skin_id in seen_ids:
+                continue
+            seen_ids.add(skin_id)
+            unique_skins.append(skin)
+        return unique_skins
+
+    async def _confirm_skin_applied(self: "WebSocketManager", skin_id: int) -> bool:
+        for attempt in range(self.SKIN_CONFIRM_RETRIES + 1):
+            session = await self._fetch_current_champ_select_session(area="SKIN")
+            local_selection = self._extract_local_player_selection(session)
+            if local_selection:
+                current_skin_id = int(local_selection.get("selectedSkinId") or 0)
+                logging.info(
+                    "[SKIN] Confirmation %s/%s current=%s expected=%s",
+                    attempt + 1,
+                    self.SKIN_CONFIRM_RETRIES + 1,
+                    current_skin_id,
+                    skin_id,
+                )
+                if current_skin_id == skin_id:
+                    return True
+            if attempt < self.SKIN_CONFIRM_RETRIES:
+                await asyncio.sleep(self.SKIN_CONFIRM_DELAY_S)
+        return False
+
+    def _selection_has_expected_skin(
+        self: "WebSocketManager",
+        session: Optional[Dict[str, Any]],
+        params: Dict[str, Any],
+        *,
+        slot_key: Optional[str] = None,
+    ) -> bool:
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return False
+        skin_selection, _ = self._resolve_skin_selection(params, slot_key=slot_key)
+        if not skin_selection or int(skin_selection.get("skin_id") or 0) <= 0:
+            return True
+        return int(local_selection.get("selectedSkinId") or 0) == int(skin_selection.get("skin_id") or 0)
+
+    def _ensure_skin_is_applied(
+        self: "WebSocketManager",
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> None:
+        if self.state.skin_apply_in_progress or not self.connection:
+            return
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return
+        skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
+        if not skin_selection:
+            return
+        desired_skin_id = int(skin_selection.get("skin_id") or 0)
+        if desired_skin_id <= 0 and skin_selection.get("mode") != "random":
+            return
+        self.state.desired_skin_id = desired_skin_id or None
+        current_skin_id = int(local_selection.get("selectedSkinId") or 0)
+        if desired_skin_id > 0 and current_skin_id == desired_skin_id:
+            self.state.last_confirmed_skin_id = desired_skin_id
+            return
+        if time() - self.state.last_skin_try_ts < self.SKIN_RETRY_COOLDOWN_S:
+            return
+        logging.info(
+            "[SKIN] Mismatch detected for %s: current=%s expected=%s. Retrying.",
+            chosen_slot,
+            current_skin_id,
+            desired_skin_id or "random",
+        )
+        asyncio.create_task(self._set_skin(params, slot_key=chosen_slot))
+
+    def _persist_random_skin_preview(
+        self: "WebSocketManager",
+        slot_key: str,
+        *,
+        source_role: str,
+        skin: Dict[str, Any],
+    ) -> None:
+        if not self.update_param:
+            return
+
+        if source_role not in {"GLOBAL", "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}:
+            source_role = "GLOBAL"
+
+        if source_role == "GLOBAL":
+            params = self.get_params()
+            pick_slots = params.get("pick_slots", {})
+            if not isinstance(pick_slots, dict):
+                pick_slots = {}
+            new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
+            slot_data = new_slots.get(slot_key, {})
+            slot_data.update(
+                {
+                    "skin_mode": "random",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": int(skin.get("skin_id") or 0),
+                    "random_skin_name": str(skin.get("skin_name") or ""),
+                    "random_skin_num": int(skin.get("skin_num") or 0),
+                }
+            )
+            new_slots[slot_key] = slot_data
+            self.update_param("pick_slots", new_slots)
+            return
+
+        params = self.get_params()
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+        role_data = new_profiles.get(source_role, {})
+        pick_slots = role_data.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
+        new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
+        slot_data = new_slots.get(slot_key, {})
+        slot_data.update(
+            {
+                "skin_mode": "random",
+                "skin_id": 0,
+                "skin_name": "",
+                "skin_num": 0,
+                "random_skin_id": int(skin.get("skin_id") or 0),
+                "random_skin_name": str(skin.get("skin_name") or ""),
+                "random_skin_num": int(skin.get("skin_num") or 0),
+            }
+        )
+        new_slots[slot_key] = slot_data
+        role_data["pick_slots"] = new_slots
+        new_profiles[source_role] = role_data
+        self.update_param("role_profiles", new_profiles)
+
     async def _lock_in_champion(
         self: "WebSocketManager",
         action_id: int,
@@ -817,6 +1063,105 @@ class ChampSelectMixin:
             )
         finally:
             self.state.spell_apply_in_progress = False
+
+    async def _set_skin(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
+        if not self.connection or self.state.skin_apply_in_progress:
+            return
+
+        skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
+        if not skin_selection:
+            return
+
+        session = await self._fetch_current_champ_select_session(area="SKIN")
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return
+
+        champion_id = int(local_selection.get("championId") or 0)
+        if champion_id <= 0:
+            return
+
+        self.state.skin_apply_in_progress = True
+        effective = self.get_effective_profile_config(params=params)
+        selected_skin = dict(skin_selection)
+        try:
+            pickable_skins: List[Dict[str, Any]] = []
+            if selected_skin.get("mode") == "random":
+                pickable_skins = await self._fetch_pickable_skins(champion_id)
+                if int(selected_skin.get("skin_id") or 0) <= 0:
+                    selected_skin = self._choose_random_skin_entry(pickable_skins) or selected_skin
+                if int(selected_skin.get("skin_id") or 0) <= 0:
+                    return
+
+            skin_id = int(selected_skin.get("skin_id") or 0)
+            if skin_id <= 0:
+                return
+
+            self.state.desired_skin_id = skin_id
+            self.state.last_skin_try_ts = time()
+            payload = {"selectedSkinId": skin_id}
+            logging.info(
+                "[SKIN] Applying %s for %s: %s (%s).",
+                chosen_slot,
+                effective.get("resolved_role", "GLOBAL"),
+                selected_skin.get("skin_name") or skin_id,
+                skin_id,
+            )
+
+            for endpoint in (
+                "/lol-champ-select/v1/session/my-selection",
+                "/lol-champ-select-legacy/v1/session/my-selection",
+            ):
+                try:
+                    self._log_lcu_request("SKIN", "patch", endpoint, payload)
+                    response = await self.connection.request("patch", endpoint, json=payload)
+                except Exception as e:
+                    logging.warning("[SKIN] Patch request failed on %s: %s", endpoint, e)
+                    response = None
+
+                self._log_lcu_response("SKIN", "patch", endpoint, response)
+                if response and response.status < 400 and await self._confirm_skin_applied(skin_id):
+                    previous_confirmed = self.state.last_confirmed_skin_id
+                    self.state.last_confirmed_skin_id = skin_id
+                    if previous_confirmed != skin_id:
+                        self._log_history(
+                            "skin",
+                            f"Skin applied automatically: {selected_skin.get('skin_name') or skin_id}.",
+                            {
+                                "skin_id": skin_id,
+                                "skin_name": selected_skin.get("skin_name") or "",
+                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "pick_slot": chosen_slot,
+                                "endpoint": endpoint,
+                            },
+                            level="success",
+                            category="Champion Select",
+                            action="skin",
+                        )
+                        self._notify_ui(
+                            self.EVENT_STATUS,
+                            (f"Skin selected: {selected_skin.get('skin_name') or skin_id}.", "SKIN"),
+                        )
+
+                    if selected_skin.get("mode") == "random":
+                        if not pickable_skins:
+                            pickable_skins = await self._fetch_pickable_skins(champion_id)
+                        next_skin = self._choose_random_skin_entry(pickable_skins, exclude_skin_id=skin_id)
+                        if next_skin:
+                            self._persist_random_skin_preview(
+                                chosen_slot,
+                                source_role=str(selected_skin.get("skin_source_role") or "GLOBAL"),
+                                skin=next_skin,
+                            )
+                    return
+
+            logging.warning(
+                "[SKIN] Unable to confirm selected skin for %s after patch attempts. Expected %s.",
+                chosen_slot,
+                skin_id,
+            )
+        finally:
+            self.state.skin_apply_in_progress = False
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         params = self.get_params()

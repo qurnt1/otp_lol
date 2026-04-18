@@ -4,7 +4,7 @@ import asyncio
 import logging
 from threading import Event, Thread, current_thread
 from time import time
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 try:
     from lcu_driver import Connector
@@ -169,10 +169,23 @@ class WebSocketManager(ChampSelectMixin):
                 global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             )
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            skin_source_role = (
+                resolved_role
+                if any(role_slot.get(field) for field in ("skin_mode", "skin_id", "skin_name", "skin_num"))
+                else "GLOBAL"
+            )
             return {
                 "champion": role_data.get(pick_key) or params.get(pick_key, ""),
                 "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
                 "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
+                "skin_mode": role_slot.get("skin_mode") or global_slot.get("skin_mode", "none"),
+                "skin_id": int(role_slot.get("skin_id") or global_slot.get("skin_id", 0) or 0),
+                "skin_name": role_slot.get("skin_name") or global_slot.get("skin_name", ""),
+                "skin_num": int(role_slot.get("skin_num") or global_slot.get("skin_num", 0) or 0),
+                "random_skin_id": int(role_slot.get("random_skin_id") or global_slot.get("random_skin_id", 0) or 0),
+                "random_skin_name": role_slot.get("random_skin_name") or global_slot.get("random_skin_name", ""),
+                "random_skin_num": int(role_slot.get("random_skin_num") or global_slot.get("random_skin_num", 0) or 0),
+                "skin_source_role": skin_source_role,
             }
 
         pick_slots = {
@@ -216,6 +229,102 @@ class WebSocketManager(ChampSelectMixin):
                 ),
             },
         }
+
+    def get_current_summoner_id(self) -> Optional[int]:
+        try:
+            return int(self.state.summoner_id or 0) or None
+        except (TypeError, ValueError):
+            return None
+
+    def fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
+        if not self.ws_active or not self.connection or not self.loop:
+            return {
+                "ok": False,
+                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "skins": [],
+            }
+        future = asyncio.run_coroutine_threadsafe(self._fetch_owned_skins_for_champion(champion_id), self.loop)
+        try:
+            return future.result(timeout=8)
+        except Exception as e:
+            logging.debug("WebSocket: owned skins fetch failed - %s", e)
+            return {
+                "ok": False,
+                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "skins": [],
+            }
+
+    async def _fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
+        if not self.connection:
+            return {
+                "ok": False,
+                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "skins": [],
+            }
+        summoner_id = self.get_current_summoner_id()
+        if not summoner_id:
+            await self._refresh_player_and_region()
+            summoner_id = self.get_current_summoner_id()
+        if not summoner_id:
+            return {
+                "ok": False,
+                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "skins": [],
+            }
+
+        endpoint = f"/lol-champions/v1/inventories/{summoner_id}/champions/{champion_id}/skins"
+        try:
+            response = await self.connection.request("get", endpoint)
+            if response.status != 200:
+                return {
+                    "ok": False,
+                    "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                    "skins": [],
+                }
+            payload = await response.json()
+        except Exception as e:
+            logging.debug("WebSocket: inventory skins request failed - %s", e)
+            return {
+                "ok": False,
+                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "skins": [],
+            }
+
+        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+        catalog = self.dd.get_skin_catalog(champion_name)
+        by_skin_id = {int(entry.get("skin_id") or 0): entry for entry in catalog}
+        by_name = {str(entry.get("skin_name") or "").strip().lower(): entry for entry in catalog}
+        skins: List[Dict[str, Any]] = []
+        for item in payload if isinstance(payload, list) else []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                skin_id = int(item.get("id") or item.get("skinId") or 0)
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = by_skin_id.get(skin_id) or by_name.get(skin_name.strip().lower())
+            if not skin_data:
+                skin_data = self.dd.resolve_skin_data(champion_name, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                continue
+            skins.append(
+                {
+                    "skin_id": int(skin_data.get("skin_id") or skin_id or 0),
+                    "skin_num": int(skin_data.get("skin_num") or 0),
+                    "skin_name": str(skin_data.get("skin_name") or skin_name or ""),
+                    "splash_url": skin_data.get("splash_url", ""),
+                }
+            )
+
+        unique_skins = []
+        seen_ids = set()
+        for skin in skins:
+            if skin["skin_id"] in seen_ids:
+                continue
+            seen_ids.add(skin["skin_id"])
+            unique_skins.append(skin)
+        return {"ok": True, "message": "", "skins": unique_skins}
 
     def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
         if not self.update_param:

@@ -40,6 +40,9 @@ from .constants import (
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
     URL_DD_IMG_SPELL,
+    URL_DD_CHAMPION_DETAIL,
+    URL_DD_SKIN_SPLASH,
+    URL_PHASE_RUSH_ICON,
     URL_DD_SPLASH,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
@@ -52,6 +55,7 @@ from .paths import (
     LOCKFILE_PATH,
     PARAMETERS_PATH,
     SPELLS_CACHE_DIR,
+    SKINS_CACHE_DIR,
     get_appdata_path,
     resource_path,
 )
@@ -65,6 +69,7 @@ def _sync_runtime_paths() -> None:
     _paths.LOCKFILE_PATH = LOCKFILE_PATH
     _settings.ICONS_CACHE_DIR = ICONS_CACHE_DIR
     _settings.SPELLS_CACHE_DIR = SPELLS_CACHE_DIR
+    _settings.SKINS_CACHE_DIR = SKINS_CACHE_DIR
 
 
 def load_parameters():
@@ -105,6 +110,9 @@ __all__ = [
     "URL_DD_SUMMONERS",
     "URL_DD_IMG_CHAMP",
     "URL_DD_IMG_SPELL",
+    "URL_DD_CHAMPION_DETAIL",
+    "URL_DD_SKIN_SPLASH",
+    "URL_PHASE_RUSH_ICON",
     "URL_DD_SPLASH",
     "EP_SESSION",
     "EP_SESSION_TIMER",
@@ -141,6 +149,7 @@ __all__ = [
     "DDRAGON_CACHE_FILE",
     "ICONS_CACHE_DIR",
     "SPELLS_CACHE_DIR",
+    "SKINS_CACHE_DIR",
     "DEFAULT_PARAMS",
     "FIRST_LAUNCH_PARAMS",
     "load_parameters",

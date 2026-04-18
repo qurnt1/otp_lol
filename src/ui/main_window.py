@@ -221,13 +221,26 @@ class LoLAssistantUI:
         global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
         role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
 
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, str]:
+        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
             global_slot = global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            skin_source_role = (
+                resolved_role
+                if any(role_slot.get(field) for field in ("skin_mode", "skin_id", "skin_name", "skin_num"))
+                else "GLOBAL"
+            )
             return {
                 "champion": role_data.get(pick_key) or params.get(pick_key, ""),
                 "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
                 "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
+                "skin_mode": role_slot.get("skin_mode") or global_slot.get("skin_mode", "none"),
+                "skin_id": int(role_slot.get("skin_id") or global_slot.get("skin_id", 0) or 0),
+                "skin_name": role_slot.get("skin_name") or global_slot.get("skin_name", ""),
+                "skin_num": int(role_slot.get("skin_num") or global_slot.get("skin_num", 0) or 0),
+                "random_skin_id": int(role_slot.get("random_skin_id") or global_slot.get("random_skin_id", 0) or 0),
+                "random_skin_name": role_slot.get("random_skin_name") or global_slot.get("random_skin_name", ""),
+                "random_skin_num": int(role_slot.get("random_skin_num") or global_slot.get("random_skin_num", 0) or 0),
+                "skin_source_role": skin_source_role,
             }
 
         pick_slots = {

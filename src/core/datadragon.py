@@ -15,10 +15,13 @@ from PIL import Image
 from ..config import (
     DDRAGON_CACHE_FILE,
     ICONS_CACHE_DIR,
+    SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
     URL_DD_CHAMPIONS,
+    URL_DD_CHAMPION_DETAIL,
     URL_DD_IMG_CHAMP,
     URL_DD_IMG_SPELL,
+    URL_DD_SKIN_SPLASH,
     URL_DD_SPLASH,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
@@ -39,6 +42,7 @@ class DataDragon:
         self.summoner_data: Dict[str, str] = {}
         self.summoner_loaded: bool = False
         self._image_cache: Dict[str, Image.Image] = {}
+        self._champion_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._cache_lock = Lock()
 
     @staticmethod
@@ -306,11 +310,173 @@ class DataDragon:
 
         real_name = self.by_id[champion_id].get("id", champion_name)
         url = URL_DD_SPLASH.format(champion=real_name)
+        return self.get_remote_image(url, cache_key=f"splash_{real_name}_0")
+
+    def get_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
+            return None
+
+        with self._cache_lock:
+            cached = self._champion_detail_cache.get(champion_id)
+            if cached:
+                return dict(cached)
+
+        if not self.version:
+            self.load()
+
+        champ_data = self.by_id.get(champion_id) or {}
+        champion_slug = champ_data.get("id")
+        if not champion_slug or not self.version:
+            return None
 
         try:
-            response = requests.get(url, stream=True, timeout=5)
-            if response.status_code == 200:
-                return Image.open(BytesIO(response.content))
+            url = URL_DD_CHAMPION_DETAIL.format(version=self.version, champion=champion_slug)
+            response = requests.get(url, timeout=8)
+            response.raise_for_status()
+            payload = response.json().get("data", {})
+            detail = payload.get(champion_slug)
+            if isinstance(detail, dict):
+                with self._cache_lock:
+                    self._champion_detail_cache[champion_id] = detail
+                return dict(detail)
+        except requests.RequestException as e:
+            logging.warning(f"DataDragon: Champion detail download error - {e}")
         except Exception as e:
-            logging.warning(f"DataDragon: Splash art error for {champion_name} - {e}")
+            logging.warning(f"DataDragon: Champion detail parsing error - {e}")
+        return None
+
+    def get_skin_catalog(self, name_or_id: Any) -> List[Dict[str, Any]]:
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
+            return []
+
+        detail = self.get_champion_detail(champion_id)
+        if not detail:
+            return []
+
+        champion_slug = detail.get("id") or self.by_id.get(champion_id, {}).get("id")
+        champion_name = detail.get("name") or self.id_to_name(champion_id) or str(name_or_id)
+        skins = detail.get("skins", [])
+        catalog: List[Dict[str, Any]] = []
+        for skin in skins:
+            try:
+                skin_id = int(skin.get("id") or 0)
+            except (TypeError, ValueError):
+                skin_id = 0
+            try:
+                skin_num = int(skin.get("num") or 0)
+            except (TypeError, ValueError):
+                skin_num = 0
+            name = str(skin.get("name") or "")
+            entry = {
+                "champion_id": champion_id,
+                "champion_name": champion_name,
+                "champion_slug": champion_slug,
+                "skin_id": skin_id,
+                "skin_num": skin_num,
+                "skin_name": name,
+                "splash_url": URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=skin_num),
+            }
+            catalog.append(entry)
+        return catalog
+
+    def resolve_skin_data(
+        self,
+        name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[Dict[str, Any]]:
+        catalog = self.get_skin_catalog(name_or_id)
+        if not catalog:
+            return None
+
+        if skin_id not in {None, ""}:
+            try:
+                target_skin_id = int(skin_id)
+            except (TypeError, ValueError):
+                target_skin_id = 0
+            if target_skin_id:
+                for entry in catalog:
+                    if entry["skin_id"] == target_skin_id:
+                        return dict(entry)
+
+        if skin_num not in {None, ""}:
+            try:
+                target_skin_num = int(skin_num)
+            except (TypeError, ValueError):
+                target_skin_num = 0
+            if target_skin_num >= 0:
+                for entry in catalog:
+                    if entry["skin_num"] == target_skin_num:
+                        return dict(entry)
+
+        normalized_name = self._normalize(str(skin_name or ""))
+        if normalized_name:
+            for entry in catalog:
+                if self._normalize(entry["skin_name"]) == normalized_name:
+                    return dict(entry)
+        return None
+
+    def get_skin_splash_url(
+        self,
+        champion_name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[str]:
+        skin_data = self.resolve_skin_data(
+            champion_name_or_id,
+            skin_name=skin_name,
+            skin_id=skin_id,
+            skin_num=skin_num,
+        )
+        return skin_data.get("splash_url") if skin_data else None
+
+    def get_skin_splash_art(
+        self,
+        champion_name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[Image.Image]:
+        skin_data = self.resolve_skin_data(
+            champion_name_or_id,
+            skin_name=skin_name,
+            skin_id=skin_id,
+            skin_num=skin_num,
+        )
+        if not skin_data:
+            return None
+        cache_key = f"skin_{skin_data['champion_slug']}_{skin_data['skin_num']}"
+        return self.get_remote_image(skin_data["splash_url"], cache_key=cache_key)
+
+    def get_remote_image(self, url: str, *, cache_key: str) -> Optional[Image.Image]:
+        with self._cache_lock:
+            if cache_key in self._image_cache:
+                return self._image_cache[cache_key].copy()
+
+        try:
+            cache_filename = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in cache_key)
+            cache_path = os.path.join(SKINS_CACHE_DIR, f"{cache_filename}.img")
+            if os.path.exists(cache_path):
+                img = Image.open(cache_path)
+                with self._cache_lock:
+                    self._image_cache[cache_key] = img.copy()
+                return img
+
+            response = requests.get(url, stream=True, timeout=8)
+            if response.status_code == 200:
+                img = Image.open(BytesIO(response.content))
+                with open(cache_path, "wb") as f:
+                    f.write(response.content)
+                with self._cache_lock:
+                    self._image_cache[cache_key] = img.copy()
+                return img
+        except Exception as e:
+            logging.warning(f"DataDragon: Remote image error for {url} - {e}")
         return None
