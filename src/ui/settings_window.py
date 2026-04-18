@@ -93,6 +93,7 @@ class SettingsWindow:
         self.auto_pick_var = tk.BooleanVar(value=True)
         self.auto_ban_var = tk.BooleanVar(value=params.get("auto_ban_enabled", True))
         self.auto_summoners_var = tk.BooleanVar(value=True)
+        self.presets_enabled_var = tk.BooleanVar(value=params.get("presets_enabled", True))
         self.summoner_auto_detect_var = tk.BooleanVar(value=params.get("summoner_name_auto_detect", True))
         self.summoner_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
@@ -181,7 +182,7 @@ class SettingsWindow:
 
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
-        role_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 10))
+        role_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 8))
         ttk.Label(role_frame, text="Role profile:").pack(side="left")
         self.role_selector_btn = ttk.Button(
             role_frame,
@@ -196,7 +197,19 @@ class SettingsWindow:
         self._refresh_role_selector_button()
 
         ttk.Separator(self.main_frame).grid(row=start_row + 1, column=0, columnspan=4, sticky="we", pady=(4, 8))
-        for offset, slot_key in enumerate(PICK_SLOT_ORDER, start=2):
+
+        presets_frame = ttk.Frame(self.main_frame)
+        presets_frame.grid(row=start_row + 2, column=0, columnspan=4, sticky="w", pady=(0, 8))
+        self.presets_toggle = ttk.Checkbutton(
+            presets_frame,
+            text="Enable presets for this profile",
+            variable=self.presets_enabled_var,
+            command=self._toggle_profile_presets,
+            bootstyle="info-round-toggle",
+        )
+        self.presets_toggle.pack(side="left")
+
+        for offset, slot_key in enumerate(PICK_SLOT_ORDER, start=3):
             ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
                 row=start_row + offset,
                 column=0,
@@ -234,8 +247,8 @@ class SettingsWindow:
             spell_2_btn.grid(row=start_row + offset, column=3, sticky="ew", padx=5, pady=4)
             self.pick_spell_buttons[(slot_key, 2)] = spell_2_btn
 
-        ttk.Separator(self.main_frame).grid(row=start_row + 5, column=0, columnspan=4, sticky="we", pady=(10, 8))
-        return start_row + 6
+        ttk.Separator(self.main_frame).grid(row=start_row + 6, column=0, columnspan=4, sticky="we", pady=(10, 8))
+        return start_row + 7
 
     def _create_ban_section(self, start_row: int) -> int:
         ttk.Checkbutton(
@@ -405,6 +418,7 @@ class SettingsWindow:
         target_role = self._normalize_role(role or self._get_selected_profile_role())
         if target_role == "GLOBAL":
             return {
+                "presets_enabled": params.get("presets_enabled", True),
                 "selected_pick_1": params.get("selected_pick_1", ""),
                 "selected_pick_2": params.get("selected_pick_2", ""),
                 "selected_pick_3": params.get("selected_pick_3", ""),
@@ -416,6 +430,7 @@ class SettingsWindow:
         if not isinstance(role_data, dict):
             role_data = {}
         return {
+            "presets_enabled": role_data.get("presets_enabled", params.get("presets_enabled", True)),
             "selected_pick_1": role_data.get("selected_pick_1", ""),
             "selected_pick_2": role_data.get("selected_pick_2", ""),
             "selected_pick_3": role_data.get("selected_pick_3", ""),
@@ -425,6 +440,9 @@ class SettingsWindow:
 
     def _get_profile_value(self, key: str) -> str:
         return self._get_profile_role_data().get(key, "")
+
+    def _get_profile_presets_enabled(self) -> bool:
+        return bool(self._get_profile_role_data().get("presets_enabled", True))
 
     @staticmethod
     def _normalize_empty_choice(value: str) -> str:
@@ -475,6 +493,22 @@ class SettingsWindow:
         new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
         role_data = new_profiles.get(role, {})
         role_data[key] = value
+        new_profiles[role] = role_data
+        self.parent.update_param("role_profiles", new_profiles)
+
+    def _set_profile_presets_enabled(self, enabled: bool) -> None:
+        role = self._get_selected_profile_role()
+        if role == "GLOBAL":
+            self.parent.update_param("presets_enabled", enabled)
+            return
+
+        params = self.parent.get_params()
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+        role_data = new_profiles.get(role, {})
+        role_data["presets_enabled"] = enabled
         new_profiles[role] = role_data
         self.parent.update_param("role_profiles", new_profiles)
 
@@ -582,6 +616,12 @@ class SettingsWindow:
         if hasattr(self, "hotkey_site_btn"):
             label = HOTKEY_SITE_LABELS.get(self.preferred_hotkey_site_var.get(), HOTKEY_SITE_LABELS["porofessor"])
             self.hotkey_site_btn.configure(text=label)
+
+    def _toggle_profile_presets(self) -> None:
+        enabled = self.presets_enabled_var.get()
+        self._set_profile_presets_enabled(enabled)
+        self.toggle_pick()
+        self.toggle_spells()
 
     def _get_theme_button_text(self) -> str:
         return f"Theme: {THEME_LABELS.get(self.theme_var.get(), THEME_LABELS['darkly'])}"
@@ -699,8 +739,11 @@ class SettingsWindow:
     def _select_profile_role(self, selected_role: str) -> None:
         self.profile_role_var.set(selected_role)
         self.parent.update_param("selected_profile_role", selected_role)
+        self.presets_enabled_var.set(self._get_profile_presets_enabled())
         self._refresh_profile_buttons()
         self._refresh_spell_buttons()
+        self.toggle_pick()
+        self.toggle_spells()
         self._close_role_picker()
 
     def _open_role_picker(self) -> None:
@@ -752,10 +795,12 @@ class SettingsWindow:
         return {champion for champion in excluded if champion and champion != "(None)"}
 
     def _open_champion_picker(self, context: str, slot_num: int = 1) -> None:
+        if context == "pick" and not self.presets_enabled_var.get():
+            return
         open_champion_picker(self, context, slot_num)
 
     def _open_spell_picker(self, pick_slot_key: str, spell_slot_num: int) -> None:
-        if not self.auto_summoners_var.get():
+        if not self.auto_summoners_var.get() or not self.presets_enabled_var.get():
             return
 
         picker = ttk.Toplevel(self.window)
@@ -876,7 +921,7 @@ class SettingsWindow:
         self._update_detect_label_text()
 
     def toggle_pick(self) -> None:
-        state = "normal" if self.auto_pick_var.get() else "disabled"
+        state = "normal" if self.auto_pick_var.get() and self.presets_enabled_var.get() else "disabled"
         for button in getattr(self, "pick_buttons", {}).values():
             button.configure(state=state)
 
@@ -884,7 +929,7 @@ class SettingsWindow:
         self.btn_ban.configure(state="normal" if self.auto_ban_var.get() else "disabled")
 
     def toggle_spells(self) -> None:
-        state = "normal" if self.auto_summoners_var.get() else "disabled"
+        state = "normal" if self.auto_summoners_var.get() and self.presets_enabled_var.get() else "disabled"
         for button in getattr(self, "pick_spell_buttons", {}).values():
             button.configure(state=state)
 
@@ -901,6 +946,7 @@ class SettingsWindow:
         self.auto_pick_var.set(True)
         self.auto_ban_var.set(params.get("auto_ban_enabled", True))
         self.auto_summoners_var.set(True)
+        self.presets_enabled_var.set(self._get_profile_presets_enabled())
         self.summoner_auto_detect_var.set(params.get("summoner_name_auto_detect", True))
         self.summoner_entry_var.set(params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")

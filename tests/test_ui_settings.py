@@ -18,6 +18,7 @@ class FakeParent:
     def __init__(self):
         self.params = {
             "selected_profile_role": "MIDDLE",
+            "presets_enabled": False,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
@@ -34,6 +35,7 @@ class FakeParent:
             "theme": "darkly",
             "role_profiles": {
                 "MIDDLE": {
+                    "presets_enabled": True,
                     "selected_pick_1": "Ahri",
                     "selected_pick_2": "",
                     "selected_pick_3": "",
@@ -83,6 +85,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(data["selected_pick_1"], "Ahri")
         self.assertEqual(data["pick_slots"]["pick_1"]["spell_1"], "Ignite")
         self.assertEqual(data["pick_slots"]["pick_1"]["spell_2"], "")
+        self.assertTrue(data["presets_enabled"])
 
     def test_get_excluded_champions_for_ban_includes_picks(self):
         window = self.make_window()
@@ -97,6 +100,13 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._set_pick_slot_value("pick_1", "spell_2", "Flash")
 
         self.assertEqual(window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "Flash")
+
+    def test_set_profile_presets_enabled_updates_role_profile_payload(self):
+        window = self.make_window()
+
+        window._set_profile_presets_enabled(False)
+
+        self.assertFalse(window.parent.params["role_profiles"]["MIDDLE"]["presets_enabled"])
 
     def test_pick_slot_display_uses_global_fallback(self):
         window = self.make_window()
