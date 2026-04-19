@@ -65,6 +65,8 @@ class MainWindowLogicTests(unittest.TestCase):
             "auto_pick_enabled": True,
             "auto_ban_enabled": False,
             "auto_summoners_enabled": True,
+            "main_skin_mode_override": "inherit",
+            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
         }
         effective = {
             "presets_enabled": False,
@@ -72,6 +74,41 @@ class MainWindowLogicTests(unittest.TestCase):
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
+            "pick_slots": {
+                "pick_1": {
+                    "champion": "Garen",
+                    "skin_mode": "fixed",
+                    "skin_id": 86000,
+                    "skin_name": "Default Garen",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                },
+                "pick_2": {
+                    "champion": "Lux",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                },
+                "pick_3": {
+                    "champion": "Ashe",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                },
+            },
         }
 
         payload = window._build_feature_preview_payload(params, effective)
@@ -79,6 +116,11 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertFalse(payload["presets"]["enabled"])
         self.assertFalse(payload["ban"]["enabled"])
         self.assertEqual(payload["presets"]["values"], ["Garen", "Lux", "Ashe"])
+        self.assertTrue(payload["skins"]["enabled"])
+        self.assertEqual(payload["skins"]["mode"], "mixed")
+        self.assertEqual(len(payload["skins"]["values"]), 3)
+        self.assertEqual(payload["skins"]["values"][0]["mode"], "fixed")
+        self.assertEqual(payload["skins"]["values"][1]["mode"], "none")
         self.assertEqual(payload["ban"]["values"], ["Teemo"])
 
     def test_toggle_main_preview_feature_updates_param_and_syncs_settings(self):
@@ -117,7 +159,7 @@ class MainWindowLogicTests(unittest.TestCase):
             ],
         )
         self.assertEqual(settings.sync_calls, 1)
-        self.assertEqual(recorder.messages[0][0], "Presets desactive.")
+        self.assertEqual(recorder.messages[0][0], "Presets disabled.")
 
     def test_set_feature_icon_hides_slot_text_when_section_disabled(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
@@ -134,10 +176,12 @@ class MainWindowLogicTests(unittest.TestCase):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
         preview_a = {
             "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
+            "skins": {"enabled": False, "mode": "none", "values": [{"mode": "none"}, {"mode": "none"}, {"mode": "none"}]},
             "ban": {"enabled": True, "values": ["Teemo"]},
         }
         preview_b = {
             "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
+            "skins": {"enabled": True, "mode": "fixed", "values": [{"mode": "fixed", "skin_id": 1}, {"mode": "none"}, {"mode": "none"}]},
             "ban": {"enabled": False, "values": ["Teemo"]},
         }
 
@@ -228,7 +272,7 @@ class MainWindowLogicTests(unittest.TestCase):
 
         self.assertFalse(params["role_profiles"]["MIDDLE"]["presets_enabled"])
         self.assertEqual(window.settings_win.sync_calls, 1)
-        self.assertEqual(mutable.toasts[0][0], "Presets automation desactive for Mid.")
+        self.assertEqual(mutable.toasts[0][0], "Presets automation disabled for Mid.")
 
     def test_toggle_tray_auto_ban_updates_global_setting(self):
         params = {"auto_ban_enabled": True}
@@ -243,7 +287,7 @@ class MainWindowLogicTests(unittest.TestCase):
 
         self.assertFalse(params["auto_ban_enabled"])
         self.assertEqual(window.settings_win.sync_calls, 1)
-        self.assertEqual(mutable.toasts[0][0], "Auto-ban desactive.")
+        self.assertEqual(mutable.toasts[0][0], "Auto-ban disabled.")
 
     def test_set_main_preview_presets_enabled_updates_global_flags_and_global_role(self):
         params = {
@@ -285,6 +329,269 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertTrue(params["auto_pick_enabled"])
         self.assertTrue(params["auto_summoners_enabled"])
         self.assertTrue(params["role_profiles"]["MIDDLE"]["presets_enabled"])
+
+    def test_toggle_main_preview_feature_cycles_skin_modes_in_global_slot(self):
+        params = {
+            "main_skin_mode_override": "inherit",
+            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
+            "pick_slots": {
+                "pick_1": {
+                    "skin_mode": "none",
+                    "skin_id": 86000,
+                    "skin_name": "Default Garen",
+                    "skin_num": 0,
+                    "random_skin_id": 86001,
+                    "random_skin_name": "Fancy Garen",
+                    "random_skin_num": 1,
+                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
+                }
+            }
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window.show_toast = mutable.show_toast
+        window.settings_win = mutable.settings_win
+        window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
+        window._get_main_preview_role = lambda: "TOP"
+        window.get_effective_profile_config = lambda role=None: {
+            "pick_slots": {
+                "pick_1": {
+                    "champion": "Garen",
+                    "skin_mode": "fixed",
+                    "skin_id": 86000,
+                    "skin_name": "Default Garen",
+                    "skin_num": 0,
+                    "random_skin_id": 86001,
+                    "random_skin_name": "Fancy Garen",
+                    "random_skin_num": 1,
+                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
+                    "skin_source_role": "GLOBAL",
+                },
+                "pick_2": {
+                    "champion": "Lux",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                    "skin_source_role": "GLOBAL",
+                },
+                "pick_3": {
+                    "champion": "Ashe",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                    "skin_source_role": "GLOBAL",
+                },
+            }
+        }
+
+        window._toggle_main_preview_feature("skins")
+        self.assertEqual(
+            params["main_skin_mode_overrides"],
+            {"pick_1": "fixed", "pick_2": "fixed", "pick_3": "fixed"},
+        )
+        self.assertEqual(mutable.toasts[-1][0], "Fixed skin enabled.")
+
+        window._toggle_main_preview_feature("skins")
+        self.assertEqual(
+            params["main_skin_mode_overrides"],
+            {"pick_1": "random", "pick_2": "random", "pick_3": "random"},
+        )
+        self.assertEqual(mutable.toasts[-1][0], "Random skins enabled.")
+
+        window._toggle_main_preview_feature("skins")
+        self.assertEqual(
+            params["main_skin_mode_overrides"],
+            {"pick_1": "none", "pick_2": "none", "pick_3": "none"},
+        )
+        self.assertEqual(mutable.toasts[-1][0], "Skin off.")
+
+    def test_toggle_main_preview_skin_slot_cycles_only_target_slot(self):
+        params = {
+            "main_skin_mode_override": "inherit",
+            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window.show_toast = mutable.show_toast
+        window.settings_win = mutable.settings_win
+        window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
+        window._get_main_preview_role = lambda: "GLOBAL"
+        window.get_effective_profile_config = lambda role=None: {
+            "pick_slots": {
+                "pick_1": {
+                    "champion": "Garen",
+                    "skin_mode": "fixed",
+                    "skin_id": 86000,
+                    "skin_name": "Default Garen",
+                    "skin_num": 0,
+                    "random_skin_id": 86001,
+                    "random_skin_name": "Fancy Garen",
+                    "random_skin_num": 1,
+                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
+                },
+                "pick_2": {
+                    "champion": "Lux",
+                    "skin_mode": "fixed",
+                    "skin_id": 99010,
+                    "skin_name": "Battle Academia Lux",
+                    "skin_num": 10,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                },
+                "pick_3": {
+                    "champion": "Ashe",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                },
+            }
+        }
+
+        window._toggle_main_preview_skin_slot("pick_1")
+        self.assertEqual(params["main_skin_mode_overrides"]["pick_1"], "random")
+        self.assertEqual(params["main_skin_mode_overrides"]["pick_2"], "inherit")
+        self.assertEqual(mutable.toasts[-1][0], "Pick 1 random skin enabled.")
+
+        window._toggle_main_preview_skin_slot("pick_2")
+        self.assertEqual(params["main_skin_mode_overrides"]["pick_2"], "none")
+        self.assertEqual(mutable.toasts[-1][0], "Pick 2 skin off.")
+
+    def test_toggle_main_preview_feature_shows_toast_when_no_skin_is_configured(self):
+        params = {
+            "main_skin_mode_override": "inherit",
+            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
+            "pick_slots": {
+                "pick_1": {
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                }
+            }
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        mutable = MutableParamsWindow(params)
+        window.get_params = mutable.get_params
+        window.update_param = mutable.update_param
+        window.show_toast = mutable.show_toast
+        window.settings_win = mutable.settings_win
+        window._get_main_preview_role = lambda: "GLOBAL"
+        window.get_effective_profile_config = lambda role=None: {
+            "pick_slots": {
+                "pick_1": {
+                    "champion": "Garen",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                    "skin_source_role": "GLOBAL",
+                },
+                "pick_2": {
+                    "champion": "Lux",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                    "skin_source_role": "GLOBAL",
+                },
+                "pick_3": {
+                    "champion": "Ashe",
+                    "skin_mode": "none",
+                    "skin_id": 0,
+                    "skin_name": "",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                    "skin_source_role": "GLOBAL",
+                },
+            }
+        }
+
+        window._toggle_main_preview_feature("skins")
+
+        self.assertEqual(params["main_skin_mode_override"], "inherit")
+        self.assertEqual(
+            params["main_skin_mode_overrides"],
+            {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
+        )
+        self.assertEqual(mutable.toasts[-1][0], "No skin configured in presets.")
+
+    def test_main_window_local_effective_profile_config_uses_global_skin_fallback(self):
+        params = {
+            "pick_slots": {
+                "pick_1": {
+                    "skin_mode": "fixed",
+                    "skin_id": 86000,
+                    "skin_name": "Default Garen",
+                    "skin_num": 0,
+                    "random_skin_id": 0,
+                    "random_skin_name": "",
+                    "random_skin_num": 0,
+                    "random_skin_pool": [],
+                }
+            },
+            "role_profiles": {
+                "TOP": {
+                    "selected_pick_1": "Garen",
+                    "pick_slots": {
+                        "pick_1": {
+                            "skin_mode": "none",
+                            "skin_id": 0,
+                            "skin_name": "",
+                            "skin_num": 0,
+                            "random_skin_id": 0,
+                            "random_skin_name": "",
+                            "random_skin_num": 0,
+                            "random_skin_pool": [],
+                        }
+                    },
+                }
+            },
+        }
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.ws_manager = None
+        window.get_params = lambda: params
+
+        effective = window.get_effective_profile_config(role="TOP")
+
+        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "fixed")
+        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_id"], 86000)
+        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_source_role"], "GLOBAL")
 
 
 if __name__ == "__main__":

@@ -31,6 +31,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_mode"], "none")
         self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_id"], 0)
         self.assertEqual(loaded["pick_slots"]["pick_1"]["random_skin_pool"], [])
+        self.assertEqual(loaded["main_skin_mode_override"], "inherit")
+        self.assertEqual(
+            loaded["main_skin_mode_overrides"],
+            {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
+        )
         self.assertFalse(loaded["role_profiles"]["TOP"]["presets_enabled"])
 
     def test_load_parameters_migrates_legacy_region_to_manual_region(self):
@@ -210,6 +215,36 @@ class ConfigTests(unittest.TestCase):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded["preferred_hotkey_site"], "deeplol")
+
+    def test_load_parameters_normalizes_main_skin_mode_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(json.dumps({"main_skin_mode_override": " RANDOM "}), encoding="utf-8")
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["main_skin_mode_override"], "random")
+        self.assertEqual(
+            loaded["main_skin_mode_overrides"],
+            {"pick_1": "random", "pick_2": "random", "pick_3": "random"},
+        )
+
+    def test_load_parameters_normalizes_main_skin_mode_overrides(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text(
+                json.dumps({"main_skin_mode_overrides": {"pick_1": " fixed ", "pick_2": " RANDOM ", "pick_3": "x"}}),
+                encoding="utf-8",
+            )
+
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(
+            loaded["main_skin_mode_overrides"],
+            {"pick_1": "fixed", "pick_2": "random", "pick_3": "inherit"},
+        )
 
     def test_load_parameters_rejects_non_ingame_hotkey_site(self):
         with tempfile.TemporaryDirectory() as tmpdir:

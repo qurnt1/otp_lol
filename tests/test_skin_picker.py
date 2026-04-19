@@ -121,7 +121,7 @@ class SkinPickerMergeTests(unittest.TestCase):
             _get_skin_fetch_status_text(
                 {
                     "ok": False,
-                    "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                    "message": "Unable to fetch skins. Check your League of Legends connection.",
                 }
             ),
             "Impossible to fetch skins: LoL LCU not detected",

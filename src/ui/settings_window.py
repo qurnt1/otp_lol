@@ -73,6 +73,7 @@ class SettingsWindow:
         self.pick_rune_buttons: Dict[str, ttk.Button] = {}
         self.pick_skin_buttons: Dict[str, ttk.Button] = {}
         self.skin_picker_window: Optional[ttk.Toplevel] = None
+        self.rune_placeholder_window: Optional[ttk.Toplevel] = None
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
@@ -268,6 +269,7 @@ class SettingsWindow:
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
+                command=self._open_rune_placeholder,
             )
             rune_btn.grid(row=0, column=3, sticky="ew", padx=3)
             self.pick_rune_buttons[slot_key] = rune_btn
@@ -1021,6 +1023,46 @@ class SettingsWindow:
                 col = 0
                 row += 1
 
+    def _open_rune_placeholder(self) -> None:
+        if self.rune_placeholder_window and self.rune_placeholder_window.winfo_exists():
+            self.rune_placeholder_window.lift()
+            self.rune_placeholder_window.focus_force()
+            return
+
+        popup = ttk.Toplevel(self.window)
+        if self.window._icon_img:
+            popup.iconphoto(False, self.window._icon_img)
+        popup.title("Runes")
+        popup.geometry(f"360x190+{self.window.winfo_x()+90}+{self.window.winfo_y()+120}")
+        popup.resizable(False, False)
+        popup.transient(self.window)
+
+        def _close_popup() -> None:
+            self.rune_placeholder_window = None
+            popup.destroy()
+
+        popup.protocol("WM_DELETE_WINDOW", _close_popup)
+        self.rune_placeholder_window = popup
+
+        container = ttk.Frame(popup, padding=18)
+        container.pack(fill="both", expand=True)
+        ttk.Label(
+            container,
+            text="Working on it !!",
+            font=("Segoe UI", 16, "bold"),
+            anchor="center",
+            justify="center",
+        ).pack(fill="x", pady=(8, 6))
+        ttk.Label(
+            container,
+            text="Rune automation will arrive in the next update.",
+            anchor="center",
+            justify="center",
+        ).pack(fill="x")
+        ttk.Button(container, text="Close", bootstyle="secondary-outline", command=_close_popup, width=12).pack(
+            pady=(14, 0)
+        )
+
     def _update_btn_content(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
         display_name = name or "..."
 
@@ -1360,6 +1402,8 @@ class SettingsWindow:
             self._cancel_hotkey_capture()
         if getattr(self, "skin_picker_window", None) and self.skin_picker_window.winfo_exists():
             self.skin_picker_window.destroy()
+        if getattr(self, "rune_placeholder_window", None) and self.rune_placeholder_window.winfo_exists():
+            self.rune_placeholder_window.destroy()
         self.parent.update_param("auto_pick_enabled", True)
         self.parent.update_param("auto_summoners_enabled", True)
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())

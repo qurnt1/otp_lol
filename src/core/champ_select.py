@@ -422,31 +422,56 @@ class ChampSelectMixin:
         if not champion_name:
             return None, chosen_slot
 
-        skin_mode = str(slot_data.get("skin_mode") or fallback_slot.get("skin_mode") or "none").strip().lower()
+        skin_mode_overrides = params.get("main_skin_mode_overrides", {})
+        if isinstance(skin_mode_overrides, dict):
+            raw_override = skin_mode_overrides.get(chosen_slot, "inherit")
+        else:
+            raw_override = "inherit"
+        if raw_override in {None, "", "inherit"}:
+            raw_override = params.get("main_skin_mode_override", "inherit")
+        skin_mode_override = str(raw_override or "inherit").strip().lower()
+        if skin_mode_override not in {"inherit", "none", "fixed", "random"}:
+            skin_mode_override = "inherit"
+        if skin_mode_override == "none":
+            return None, chosen_slot
+
+        slot_skin_mode = str(slot_data.get("skin_mode") or fallback_slot.get("skin_mode") or "none").strip().lower()
+        skin_mode = skin_mode_override if skin_mode_override in {"fixed", "random"} else slot_skin_mode
         if skin_mode not in {"fixed", "random"}:
             return None, chosen_slot
 
         if skin_mode == "fixed":
+            skin_id = int(slot_data.get("skin_id") or fallback_slot.get("skin_id") or 0)
+            skin_name = slot_data.get("skin_name") or fallback_slot.get("skin_name") or ""
+            skin_num = int(slot_data.get("skin_num") or fallback_slot.get("skin_num") or 0)
+            if skin_id <= 0 and not skin_name:
+                return None, chosen_slot
             return (
                 {
                     "mode": "fixed",
                     "champion_name": champion_name,
-                    "skin_id": int(slot_data.get("skin_id") or fallback_slot.get("skin_id") or 0),
-                    "skin_name": slot_data.get("skin_name") or fallback_slot.get("skin_name") or "",
-                    "skin_num": int(slot_data.get("skin_num") or fallback_slot.get("skin_num") or 0),
+                    "skin_id": skin_id,
+                    "skin_name": skin_name,
+                    "skin_num": skin_num,
                     "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
                 },
                 chosen_slot,
             )
 
+        random_skin_id = int(slot_data.get("random_skin_id") or fallback_slot.get("random_skin_id") or 0)
+        random_skin_name = slot_data.get("random_skin_name") or fallback_slot.get("random_skin_name") or ""
+        random_skin_num = int(slot_data.get("random_skin_num") or fallback_slot.get("random_skin_num") or 0)
+        random_skin_pool = slot_data.get("random_skin_pool") or fallback_slot.get("random_skin_pool") or []
+        if random_skin_id <= 0 and not random_skin_pool and not random_skin_name:
+            return None, chosen_slot
         return (
             {
                 "mode": "random",
                 "champion_name": champion_name,
-                "skin_id": int(slot_data.get("random_skin_id") or fallback_slot.get("random_skin_id") or 0),
-                "skin_name": slot_data.get("random_skin_name") or fallback_slot.get("random_skin_name") or "",
-                "skin_num": int(slot_data.get("random_skin_num") or fallback_slot.get("random_skin_num") or 0),
-                "random_skin_pool": slot_data.get("random_skin_pool") or fallback_slot.get("random_skin_pool") or [],
+                "skin_id": random_skin_id,
+                "skin_name": random_skin_name,
+                "skin_num": random_skin_num,
+                "random_skin_pool": random_skin_pool,
                 "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
             },
             chosen_slot,

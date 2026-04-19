@@ -285,7 +285,7 @@ class WebSocketManager(ChampSelectMixin):
         if not self.ws_active or not self.connection or not self.loop:
             return {
                 "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "message": "Unable to fetch skins. Check your League of Legends connection.",
                 "owned_skins": [],
             }
         future = asyncio.run_coroutine_threadsafe(self._fetch_owned_skins_for_champion(champion_id), self.loop)
@@ -295,7 +295,7 @@ class WebSocketManager(ChampSelectMixin):
             logging.debug("WebSocket: owned skins fetch failed - %s", e)
             return {
                 "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "message": "Unable to fetch skins. Check your League of Legends connection.",
                 "owned_skins": [],
             }
 
@@ -566,7 +566,7 @@ class WebSocketManager(ChampSelectMixin):
         if not self.connection:
             return {
                 "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "message": "Unable to fetch skins. Check your League of Legends connection.",
                 "owned_skins": [],
             }
         summoner_id = self.get_current_summoner_id()
@@ -595,7 +595,7 @@ class WebSocketManager(ChampSelectMixin):
             return inventory_result
         return pickable_result or {
             "ok": False,
-            "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+            "message": "Unable to fetch skins. Check your League of Legends connection.",
             "owned_skins": [],
         }
 

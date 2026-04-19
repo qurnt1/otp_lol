@@ -3,9 +3,10 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import tkinter as tk
-from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledFrame
+
+from ..config import THEME_PALETTE
 
 if TYPE_CHECKING:
     from .settings_window import SettingsWindow
@@ -95,18 +96,82 @@ def _sort_skins_for_display(
 def _confirm_unowned_skin_selection(
     skin: Dict[str, Any],
     *,
+    owner: Optional["SettingsWindow"] = None,
     ask_fn: Optional[Any] = None,
 ) -> bool:
     if bool(skin.get("owned")):
         return True
-    prompt = ask_fn or messagebox.askyesno
-    return bool(
-        prompt(
-            "Skin non detecte",
-            "Attention, ce skin n'est pas detecte sur ce compte.\n"
-            "Etes-vous sur de vouloir le selectionner ?",
+    if ask_fn is not None:
+        return bool(
+            ask_fn(
+                "Skin not detected",
+                "Warning: this skin is not detected on this account.\n"
+                "Are you sure you want to select it?",
+            )
         )
+    if owner is None:
+        return False
+
+    theme_name = getattr(owner.parent, "theme", "darkly")
+    palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["darkly"])
+    prompt = ttk.Toplevel(owner.window)
+    if getattr(owner.window, "_icon_img", None):
+        prompt.iconphoto(False, owner.window._icon_img)
+    prompt.title("Skin not detected")
+    prompt.resizable(False, False)
+    prompt.transient(owner.window)
+    prompt.geometry(f"400x160+{owner.window.winfo_x()+110}+{owner.window.winfo_y()+120}")
+    prompt.configure(bg=palette["window_bg"])
+
+    result = {"value": False}
+
+    def _close(value: bool) -> None:
+        result["value"] = value
+        try:
+            prompt.grab_release()
+        except Exception:
+            pass
+        prompt.destroy()
+
+    prompt.protocol("WM_DELETE_WINDOW", lambda: _close(False))
+
+    container = tk.Frame(prompt, bg=palette["window_bg"], padx=18, pady=18)
+    container.pack(fill="both", expand=True)
+
+    title_label = tk.Label(
+        container,
+        text="Skin not detected",
+        bg=palette["window_bg"],
+        fg=palette["text"],
+        font=("Segoe UI", 12, "bold"),
+        anchor="w",
     )
+    title_label.pack(fill="x", pady=(0, 8))
+
+    message_label = tk.Label(
+        container,
+        text="Warning: this skin is not detected on this account.\nAre you sure you want to select it?",
+        bg=palette["window_bg"],
+        fg=palette["text"],
+        justify="left",
+        anchor="w",
+        font=("Segoe UI", 10),
+    )
+    message_label.pack(fill="x")
+
+    buttons = tk.Frame(container, bg=palette["window_bg"])
+    buttons.pack(anchor="e", pady=(16, 0))
+    ttk.Button(buttons, text="Yes", bootstyle="primary", width=10, command=lambda: _close(True)).pack(
+        side="left", padx=(0, 8)
+    )
+    ttk.Button(buttons, text="No", bootstyle="secondary-outline", width=10, command=lambda: _close(False)).pack(
+        side="left"
+    )
+
+    prompt.grab_set()
+    prompt.focus_force()
+    prompt.wait_window()
+    return bool(result["value"])
 
 
 def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
@@ -116,7 +181,7 @@ def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
     if not message:
         return "Impossible to fetch skins: LoL LCU not detected"
     lowered = message.lower()
-    if "connexion" in lowered or "league of legends" in lowered or "lcu" in lowered:
+    if "connection" in lowered or "league of legends" in lowered or "lcu" in lowered:
         return "Impossible to fetch skins: LoL LCU not detected"
     return f"Impossible to fetch skins: {message}"
 
@@ -213,7 +278,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             if int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed":
                 owner._clear_pick_slot_skin(slot_key)
             else:
-                if not _confirm_unowned_skin_selection(skin):
+                if not _confirm_unowned_skin_selection(skin, owner=owner):
                     return
                 owner._set_pick_slot_skin_selection(slot_key, mode="fixed", fixed_skin=skin)
             refresh_parent_buttons()
@@ -224,7 +289,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         if skin_id in pool_ids:
             pool_ids.discard(skin_id)
         else:
-            if not _confirm_unowned_skin_selection(skin):
+            if not _confirm_unowned_skin_selection(skin, owner=owner):
                 return
             pool_ids.add(skin_id)
         selected_skins = [entry for entry in available_skins if int(entry.get("skin_id") or 0) in pool_ids]
@@ -320,7 +385,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         if not ws_manager:
             result = {
                 "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                "message": "Unable to fetch skins. Check your League of Legends connection.",
                 "owned_skins": [],
             }
         else:

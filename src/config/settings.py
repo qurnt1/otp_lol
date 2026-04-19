@@ -44,6 +44,11 @@ def build_role_profile_defaults(*, presets_enabled: bool = True) -> Dict[str, Di
     }
 
 
+def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str, str]:
+    """Return main-window skin override defaults for each preset slot."""
+    return {slot: default_mode for slot in PICK_SLOT_ORDER}
+
+
 DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_accept_enabled": True,
     "auto_pick_enabled": True,
@@ -71,6 +76,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
+    "main_skin_mode_override": "inherit",
+    "main_skin_mode_overrides": build_main_skin_mode_overrides(),
 }
 
 FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
@@ -146,6 +153,23 @@ def _normalize_spell_value(value: Any) -> str:
 def _normalize_skin_mode(value: Any) -> str:
     mode = str(value or "none").strip().lower()
     return mode if mode in {"none", "fixed", "random"} else "none"
+
+
+def _normalize_main_skin_mode_override(value: Any) -> str:
+    mode = str(value or "inherit").strip().lower()
+    return mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
+
+
+def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inherit") -> Dict[str, str]:
+    normalized = build_main_skin_mode_overrides()
+    legacy_mode = _normalize_main_skin_mode_override(legacy_value)
+    if legacy_mode != "inherit":
+        for slot in normalized:
+            normalized[slot] = legacy_mode
+    if isinstance(value, dict):
+        for slot in PICK_SLOT_ORDER:
+            normalized[slot] = _normalize_main_skin_mode_override(value.get(slot, normalized[slot]))
+    return normalized
 
 
 def _normalize_skin_id(value: Any) -> int:
@@ -257,6 +281,13 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["selected_pick_3"] = str(config.get("selected_pick_3", DEFAULT_PARAMS["selected_pick_3"]))
     merged["selected_ban"] = str(config.get("selected_ban", DEFAULT_PARAMS["selected_ban"]))
     merged["presets_enabled"] = bool(config.get("presets_enabled", DEFAULT_PARAMS["presets_enabled"]))
+    merged["main_skin_mode_override"] = _normalize_main_skin_mode_override(
+        config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"])
+    )
+    merged["main_skin_mode_overrides"] = _normalize_main_skin_mode_overrides(
+        config.get("main_skin_mode_overrides"),
+        legacy_value=config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"]),
+    )
     merged["pick_slots"] = _build_normalized_pick_slots(
         config.get("pick_slots"),
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),

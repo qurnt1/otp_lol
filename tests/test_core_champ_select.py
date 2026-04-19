@@ -270,6 +270,55 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skin_selection["mode"], "random")
         self.assertEqual(skin_selection["skin_id"], 86000)
 
+    async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
+        self.manager.state.assigned_position = "TOP"
+        self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "inherit", "pick_3": "inherit"}
+        self.params["pick_slots"]["pick_1"].update(
+            {
+                "skin_mode": "random",
+                "skin_id": 86000,
+                "skin_name": "Default Garen",
+                "skin_num": 0,
+                "random_skin_id": 86001,
+                "random_skin_name": "Fancy Garen",
+                "random_skin_num": 1,
+                "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
+            }
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertEqual(chosen_slot, "pick_1")
+        self.assertIsNotNone(skin_selection)
+        self.assertEqual(skin_selection["mode"], "fixed")
+        self.assertEqual(skin_selection["skin_id"], 86000)
+
+    async def test_resolve_skin_selection_returns_none_when_override_is_none(self):
+        self.manager.state.assigned_position = "TOP"
+        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "inherit", "pick_3": "inherit"}
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_uses_slot_specific_override_only_for_target_slot(self):
+        self.manager.state.assigned_position = "TOP"
+        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "fixed", "pick_3": "inherit"}
+        self.params["pick_slots"]["pick_2"].update(
+            {"skin_mode": "random", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_2")
+
+        self.assertEqual(chosen_slot, "pick_2")
+        self.assertIsNotNone(skin_selection)
+        self.assertEqual(skin_selection["mode"], "fixed")
+        self.assertEqual(skin_selection["skin_id"], 99010)
+
     async def test_pick_priority_returns_no_candidate_when_role_presets_are_disabled(self):
         self.manager.state.assigned_position = "MID"
 

@@ -5,7 +5,7 @@ from typing import Any, Dict
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-CURRENT_VERSION: str = "9.0"
+CURRENT_VERSION: str = "10.0"
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
 
