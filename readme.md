@@ -63,12 +63,16 @@ Version `11.0` focuses on champion select reliability, cleaner settings, and bet
 
 - `Preset-based picks`
   Each preset now stores one champion plus two summs, and the app uses the preset that is actually selected in champion select.
+  
 - `More reliable champion select flow`
   The app now handles pre-pick, skips banned or unavailable champions, falls back from `Preset 1` to `Preset 2` then `Preset 3`, and confirms actions directly from the LCU session.
+
 - `Direct preset editing`
   The settings window now exposes three direct buttons per preset: champion, `Summ 1`, and `Summ 2`, with icon-based pickers and support for `None`.
+
 - `Cleaner tray and shutdown behavior`
   Tray actions are marshalled back to the Tk thread so hiding and quitting behave correctly, including in the PyInstaller executable.
+
 - `Better diagnostics`
   Logs are more explicit around ready check, pre-pick, ban, pick, summs, and update checks.
 
