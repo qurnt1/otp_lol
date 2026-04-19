@@ -59,7 +59,7 @@ The application is designed to work as a lightweight desktop tool:
 
 ## Version 11.0 Highlights
 
-Version `9.0` focuses on champion select reliability, cleaner settings, and better runtime behavior.
+Version `11.0` focuses on champion select reliability, cleaner settings, and better runtime behavior.
 
 - `Preset-based picks`
   Each preset now stores one champion plus two summs, and the app uses the preset that is actually selected in champion select.
