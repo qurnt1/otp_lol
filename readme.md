@@ -15,7 +15,7 @@ Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Current project version: `9.0`
+Current project version: `11.0`
 
 ## Table Of Contents
 
