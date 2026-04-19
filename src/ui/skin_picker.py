@@ -1,6 +1,6 @@
 """Skin picker helpers for preset settings."""
 
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -73,6 +73,24 @@ def _get_picker_image_url(skin: Dict[str, Any]) -> str:
     )
 
 
+def _sort_skins_for_display(
+    skins: List[Dict[str, Any]],
+    *,
+    mode: str,
+    fixed_skin_id: int = 0,
+    pool_ids: Optional[set[int]] = None,
+) -> List[Dict[str, Any]]:
+    normalized_mode = str(mode or "fixed").strip().lower()
+    selected_ids = set(pool_ids or set()) if normalized_mode == "random" else set()
+    prioritized: List[Dict[str, Any]] = []
+    others: List[Dict[str, Any]] = []
+    for skin in skins:
+        skin_id = int(skin.get("skin_id") or 0)
+        is_selected = skin_id in selected_ids if normalized_mode == "random" else skin_id == int(fixed_skin_id or 0)
+        (prioritized if is_selected else others).append(skin)
+    return [*prioritized, *others]
+
+
 def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     """Open the skin picker for a preset slot."""
     if getattr(owner, "skin_picker_window", None) and owner.skin_picker_window.winfo_exists():
@@ -83,7 +101,9 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     if owner.window._icon_img:
         picker.iconphoto(False, owner.window._icon_img)
     picker.title(f"{owner._get_preset_label(slot_key)} - Skin")
-    picker.geometry(f"960x760+{owner.window.winfo_x()+30}+{owner.window.winfo_y()+40}")
+    picker.resizable(False, False)
+    picker.transient(owner.window)
+    picker.geometry(f"380x620+{owner.window.winfo_x()+60}+{owner.window.winfo_y()+80}")
 
     def on_close() -> None:
         if picker.winfo_exists():
@@ -94,36 +114,32 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
 
     champion_name = owner._get_slot_champion_name(slot_key)
     champion_id = owner.parent.dd.resolve_champion(champion_name) if champion_name not in {"", "(None)"} else None
-    status_var = tk.StringVar(value="Loading skins...")
-    result_var = tk.StringVar(value="")
+    picker_mode_var = tk.StringVar(
+        value="random" if owner._get_effective_pick_slot_config(slot_key).get("skin_mode") == "random" else "fixed"
+    )
     available_skins: list[Dict[str, Any]] = []
     catalog_skins: list[Dict[str, Any]] = []
-    layout_state = {"columns": 3, "after_id": None}
-    pool_var_by_skin_id: dict[int, tk.BooleanVar] = {}
 
-    header = ttk.Frame(picker, padding=10)
-    header.pack(fill="x")
-    ttk.Label(header, text=f"{owner._get_preset_label(slot_key)} skin", font=("Segoe UI", 11, "bold")).pack(
-        anchor="w"
-    )
-    if champion_name and champion_name != "(None)":
-        ttk.Label(header, text=f"Champion: {champion_name}", bootstyle="secondary").pack(anchor="w", pady=(2, 0))
-    ttk.Label(header, textvariable=status_var, bootstyle="warning").pack(anchor="w", pady=(8, 0))
-    ttk.Label(header, textvariable=result_var, bootstyle="secondary").pack(anchor="w", pady=(2, 0))
+    container = ttk.Frame(picker, padding=12)
+    container.pack(fill="both", expand=True)
 
-    scroll_container = ScrolledFrame(picker, autohide=False)
-    scroll_container.pack(fill="both", expand=True, padx=8, pady=(0, 8))
-    grid_frame = scroll_container
+    mode_bar = ttk.Frame(container)
+    mode_bar.pack(fill="x")
+    fixed_mode_btn = ttk.Button(mode_bar, text="Choose a skin")
+    random_mode_btn = ttk.Button(mode_bar, text="Choose from a list")
+    fixed_mode_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
+    random_mode_btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
+
+    scroll_container = ScrolledFrame(container, autohide=False)
+    scroll_container.pack(fill="both", expand=True, pady=(10, 0))
+    list_frame = ttk.Frame(scroll_container)
+    list_frame.pack(fill="both", expand=True)
 
     def get_current_config() -> Dict[str, Any]:
         return owner._get_effective_pick_slot_config(slot_key)
 
     def get_pool_ids() -> set[int]:
         return {int(entry.get("skin_id") or 0) for entry in owner._get_random_skin_pool(slot_key)}
-
-    def get_pool_skins() -> list[Dict[str, Any]]:
-        pool_ids = get_pool_ids()
-        return [skin for skin in available_skins if int(skin.get("skin_id") or 0) in pool_ids]
 
     def get_owned_skins() -> list[Dict[str, Any]]:
         return [skin for skin in available_skins if bool(skin.get("owned"))]
@@ -134,260 +150,129 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     def refresh_parent_buttons() -> None:
         owner._refresh_skin_buttons()
 
-    def apply_fixed(skin: Dict[str, Any]) -> None:
-        owner._set_pick_slot_skin_selection(slot_key, mode="fixed", fixed_skin=skin)
-        refresh_parent_buttons()
-        on_close()
+    def refresh_mode_buttons() -> None:
+        active_mode = picker_mode_var.get()
+        fixed_mode_btn.configure(bootstyle="primary" if active_mode == "fixed" else "secondary-outline")
+        random_mode_btn.configure(bootstyle="primary" if active_mode == "random" else "secondary-outline")
 
-    def clear_selection() -> None:
-        owner._clear_pick_slot_skin(slot_key)
-        refresh_parent_buttons()
-        on_close()
+    def set_picker_mode(mode: str) -> None:
+        picker_mode_var.set("random" if mode == "random" else "fixed")
+        refresh_mode_buttons()
+        populate_list()
 
-    def apply_random_from_pool(*, force_new_roll: bool = False) -> None:
+    def choose_random_preview(selected_skins: list[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if not selected_skins:
+            return None
         current_config = get_current_config()
-        pool_skins = get_pool_skins()
-        if not pool_skins:
-            owner.parent.show_toast("Select at least one skin for the random pool.")
-            return
+        current_random_skin_id = int(current_config.get("random_skin_id") or 0)
+        if current_random_skin_id:
+            for skin in selected_skins:
+                if int(skin.get("skin_id") or 0) == current_random_skin_id:
+                    return skin
+        return owner._choose_random_skin_entry(selected_skins)
 
-        exclude_skin_id = int(current_config.get("random_skin_id") or 0) if force_new_roll else 0
-        chosen = owner._choose_random_skin_entry(pool_skins, exclude_skin_id=exclude_skin_id)
-        if not chosen:
-            owner.parent.show_toast("No skin available for random mode.")
-            return
-
-        owner._set_random_skin_pool(slot_key, pool_skins)
-        owner._set_pick_slot_skin_selection(slot_key, mode="random", random_skin=chosen)
-        refresh_parent_buttons()
-        populate_grid()
-
-    def sync_random_pool_selection() -> None:
-        selected = [
-            skin
-            for skin in available_skins
-            if pool_var_by_skin_id.get(int(skin.get("skin_id") or 0))
-            and pool_var_by_skin_id[int(skin.get("skin_id") or 0)].get()
-        ]
-        owner._set_random_skin_pool(slot_key, selected)
-        current_config = get_current_config()
-        if current_config.get("skin_mode") == "random":
-            if not selected:
-                owner._set_pick_slot_skin_selection(slot_key, mode="none")
-            elif int(current_config.get("random_skin_id") or 0) not in {
-                int(entry.get("skin_id") or 0) for entry in selected
-            }:
-                chosen = owner._choose_random_skin_entry(selected)
-                if chosen:
-                    owner._set_pick_slot_skin_selection(slot_key, mode="random", random_skin=chosen)
-        refresh_parent_buttons()
-        populate_grid()
-
-    def compute_columns() -> int:
-        available_width = max(picker.winfo_width() - 80, 520)
-        return max(2, available_width // 250)
-
-    def render_control_cards(columns: int) -> int:
-        current_config = get_current_config()
-        pool_skins = get_pool_skins()
-
-        ttk.Label(grid_frame, text="Selection", font=("Segoe UI", 10, "bold")).grid(
-            row=0, column=0, columnspan=columns, sticky="w", pady=(0, 8)
-        )
-
-        clear_card = ttk.Frame(grid_frame, padding=8)
-        clear_card.grid(row=1, column=0, padx=6, pady=6, sticky="nsew")
-        clear_btn = ttk.Button(
-            clear_card,
-            text="Clear skin setup",
-            bootstyle="secondary-outline",
-            compound="top",
-            width=20,
-            padding=(8, 10),
-            command=clear_selection,
-        )
-        clear_btn.pack(fill="x")
-        ttk.Label(clear_card, text="Use the default client skin", bootstyle="secondary").pack(pady=(6, 0))
-
-        random_card = ttk.Frame(grid_frame, padding=8)
-        random_card.grid(row=1, column=1, padx=6, pady=6, sticky="nsew")
-        random_btn = ttk.Button(
-            random_card,
-            text=f"Random pool ({len(pool_skins)})",
-            bootstyle="info-outline",
-            compound="top",
-            width=20,
-            padding=(8, 10),
-            command=lambda: apply_random_from_pool(force_new_roll=True),
-            state="normal" if pool_skins else "disabled",
-        )
-        random_btn.pack(fill="x")
-
-        if current_config.get("skin_mode") == "random" and current_config.get("random_skin_name"):
-            ttk.Label(
-                random_card,
-                text=f"Next: {current_config['random_skin_name']}",
-                bootstyle="secondary",
-            ).pack(pady=(6, 0))
-        else:
-            ttk.Label(
-                random_card,
-                text="Roll only among checked skins below",
-                bootstyle="secondary",
-            ).pack(pady=(6, 0))
-
-        if current_config.get("skin_mode") == "random" and champion_name not in {"", "(None)"}:
-            preview_url = owner.parent.dd.get_skin_picker_url(
-                champion_name,
-                skin_id=current_config.get("random_skin_id"),
-                skin_num=current_config.get("random_skin_num"),
-                skin_name=current_config.get("random_skin_name"),
-            )
-            if preview_url:
-                owner._load_remote_img_into_btn(
-                    random_btn,
-                    preview_url,
-                    cache_key=(
-                        f"skin_picker_random_{slot_key}_"
-                        f"{current_config.get('random_skin_num') or current_config.get('random_skin_id') or 0}"
-                    ),
-                    size=(150, 84),
-                    cover=True,
-                )
-        return 3
-
-    def render_skin_cards(start_row: int, columns: int, section_title: str, skins: list[Dict[str, Any]]) -> int:
-        current_config = get_current_config()
-        current_pool_ids = get_pool_ids()
-        ttk.Label(grid_frame, text=section_title, font=("Segoe UI", 10, "bold")).grid(
-            row=start_row, column=0, columnspan=columns, sticky="w", pady=(14, 8)
-        )
-
-        row = start_row + 1
-        col = 0
-        for column in range(columns):
-            grid_frame.columnconfigure(column, weight=1)
-
-        for skin in skins:
-            skin_id = int(skin.get("skin_id") or 0)
-            card = ttk.Frame(grid_frame, padding=8)
-            card.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
-
-            select_btn = ttk.Button(
-                card,
-                text=skin["skin_name"],
-                bootstyle=(
-                    "success-outline"
-                    if current_config.get("skin_mode") == "fixed" and int(current_config.get("skin_id") or 0) == skin_id
-                    else "secondary-outline"
-                ),
-                compound="top",
-                width=20,
-                padding=(8, 10),
-                command=lambda s=skin: apply_fixed(s),
-            )
-            select_btn.pack(fill="x")
-            preview_url = _get_picker_image_url(skin)
-            if preview_url:
-                owner._load_remote_img_into_btn(
-                    select_btn,
-                    preview_url,
-                    cache_key=(
-                        f"skin_picker_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
-                        f"{'owned' if skin.get('owned') else 'other'}"
-                    ),
-                    size=(150, 84),
-                    cover=True,
-                )
-
-            if current_config.get("skin_mode") == "fixed" and int(current_config.get("skin_id") or 0) == skin_id:
-                status_text = "Selected fixed skin"
-            elif skin.get("owned"):
-                status_text = "Owned skin"
+    def toggle_skin_selection(skin: Dict[str, Any]) -> None:
+        skin_id = int(skin.get("skin_id") or 0)
+        active_mode = picker_mode_var.get()
+        if active_mode == "fixed":
+            current_config = get_current_config()
+            if int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed":
+                owner._clear_pick_slot_skin(slot_key)
             else:
-                status_text = "Not owned on this account"
-            ttk.Label(card, text=status_text, bootstyle="secondary").pack(pady=(6, 2))
-            ttk.Label(card, text="Click to use as fixed skin", bootstyle="secondary").pack(pady=(0, 2))
+                owner._set_pick_slot_skin_selection(slot_key, mode="fixed", fixed_skin=skin)
+            refresh_parent_buttons()
+            populate_list()
+            return
 
-            pool_var = tk.BooleanVar(value=skin_id in current_pool_ids)
-            pool_var_by_skin_id[skin_id] = pool_var
-            ttk.Checkbutton(
-                card,
-                text="Include in random pool",
-                variable=pool_var,
-                bootstyle="info-round-toggle",
-                command=sync_random_pool_selection,
-            ).pack(anchor="w", pady=(2, 0))
+        pool_ids = get_pool_ids()
+        if skin_id in pool_ids:
+            pool_ids.discard(skin_id)
+        else:
+            pool_ids.add(skin_id)
+        selected_skins = [entry for entry in available_skins if int(entry.get("skin_id") or 0) in pool_ids]
+        owner._set_random_skin_pool(slot_key, selected_skins)
+        if not selected_skins:
+            owner._set_pick_slot_skin_selection(slot_key, mode="none")
+        else:
+            chosen = choose_random_preview(selected_skins)
+            if chosen:
+                owner._set_pick_slot_skin_selection(slot_key, mode="random", random_skin=chosen)
+        refresh_parent_buttons()
+        populate_list()
 
-            col += 1
-            if col >= columns:
-                col = 0
-                row += 1
-        if col != 0:
-            row += 1
-        return row
-
-    def render_empty_section(start_row: int, columns: int, section_title: str, message: str) -> int:
-        ttk.Label(grid_frame, text=section_title, font=("Segoe UI", 10, "bold")).grid(
-            row=start_row, column=0, columnspan=columns, sticky="w", pady=(14, 8)
+    def render_skin_row(parent: ttk.Frame, skin: Dict[str, Any]) -> None:
+        current_config = get_current_config()
+        active_mode = picker_mode_var.get()
+        skin_id = int(skin.get("skin_id") or 0)
+        selected = (
+            skin_id in get_pool_ids()
+            if active_mode == "random"
+            else int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed"
         )
-        ttk.Label(grid_frame, text=message, bootstyle="secondary").grid(
-            row=start_row + 1, column=0, columnspan=columns, sticky="w"
+        row_btn = ttk.Button(
+            parent,
+            text=f"  {skin['skin_name']}",
+            bootstyle="primary" if selected else "secondary-outline",
+            compound="left",
+            width=26,
+            padding=(8, 8),
+            command=lambda s=skin: toggle_skin_selection(s),
         )
-        return start_row + 2
+        row_btn.pack(fill="x", pady=4)
+        preview_url = _get_picker_image_url(skin)
+        if preview_url:
+            owner._load_remote_img_into_btn(
+                row_btn,
+                preview_url,
+                cache_key=(
+                    f"skin_picker_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
+                    f"{'owned' if skin.get('owned') else 'other'}"
+                ),
+                size=(88, 50),
+                cover=True,
+            )
 
-    def populate_grid() -> None:
-        current_pool_ids = get_pool_ids()
-        pool_var_by_skin_id.clear()
-        for widget in grid_frame.winfo_children():
+    def render_section(parent: ttk.Frame, title: str, skins: list[Dict[str, Any]], empty_message: str) -> None:
+        section = ttk.Frame(parent)
+        section.pack(fill="x", pady=(0, 12))
+        ttk.Label(section, text=title, font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+        if not skins:
+            ttk.Label(section, text=empty_message, bootstyle="secondary").pack(anchor="w")
+            return
+        for skin in skins:
+            render_skin_row(section, skin)
+
+    def populate_list() -> None:
+        current_config = get_current_config()
+        active_mode = picker_mode_var.get()
+        fixed_skin_id = int(current_config.get("skin_id") or 0)
+        pool_ids = get_pool_ids()
+        for widget in list_frame.winfo_children():
             widget.destroy()
 
-        columns = compute_columns()
-        layout_state["columns"] = columns
-        next_row = render_control_cards(columns)
-        owned_skins = get_owned_skins()
-        other_skins = get_other_skins()
-        if owned_skins:
-            next_row = render_skin_cards(next_row, columns, "Owned skins", owned_skins)
-        elif available_skins:
-            next_row = render_empty_section(next_row, columns, "Owned skins", "No owned skins detected.")
+        owned_skins = _sort_skins_for_display(
+            get_owned_skins(),
+            mode=active_mode,
+            fixed_skin_id=fixed_skin_id,
+            pool_ids=pool_ids,
+        )
+        other_skins = _sort_skins_for_display(
+            get_other_skins(),
+            mode=active_mode,
+            fixed_skin_id=fixed_skin_id,
+            pool_ids=pool_ids,
+        )
 
-        if other_skins:
-            next_row = render_skin_cards(next_row, columns, "Other skins", other_skins)
-        elif not available_skins and not status_var.get():
-            ttk.Label(
-                grid_frame,
-                text="No skins found for this champion.",
-                bootstyle="secondary",
-            ).grid(row=next_row, column=0, columnspan=columns, sticky="w", pady=(14, 0))
+        render_section(list_frame, "Owned skins", owned_skins, "No owned skins detected.")
+        other_empty_message = "No skins found for this champion." if not available_skins else "No other skins found."
+        render_section(list_frame, "Other skins", other_skins, other_empty_message)
 
-        # Preserve checkbox state during relayouts.
-        for skin_id in current_pool_ids:
-            if skin_id in pool_var_by_skin_id:
-                pool_var_by_skin_id[skin_id].set(True)
-
-    def schedule_relayout(event=None) -> None:
-        new_columns = compute_columns()
-        if new_columns == layout_state["columns"]:
-            return
-        if layout_state["after_id"] is not None:
-            try:
-                picker.after_cancel(layout_state["after_id"])
-            except Exception:
-                pass
-
-        def relayout() -> None:
-            layout_state["after_id"] = None
-            populate_grid()
-
-        layout_state["after_id"] = picker.after(120, relayout)
-
-    picker.bind("<Configure>", schedule_relayout)
+    fixed_mode_btn.configure(command=lambda: set_picker_mode("fixed"))
+    random_mode_btn.configure(command=lambda: set_picker_mode("random"))
 
     if not champion_id:
-        status_var.set("Impossible de recuperer les skins sans champion configure.")
-        result_var.set("Choisissez d'abord un champion sur ce preset.")
-        populate_grid()
+        refresh_mode_buttons()
+        populate_list()
         return
 
     catalog_skins.extend(owner.parent.dd.get_skin_catalog(champion_name))
@@ -408,29 +293,11 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
                 return
             available_skins.clear()
             available_skins.extend(_merge_catalog_and_owned_skins(catalog_skins, result.get("owned_skins", [])))
-            owned_count = len(get_owned_skins())
-            other_count = len(get_other_skins())
-            if result.get("ok"):
-                status_var.set("")
-                result_var.set(f"{owned_count} owned skin(s), {other_count} other skin(s)")
-            else:
-                status_var.set(result.get("message") or "Impossible de recuperer les skins.")
-                if available_skins:
-                    result_var.set("Inventory unavailable, showing full skin catalog for testing.")
-                else:
-                    result_var.set("Connectez League of Legends puis reessayez.")
-            populate_grid()
+            refresh_mode_buttons()
+            populate_list()
 
         picker.after(0, update_ui)
 
-    toolbar = ttk.Frame(header)
-    toolbar.pack(anchor="w", pady=(8, 0))
-    ttk.Button(
-        toolbar,
-        text="Refresh skins",
-        bootstyle="secondary-outline",
-        command=lambda: owner.parent.executor.submit(load_skins),
-    ).pack(side="left")
-
-    populate_grid()
+    refresh_mode_buttons()
+    populate_list()
     owner.parent.executor.submit(load_skins)

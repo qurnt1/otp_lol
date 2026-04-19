@@ -185,6 +185,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._refresh_skin_buttons()
 
         self.assertEqual(window._load_remote_img_into_btn_calls[0][0], "https://example.com/tile.jpg")
+        self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
         self.assertEqual(window.pick_skin_buttons["pick_1"].config["bootstyle"], "info-outline")
 
     def test_refresh_skin_buttons_uses_theme_placeholder_for_random(self):

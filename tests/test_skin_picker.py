@@ -1,6 +1,10 @@
 import unittest
 
-from src.ui.skin_picker import _get_picker_image_url, _merge_catalog_and_owned_skins
+from src.ui.skin_picker import (
+    _get_picker_image_url,
+    _merge_catalog_and_owned_skins,
+    _sort_skins_for_display,
+)
 
 
 class SkinPickerMergeTests(unittest.TestCase):
@@ -62,6 +66,28 @@ class SkinPickerMergeTests(unittest.TestCase):
             ),
             "splash-2",
         )
+
+    def test_sort_skins_for_display_prioritizes_selected_fixed_skin(self):
+        skins = [
+            {"skin_id": 1, "skin_name": "A"},
+            {"skin_id": 2, "skin_name": "B"},
+            {"skin_id": 3, "skin_name": "C"},
+        ]
+
+        ordered = _sort_skins_for_display(skins, mode="fixed", fixed_skin_id=2)
+
+        self.assertEqual([skin["skin_id"] for skin in ordered], [2, 1, 3])
+
+    def test_sort_skins_for_display_prioritizes_random_pool(self):
+        skins = [
+            {"skin_id": 1, "skin_name": "A"},
+            {"skin_id": 2, "skin_name": "B"},
+            {"skin_id": 3, "skin_name": "C"},
+        ]
+
+        ordered = _sort_skins_for_display(skins, mode="random", pool_ids={3, 1})
+
+        self.assertEqual([skin["skin_id"] for skin in ordered], [1, 3, 2])
 
 
 if __name__ == "__main__":

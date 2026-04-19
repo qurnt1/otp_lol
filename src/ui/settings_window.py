@@ -1187,8 +1187,7 @@ class SettingsWindow:
                 button,
                 preview_url,
                 cache_key=f"skin_btn_{champion_name}_{cache_suffix}",
-                size=(52, 30),
-                cover=True,
+                size=self.PICK_ICON_SIZE,
             )
 
     def _refresh_profile_buttons(self) -> None:
