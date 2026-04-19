@@ -178,7 +178,7 @@ class SettingsWindow:
 
         ttk.Checkbutton(
             top_frame,
-            text="Automatically accept match",
+            text="Automatically accept the game when a match is found",
             variable=self.auto_accept_var,
             command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_accept_var.get()),
             bootstyle="success-round-toggle",
@@ -217,16 +217,17 @@ class SettingsWindow:
         )
         self.presets_toggle.pack(side="left")
 
-        for offset, slot_key in enumerate(PICK_SLOT_ORDER, start=3):
+        for slot_num, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
+            row_index = start_row + slot_num + 2
             ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
-                row=start_row + offset,
+                row=row_index,
                 column=0,
                 sticky="e",
                 padx=5,
                 pady=4,
             )
             row_frame = ttk.Frame(self.main_frame)
-            row_frame.grid(row=start_row + offset, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
+            row_frame.grid(row=row_index, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
             row_frame.columnconfigure(0, weight=2)
             row_frame.columnconfigure(1, weight=1)
             row_frame.columnconfigure(2, weight=1)
@@ -238,7 +239,7 @@ class SettingsWindow:
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=16,
-                command=lambda number=offset - 1: self._open_champion_picker("pick", number),
+                command=lambda key=slot_key: self._open_pick_slot_champion_picker(key),
             )
             champion_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
             self.pick_buttons[slot_key] = champion_btn
@@ -495,6 +496,9 @@ class SettingsWindow:
     @staticmethod
     def _slot_number_from_key(slot_key: str) -> int:
         return PICK_SLOT_ORDER.index(slot_key) + 1
+
+    def _open_pick_slot_champion_picker(self, slot_key: str) -> None:
+        self._open_champion_picker("pick", self._slot_number_from_key(slot_key))
 
     def _get_global_fallback_value(self, key: str) -> str:
         params = self.parent.get_params()

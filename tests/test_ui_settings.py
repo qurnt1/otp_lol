@@ -255,6 +255,20 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(window.hotkey_site_btn.config["compound"], "left")
         self.assertEqual(window.hotkey_site_btn.image, "logo-opgg-30")
 
+    def test_open_pick_slot_champion_picker_maps_slot_key_to_expected_slot_number(self):
+        window = self.make_window()
+        calls = []
+        window._open_champion_picker = lambda context, slot_num=1: calls.append((context, slot_num))
+
+        window._open_pick_slot_champion_picker("pick_1")
+        window._open_pick_slot_champion_picker("pick_2")
+        window._open_pick_slot_champion_picker("pick_3")
+
+        self.assertEqual(
+            calls,
+            [("pick", 1), ("pick", 2), ("pick", 3)],
+        )
+
     def test_pick_slot_display_uses_global_fallback(self):
         window = self.make_window()
 
