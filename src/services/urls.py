@@ -40,12 +40,20 @@ def build_deeplol_url(region: str, riot_id: str, *, ingame: bool = False) -> str
     return f"{base}/ingame" if ingame else base
 
 
+def build_dpm_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
+    """Build the DPM.LOL URL for a player."""
+    url_name = _normalize_riot_id_for_url(riot_id)
+    base = f"https://dpm.lol/{urllib.parse.quote(url_name)}"
+    return f"{base}/live" if ingame else f"{base}/"
+
+
 def build_player_stats_url(site: str, region: str, riot_id: str) -> str:
     """Build a non in-game stats URL based on the chosen provider."""
     normalized_site = (site or "opgg").lower().strip()
     builders = {
         "opgg": lambda reg, rid: build_opgg_url(reg, rid, ingame=False),
         "deeplol": lambda reg, rid: build_deeplol_url(reg, rid, ingame=False),
+        "dpm": lambda reg, rid: build_dpm_url(reg, rid, ingame=False),
         "leagueofgraphs": build_leagueofgraphs_url,
     }
     builder = builders.get(normalized_site, builders["opgg"])
@@ -58,6 +66,7 @@ def build_ingame_stats_url(site: str, region: str, riot_id: str) -> str:
     builders = {
         "porofessor": build_porofessor_url,
         "deeplol": lambda reg, rid: build_deeplol_url(reg, rid, ingame=True),
+        "dpm": lambda reg, rid: build_dpm_url(reg, rid, ingame=True),
         "opgg": lambda reg, rid: build_opgg_url(reg, rid, ingame=True),
     }
     builder = builders.get(normalized_site, builders["porofessor"])

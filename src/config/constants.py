@@ -5,9 +5,11 @@ from typing import Any, Dict
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-CURRENT_VERSION: str = "11.0"
+CURRENT_VERSION: str = "10.0"
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
+GITHUB_DOWNLOAD_ZIP_URL: str = f"{GITHUB_REPO_URL}/archive/refs/heads/main.zip"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
+GITHUB_REPO_API = f"https://api.github.com/repos/{GITHUB_REPO_NAME}"
 
 URL_DD_VERSIONS: str = "https://ddragon.leagueoflegends.com/api/versions.json"
 URL_DD_CHAMPIONS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json"
@@ -15,6 +17,17 @@ URL_DD_SUMMONERS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/
 URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
 URL_DD_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
+URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
+URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
+URL_CDRAGON_CHAMPION_DETAIL: str = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champions/{champion_id}.json"
+)
+URL_CDRAGON_ASSET_PREFIX: str = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+)
+URL_PHASE_RUSH_ICON: str = (
+    "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
+)
 
 EP_SESSION: str = "/lol-champ-select/v1/session"
 EP_SESSION_TIMER: str = "/lol-champ-select/v1/session/timer"
@@ -85,11 +98,14 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "gear": "config/images/app/gear.png",
     "gear_light": "config/images/app/gear_light.png",
     "gear_dark": "config/images/app/gear_dark.png",
+    "question_mark_white_mode": "config/images/app/question-mark-white_mode.png",
+    "question_mark_black_mode": "config/images/app/question-mark-black_mode.png",
 }
 
 WEBSITE_LOGO_FILES: Dict[str, str] = {
     "opgg": "config/images/websites/opgg.png",
     "deeplol": "config/images/websites/deeplol.png",
+    "dpm": "config/images/websites/dpm-lol.png",
     "porofessor": "config/images/websites/porofessor.png",
     "leagueofgraphs": "config/images/websites/leagueofgraphs.png",
 }
@@ -97,18 +113,20 @@ WEBSITE_LOGO_FILES: Dict[str, str] = {
 STATS_SITE_LABELS: Dict[str, str] = {
     "opgg": "OP.GG",
     "deeplol": "DeepLOL",
+    "dpm": "DPM.LOL",
     "leagueofgraphs": "League of Graphs",
 }
 
-STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "leagueofgraphs"]
+STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "dpm", "leagueofgraphs"]
 
 HOTKEY_SITE_LABELS: Dict[str, str] = {
     "porofessor": "Porofessor",
     "deeplol": "DeepLOL",
+    "dpm": "DPM.LOL",
     "opgg": "OP.GG",
 }
 
-HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "opgg"]
+HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "dpm", "opgg"]
 
 THEME_LABELS: Dict[str, str] = {
     "darkly": "Dark",

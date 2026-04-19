@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import ttkbootstrap as ttk
 from PIL import Image, ImageTk
+from ttkbootstrap.scrolled import ScrolledFrame
 
 from ..config import HOTKEY_SITE_LABELS, HOTKEY_SITE_ORDER, STATS_SITE_LABELS, STATS_SITE_ORDER, WEBSITE_LOGO_FILES, resource_path
 
@@ -72,7 +73,7 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
         current_site = owner.preferred_hotkey_site_var.get()
         on_select = owner._select_hotkey_site
 
-    picker.geometry(f"320x260+{owner.window.winfo_x()+70}+{owner.window.winfo_y()+90}")
+    picker.geometry(f"340x320+{owner.window.winfo_x()+70}+{owner.window.winfo_y()+90}")
 
     container = ttk.Frame(picker, padding=12)
     container.pack(fill="both", expand=True)
@@ -83,11 +84,17 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
         font=("Segoe UI", 10, "bold"),
     ).pack(anchor="w", pady=(0, 10))
 
+    scroller = ScrolledFrame(container, autohide=True)
+    scroller.pack(fill="both", expand=True)
+
+    list_frame = ttk.Frame(scroller)
+    list_frame.pack(fill="both", expand=True)
+
     for site in allowed_sites:
-        row_frame = ttk.Frame(container)
+        row_frame = ttk.Frame(list_frame)
         row_frame.pack(fill="x", pady=4)
         icon = _load_site_logo(owner, site, size=28)
-        suffix = "  ✓" if site == current_site else ""
+        suffix = "  [Selected]" if site == current_site else ""
         btn = ttk.Button(
             row_frame,
             text=f"  {labels.get(site, site)}{suffix}",

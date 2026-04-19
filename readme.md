@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="./readme.md"><img src="https://img.shields.io/badge/version-11.0-2f81f7" alt="Version"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/version-10.0-2f81f7" alt="Version"></a>
   <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
@@ -15,12 +15,12 @@ Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Current project version: `11.0`
+Current project version: `10.0`
 
 ## Table Of Contents
 
 - [Overview](#overview)
-- [Version 9.0 Highlights](#version-90-highlights)
+- [Version 10.0 Highlights](#version-100-highlights)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Technologies](#technologies)
@@ -57,24 +57,20 @@ The application is designed to work as a lightweight desktop tool:
 - keyboard shortcuts
 - local cache for some Data Dragon data
 
-## Version 11.0 Highlights
+## Version 10.0 Highlights
 
-Version `11.0` focuses on champion select reliability, cleaner settings, and better runtime behavior.
+Version `10.0` focuses on skin automation, skin UI improvements, and better champion select control from the main window.
 
-- `Preset-based picks`
-  Each preset now stores one champion plus two summs, and the app uses the preset that is actually selected in champion select.
-  
-- `More reliable champion select flow`
-  The app now handles pre-pick, skips banned or unavailable champions, falls back from `Preset 1` to `Preset 2` then `Preset 3`, and confirms actions directly from the LCU session.
-
-- `Direct preset editing`
-  The settings window now exposes three direct buttons per preset: champion, `Summ 1`, and `Summ 2`, with icon-based pickers and support for `None`.
-
-- `Cleaner tray and shutdown behavior`
-  Tray actions are marshalled back to the Tk thread so hiding and quitting behave correctly, including in the PyInstaller executable.
-
-- `Better diagnostics`
-  Logs are more explicit around ready check, pre-pick, ban, pick, summs, and update checks.
+- `Skin inventory detection and validation`
+  The app now resolves owned skins more reliably, logs inventory and pickable-skin fallbacks more clearly, and validates fixed skins against the skins that are actually pickable in champion select.
+- `Reworked skin picker`
+  The settings window now exposes a cleaner skin picker with direct `fixed` or `random list` selection, centered skin art in the picker, tile previews in settings, and confirmation when a skin is not detected on the current account.
+- `Global skin fallback that really works`
+  Global skin configuration now correctly falls back when the detected role profile does not override skins, so a skin configured in `Global` can still apply in `Top`, `Jungle`, `Mid`, `ADC`, or `Support`.
+- `Main window skin mode control`
+  The main interface now includes a dedicated `Skin` control that cycles between `OFF`, `FIXED`, and `RANDOM`, and shows slot-by-slot skin previews directly from the home screen.
+- `Cleaner startup behavior`
+  Audio initialization was adjusted so `pygame` no longer pollutes startup output with its support prompt and deprecated `pkg_resources` warning.
 
 ## Features
 

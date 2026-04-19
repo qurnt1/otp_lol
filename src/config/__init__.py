@@ -7,6 +7,7 @@ from .constants import (
     APP_BUILD_NAME,
     APP_NAME,
     CURRENT_VERSION,
+    GITHUB_DOWNLOAD_ZIP_URL,
     EP_CHAT_ME,
     EP_CURRENT_SUMMONER,
     EP_GAMEFLOW,
@@ -19,6 +20,7 @@ from .constants import (
     GITHUB_RELEASES_API,
     GITHUB_REPO_NAME,
     GITHUB_REPO_URL,
+    GITHUB_REPO_API,
     HOTKEY_SITE_LABELS,
     HOTKEY_SITE_ORDER,
     PHASE_DISPLAY_MAP,
@@ -40,6 +42,11 @@ from .constants import (
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
     URL_DD_IMG_SPELL,
+    URL_DD_CHAMPION_DETAIL,
+    URL_DD_SKIN_SPLASH,
+    URL_CDRAGON_ASSET_PREFIX,
+    URL_CDRAGON_CHAMPION_DETAIL,
+    URL_PHASE_RUSH_ICON,
     URL_DD_SPLASH,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
@@ -52,10 +59,11 @@ from .paths import (
     LOCKFILE_PATH,
     PARAMETERS_PATH,
     SPELLS_CACHE_DIR,
+    SKINS_CACHE_DIR,
     get_appdata_path,
     resource_path,
 )
-from .settings import DEFAULT_PARAMS
+from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
 
 
 def _sync_runtime_paths() -> None:
@@ -65,6 +73,7 @@ def _sync_runtime_paths() -> None:
     _paths.LOCKFILE_PATH = LOCKFILE_PATH
     _settings.ICONS_CACHE_DIR = ICONS_CACHE_DIR
     _settings.SPELLS_CACHE_DIR = SPELLS_CACHE_DIR
+    _settings.SKINS_CACHE_DIR = SKINS_CACHE_DIR
 
 
 def load_parameters():
@@ -99,12 +108,18 @@ __all__ = [
     "GITHUB_REPO_NAME",
     "CURRENT_VERSION",
     "GITHUB_REPO_URL",
+    "GITHUB_DOWNLOAD_ZIP_URL",
     "GITHUB_RELEASES_API",
     "URL_DD_VERSIONS",
     "URL_DD_CHAMPIONS",
     "URL_DD_SUMMONERS",
     "URL_DD_IMG_CHAMP",
     "URL_DD_IMG_SPELL",
+    "URL_DD_CHAMPION_DETAIL",
+    "URL_DD_SKIN_SPLASH",
+    "URL_CDRAGON_CHAMPION_DETAIL",
+    "URL_CDRAGON_ASSET_PREFIX",
+    "URL_PHASE_RUSH_ICON",
     "URL_DD_SPLASH",
     "EP_SESSION",
     "EP_SESSION_TIMER",
@@ -141,7 +156,9 @@ __all__ = [
     "DDRAGON_CACHE_FILE",
     "ICONS_CACHE_DIR",
     "SPELLS_CACHE_DIR",
+    "SKINS_CACHE_DIR",
     "DEFAULT_PARAMS",
+    "FIRST_LAUNCH_PARAMS",
     "load_parameters",
     "save_parameters",
     "export_parameters_to_file",

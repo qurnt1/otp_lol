@@ -4,27 +4,37 @@ import copy
 import json
 import logging
 import os
+import shutil
 from typing import Any, Dict
 
-from .constants import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
-from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SPELLS_CACHE_DIR
+from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
+from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
 
 
-def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, str]]:
+def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
     """Return a pick-slot payload with optional default summs."""
     return {
         slot: {
             "spell_1": spell_1,
             "spell_2": spell_2,
+            "skin_mode": "none",
+            "skin_id": 0,
+            "skin_name": "",
+            "skin_num": 0,
+            "random_skin_id": 0,
+            "random_skin_name": "",
+            "random_skin_num": 0,
+            "random_skin_pool": [],
         }
         for slot in PICK_SLOT_ORDER
     }
 
 
-def build_role_profile_defaults() -> Dict[str, Dict[str, Any]]:
+def build_role_profile_defaults(*, presets_enabled: bool = True) -> Dict[str, Dict[str, Any]]:
     """Return a fully initialized role profile payload."""
     return {
         role: {
+            "presets_enabled": presets_enabled,
             "selected_pick_1": "",
             "selected_pick_2": "",
             "selected_pick_3": "",
@@ -35,11 +45,18 @@ def build_role_profile_defaults() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str, str]:
+    """Return main-window skin override defaults for each preset slot."""
+    return {slot: default_mode for slot in PICK_SLOT_ORDER}
+
+
 DEFAULT_PARAMS: Dict[str, Any] = {
+    "config_version": CURRENT_VERSION,
     "auto_accept_enabled": True,
     "auto_pick_enabled": True,
     "auto_ban_enabled": True,
     "auto_summoners_enabled": True,
+    "presets_enabled": True,
     "selected_pick_1": "Garen",
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
@@ -61,30 +78,88 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
+    "ignored_update_version": "",
+    "main_skin_mode_override": "inherit",
+    "main_skin_mode_overrides": build_main_skin_mode_overrides(),
 }
+
+FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
+FIRST_LAUNCH_PARAMS.update(
+    {
+        "auto_accept_enabled": False,
+        "auto_pick_enabled": False,
+        "auto_ban_enabled": False,
+        "auto_summoners_enabled": False,
+        "presets_enabled": False,
+        "auto_play_again_enabled": False,
+        "role_profiles": build_role_profile_defaults(presets_enabled=False),
+    }
+)
+
+
+def _build_first_launch_payload() -> Dict[str, Any]:
+    return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
+
+
+def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
+    os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
+    sanitized = _normalize_parameters(payload)
+    with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(sanitized, f, indent=4, ensure_ascii=False)
+    return sanitized
+
+
+def _clear_skin_cache() -> None:
+    if not os.path.isdir(SKINS_CACHE_DIR):
+        return
+    logging.info("Clearing skin cache: %s", SKINS_CACHE_DIR)
+    for entry in os.listdir(SKINS_CACHE_DIR):
+        target = os.path.join(SKINS_CACHE_DIR, entry)
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=False)
+            else:
+                os.remove(target)
+        except OSError as e:
+            logging.debug("Unable to remove skin cache entry %s: %s", target, e)
+
+
+def _reset_parameters_file(reason: str) -> Dict[str, Any]:
+    logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
+    _clear_skin_cache()
+    return _write_parameters_file(_build_first_launch_payload())
 
 
 def load_parameters() -> Dict[str, Any]:
     """Load parameters from the JSON file."""
     if not os.path.exists(PARAMETERS_PATH):
-        return copy.deepcopy(DEFAULT_PARAMS)
+        return _reset_parameters_file("missing file")
 
     try:
         with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
-        return _normalize_parameters(config)
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, IOError, OSError) as e:
         logging.warning(f"Error loading settings: {e}")
-        return copy.deepcopy(DEFAULT_PARAMS)
+        return _reset_parameters_file("invalid json")
+
+    if not isinstance(config, dict):
+        return _reset_parameters_file("root payload is not an object")
+
+    if str(config.get("config_version") or "").strip() != CURRENT_VERSION:
+        return _reset_parameters_file(
+            f"config version mismatch (found={config.get('config_version')!r}, expected={CURRENT_VERSION!r})"
+        )
+
+    normalized = _normalize_parameters(config)
+    if config != normalized:
+        return _reset_parameters_file("schema mismatch")
+    return normalized
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
     """Save parameters to the JSON file."""
     try:
-        os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
-        sanitized = _normalize_parameters(params)
-        with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
-            json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        _write_parameters_file(params)
         return True
     except (IOError, OSError) as e:
         logging.error(f"Error saving settings: {e}")
@@ -120,12 +195,64 @@ def _normalize_spell_value(value: Any) -> str:
     return spell_name if spell_name in SUMMONER_SPELL_MAP or not spell_name else spell_name
 
 
+def _normalize_skin_mode(value: Any) -> str:
+    mode = str(value or "none").strip().lower()
+    return mode if mode in {"none", "fixed", "random"} else "none"
+
+
+def _normalize_main_skin_mode_override(value: Any) -> str:
+    mode = str(value or "inherit").strip().lower()
+    return mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
+
+
+def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inherit") -> Dict[str, str]:
+    normalized = build_main_skin_mode_overrides()
+    legacy_mode = _normalize_main_skin_mode_override(legacy_value)
+    if legacy_mode != "inherit":
+        for slot in normalized:
+            normalized[slot] = legacy_mode
+    if isinstance(value, dict):
+        for slot in PICK_SLOT_ORDER:
+            normalized[slot] = _normalize_main_skin_mode_override(value.get(slot, normalized[slot]))
+    return normalized
+
+
+def _normalize_skin_id(value: Any) -> int:
+    try:
+        skin_id = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return skin_id if skin_id >= 0 else 0
+
+
+def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized_pool: list[Dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        skin_id = _normalize_skin_id(item.get("skin_id", item.get("id", item.get("skinId", 0))))
+        if skin_id <= 0 or skin_id in seen_ids:
+            continue
+        seen_ids.add(skin_id)
+        normalized_pool.append(
+            {
+                "skin_id": skin_id,
+                "skin_name": str(item.get("skin_name", item.get("name", "")) or ""),
+                "skin_num": _normalize_skin_id(item.get("skin_num", item.get("num", 0))),
+            }
+        )
+    return normalized_pool
+
+
 def _build_normalized_pick_slots(
     raw_slots: Any,
     *,
     fallback_spell_1: Any = "",
     fallback_spell_2: Any = "",
-) -> Dict[str, Dict[str, str]]:
+) -> Dict[str, Dict[str, Any]]:
     """Normalize a pick-slot payload while supporting legacy global spell fallbacks."""
     fallback_1 = _normalize_spell_value(fallback_spell_1)
     fallback_2 = _normalize_spell_value(fallback_spell_2)
@@ -142,6 +269,20 @@ def _build_normalized_pick_slots(
             {
                 "spell_1": _normalize_spell_value(slot_data.get("spell_1", slots[slot]["spell_1"])),
                 "spell_2": _normalize_spell_value(slot_data.get("spell_2", slots[slot]["spell_2"])),
+                "skin_mode": _normalize_skin_mode(slot_data.get("skin_mode", slots[slot]["skin_mode"])),
+                "skin_id": _normalize_skin_id(slot_data.get("skin_id", slots[slot]["skin_id"])),
+                "skin_name": str(slot_data.get("skin_name", slots[slot]["skin_name"]) or ""),
+                "skin_num": _normalize_skin_id(slot_data.get("skin_num", slots[slot]["skin_num"])),
+                "random_skin_id": _normalize_skin_id(
+                    slot_data.get("random_skin_id", slots[slot]["random_skin_id"])
+                ),
+                "random_skin_name": str(slot_data.get("random_skin_name", slots[slot]["random_skin_name"]) or ""),
+                "random_skin_num": _normalize_skin_id(
+                    slot_data.get("random_skin_num", slots[slot]["random_skin_num"])
+                ),
+                "random_skin_pool": _normalize_skin_pool(
+                    slot_data.get("random_skin_pool", slots[slot]["random_skin_pool"])
+                ),
             }
         )
     return slots
@@ -184,6 +325,14 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
     merged["selected_pick_3"] = str(config.get("selected_pick_3", DEFAULT_PARAMS["selected_pick_3"]))
     merged["selected_ban"] = str(config.get("selected_ban", DEFAULT_PARAMS["selected_ban"]))
+    merged["presets_enabled"] = bool(config.get("presets_enabled", DEFAULT_PARAMS["presets_enabled"]))
+    merged["main_skin_mode_override"] = _normalize_main_skin_mode_override(
+        config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"])
+    )
+    merged["main_skin_mode_overrides"] = _normalize_main_skin_mode_overrides(
+        config.get("main_skin_mode_overrides"),
+        legacy_value=config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"]),
+    )
     merged["pick_slots"] = _build_normalized_pick_slots(
         config.get("pick_slots"),
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
@@ -191,13 +340,14 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
-    normalized_profiles = build_role_profile_defaults()
+    normalized_profiles = build_role_profile_defaults(presets_enabled=merged["presets_enabled"])
     for role in ROLE_PROFILE_ORDER:
         role_data = raw_profiles.get(role, {})
         if not isinstance(role_data, dict):
             role_data = {}
         normalized_profiles[role].update(
             {
+                "presets_enabled": bool(role_data.get("presets_enabled", merged["presets_enabled"])),
                 "selected_pick_1": str(role_data.get("selected_pick_1", "")),
                 "selected_pick_2": str(role_data.get("selected_pick_2", "")),
                 "selected_pick_3": str(role_data.get("selected_pick_3", "")),
@@ -212,12 +362,12 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["role_profiles"] = normalized_profiles
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
-    if preferred_stats_site not in {"opgg", "deeplol", "leagueofgraphs"}:
+    if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:
         preferred_stats_site = DEFAULT_PARAMS["preferred_stats_site"]
     merged["preferred_stats_site"] = preferred_stats_site
 
     preferred_hotkey_site = str(config.get("preferred_hotkey_site", DEFAULT_PARAMS["preferred_hotkey_site"])).lower().strip()
-    if preferred_hotkey_site not in {"porofessor", "deeplol", "opgg"}:
+    if preferred_hotkey_site not in {"porofessor", "deeplol", "dpm", "opgg"}:
         preferred_hotkey_site = DEFAULT_PARAMS["preferred_hotkey_site"]
     merged["preferred_hotkey_site"] = preferred_hotkey_site
 
@@ -225,6 +375,9 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     hotkey_open_site = str(config.get("hotkey_open_site", DEFAULT_PARAMS["hotkey_open_site"])).strip().lower()
     merged["hotkey_toggle_window"] = hotkey_toggle_window or DEFAULT_PARAMS["hotkey_toggle_window"]
     merged["hotkey_open_site"] = hotkey_open_site or DEFAULT_PARAMS["hotkey_open_site"]
+    merged["ignored_update_version"] = str(
+        config.get("ignored_update_version", DEFAULT_PARAMS["ignored_update_version"])
+    ).strip()
 
     theme = str(config.get("theme", DEFAULT_PARAMS["theme"])).strip().lower()
     if theme not in {"darkly", "flatly"}:
@@ -236,6 +389,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
-    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR]:
+    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)

@@ -136,11 +136,16 @@ class MainLoLApplication:
         """Vérifie les mises à jour en arrière-plan."""
         def check_task():
             try:
-                new_version = check_for_updates()
-                if new_version:
+                update_info = check_for_updates()
+                if update_info:
+                    new_version = str(update_info.get("version") or "")
+                    ignored_version = str(self._params.get("ignored_update_version") or "").strip()
+                    if ignored_version and ignored_version == new_version:
+                        logging.info(f"Update {new_version} ignored by user preference.")
+                        return
                     logging.info(f"New version available: {new_version}")
                     # Planifier l'affichage du popup sur le thread UI
-                    self.ui.root.after(0, lambda: self.ui.show_update_popup(new_version))
+                    self.ui.root.after(0, lambda: self.ui.show_update_popup(update_info))
                 else:
                     logging.info("Application is up to date.")
             except Exception as e:

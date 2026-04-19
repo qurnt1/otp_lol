@@ -41,6 +41,10 @@ class GameState:
         self.last_confirmed_spell_ids: Optional[tuple[int, int]] = None
         self.last_spell_try_ts: float = 0.0
         self.spell_apply_in_progress: bool = False
+        self.desired_skin_id: Optional[int] = None
+        self.last_confirmed_skin_id: Optional[int] = None
+        self.last_skin_try_ts: float = 0.0
+        self.skin_apply_in_progress: bool = False
         self.last_flow_note: str = ""
         self.cache_lock = Lock()
 
@@ -68,4 +72,8 @@ class GameState:
         self.last_confirmed_spell_ids = None
         self.last_spell_try_ts = 0.0
         self.spell_apply_in_progress = False
+        self.desired_skin_id = None
+        self.last_confirmed_skin_id = None
+        self.last_skin_try_ts = 0.0
+        self.skin_apply_in_progress = False
         self.last_flow_note = ""

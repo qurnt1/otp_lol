@@ -8,8 +8,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_current_version_targets_v9(self):
-        self.assertEqual(CURRENT_VERSION, "9.0")
+    def test_current_version_targets_v10(self):
+        self.assertEqual(CURRENT_VERSION, "10.0")
 
     def test_readme_mentions_current_version(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")

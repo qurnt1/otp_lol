@@ -18,14 +18,15 @@ class FakeParent:
     def __init__(self):
         self.params = {
             "selected_profile_role": "MIDDLE",
+            "presets_enabled": False,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
             "pick_slots": {
-                "pick_1": {"spell_1": "Heal", "spell_2": "Flash"},
-                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash"},
-                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite"},
+                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
             },
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
@@ -34,14 +35,15 @@ class FakeParent:
             "theme": "darkly",
             "role_profiles": {
                 "MIDDLE": {
+                    "presets_enabled": True,
                     "selected_pick_1": "Ahri",
                     "selected_pick_2": "",
                     "selected_pick_3": "",
                     "selected_ban": "Zed",
                     "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": ""},
-                        "pick_2": {"spell_1": "", "spell_2": ""},
-                        "pick_3": {"spell_1": "", "spell_2": ""},
+                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 9999, "random_skin_name": "Star Guardian Ahri", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 9999, "skin_name": "Star Guardian Ahri", "skin_num": 7}]},
+                        "pick_2": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
                     },
                 }
             },
@@ -49,6 +51,13 @@ class FakeParent:
         self.suspend_calls = 0
         self.resume_calls = 0
         self.toasts = []
+        self.dd = type(
+            "DummyDD",
+            (),
+            {
+                "get_skin_preview_url": lambda self, champion_name, **kwargs: "https://example.com/tile.jpg",
+            },
+        )()
 
     def get_params(self):
         return self.params
@@ -73,6 +82,9 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window.profile_role_var = DummyVar("MIDDLE")
         window.pick_buttons = {}
         window.pick_spell_buttons = {}
+        window.pick_skin_buttons = {}
+        window.theme_var = DummyVar("darkly")
+        window.local_button_image_cache = {}
         return window
 
     def test_get_profile_role_data_includes_pick_slots(self):
@@ -83,6 +95,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(data["selected_pick_1"], "Ahri")
         self.assertEqual(data["pick_slots"]["pick_1"]["spell_1"], "Ignite")
         self.assertEqual(data["pick_slots"]["pick_1"]["spell_2"], "")
+        self.assertTrue(data["presets_enabled"])
 
     def test_get_excluded_champions_for_ban_includes_picks(self):
         window = self.make_window()
@@ -97,6 +110,209 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._set_pick_slot_value("pick_1", "spell_2", "Flash")
 
         self.assertEqual(window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["spell_2"], "Flash")
+
+    def test_set_profile_presets_enabled_updates_role_profile_payload(self):
+        window = self.make_window()
+
+        window._set_profile_presets_enabled(False)
+
+        self.assertFalse(window.parent.params["role_profiles"]["MIDDLE"]["presets_enabled"])
+
+    def test_set_pick_slot_skin_selection_updates_role_profile_payload(self):
+        window = self.make_window()
+
+        window._set_pick_slot_skin_selection(
+            "pick_1",
+            mode="fixed",
+            fixed_skin={"skin_id": 1234, "skin_name": "Elementalist Lux", "skin_num": 7},
+        )
+
+        slot = window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]
+        self.assertEqual(slot["skin_mode"], "fixed")
+        self.assertEqual(slot["skin_id"], 1234)
+        self.assertEqual(slot["skin_name"], "Elementalist Lux")
+        self.assertEqual(slot["skin_num"], 7)
+
+    def test_set_random_skin_pool_updates_role_profile_payload(self):
+        window = self.make_window()
+
+        window._set_random_skin_pool(
+            "pick_1",
+            [
+                {"skin_id": 111, "skin_name": "Skin A", "skin_num": 1},
+                {"skin_id": 222, "skin_name": "Skin B", "skin_num": 2},
+            ],
+        )
+
+        self.assertEqual(
+            window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["random_skin_pool"],
+            [
+                {"skin_id": 111, "skin_name": "Skin A", "skin_num": 1},
+                {"skin_id": 222, "skin_name": "Skin B", "skin_num": 2},
+            ],
+        )
+
+    def test_get_skin_button_label_returns_random_for_random_mode(self):
+        window = self.make_window()
+
+        label = window._get_skin_button_label("pick_1")
+
+        self.assertEqual(label, "Random")
+
+    def test_refresh_skin_buttons_prefers_preview_url(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def winfo_exists(self):
+                return True
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_mode"] = "fixed"
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_id"] = 1234
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_name"] = "Elementalist Lux"
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_num"] = 7
+        window.pick_skin_buttons = {"pick_1": FakeButton()}
+        window._get_slot_champion_name = lambda slot_key: "Ahri"
+        window._load_remote_img_into_btn_calls = []
+        window._load_remote_img_into_btn = (
+            lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
+        )
+        window._load_empty_img_into_btn_calls = []
+        window._load_empty_img_into_btn = (
+            lambda btn, **kwargs: window._load_empty_img_into_btn_calls.append(kwargs)
+        )
+
+        window._refresh_skin_buttons()
+
+        self.assertEqual(window._load_empty_img_into_btn_calls[0]["size"], (30, 30))
+        self.assertEqual(window._load_remote_img_into_btn_calls[0][0], "https://example.com/tile.jpg")
+        self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
+        self.assertEqual(window.pick_skin_buttons["pick_1"].config["bootstyle"], "secondary-outline")
+
+    def test_refresh_skin_buttons_uses_theme_placeholder_for_random(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def winfo_exists(self):
+                return True
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.pick_skin_buttons = {"pick_1": FakeButton()}
+        window._get_slot_champion_name = lambda slot_key: "Ahri"
+        window._load_remote_img_into_btn_calls = []
+        window._load_remote_img_into_btn = (
+            lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
+        )
+        window._load_local_img_into_btn_calls = []
+        window._load_local_img_into_btn = (
+            lambda btn, path, **kwargs: window._load_local_img_into_btn_calls.append((path, kwargs))
+        )
+        window._load_empty_img_into_btn_calls = []
+        window._load_empty_img_into_btn = (
+            lambda btn, **kwargs: window._load_empty_img_into_btn_calls.append(kwargs)
+        )
+
+        window._refresh_skin_buttons()
+
+        self.assertEqual(window._load_empty_img_into_btn_calls[0]["size"], (30, 30))
+        self.assertEqual(window._load_remote_img_into_btn_calls, [])
+        self.assertEqual(
+            window._load_local_img_into_btn_calls[0][0],
+            "config/images/app/question-mark-white_mode.png",
+        )
+        self.assertEqual(window.pick_skin_buttons["pick_1"].config["text"], "  Random")
+
+    def test_skin_button_display_text_truncates_long_skin_names(self):
+        window = self.make_window()
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_mode"] = "fixed"
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_name"] = "Mr. Mundoverse Forever"
+
+        text = window._get_skin_button_display_text("pick_1")
+
+        self.assertEqual(text, "Mr. Mundovers...")
+
+    def test_random_skin_placeholder_uses_black_icon_on_light_theme(self):
+        window = self.make_window()
+        window.theme_var = DummyVar("flatly")
+
+        self.assertEqual(
+            window._get_random_skin_placeholder_asset(),
+            "config/images/app/question-mark-black_mode.png",
+        )
+
+    def test_refresh_rune_buttons_uses_generic_runes_label(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def winfo_exists(self):
+                return True
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.pick_rune_buttons = {"pick_1": FakeButton()}
+        window._load_remote_img_into_btn_calls = []
+        window._load_remote_img_into_btn = (
+            lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
+        )
+
+        window._refresh_rune_buttons()
+
+        self.assertEqual(window.pick_rune_buttons["pick_1"].config["text"], "  Runes")
+        self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
+
+    def test_refresh_site_buttons_show_logo_and_left_compound(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.stats_site_btn = FakeButton()
+        window.hotkey_site_btn = FakeButton()
+        window.preferred_stats_site_var = DummyVar("dpm")
+        window.preferred_hotkey_site_var = DummyVar("opgg")
+        window._load_website_logo = lambda site, size=30: f"logo-{site}-{size}"
+
+        window._refresh_stats_site_button()
+        window._refresh_hotkey_site_button()
+
+        self.assertEqual(window.stats_site_btn.config["text"], "  DPM.LOL")
+        self.assertEqual(window.stats_site_btn.config["compound"], "left")
+        self.assertEqual(window.stats_site_btn.image, "logo-dpm-30")
+        self.assertEqual(window.hotkey_site_btn.config["text"], "  OP.GG")
+        self.assertEqual(window.hotkey_site_btn.config["compound"], "left")
+        self.assertEqual(window.hotkey_site_btn.image, "logo-opgg-30")
+
+    def test_open_pick_slot_champion_picker_maps_slot_key_to_expected_slot_number(self):
+        window = self.make_window()
+        calls = []
+        window._open_champion_picker = lambda context, slot_num=1: calls.append((context, slot_num))
+
+        window._open_pick_slot_champion_picker("pick_1")
+        window._open_pick_slot_champion_picker("pick_2")
+        window._open_pick_slot_champion_picker("pick_3")
+
+        self.assertEqual(
+            calls,
+            [("pick", 1), ("pick", 2), ("pick", 3)],
+        )
 
     def test_pick_slot_display_uses_global_fallback(self):
         window = self.make_window()

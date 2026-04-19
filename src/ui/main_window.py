@@ -2,10 +2,11 @@
 
 import logging
 import os
+import re
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import scrolledtext
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -15,6 +16,7 @@ from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
+    GITHUB_DOWNLOAD_ZIP_URL,
     GITHUB_REPO_URL,
     PICK_SLOT_ORDER,
     ROLE_PROFILE_LABELS,
@@ -40,19 +42,17 @@ class LoLAssistantUI:
     PREVIEW_TOP_RELY = 0.47
     STATS_BUTTON_TOP_RELY = 0.79
     FEATURE_PREVIEW_DEFINITIONS = (
-        ("pick", "Pick", 3, "info"),
+        ("presets", "Presets", 3, "info"),
         ("ban", "Ban", 1, "danger"),
-        ("spells", "Summs", 2, "warning"),
+        ("skins", "Skin", 3, "info"),
     )
     FEATURE_PARAM_MAP = {
-        "pick": "auto_pick_enabled",
         "ban": "auto_ban_enabled",
-        "spells": "auto_summoners_enabled",
     }
     FEATURE_LABEL_MAP = {
-        "pick": "Auto-pick",
+        "presets": "Presets",
         "ban": "Auto-ban",
-        "spells": "Auto-summs",
+        "skins": "Skin",
     }
 
     def __init__(
@@ -96,7 +96,7 @@ class LoLAssistantUI:
         self.preview_placeholder = ImageTk.PhotoImage(
             Image.new("RGBA", (self.PREVIEW_ICON_SIZE, self.PREVIEW_ICON_SIZE), (0, 0, 0, 0))
         )
-        self.preview_icon_cache: Dict[tuple[str, str, int], ImageTk.PhotoImage] = {}
+        self.preview_icon_cache: Dict[tuple[Any, ...], ImageTk.PhotoImage] = {}
         self.feature_preview_frame: Optional[ttk.Frame] = None
         self.feature_group_frames: Dict[str, ttk.Frame] = {}
         self.feature_status_labels: Dict[str, tk.Label] = {}
@@ -225,13 +225,70 @@ class LoLAssistantUI:
         global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
         role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
 
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, str]:
+        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
             global_slot = global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            def _to_int(value: Any) -> int:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            def _pick_skin_mode() -> str:
+                role_mode = str(role_slot.get("skin_mode") or "").strip().lower()
+                global_mode = str(global_slot.get("skin_mode") or "").strip().lower()
+                if role_mode in {"fixed", "random"}:
+                    return role_mode
+                if global_mode in {"fixed", "random"}:
+                    return global_mode
+                return "none"
+
+            def _pick_skin_text(field: str) -> str:
+                role_value = str(role_slot.get(field) or "").strip()
+                if role_value:
+                    return role_value
+                return str(global_slot.get(field) or "").strip()
+
+            def _pick_skin_int(field: str) -> int:
+                role_value = _to_int(role_slot.get(field))
+                if role_value > 0:
+                    return role_value
+                return _to_int(global_slot.get(field))
+
+            def _pick_skin_pool() -> List[Dict[str, Any]]:
+                role_pool = role_slot.get("random_skin_pool")
+                if isinstance(role_pool, list) and role_pool:
+                    return role_pool
+                global_pool = global_slot.get("random_skin_pool")
+                if isinstance(global_pool, list) and global_pool:
+                    return global_pool
+                return []
+
+            role_skin_mode = str(role_slot.get("skin_mode") or "").strip().lower()
+            role_has_skin_override = (
+                role_skin_mode in {"fixed", "random"}
+                or _to_int(role_slot.get("skin_id")) > 0
+                or _to_int(role_slot.get("random_skin_id")) > 0
+                or bool(str(role_slot.get("skin_name") or "").strip())
+                or bool(str(role_slot.get("random_skin_name") or "").strip())
+                or bool(role_slot.get("random_skin_pool"))
+            )
+            skin_source_role = (
+                resolved_role if role_has_skin_override else "GLOBAL"
+            )
             return {
                 "champion": role_data.get(pick_key) or params.get(pick_key, ""),
                 "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
                 "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
+                "skin_mode": _pick_skin_mode(),
+                "skin_id": _pick_skin_int("skin_id"),
+                "skin_name": _pick_skin_text("skin_name"),
+                "skin_num": _pick_skin_int("skin_num"),
+                "random_skin_id": _pick_skin_int("random_skin_id"),
+                "random_skin_name": _pick_skin_text("random_skin_name"),
+                "random_skin_num": _pick_skin_int("random_skin_num"),
+                "random_skin_pool": _pick_skin_pool(),
+                "skin_source_role": skin_source_role,
             }
 
         pick_slots = {
@@ -244,6 +301,11 @@ class LoLAssistantUI:
             "resolved_role": resolved_role,
             "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
             "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
+            "presets_enabled": (
+                bool(role_data.get("presets_enabled"))
+                if "presets_enabled" in role_data
+                else bool(params.get("presets_enabled", True))
+            ),
             "pick_slots": pick_slots,
             "selected_pick_1": pick_slots["pick_1"]["champion"],
             "selected_pick_2": pick_slots["pick_2"]["champion"],
@@ -252,6 +314,7 @@ class LoLAssistantUI:
             "spell_1": first_slot.get("spell_1", ""),
             "spell_2": first_slot.get("spell_2", ""),
             "sources": {
+                "presets_enabled": resolved_role if "presets_enabled" in role_data else "GLOBAL",
                 "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
                 "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
                 "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
@@ -282,6 +345,7 @@ class LoLAssistantUI:
         style.configure("Feature.TFrame", background=palette["surface_bg"])
         style.configure("FeatureSlot.TLabel", font=("Segoe UI", 9), background=palette["surface_bg"], foreground=palette["muted"])
         style.configure("AppSecondary.TButton", padding=(10, 8))
+        style.configure("UpdatePopup.TButton", padding=(14, 8))
 
     def _create_banner(self) -> None:
         try:
@@ -341,7 +405,7 @@ class LoLAssistantUI:
             icons_row = tk.Frame(group, bg=palette["window_bg"], bd=0, highlightthickness=0)
             icons_row.pack(anchor="w", pady=(4, 0))
             labels: list[tk.Label] = []
-            for _ in range(icon_count):
+            for index in range(icon_count):
                 slot = tk.Label(
                     icons_row,
                     text="",
@@ -358,7 +422,13 @@ class LoLAssistantUI:
                 slot.image = self.preview_placeholder
                 labels.append(slot)
             self.feature_icon_labels[key] = labels
-            self._bind_feature_group(group, key)
+            if key == "skins":
+                self._bind_click_tree(header, lambda event, feature_key=key: self._on_feature_group_click(feature_key, event))
+                for index, slot in enumerate(labels):
+                    slot_key = PICK_SLOT_ORDER[index]
+                    self._bind_click_tree(slot, lambda event, current_slot=slot_key: self._on_skin_preview_click(current_slot, event))
+            else:
+                self._bind_feature_group(group, key)
 
         self._queue_feature_preview_refresh(force=True)
 
@@ -424,16 +494,108 @@ class LoLAssistantUI:
         kind = "champ" if is_champion else "spell"
         return kind, name, size or self.PREVIEW_ICON_SIZE
 
+    def _set_preview_placeholder(self, widget: ttk.Label, *, fg: Optional[str] = None) -> None:
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        widget.configure(
+            text="",
+            image=self.preview_placeholder,
+            compound="center",
+            bg=palette["window_bg"],
+            fg=fg or palette["muted"],
+        )
+        widget.image = self.preview_placeholder
+
+    def _get_random_skin_placeholder_asset(self) -> str:
+        return APP_IMAGE_FILES["question_mark_black_mode"] if self.theme == "flatly" else APP_IMAGE_FILES["question_mark_white_mode"]
+
+    def _load_local_preview_asset(self, asset_rel_path: str, cache_key: tuple[Any, ...]) -> Optional[ImageTk.PhotoImage]:
+        if cache_key in self.preview_icon_cache:
+            return self.preview_icon_cache[cache_key]
+        asset_path = resource_path(asset_rel_path)
+        if not os.path.exists(asset_path):
+            return None
+        try:
+            photo = ImageTk.PhotoImage(Image.open(asset_path).convert("RGBA").resize((self.PREVIEW_ICON_SIZE, self.PREVIEW_ICON_SIZE), Image.LANCZOS))
+            self.preview_icon_cache[cache_key] = photo
+            return photo
+        except Exception as e:
+            logging.debug("Unable to load local preview asset %s: %s", asset_rel_path, e)
+            return None
+
+    def _set_skin_feature_icon(self, widget: ttk.Label, skin_data: Dict[str, Any], enabled: bool, accent: str) -> None:
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+        if not enabled or not isinstance(skin_data, dict):
+            self._set_preview_placeholder(widget)
+            return
+
+        mode = str(skin_data.get("mode") or "none").strip().lower()
+        if mode == "random":
+            cache_key = ("asset", self._get_random_skin_placeholder_asset(), self.PREVIEW_ICON_SIZE)
+            photo = self._load_local_preview_asset(self._get_random_skin_placeholder_asset(), cache_key)
+            if photo:
+                widget.configure(text="", image=photo, compound="center", bg=palette["window_bg"], fg=palette["text"])
+                widget.image = photo
+            else:
+                self._set_preview_placeholder(widget)
+            return
+
+        if mode != "fixed":
+            self._set_preview_placeholder(widget)
+            return
+
+        champion_name = str(skin_data.get("champion_name") or "").strip()
+        if not champion_name:
+            self._set_preview_placeholder(widget)
+            return
+
+        preview_url = self.dd.get_skin_preview_url(
+            champion_name,
+            skin_id=skin_data.get("skin_id"),
+            skin_num=skin_data.get("skin_num"),
+            skin_name=skin_data.get("skin_name"),
+        )
+        if not preview_url:
+            self._set_preview_placeholder(widget)
+            return
+
+        cache_suffix = skin_data.get("skin_num") or skin_data.get("skin_id") or skin_data.get("skin_name") or "0"
+        cache_key = ("skin", champion_name, str(cache_suffix), self.PREVIEW_ICON_SIZE)
+        if cache_key in self.preview_icon_cache:
+            photo = self.preview_icon_cache[cache_key]
+            widget.configure(text="", image=photo, compound="center", bg=palette["window_bg"], fg=palette["text"])
+            widget.image = photo
+            return
+
+        self._set_preview_placeholder(widget, fg=palette["text"])
+
+        def task():
+            try:
+                image = self.dd.get_remote_image(preview_url, cache_key=f"main_preview_skin_{champion_name}_{cache_suffix}")
+                if not image:
+                    return
+                resized_image = image.resize((self.PREVIEW_ICON_SIZE, self.PREVIEW_ICON_SIZE), Image.LANCZOS)
+
+                def update_ui():
+                    if widget.winfo_exists():
+                        photo = ImageTk.PhotoImage(resized_image)
+                        self.preview_icon_cache[cache_key] = photo
+                        widget.configure(text="", image=photo, compound="center", bg=palette["window_bg"], fg=palette["text"])
+                        widget.image = photo
+
+                widget.after(0, update_ui)
+            except Exception as e:
+                logging.debug("Main preview loading error for skin %s: %s", skin_data.get("skin_name") or cache_suffix, e)
+
+        self.executor.submit(task)
+
     def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
         display_name = name or "..."
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
         if not enabled:
-            widget.configure(text="", image=self.preview_placeholder, compound="center", bg=palette["window_bg"], fg=palette["muted"])
-            widget.image = self.preview_placeholder
+            self._set_preview_placeholder(widget)
             return
         if not name:
-            widget.configure(text="", image=self.preview_placeholder, compound="center", bg=palette["window_bg"], fg=palette["muted"])
-            widget.image = self.preview_placeholder
+            self._set_preview_placeholder(widget)
             return
 
         cache_key = self._get_preview_icon_cache_key(name, is_champion, self.PREVIEW_ICON_SIZE)
@@ -463,14 +625,7 @@ class LoLAssistantUI:
                 else:
                     def update_ui_no_img():
                         if widget.winfo_exists():
-                            widget.configure(
-                                image=self.preview_placeholder,
-                                text="",
-                                compound="center",
-                                bg=palette["window_bg"],
-                                fg=palette["muted"],
-                            )
-                            widget.image = self.preview_placeholder
+                            self._set_preview_placeholder(widget)
 
                     widget.after(0, update_ui_no_img)
             except Exception as e:
@@ -478,13 +633,16 @@ class LoLAssistantUI:
 
         self.executor.submit(task)
 
-    def _bind_feature_group(self, widget: tk.Misc, feature_key: str) -> None:
+    def _bind_click_tree(self, widget: tk.Misc, callback: Callable[[Any], str]) -> None:
         for current in self._iter_widget_tree(widget):
             try:
-                current.bind("<Button-1>", lambda event, key=feature_key: self._on_feature_group_click(key, event))
+                current.bind("<Button-1>", callback)
                 current.configure(cursor="hand2")
             except Exception:
                 continue
+
+    def _bind_feature_group(self, widget: tk.Misc, feature_key: str) -> None:
+        self._bind_click_tree(widget, lambda event, key=feature_key: self._on_feature_group_click(key, event))
 
     def _iter_widget_tree(self, widget: tk.Misc):
         yield widget
@@ -495,11 +653,171 @@ class LoLAssistantUI:
         self._toggle_main_preview_feature(feature_key)
         return "break"
 
+    def _on_skin_preview_click(self, slot_key: str, event=None):
+        self._toggle_main_preview_skin_slot(slot_key)
+        return "break"
+
+    @staticmethod
+    def _has_fixed_skin(slot_data: Dict[str, Any]) -> bool:
+        return int(slot_data.get("skin_id") or 0) > 0 or bool(str(slot_data.get("skin_name") or "").strip())
+
+    @staticmethod
+    def _has_random_skin(slot_data: Dict[str, Any]) -> bool:
+        return (
+            int(slot_data.get("random_skin_id") or 0) > 0
+            or bool(str(slot_data.get("random_skin_name") or "").strip())
+            or bool(slot_data.get("random_skin_pool"))
+        )
+
+    def _get_main_preview_skin_target_role(self, effective: Optional[Dict[str, Any]] = None) -> str:
+        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+        slot_data = effective.get("pick_slots", {}).get("pick_1", {})
+        source_role = str(slot_data.get("skin_source_role") or "GLOBAL").upper()
+        return source_role if source_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
+
+    def _get_pick_slot_config_for_role(self, role: str, slot_key: str) -> Dict[str, Any]:
+        params = self.get_params()
+        normalized_role = self._normalize_profile_role(role)
+        if normalized_role == "GLOBAL":
+            pick_slots = params.get("pick_slots", {})
+        else:
+            role_profiles = params.get("role_profiles", {})
+            role_data = role_profiles.get(normalized_role, {}) if isinstance(role_profiles, dict) else {}
+            pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data, dict) else {}
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        return dict(slot_data) if isinstance(slot_data, dict) else {}
+
+    def _get_main_skin_overrides(self) -> Dict[str, str]:
+        try:
+            params = self.get_params()
+        except Exception:
+            params = {}
+        raw_overrides = params.get("main_skin_mode_overrides", {})
+        legacy_mode = str(params.get("main_skin_mode_override", "inherit") or "inherit").strip().lower()
+        if legacy_mode not in {"inherit", "none", "fixed", "random"}:
+            legacy_mode = "inherit"
+        overrides = {slot: "inherit" for slot in PICK_SLOT_ORDER}
+        if legacy_mode != "inherit":
+            for slot in overrides:
+                overrides[slot] = legacy_mode
+        if isinstance(raw_overrides, dict):
+            for slot in PICK_SLOT_ORDER:
+                mode = str(raw_overrides.get(slot, overrides[slot]) or overrides[slot]).strip().lower()
+                overrides[slot] = mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
+        return overrides
+
+    def _get_main_preview_skin_cycle_modes(self, slot_data: Optional[Dict[str, Any]] = None, *, effective: Optional[Dict[str, Any]] = None) -> List[str]:
+        if slot_data is None:
+            effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+            pick_slots = effective.get("pick_slots", {})
+            modes = ["none"]
+            if any(self._has_fixed_skin(pick_slots.get(slot_key, {})) for slot_key in PICK_SLOT_ORDER):
+                modes.append("fixed")
+            if any(self._has_random_skin(pick_slots.get(slot_key, {})) for slot_key in PICK_SLOT_ORDER):
+                modes.append("random")
+            return modes
+        modes = ["none"]
+        if self._has_fixed_skin(slot_data):
+            modes.append("fixed")
+        if self._has_random_skin(slot_data):
+            modes.append("random")
+        return modes
+
+    def _get_effective_main_preview_skin_mode_for_slot(
+        self,
+        slot_key: str,
+        *,
+        effective: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+        overrides = self._get_main_skin_overrides()
+        override_mode = overrides.get(slot_key, "inherit")
+        if override_mode in {"none", "fixed", "random"}:
+            return override_mode
+        pick_slots = effective.get("pick_slots", {})
+        slot_mode = str(pick_slots.get(slot_key, {}).get("skin_mode") or "none").strip().lower()
+        return slot_mode if slot_mode in {"fixed", "random"} else "none"
+
+    def _get_effective_main_preview_skin_mode(self, effective: Optional[Dict[str, Any]] = None) -> str:
+        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+        slot_modes = [
+            self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
+            for slot_key in PICK_SLOT_ORDER
+        ]
+        if not any(mode in {"fixed", "random"} for mode in slot_modes):
+            return "none"
+        unique_modes = {mode for mode in slot_modes}
+        if len(unique_modes) == 1:
+            return unique_modes.pop()
+        return "mixed"
+
+    def _cycle_main_preview_skin_mode(self) -> Optional[str]:
+        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        cycle_modes = self._get_main_preview_skin_cycle_modes(effective=effective)
+        if len(cycle_modes) == 1:
+            return None
+        current_mode = self._get_effective_main_preview_skin_mode(effective=effective)
+        if current_mode not in cycle_modes:
+            current_mode = "none"
+        next_mode = cycle_modes[(cycle_modes.index(current_mode) + 1) % len(cycle_modes)]
+        overrides = self._get_main_skin_overrides()
+        for slot_key in PICK_SLOT_ORDER:
+            overrides[slot_key] = next_mode
+        self.update_param("main_skin_mode_overrides", overrides)
+        return next_mode
+
+    def _cycle_main_preview_skin_mode_for_slot(self, slot_key: str) -> Optional[str]:
+        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        pick_slots = effective.get("pick_slots", {})
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        cycle_modes = self._get_main_preview_skin_cycle_modes(slot_data)
+        if len(cycle_modes) == 1:
+            return None
+        current_mode = self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
+        if current_mode not in cycle_modes:
+            current_mode = "none"
+        next_mode = cycle_modes[(cycle_modes.index(current_mode) + 1) % len(cycle_modes)]
+        overrides = self._get_main_skin_overrides()
+        overrides[slot_key] = next_mode
+        self.update_param("main_skin_mode_overrides", overrides)
+        return next_mode
+
+    def _build_slot_skin_preview_value(self, slot_data: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
+        champion_name = str(slot_data.get("champion") or "").strip()
+        if mode == "fixed" and self._has_fixed_skin(slot_data):
+            return {
+                "mode": "fixed",
+                "champion_name": champion_name,
+                "skin_id": int(slot_data.get("skin_id") or 0),
+                "skin_name": str(slot_data.get("skin_name") or ""),
+                "skin_num": int(slot_data.get("skin_num") or 0),
+            }
+        if mode == "random" and self._has_random_skin(slot_data):
+            return {"mode": "random"}
+        return {"mode": "none"}
+
     def _build_feature_preview_payload(self, params: Dict[str, Any], effective: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-        preview_slot = effective.get("pick_slots", {}).get("pick_1", {}) if isinstance(effective.get("pick_slots", {}), dict) else {}
+        presets_enabled = bool(effective.get("presets_enabled", True))
+        pick_slots = effective.get("pick_slots", {})
+        skin_values = []
+        slot_modes = []
+        for slot_key in PICK_SLOT_ORDER:
+            slot_mode = self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
+            slot_modes.append(slot_mode)
+            skin_values.append(self._build_slot_skin_preview_value(pick_slots.get(slot_key, {}), mode=slot_mode))
+        if not any(mode in {"fixed", "random"} for mode in slot_modes):
+            skin_mode = "none"
+        elif len(set(slot_modes)) == 1:
+            skin_mode = slot_modes[0]
+        else:
+            skin_mode = "mixed"
         return {
-            "pick": {
-                "enabled": params.get("auto_pick_enabled", True),
+            "presets": {
+                "enabled": (
+                    params.get("auto_pick_enabled", True)
+                    and params.get("auto_summoners_enabled", True)
+                    and presets_enabled
+                ),
                 "style": "info",
                 "is_champion": True,
                 "values": [
@@ -508,24 +826,44 @@ class LoLAssistantUI:
                     effective.get("selected_pick_3") or "",
                 ],
             },
+            "skins": {
+                "enabled": any(mode in {"fixed", "random"} for mode in slot_modes),
+                "style": "info",
+                "is_skin": True,
+                "mode": skin_mode,
+                "values": skin_values,
+            },
             "ban": {
                 "enabled": params.get("auto_ban_enabled", True),
                 "style": "danger",
                 "is_champion": True,
                 "values": [effective.get("selected_ban") or ""],
             },
-            "spells": {
-                "enabled": params.get("auto_summoners_enabled", True),
-                "style": "warning",
-                "is_champion": False,
-                "values": [
-                    preview_slot.get("spell_1") or effective.get("spell_1") or "",
-                    preview_slot.get("spell_2") or effective.get("spell_2") or "",
-                ],
-            },
         }
 
     def _toggle_main_preview_feature(self, feature_key: str) -> None:
+        if feature_key == "presets":
+            next_value = not self.is_main_preview_presets_enabled()
+            self.set_main_preview_presets_enabled(next_value)
+            self._sync_settings_window_if_open()
+            state_label = "active" if next_value else "disabled"
+            self.show_toast(f"{self.FEATURE_LABEL_MAP.get(feature_key, feature_key)} {state_label}.", duration=1200)
+            return
+
+        if feature_key == "skins":
+            next_mode = self._cycle_main_preview_skin_mode()
+            if next_mode is None:
+                self.show_toast("No skin configured in presets.", duration=1400)
+                return
+            self._sync_settings_window_if_open()
+            label_map = {
+                "none": "Skin off.",
+                "fixed": "Fixed skin enabled.",
+                "random": "Random skins enabled.",
+            }
+            self.show_toast(label_map.get(next_mode, "Skin updated."), duration=1200)
+            return
+
         param_key = self.FEATURE_PARAM_MAP.get(feature_key)
         if not param_key:
             return
@@ -535,8 +873,21 @@ class LoLAssistantUI:
         self.update_param(param_key, next_value)
         if self.settings_win and self.settings_win.window.winfo_exists():
             self.settings_win._sync_from_params()
-        state_label = "active" if next_value else "desactive"
+        state_label = "active" if next_value else "disabled"
         self.show_toast(f"{self.FEATURE_LABEL_MAP.get(feature_key, feature_key)} {state_label}.", duration=1200)
+
+    def _toggle_main_preview_skin_slot(self, slot_key: str) -> None:
+        next_mode = self._cycle_main_preview_skin_mode_for_slot(slot_key)
+        if next_mode is None:
+            return
+        self._sync_settings_window_if_open()
+        slot_label = slot_key.replace("_", " ").title()
+        label_map = {
+            "none": f"{slot_label} skin off.",
+            "fixed": f"{slot_label} fixed skin enabled.",
+            "random": f"{slot_label} random skin enabled.",
+        }
+        self.show_toast(label_map.get(next_mode, f"{slot_label} skin updated."), duration=1100)
 
     def _queue_feature_preview_refresh(self, force: bool = False) -> None:
         if not hasattr(self, "root") or not self.root.winfo_exists():
@@ -552,13 +903,20 @@ class LoLAssistantUI:
 
     def _build_preview_signature(self, preview_data: Dict[str, Dict[str, Any]]) -> tuple:
         signature = []
-        for key in ("pick", "ban", "spells"):
+        for key in ("presets", "skins", "ban"):
             data = preview_data.get(key, {})
+            values = []
+            for value in data.get("values", []):
+                if isinstance(value, dict):
+                    values.append(tuple(sorted(value.items())))
+                else:
+                    values.append(value)
             signature.append(
                 (
                     key,
                     bool(data.get("enabled")),
-                    tuple(data.get("values", [])),
+                    data.get("mode"),
+                    tuple(values),
                 )
             )
         return tuple(signature)
@@ -569,7 +927,6 @@ class LoLAssistantUI:
         palette = {
             "info": "#3da5ff",
             "danger": "#ff6b5a",
-            "warning": "#f5b84c",
         }
         return ("", palette.get(accent, "#3da5ff"))
 
@@ -593,13 +950,20 @@ class LoLAssistantUI:
             status = self.feature_status_labels.get(key)
             if status:
                 _, fg = self._get_feature_status_colors(data["style"], data["enabled"])
+                status_text = "ON" if data["enabled"] else "OFF"
+                if key == "skins":
+                    skin_mode = str(data.get("mode") or "none").upper()
+                    status_text = "OFF" if skin_mode == "NONE" else skin_mode
                 status.configure(
-                    text="ON" if data["enabled"] else "OFF",
+                    text=status_text,
                     bg=THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])["window_bg"],
                     fg=fg,
                 )
             for widget, value in zip(self.feature_icon_labels.get(key, []), data["values"]):
-                self._set_feature_icon(widget, value, data["is_champion"], data["enabled"], data["style"])
+                if data.get("is_skin"):
+                    self._set_skin_feature_icon(widget, value, data["enabled"], data["style"])
+                else:
+                    self._set_feature_icon(widget, value, data["is_champion"], data["enabled"], data["style"])
 
     def build_preferred_stats_url(self) -> str:
         params = self.get_params()
@@ -682,6 +1046,11 @@ class LoLAssistantUI:
         self.tray_controller.setup(
             executor=self.executor,
             toggle_window=self.request_toggle_window_from_external_thread,
+            open_settings=self.request_open_settings_from_external_thread,
+            toggle_presets_automation=self.request_toggle_presets_automation_from_external_thread,
+            toggle_auto_ban=self.request_toggle_auto_ban_from_external_thread,
+            is_presets_automation_enabled=self.is_tray_presets_automation_enabled,
+            is_auto_ban_enabled=self.is_tray_auto_ban_enabled,
             quit_callback=self.request_quit_from_external_thread,
             on_failure=lambda: self.root.after(0, self._refresh_safe_controls),
         )
@@ -755,6 +1124,125 @@ class LoLAssistantUI:
             self.root.after(0, self._quit_callback)
         except Exception as e:
             logging.debug(f"Unable to schedule tray quit on UI thread: {e}")
+
+    @staticmethod
+    def _normalize_profile_role(role: str) -> str:
+        normalized_role = (role or "GLOBAL").upper()
+        aliases = {
+            "MID": "MIDDLE",
+            "ADC": "BOTTOM",
+            "BOT": "BOTTOM",
+            "SUP": "UTILITY",
+            "SUPPORT": "UTILITY",
+            "JGL": "JUNGLE",
+        }
+        normalized_role = aliases.get(normalized_role, normalized_role)
+        return normalized_role if normalized_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
+
+    def _get_selected_profile_role(self) -> str:
+        return self._normalize_profile_role(self.get_params().get("selected_profile_role", "GLOBAL"))
+
+    def _sync_settings_window_if_open(self) -> None:
+        if self.settings_win and self.settings_win.window.winfo_exists():
+            self.settings_win._sync_from_params()
+
+    def _get_main_preview_role(self) -> str:
+        if self.ws_manager and self.ws_manager.state.assigned_position:
+            return self._normalize_profile_role(self.ws_manager.state.assigned_position)
+        return "GLOBAL"
+
+    def is_main_preview_presets_enabled(self) -> bool:
+        params = self.get_params()
+        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        return (
+            bool(params.get("auto_pick_enabled", True))
+            and bool(params.get("auto_summoners_enabled", True))
+            and bool(effective.get("presets_enabled", True))
+        )
+
+    def set_main_preview_presets_enabled(self, enabled: bool) -> None:
+        params = self.get_params()
+        target_role = self._get_main_preview_role()
+        self.update_param("auto_pick_enabled", enabled)
+        self.update_param("auto_summoners_enabled", enabled)
+
+        if target_role == "GLOBAL":
+            self.update_param("presets_enabled", enabled)
+            return
+
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+        role_data = new_profiles.get(target_role, {})
+        role_data["presets_enabled"] = enabled
+        new_profiles[target_role] = role_data
+        self.update_param("role_profiles", new_profiles)
+
+    def is_tray_presets_automation_enabled(self) -> bool:
+        params = self.get_params()
+        selected_role = self._get_selected_profile_role()
+        if selected_role == "GLOBAL":
+            return bool(params.get("presets_enabled", True))
+
+        role_profiles = params.get("role_profiles", {})
+        role_data = role_profiles.get(selected_role, {}) if isinstance(role_profiles, dict) else {}
+        if not isinstance(role_data, dict):
+            role_data = {}
+        return bool(role_data.get("presets_enabled", params.get("presets_enabled", True)))
+
+    def is_tray_auto_ban_enabled(self) -> bool:
+        return bool(self.get_params().get("auto_ban_enabled", True))
+
+    def toggle_tray_presets_automation(self) -> None:
+        params = self.get_params()
+        selected_role = self._get_selected_profile_role()
+        next_value = not self.is_tray_presets_automation_enabled()
+
+        if selected_role == "GLOBAL":
+            self.update_param("presets_enabled", next_value)
+        else:
+            role_profiles = params.get("role_profiles", {})
+            if not isinstance(role_profiles, dict):
+                role_profiles = {}
+            new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
+            role_data = new_profiles.get(selected_role, {})
+            role_data["presets_enabled"] = next_value
+            new_profiles[selected_role] = role_data
+            self.update_param("role_profiles", new_profiles)
+
+        self._sync_settings_window_if_open()
+        state_label = "active" if next_value else "disabled"
+        role_label = ROLE_PROFILE_LABELS.get(selected_role, "Global")
+        self.show_toast(f"Presets automation {state_label} for {role_label}.", duration=1200)
+
+    def toggle_tray_auto_ban(self) -> None:
+        next_value = not self.is_tray_auto_ban_enabled()
+        self.update_param("auto_ban_enabled", next_value)
+        self._sync_settings_window_if_open()
+        state_label = "active" if next_value else "disabled"
+        self.show_toast(f"Auto-ban {state_label}.", duration=1200)
+
+    def request_open_settings_from_external_thread(self) -> None:
+        logging.info("[TRAY] Settings requested from tray thread.")
+        try:
+            self.root.after(0, self.open_settings)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray settings on UI thread: {e}")
+
+    def request_toggle_presets_automation_from_external_thread(self) -> None:
+        logging.info("[TRAY] Presets automation requested from tray thread.")
+        try:
+            self.root.after(0, self.toggle_tray_presets_automation)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray presets toggle on UI thread: {e}")
+
+    def request_toggle_auto_ban_from_external_thread(self) -> None:
+        logging.info("[TRAY] Auto-ban requested from tray thread.")
+        try:
+            self.root.after(0, self.toggle_tray_auto_ban)
+        except Exception as e:
+            logging.debug(f"Unable to schedule tray auto-ban toggle on UI thread: {e}")
 
     def open_settings(self) -> None:
         if self.settings_win and self.settings_win.window.winfo_exists():
@@ -927,11 +1415,17 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Toast display error: {e}")
 
-    def show_update_popup(self, new_version: str) -> None:
+    def show_update_popup(self, update_info: Dict[str, str]) -> None:
+        new_version = str(update_info.get("version") or "").strip()
+        highlights = str(update_info.get("highlights") or "").strip()
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+
         popup = ttk.Toplevel(self.root)
         popup.title(f"{APP_NAME} Update")
-        popup.geometry("400x250")
+        popup.geometry("650x520")
         popup.resizable(False, False)
+        popup.transient(self.root)
+
         popup.update_idletasks()
         width = popup.winfo_width()
         height = popup.winfo_height()
@@ -949,29 +1443,242 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Update popup icon error: {e}")
 
-        title_lbl = ttk.Label(popup, text="New version detected!", font=("Segoe UI Emoji", 14, "bold"), bootstyle="inverse-primary")
-        title_lbl.pack(fill="x", pady=(0, 15), ipady=10)
+        outer = tk.Frame(popup, bg=palette["window_bg"], padx=20, pady=20)
+        outer.pack(fill="both", expand=True)
 
-        info_frame = ttk.Frame(popup, padding=10)
-        info_frame.pack(fill="both", expand=True)
-        info_text = (
-            "An update is available on GitHub.\n\n"
-            f"Current version: {CURRENT_VERSION}\n"
-            f"New version: {new_version}"
+        header = tk.Frame(outer, bg=palette["window_bg"])
+        header.pack(fill="x", pady=(0, 20))
+
+        try:
+            banner_img = ImageTk.PhotoImage(Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((42, 42)))
+            icon_label = tk.Label(header, image=banner_img, bg=palette["window_bg"])
+            icon_label.image = banner_img
+            icon_label.pack(side="left", padx=(0, 12))
+        except Exception as e:
+            logging.debug(f"Update popup banner icon error: {e}")
+
+        title_block = tk.Frame(header, bg=palette["window_bg"])
+        title_block.pack(side="left", fill="x", expand=True)
+        tk.Label(
+            title_block,
+            text="Update available",
+            font=("Segoe UI", 18, "bold"),
+            bg=palette["window_bg"],
+            fg=palette["text"],
+        ).pack(anchor="w")
+        tk.Label(
+            title_block,
+            text="A newer version of OTP LOL was detected on GitHub.",
+            font=("Segoe UI", 11),
+            bg=palette["window_bg"],
+            fg=palette["muted"],
+        ).pack(anchor="w", pady=(2, 0))
+
+        summary_card = tk.Frame(
+            outer,
+            bg=palette["surface_bg"],
+            bd=0,
+            highlightthickness=0,
+            padx=16,
+            pady=12,
         )
-        ttk.Label(info_frame, text=info_text, justify="center", font=("Segoe UI", 11)).pack(pady=5)
+        summary_card.pack(fill="x", pady=(0, 15))
 
-        btn_frame = ttk.Frame(popup, padding=(0, 0, 0, 20))
+        badges = tk.Frame(summary_card, bg=palette["surface_bg"])
+        badges.pack(anchor="w")
+
+        # Utiliser des boutons désactivés ttk pour avoir l'effet d'arrondi "Ikea pill"
+        ttk.Button(
+            badges,
+            text=f"Current version: {CURRENT_VERSION}",
+            bootstyle="secondary-outline",
+            state="disabled",
+        ).pack(side="left")
+        ttk.Button(
+            badges,
+            text=f"Latest version: {new_version}",
+            bootstyle="success-outline",
+            state="disabled",
+        ).pack(side="left", padx=(10, 0))
+
+        content_frame = tk.Frame(outer, bg=palette["window_bg"])
+        content_frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            content_frame, 
+            text="What's new", 
+            font=("Segoe UI", 12, "bold"), 
+            background=palette["window_bg"], 
+            foreground=palette["text"]
+        ).pack(anchor="w", pady=(0, 6))
+
+        sep = tk.Frame(content_frame, bg=palette["muted"], height=1)
+        sep.pack(fill="x", pady=(0, 10))
+
+        highlights_box = scrolledtext.ScrolledText(
+            content_frame,
+            wrap="word",
+            font=("Segoe UI", 10),
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            height=10,
+        )
+        highlights_box.pack(fill="both", expand=True, pady=(0, 15))
+        highlights_box.configure(
+            background=palette["window_bg"],
+            foreground=palette["text"],
+            insertbackground=palette["text"],
+            highlightbackground=palette["window_bg"],
+            highlightcolor=palette["window_bg"],
+        )
+        self._render_update_markdown(highlights_box, highlights, palette)
+        highlights_box.configure(state="disabled")
+
+        btn_frame = tk.Frame(outer, bg=palette["window_bg"], bd=0, highlightthickness=0)
         btn_frame.pack(fill="x")
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
+        btn_frame.columnconfigure(2, weight=1)
 
-        def on_download():
+        left_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        left_actions.grid(row=0, column=0, sticky="w")
+        center_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        center_actions.grid(row=0, column=1)
+        right_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        right_actions.grid(row=0, column=2, sticky="e")
+
+        def _make_text_action(
+            parent: tk.Widget,
+            text: str,
+            command: Callable[[], None],
+            *,
+            foreground: Optional[str] = None,
+            hover_foreground: Optional[str] = None,
+        ) -> tk.Label:
+            label = tk.Label(
+                parent,
+                text=text,
+                bg=palette["window_bg"],
+                fg=foreground or palette["muted"],
+                font=("Segoe UI", 10, "bold"),
+                cursor="hand2",
+                bd=0,
+                padx=0,
+                pady=0,
+            )
+
+            def on_enter(_event: object) -> None:
+                label.configure(fg=hover_foreground or palette["text"])
+
+            def on_leave(_event: object) -> None:
+                label.configure(fg=foreground or palette["muted"])
+
+            label.bind("<Button-1>", lambda _event: command())
+            label.bind("<Enter>", on_enter)
+            label.bind("<Leave>", on_leave)
+            return label
+
+        def on_download() -> None:
+            webbrowser.open(GITHUB_DOWNLOAD_ZIP_URL)
+
+        def on_open_repo() -> None:
             webbrowser.open(GITHUB_REPO_URL)
+
+        def on_ignore() -> None:
+            self.update_param("ignored_update_version", new_version)
+            self.save_params()
             popup.destroy()
 
-        ttk.Button(btn_frame, text="Download", bootstyle="success", command=on_download, width=15).pack(side="left", padx=(40, 10), expand=True)
-        ttk.Button(btn_frame, text="Later", bootstyle="secondary", command=popup.destroy, width=15).pack(side="right", padx=(10, 40), expand=True)
+        _make_text_action(
+            left_actions,
+            "Do not remind me again",
+            on_ignore,
+            foreground=palette["muted"],
+            hover_foreground=palette["history_warning"],
+        ).pack(side="left")
+        _make_text_action(
+            center_actions,
+            "Later",
+            popup.destroy,
+            foreground=palette["muted"],
+            hover_foreground=palette["text"],
+        ).pack()
+        
+        # En inversant l'ordre de packing avec side="right", on assure que Download est tout à droite.
+        ttk.Button(
+            right_actions,
+            text="Download",
+            bootstyle="primary",
+            command=on_download,
+            width=16,
+        ).pack(side="right", padx=(10, 0))
+        ttk.Button(
+            right_actions,
+            text="Open in browser",
+            bootstyle="info-outline",
+            command=on_open_repo,
+            width=18,
+        ).pack(side="right")
+
         popup.attributes("-topmost", True)
+        popup.grab_set()
         popup.focus_force()
+
+    @staticmethod
+    def _insert_markdown_inline(text_widget: scrolledtext.ScrolledText, text: str) -> None:
+        parts = re.split(r"(`[^`]+`)", text)
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith("`") and part.endswith("`") and len(part) >= 2:
+                text_widget.insert("end", part[1:-1], ("update_code",))
+            else:
+                text_widget.insert("end", part)
+
+    def _render_update_markdown(
+        self,
+        text_widget: scrolledtext.ScrolledText,
+        markdown_text: str,
+        palette: Dict[str, str],
+    ) -> None:
+        text_widget.delete("1.0", "end")
+        text_widget.tag_configure(
+            "update_body",
+            font=("Segoe UI", 10),
+            foreground=palette["text"],
+            lmargin1=8,
+            lmargin2=8,
+            spacing3=3,
+        )
+        text_widget.tag_configure(
+            "update_bullet",
+            font=("Segoe UI", 10),
+            foreground=palette["text"],
+            lmargin1=12,
+            lmargin2=28,
+            spacing1=4,
+            spacing3=4,
+        )
+        text_widget.tag_configure(
+            "update_code",
+            font=("Consolas", 10),
+            foreground=palette["history_info"],
+        )
+
+        content = markdown_text.strip() or "Release notes are not available for this version yet."
+        for raw_line in content.splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                text_widget.insert("end", "\n")
+                continue
+            if stripped.startswith("- "):
+                text_widget.insert("end", "• ", ("update_bullet",))
+                self._insert_markdown_inline(text_widget, stripped[2:])
+                text_widget.insert("end", "\n", ("update_bullet",))
+            else:
+                self._insert_markdown_inline(text_widget, stripped)
+                text_widget.insert("end", "\n", ("update_body",))
 
     def on_core_event(self, event_type: str, data: Any) -> None:
         self.root.after(0, lambda: self._handle_core_event(event_type, data))
@@ -985,8 +1692,12 @@ class LoLAssistantUI:
             if self.get_params().get("auto_hide_on_connect", True):
                 self.root.after(3000, self.hide_window)
         elif event_type == WebSocketManager.EVENT_DISCONNECTED:
+            disconnect_info = data if isinstance(data, dict) else {}
+            is_transient_disconnect = bool(disconnect_info.get("transient"))
             self.update_connection_indicator(False)
-            if self.get_params().get("close_app_on_lol_exit", True):
+            if is_transient_disconnect:
+                self._cancel_disconnect_close()
+            elif self.get_params().get("close_app_on_lol_exit", True):
                 self._schedule_disconnect_close()
             else:
                 self.root.after(100, self.show_window)
