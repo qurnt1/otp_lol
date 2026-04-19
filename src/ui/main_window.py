@@ -524,7 +524,7 @@ class LoLAssistantUI:
 
     def _set_skin_feature_icon(self, widget: ttk.Label, skin_data: Dict[str, Any], enabled: bool, accent: str) -> None:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
-        if not enabled or not isinstance(skin_data, dict):
+        if not isinstance(skin_data, dict):
             self._set_preview_placeholder(widget)
             return
 
@@ -591,9 +591,6 @@ class LoLAssistantUI:
     def _set_feature_icon(self, widget: ttk.Label, name: str, is_champion: bool, enabled: bool, accent: str) -> None:
         display_name = name or "..."
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
-        if not enabled:
-            self._set_preview_placeholder(widget)
-            return
         if not name:
             self._set_preview_placeholder(widget)
             return
@@ -804,7 +801,12 @@ class LoLAssistantUI:
         for slot_key in PICK_SLOT_ORDER:
             slot_mode = self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
             slot_modes.append(slot_mode)
-            skin_values.append(self._build_slot_skin_preview_value(pick_slots.get(slot_key, {}), mode=slot_mode))
+            
+            # Inject champion name so the skin preview thumbnail can load properly
+            slot_data = dict(pick_slots.get(slot_key, {}))
+            slot_data["champion"] = str(effective.get(f"selected_{slot_key}") or "").strip()
+            skin_values.append(self._build_slot_skin_preview_value(slot_data, mode=slot_mode))
+            
         if not any(mode in {"fixed", "random"} for mode in slot_modes):
             skin_mode = "none"
         elif len(set(slot_modes)) == 1:

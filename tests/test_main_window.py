@@ -167,14 +167,27 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertEqual(settings.sync_calls, 1)
         self.assertEqual(recorder.messages[0][0], "Presets disabled.")
 
-    def test_set_feature_icon_hides_slot_text_when_section_disabled(self):
+    def test_set_feature_icon_updates_slot_when_section_disabled(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
         window.theme = "darkly"
         window.preview_placeholder = object()
+        window.preview_icon_cache = {}
+        window.PREVIEW_ICON_SIZE = 48
+        
+        class MockDD:
+            def get_summoner_icon(self, name): return None
+        window.dd = MockDD()
+        
+        class MockExecutor:
+            def submit(self, fn): pass
+        window.executor = MockExecutor()
+        
         widget = DummyWidget()
 
         window._set_feature_icon(widget, "Flash", is_champion=False, enabled=False, accent="warning")
 
+        # Now it shouldn't just set the placeholder and return, it should actually process the icon request.
+        # But initially before loading it sets the placeholder with text=""
         self.assertEqual(widget.last_config["text"], "")
         self.assertIs(widget.image, window.preview_placeholder)
 
