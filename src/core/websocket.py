@@ -11,6 +11,11 @@ try:
 except ImportError:
     Connector = None
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 from ..config import (
     EP_CHAT_ME,
     EP_CURRENT_SUMMONER,
@@ -43,6 +48,7 @@ class WebSocketManager(ChampSelectMixin):
     EVENT_PLAY_AGAIN = "play_again"
     EVENT_TOAST = "toast"
     EVENT_READY_CHECK_ACCEPTED = "ready_check_accepted"
+    WS_RETRY_DELAY_S = 2.0
 
     def __init__(
         self,
@@ -612,141 +618,201 @@ class WebSocketManager(ChampSelectMixin):
         if self.ws_active and self.connection and self.loop:
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
+    def _reset_ws_runtime_state(self) -> None:
+        self.connection = None
+        self.ws_active = False
+        self.state.current_phase = "None"
+        self.state.last_reported_summoner = None
+        self.state.reset_between_games()
+
+    def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_message: Optional[str] = None) -> None:
+        if self._stop_event.is_set():
+            return
+        self._notify_ui(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
+        if status_message:
+            self._notify_ui(self.EVENT_STATUS, (status_message, "WARN"))
+
+    def _is_transient_ws_scan_error(self, exc: BaseException) -> bool:
+        transient_types: tuple[type[BaseException], ...] = (ProcessLookupError,)
+        if psutil is not None:
+            transient_types = transient_types + (
+                psutil.NoSuchProcess,
+                psutil.ZombieProcess,
+                psutil.AccessDenied,
+            )
+        if isinstance(exc, transient_types):
+            return True
+        message = str(exc).strip().lower()
+        return "process no longer exists" in message or "no such process" in message
+
     def _ws_loop(self) -> None:
         """Run the LCU connector in its own asyncio loop and forward LCU events to the UI thread."""
         if Connector is None:
             return
 
+        loop = None
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             self.loop = loop
-            connector = Connector(loop=loop)
-            self.connector = connector
+            while not self._stop_event.is_set():
+                connector = Connector(loop=loop)
+                self.connector = connector
 
-            @connector.ready
-            async def on_ready(connection):
-                self.connection = connection
-                self.ws_active = True
-                log_history_event(
-                    "connection",
-                    "LoL client detected and connection established.",
-                    {"region": self.get_platform_for_websites()},
-                    level="success",
-                    category="Connection",
-                    action="connected",
-                )
-                self._notify_ui(self.EVENT_CONNECTED, None)
-                self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "WS"))
-                logging.info("[WS] Connected to the LCU client.")
-                await self._refresh_player_and_region()
-
-            @connector.close
-            async def on_close(connection):
-                self.connection = None
-                self.ws_active = False
-                self.state.last_reported_summoner = None
-                if not self._stop_event.is_set():
+                @connector.ready
+                async def on_ready(connection):
+                    self.connection = connection
+                    self.ws_active = True
                     log_history_event(
                         "connection",
-                        "LoL client connection lost, trying to reconnect.",
-                        level="warning",
+                        "LoL client detected and connection established.",
+                        {"region": self.get_platform_for_websites()},
+                        level="success",
                         category="Connection",
-                        action="disconnected",
+                        action="connected",
                     )
-                    self._notify_ui(self.EVENT_DISCONNECTED, None)
-                    self._notify_ui(self.EVENT_STATUS, ("LoL client disconnected. Trying to reconnect...", "WARN"))
-                    logging.info("[WS] Disconnected.")
-                else:
-                    logging.info("[WS] Stop requested.")
-
-            @connector.ws.register(EP_CURRENT_SUMMONER)
-            async def _ws_summoner_change(connection, event):
-                await self._refresh_player_and_region()
-
-            @connector.ws.register(EP_CHAT_ME)
-            async def _ws_chat_me_change(connection, event):
-                await self._refresh_player_and_region()
-
-            @connector.ws.register(EP_LOGIN)
-            async def _ws_login_session(connection, event):
-                data = event.data or {}
-                if data.get("status") == "SUCCEEDED":
-                    self._notify_ui(self.EVENT_STATUS, ("Login detected...", "INFO"))
+                    self._notify_ui(self.EVENT_CONNECTED, None)
+                    self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "WS"))
+                    logging.info("[WS] Connected to the LCU client.")
                     await self._refresh_player_and_region()
 
-            @connector.ws.register(EP_GAMEFLOW)
-            async def _ws_phase(connection, event):
-                phase = event.data
-                if not phase:
-                    return
-
-                if phase != self.state.current_phase:
-                    logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
-                self.state.current_phase = phase
-
-                friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
-                self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
-                self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
-
-                if phase == "ChampSelect":
-                    self.state.reset_between_games()
-                    await self._champ_select_tick()
-                if phase in ("EndOfGame", "WaitingForStats"):
-                    await self._handle_post_game()
-
-            @connector.ws.register(EP_READY_CHECK)
-            async def _ws_ready(connection, event):
-                if self.state.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]:
-                    return
-                data = event.data or {}
-                params = self.get_params()
-                if (
-                    params.get("auto_accept_enabled", True)
-                    and data.get("state") == "InProgress"
-                    and data.get("playerResponse") != "Accepted"
-                ):
-                    accept_url = f"{EP_READY_CHECK}/accept"
-                    logging.info("[READY] POST %s", accept_url)
-                    response = await connection.request("post", accept_url)
-                    logging.info("[READY] POST %s -> %s", accept_url, getattr(response, "status", "no-response"))
-                    if response and response.status < 400:
+                @connector.close
+                async def on_close(connection):
+                    self._reset_ws_runtime_state()
+                    if not self._stop_event.is_set():
                         log_history_event(
-                            "ready_check",
-                            "Match automatically accepted.",
-                            level="success",
-                            category="Match found",
-                            action="accepted",
+                            "connection",
+                            "LoL client connection lost, trying to reconnect.",
+                            level="warning",
+                            category="Connection",
+                            action="disconnected",
                         )
-                        self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "OK"))
-                        if not self.state.has_played_accept_sound:
-                            self.state.has_played_accept_sound = True
-                            self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
+                        self._notify_ws_disconnected(
+                            transient=False,
+                            reason="client_disconnected",
+                            status_message="LoL client disconnected. Trying to reconnect...",
+                        )
+                        logging.info("[WS] Disconnected.")
+                    else:
+                        logging.info("[WS] Stop requested.")
 
-            @connector.ws.register(EP_SESSION)
-            async def _ws_cs_session(connection, event):
-                if self._cs_tick_lock.locked():
-                    return
-                async with self._cs_tick_lock:
-                    await self._champ_select_tick()
+                @connector.ws.register(EP_CURRENT_SUMMONER)
+                async def _ws_summoner_change(connection, event):
+                    await self._refresh_player_and_region()
 
-            @connector.ws.register(EP_SESSION_TIMER)
-            async def _ws_cs_timer(connection, event):
-                if time() - self.state._last_cs_timer_fetch > 0.2:
-                    await self._champ_select_timer_tick()
-                    self.state._last_cs_timer_fetch = time()
+                @connector.ws.register(EP_CHAT_ME)
+                async def _ws_chat_me_change(connection, event):
+                    await self._refresh_player_and_region()
 
-            connector.start()
-        except Exception as e:
-            logging.critical("[WS] Critical error in the WebSocket loop: %s", e, exc_info=True)
-            self.ws_active = False
-            if not self._stop_event.is_set():
-                self._notify_ui(self.EVENT_DISCONNECTED, None)
+                @connector.ws.register(EP_LOGIN)
+                async def _ws_login_session(connection, event):
+                    data = event.data or {}
+                    if data.get("status") == "SUCCEEDED":
+                        self._notify_ui(self.EVENT_STATUS, ("Login detected...", "INFO"))
+                        await self._refresh_player_and_region()
+
+                @connector.ws.register(EP_GAMEFLOW)
+                async def _ws_phase(connection, event):
+                    phase = event.data
+                    if not phase:
+                        return
+
+                    if phase != self.state.current_phase:
+                        logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
+                    self.state.current_phase = phase
+
+                    friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
+                    self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
+                    self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
+
+                    if phase == "ChampSelect":
+                        self.state.reset_between_games()
+                        await self._champ_select_tick()
+                    if phase in ("EndOfGame", "WaitingForStats"):
+                        await self._handle_post_game()
+
+                @connector.ws.register(EP_READY_CHECK)
+                async def _ws_ready(connection, event):
+                    if self.state.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]:
+                        return
+                    data = event.data or {}
+                    params = self.get_params()
+                    if (
+                        params.get("auto_accept_enabled", True)
+                        and data.get("state") == "InProgress"
+                        and data.get("playerResponse") != "Accepted"
+                    ):
+                        accept_url = f"{EP_READY_CHECK}/accept"
+                        logging.info("[READY] POST %s", accept_url)
+                        response = await connection.request("post", accept_url)
+                        logging.info("[READY] POST %s -> %s", accept_url, getattr(response, "status", "no-response"))
+                        if response and response.status < 400:
+                            log_history_event(
+                                "ready_check",
+                                "Match automatically accepted.",
+                                level="success",
+                                category="Match found",
+                                action="accepted",
+                            )
+                            self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "OK"))
+                            if not self.state.has_played_accept_sound:
+                                self.state.has_played_accept_sound = True
+                                self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
+
+                @connector.ws.register(EP_SESSION)
+                async def _ws_cs_session(connection, event):
+                    if self._cs_tick_lock.locked():
+                        return
+                    async with self._cs_tick_lock:
+                        await self._champ_select_tick()
+
+                @connector.ws.register(EP_SESSION_TIMER)
+                async def _ws_cs_timer(connection, event):
+                    if time() - self.state._last_cs_timer_fetch > 0.2:
+                        await self._champ_select_timer_tick()
+                        self.state._last_cs_timer_fetch = time()
+
+                try:
+                    connector.start()
+                    if self._stop_event.is_set():
+                        break
+                    logging.warning(
+                        "[WS] Connector loop stopped unexpectedly. Retrying in %.1fs.",
+                        self.WS_RETRY_DELAY_S,
+                    )
+                except Exception as e:
+                    if self._stop_event.is_set():
+                        break
+                    self._reset_ws_runtime_state()
+                    if self._is_transient_ws_scan_error(e):
+                        logging.warning(
+                            "[WS] Temporary LCU detection failure: %s. Retrying in %.1fs.",
+                            e,
+                            self.WS_RETRY_DELAY_S,
+                        )
+                        self._notify_ws_disconnected(
+                            transient=True,
+                            reason="lcu_process_scan_failed",
+                            status_message="Temporary LCU detection failure. Waiting for League of Legends...",
+                        )
+                    else:
+                        logging.critical("[WS] Critical error in the WebSocket loop: %s", e, exc_info=True)
+                        self._notify_ws_disconnected(
+                            transient=True,
+                            reason="ws_loop_error",
+                            status_message="LCU connection error. Trying to reconnect...",
+                        )
+                finally:
+                    self.connector = None
+
+                if self._stop_event.wait(self.WS_RETRY_DELAY_S):
+                    break
         finally:
-            self.connection = None
-            self.ws_active = False
+            self._reset_ws_runtime_state()
             self.connector = None
             self.loop = None
+            if loop is not None and not loop.is_closed():
+                loop.close()
 
     async def _refresh_player_and_region(self) -> None:
         if not self.connection:

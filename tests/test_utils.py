@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from src.utils import (
+    build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
     build_ingame_stats_url,
@@ -45,6 +46,14 @@ class UtilsTests(unittest.TestCase):
             "https://www.deeplol.gg/summoner/euw/MonCompte-EUW/ingame",
         )
         self.assertEqual(
+            build_dpm_url("euw", "MonCompte#EUW"),
+            "https://dpm.lol/MonCompte-EUW/",
+        )
+        self.assertEqual(
+            build_dpm_url("euw", "MonCompte#EUW", ingame=True),
+            "https://dpm.lol/MonCompte-EUW/live",
+        )
+        self.assertEqual(
             build_opgg_url("euw", "MonCompte#EUW", ingame=True),
             "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW/ingame",
         )
@@ -61,6 +70,10 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(
             build_stats_site_url("deeplol", "euw", "MonCompte#EUW"),
             "https://www.deeplol.gg/summoner/euw/MonCompte-EUW",
+        )
+        self.assertEqual(
+            build_stats_site_url("dpm", "euw", "MonCompte#EUW"),
+            "https://dpm.lol/MonCompte-EUW/",
         )
         self.assertEqual(
             build_stats_site_url("unknown", "euw", "MonCompte#EUW"),
@@ -81,6 +94,10 @@ class UtilsTests(unittest.TestCase):
             "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW/ingame",
         )
         self.assertEqual(
+            build_hotkey_site_url("dpm", "euw", "MonCompte#EUW"),
+            "https://dpm.lol/MonCompte-EUW/live",
+        )
+        self.assertEqual(
             build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
             "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
@@ -91,8 +108,16 @@ class UtilsTests(unittest.TestCase):
             "https://www.deeplol.gg/summoner/euw/MonCompte-EUW",
         )
         self.assertEqual(
+            build_player_stats_url("dpm", "euw", "MonCompte#EUW"),
+            "https://dpm.lol/MonCompte-EUW/",
+        )
+        self.assertEqual(
             build_ingame_stats_url("opgg", "euw", "MonCompte#EUW"),
             "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW/ingame",
+        )
+        self.assertEqual(
+            build_ingame_stats_url("dpm", "euw", "MonCompte#EUW"),
+            "https://dpm.lol/MonCompte-EUW/live",
         )
 
     def test_riot_id_validation(self):
@@ -108,9 +133,9 @@ class UtilsTests(unittest.TestCase):
         with patch("src.utils.requests.get", return_value=response):
             self.assertIsNone(check_for_updates())
 
-        response.json.return_value = {"tag_name": "v9.1.0"}
+        response.json.return_value = {"tag_name": "v10.1.0"}
         with patch("src.utils.requests.get", return_value=response):
-            self.assertEqual(check_for_updates(), normalize_version("v9.1.0"))
+            self.assertEqual(check_for_updates(), normalize_version("v10.1.0"))
 
 
 if __name__ == "__main__":

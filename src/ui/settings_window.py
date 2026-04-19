@@ -35,7 +35,7 @@ from ..config import (
 from .champion_picker import open_champion_picker
 from .role_picker import open_role_picker
 from .skin_picker import open_skin_picker
-from .site_picker import open_site_picker
+from .site_picker import _load_site_logo, open_site_picker
 
 if TYPE_CHECKING:
     from .main_window import LoLAssistantUI
@@ -353,60 +353,58 @@ class SettingsWindow:
         ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=4, sticky="we", pady=(15, 8))
         misc_frame = ttk.Frame(self.main_frame)
         misc_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="ew")
+        misc_frame.columnconfigure(0, weight=0, minsize=145)
+        misc_frame.columnconfigure(1, weight=0, minsize=250)
 
-        site_frame = ttk.Frame(misc_frame)
-        site_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(site_frame, text="Preferred stats site:").pack(side="left", padx=(0, 10))
+        ttk.Label(misc_frame, text="Preferred stats site:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.stats_site_btn = ttk.Button(
-            site_frame,
+            misc_frame,
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("stats"),
-            width=24,
-            padding=(10, 8),
+            width=26,
+            padding=(8, 8),
+            compound="left",
         )
-        self.stats_site_btn.pack(side="left")
+        self.stats_site_btn.grid(row=0, column=1, sticky="w", pady=(0, 8))
         self._refresh_stats_site_button()
 
-        hotkey_frame = ttk.Frame(misc_frame)
-        hotkey_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(hotkey_frame, text="Shortcut website:").pack(side="left", padx=(0, 10))
+        ttk.Label(misc_frame, text="Shortcut website:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.hotkey_site_btn = ttk.Button(
-            hotkey_frame,
+            misc_frame,
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("hotkey"),
-            width=24,
-            padding=(10, 8),
+            width=26,
+            padding=(8, 8),
+            compound="left",
         )
-        self.hotkey_site_btn.pack(side="left")
+        self.hotkey_site_btn.grid(row=1, column=1, sticky="w", pady=(0, 8))
         self._refresh_hotkey_site_button()
 
-        ttk.Separator(misc_frame).pack(fill="x", pady=(4, 10))
+        ttk.Separator(misc_frame).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 10))
 
-        shortcut_frame = ttk.Frame(misc_frame)
-        shortcut_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(shortcut_frame, text="Show/hide shortcut:").pack(side="left", padx=(0, 10))
+        ttk.Label(misc_frame, text="Show/hide app:").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.hotkey_toggle_btn = ttk.Button(
-            shortcut_frame,
+            misc_frame,
             text=self._format_hotkey_display(self.hotkey_toggle_var.get()),
             bootstyle="secondary-outline",
-            width=22,
+            width=26,
             command=lambda: self._start_hotkey_capture("toggle"),
-            padding=(10, 8),
+            padding=(8, 8),
         )
-        self.hotkey_toggle_btn.pack(side="left")
+        self.hotkey_toggle_btn.grid(row=3, column=1, sticky="w", pady=(0, 8))
 
-        shortcut_site_frame = ttk.Frame(misc_frame)
-        shortcut_site_frame.pack(anchor="w", pady=(0, 8), fill="x")
-        ttk.Label(shortcut_site_frame, text="Open website shortcut:").pack(side="left", padx=(0, 10))
+        ttk.Label(misc_frame, text="Open website shortcut:").grid(row=4, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.hotkey_open_btn = ttk.Button(
-            shortcut_site_frame,
+            misc_frame,
             text=self._format_hotkey_display(self.hotkey_open_site_var.get()),
             bootstyle="secondary-outline",
-            width=22,
+            width=26,
             command=lambda: self._start_hotkey_capture("site"),
-            padding=(10, 8),
+            padding=(8, 8),
         )
-        self.hotkey_open_btn.pack(side="left")
+        self.hotkey_open_btn.grid(row=4, column=1, sticky="w", pady=(0, 8))
+
+        ttk.Separator(misc_frame).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 10))
 
         ttk.Checkbutton(
             misc_frame,
@@ -414,7 +412,7 @@ class SettingsWindow:
             variable=self.play_again_var,
             command=lambda: self.parent.update_param("auto_play_again_enabled", self.play_again_var.get()),
             bootstyle="info-round-toggle",
-        ).pack(anchor="w", pady=2)
+        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
 
         ttk.Checkbutton(
             misc_frame,
@@ -422,7 +420,7 @@ class SettingsWindow:
             variable=self.auto_hide_var,
             command=lambda: self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
-        ).pack(anchor="w", pady=2)
+        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
 
         ttk.Checkbutton(
             misc_frame,
@@ -430,7 +428,7 @@ class SettingsWindow:
             variable=self.close_on_exit_var,
             command=lambda: self.parent.update_param("close_app_on_lol_exit", self.close_on_exit_var.get()),
             bootstyle="danger-round-toggle",
-        ).pack(anchor="w", pady=2)
+        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=2)
 
     def _load_initial_icons(self) -> None:
         self._refresh_profile_buttons()
@@ -785,15 +783,32 @@ class SettingsWindow:
         else:
             self.role_selector_btn.configure(text=label, image="")
 
+    def _load_website_logo(self, site: str, *, size: int = 30):
+        return _load_site_logo(self, site, size=size)
+
     def _refresh_stats_site_button(self) -> None:
         if hasattr(self, "stats_site_btn"):
-            label = STATS_SITE_LABELS.get(self.preferred_stats_site_var.get(), STATS_SITE_LABELS["opgg"])
-            self.stats_site_btn.configure(text=label)
+            site = self.preferred_stats_site_var.get()
+            label = STATS_SITE_LABELS.get(site, STATS_SITE_LABELS["opgg"])
+            icon = self._load_website_logo(site, size=self.PICK_ICON_SIZE[0])
+            if icon:
+                self.stats_site_btn.configure(text=f"  {label}", image=icon, compound="left")
+                self.stats_site_btn.image = icon
+            else:
+                self.stats_site_btn.configure(text=label, image="")
+                self.stats_site_btn.image = None
 
     def _refresh_hotkey_site_button(self) -> None:
         if hasattr(self, "hotkey_site_btn"):
-            label = HOTKEY_SITE_LABELS.get(self.preferred_hotkey_site_var.get(), HOTKEY_SITE_LABELS["porofessor"])
-            self.hotkey_site_btn.configure(text=label)
+            site = self.preferred_hotkey_site_var.get()
+            label = HOTKEY_SITE_LABELS.get(site, HOTKEY_SITE_LABELS["porofessor"])
+            icon = self._load_website_logo(site, size=self.PICK_ICON_SIZE[0])
+            if icon:
+                self.hotkey_site_btn.configure(text=f"  {label}", image=icon, compound="left")
+                self.hotkey_site_btn.image = icon
+            else:
+                self.hotkey_site_btn.configure(text=label, image="")
+                self.hotkey_site_btn.image = None
 
     def _toggle_profile_presets(self) -> None:
         enabled = self.presets_enabled_var.get()
@@ -1200,7 +1215,7 @@ class SettingsWindow:
                 text=f"  {self._get_skin_button_label(slot_key)}",
                 image="",
                 compound="left",
-                bootstyle="info-outline" if skin_mode in {"fixed", "random"} else "secondary-outline",
+                bootstyle="secondary-outline",
             )
 
             if champion_name in {"", "(None)"} or skin_mode == "none":

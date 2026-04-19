@@ -186,7 +186,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
         self.assertEqual(window._load_remote_img_into_btn_calls[0][0], "https://example.com/tile.jpg")
         self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
-        self.assertEqual(window.pick_skin_buttons["pick_1"].config["bootstyle"], "info-outline")
+        self.assertEqual(window.pick_skin_buttons["pick_1"].config["bootstyle"], "secondary-outline")
 
     def test_refresh_skin_buttons_uses_theme_placeholder_for_random(self):
         class FakeButton:
@@ -228,6 +228,32 @@ class SettingsWindowLogicTests(unittest.TestCase):
             window._get_random_skin_placeholder_asset(),
             "config/images/app/question-mark-black_mode.png",
         )
+
+    def test_refresh_site_buttons_show_logo_and_left_compound(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.stats_site_btn = FakeButton()
+        window.hotkey_site_btn = FakeButton()
+        window.preferred_stats_site_var = DummyVar("dpm")
+        window.preferred_hotkey_site_var = DummyVar("opgg")
+        window._load_website_logo = lambda site, size=30: f"logo-{site}-{size}"
+
+        window._refresh_stats_site_button()
+        window._refresh_hotkey_site_button()
+
+        self.assertEqual(window.stats_site_btn.config["text"], "  DPM.LOL")
+        self.assertEqual(window.stats_site_btn.config["compound"], "left")
+        self.assertEqual(window.stats_site_btn.image, "logo-dpm-30")
+        self.assertEqual(window.hotkey_site_btn.config["text"], "  OP.GG")
+        self.assertEqual(window.hotkey_site_btn.config["compound"], "left")
+        self.assertEqual(window.hotkey_site_btn.image, "logo-opgg-30")
 
     def test_pick_slot_display_uses_global_fallback(self):
         window = self.make_window()

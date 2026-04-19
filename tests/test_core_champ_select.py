@@ -139,6 +139,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["source"], "pickable")
         self.assertEqual([entry["skin_id"] for entry in result["owned_skins"]], [99007, 99010])
 
+    async def test_is_transient_ws_scan_error_detects_process_lookup_failures(self):
+        self.assertTrue(self.manager._is_transient_ws_scan_error(ProcessLookupError("gone")))
+        self.assertTrue(self.manager._is_transient_ws_scan_error(RuntimeError("process no longer exists (pid=356)")))
+        self.assertFalse(self.manager._is_transient_ws_scan_error(RuntimeError("boom")))
+
     async def test_logic_do_pick_falls_back_to_second_pick(self):
         async def request(method, url, **kwargs):
             self.assertEqual(method, "get")

@@ -1470,8 +1470,12 @@ class LoLAssistantUI:
             if self.get_params().get("auto_hide_on_connect", True):
                 self.root.after(3000, self.hide_window)
         elif event_type == WebSocketManager.EVENT_DISCONNECTED:
+            disconnect_info = data if isinstance(data, dict) else {}
+            is_transient_disconnect = bool(disconnect_info.get("transient"))
             self.update_connection_indicator(False)
-            if self.get_params().get("close_app_on_lol_exit", True):
+            if is_transient_disconnect:
+                self._cancel_disconnect_close()
+            elif self.get_params().get("close_app_on_lol_exit", True):
                 self._schedule_disconnect_close()
             else:
                 self.root.after(100, self.show_window)

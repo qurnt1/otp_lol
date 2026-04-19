@@ -1,5 +1,6 @@
 import unittest
 
+from src.core import WebSocketManager
 from src.ui.main_window import LoLAssistantUI
 
 
@@ -53,9 +54,14 @@ class MutableParamsWindow:
 class DummyRoot:
     def __init__(self):
         self.calls = []
+        self.cancelled = []
 
     def after(self, delay, callback):
         self.calls.append((delay, callback))
+        return len(self.calls)
+
+    def after_cancel(self, after_id):
+        self.cancelled.append(after_id)
 
 
 class MainWindowLogicTests(unittest.TestCase):
@@ -592,6 +598,47 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "fixed")
         self.assertEqual(effective["pick_slots"]["pick_1"]["skin_id"], 86000)
         self.assertEqual(effective["pick_slots"]["pick_1"]["skin_source_role"], "GLOBAL")
+
+    def test_handle_core_event_schedules_close_for_real_disconnect(self):
+        scheduled = []
+        connection_updates = []
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.disconnect_close_after_id = None
+        window.update_connection_indicator = lambda connected: connection_updates.append(connected)
+        window.get_params = lambda: {"close_app_on_lol_exit": True}
+        window._schedule_disconnect_close = lambda: scheduled.append("scheduled")
+        window._cancel_disconnect_close = lambda: scheduled.append("cancelled")
+        window._queue_feature_preview_refresh = lambda: None
+        window._refresh_stats_button = lambda: None
+        window.history_window = None
+
+        window._handle_core_event(WebSocketManager.EVENT_DISCONNECTED, None)
+
+        self.assertEqual(connection_updates, [False])
+        self.assertEqual(scheduled, ["scheduled"])
+
+    def test_handle_core_event_does_not_schedule_close_for_transient_disconnect(self):
+        actions = []
+        connection_updates = []
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.root = DummyRoot()
+        window.disconnect_close_after_id = None
+        window.update_connection_indicator = lambda connected: connection_updates.append(connected)
+        window.get_params = lambda: {"close_app_on_lol_exit": True}
+        window._schedule_disconnect_close = lambda: actions.append("scheduled")
+        window._cancel_disconnect_close = lambda: actions.append("cancelled")
+        window._queue_feature_preview_refresh = lambda: None
+        window._refresh_stats_button = lambda: None
+        window.history_window = None
+
+        window._handle_core_event(
+            WebSocketManager.EVENT_DISCONNECTED,
+            {"transient": True, "reason": "lcu_process_scan_failed"},
+        )
+
+        self.assertEqual(connection_updates, [False])
+        self.assertEqual(actions, ["cancelled"])
 
 
 if __name__ == "__main__":

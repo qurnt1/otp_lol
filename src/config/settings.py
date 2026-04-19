@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any, Dict
 
-from .constants import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
+from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
 
 
@@ -50,6 +50,7 @@ def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str
 
 
 DEFAULT_PARAMS: Dict[str, Any] = {
+    "config_version": CURRENT_VERSION,
     "auto_accept_enabled": True,
     "auto_pick_enabled": True,
     "auto_ban_enabled": True,
@@ -94,27 +95,53 @@ FIRST_LAUNCH_PARAMS.update(
 )
 
 
+def _build_first_launch_payload() -> Dict[str, Any]:
+    return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
+
+
+def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
+    os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
+    sanitized = _normalize_parameters(payload)
+    with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
+        json.dump(sanitized, f, indent=4, ensure_ascii=False)
+    return sanitized
+
+
+def _reset_parameters_file(reason: str) -> Dict[str, Any]:
+    logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
+    return _write_parameters_file(_build_first_launch_payload())
+
+
 def load_parameters() -> Dict[str, Any]:
     """Load parameters from the JSON file."""
     if not os.path.exists(PARAMETERS_PATH):
-        return copy.deepcopy(FIRST_LAUNCH_PARAMS)
+        return _reset_parameters_file("missing file")
 
     try:
         with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
-        return _normalize_parameters(config)
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, IOError, OSError) as e:
         logging.warning(f"Error loading settings: {e}")
-        return copy.deepcopy(DEFAULT_PARAMS)
+        return _reset_parameters_file("invalid json")
+
+    if not isinstance(config, dict):
+        return _reset_parameters_file("root payload is not an object")
+
+    if str(config.get("config_version") or "").strip() != CURRENT_VERSION:
+        return _reset_parameters_file(
+            f"config version mismatch (found={config.get('config_version')!r}, expected={CURRENT_VERSION!r})"
+        )
+
+    normalized = _normalize_parameters(config)
+    if config != normalized:
+        return _reset_parameters_file("schema mismatch")
+    return normalized
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
     """Save parameters to the JSON file."""
     try:
-        os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
-        sanitized = _normalize_parameters(params)
-        with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
-            json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        _write_parameters_file(params)
         return True
     except (IOError, OSError) as e:
         logging.error(f"Error saving settings: {e}")
@@ -317,12 +344,12 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["role_profiles"] = normalized_profiles
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
-    if preferred_stats_site not in {"opgg", "deeplol", "leagueofgraphs"}:
+    if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:
         preferred_stats_site = DEFAULT_PARAMS["preferred_stats_site"]
     merged["preferred_stats_site"] = preferred_stats_site
 
     preferred_hotkey_site = str(config.get("preferred_hotkey_site", DEFAULT_PARAMS["preferred_hotkey_site"])).lower().strip()
-    if preferred_hotkey_site not in {"porofessor", "deeplol", "opgg"}:
+    if preferred_hotkey_site not in {"porofessor", "deeplol", "dpm", "opgg"}:
         preferred_hotkey_site = DEFAULT_PARAMS["preferred_hotkey_site"]
     merged["preferred_hotkey_site"] = preferred_hotkey_site
 

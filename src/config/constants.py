@@ -103,6 +103,7 @@ APP_IMAGE_FILES: Dict[str, str] = {
 WEBSITE_LOGO_FILES: Dict[str, str] = {
     "opgg": "config/images/websites/opgg.png",
     "deeplol": "config/images/websites/deeplol.png",
+    "dpm": "config/images/websites/dpm-lol.png",
     "porofessor": "config/images/websites/porofessor.png",
     "leagueofgraphs": "config/images/websites/leagueofgraphs.png",
 }
@@ -110,18 +111,20 @@ WEBSITE_LOGO_FILES: Dict[str, str] = {
 STATS_SITE_LABELS: Dict[str, str] = {
     "opgg": "OP.GG",
     "deeplol": "DeepLOL",
+    "dpm": "DPM.LOL",
     "leagueofgraphs": "League of Graphs",
 }
 
-STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "leagueofgraphs"]
+STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "dpm", "leagueofgraphs"]
 
 HOTKEY_SITE_LABELS: Dict[str, str] = {
     "porofessor": "Porofessor",
     "deeplol": "DeepLOL",
+    "dpm": "DPM.LOL",
     "opgg": "OP.GG",
 }
 
-HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "opgg"]
+HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "dpm", "opgg"]
 
 THEME_LABELS: Dict[str, str] = {
     "darkly": "Dark",
