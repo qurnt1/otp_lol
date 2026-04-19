@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="./readme.md"><img src="https://img.shields.io/badge/version-9.0-2f81f7" alt="Version"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/version-11.0-2f81f7" alt="Version"></a>
   <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
