@@ -17,6 +17,12 @@ URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/s
 URL_DD_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
 URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
+URL_CDRAGON_CHAMPION_DETAIL: str = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champions/{champion_id}.json"
+)
+URL_CDRAGON_ASSET_PREFIX: str = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+)
 URL_PHASE_RUSH_ICON: str = (
     "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
 )
@@ -90,6 +96,8 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "gear": "config/images/app/gear.png",
     "gear_light": "config/images/app/gear_light.png",
     "gear_dark": "config/images/app/gear_dark.png",
+    "question_mark_white_mode": "config/images/app/question-mark-white_mode.png",
+    "question_mark_black_mode": "config/images/app/question-mark-black_mode.png",
 }
 
 WEBSITE_LOGO_FILES: Dict[str, str] = {

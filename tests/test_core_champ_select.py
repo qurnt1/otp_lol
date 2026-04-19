@@ -43,9 +43,9 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
             "pick_slots": {
-                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
-                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
-                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
+                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
             },
             "role_profiles": {
                 "MIDDLE": {
@@ -55,9 +55,9 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     "selected_pick_3": "",
                     "selected_ban": "Teemo",
                     "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 99007, "random_skin_name": "Star Guardian Lux", "random_skin_num": 7},
-                        "pick_2": {"spell_1": "Heal", "spell_2": "Ghost", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
-                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0},
+                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 99007, "random_skin_name": "Star Guardian Lux", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7}, {"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}]},
+                        "pick_2": {"spell_1": "Heal", "spell_2": "Ghost", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
                     },
                 }
             },
@@ -74,6 +74,12 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             ),
             get_params=lambda: self.params.copy(),
         )
+
+    async def test_inventory_skin_is_owned_uses_explicit_fields(self):
+        self.assertTrue(self.manager._inventory_skin_is_owned({"ownershipType": "OWNED"}))
+        self.assertFalse(self.manager._inventory_skin_is_owned({"ownershipType": "UNOWNED"}))
+        self.assertTrue(self.manager._inventory_skin_is_owned({"owned": True}))
+        self.assertFalse(self.manager._inventory_skin_is_owned({"owned": False}))
 
     async def test_logic_do_pick_falls_back_to_second_pick(self):
         async def request(method, url, **kwargs):
@@ -358,6 +364,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(effective["pick_slots"]["pick_1"]["spell_2"], "Flash")
         self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "random")
         self.assertEqual(effective["pick_slots"]["pick_1"]["random_skin_id"], 99007)
+        self.assertEqual(len(effective["pick_slots"]["pick_1"]["random_skin_pool"]), 2)
         self.assertEqual(effective["spell_1"], "Ignite")
         self.assertEqual(effective["spell_2"], "Flash")
 

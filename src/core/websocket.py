@@ -164,14 +164,17 @@ class WebSocketManager(ChampSelectMixin):
         global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
         role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
 
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, str]:
+        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
             global_slot = (
                 global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             )
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
             skin_source_role = (
                 resolved_role
-                if any(role_slot.get(field) for field in ("skin_mode", "skin_id", "skin_name", "skin_num"))
+                if any(
+                    role_slot.get(field)
+                    for field in ("skin_mode", "skin_id", "skin_name", "skin_num", "random_skin_pool")
+                )
                 else "GLOBAL"
             )
             return {
@@ -185,6 +188,7 @@ class WebSocketManager(ChampSelectMixin):
                 "random_skin_id": int(role_slot.get("random_skin_id") or global_slot.get("random_skin_id", 0) or 0),
                 "random_skin_name": role_slot.get("random_skin_name") or global_slot.get("random_skin_name", ""),
                 "random_skin_num": int(role_slot.get("random_skin_num") or global_slot.get("random_skin_num", 0) or 0),
+                "random_skin_pool": role_slot.get("random_skin_pool") or global_slot.get("random_skin_pool", []),
                 "skin_source_role": skin_source_role,
             }
 
@@ -241,7 +245,7 @@ class WebSocketManager(ChampSelectMixin):
             return {
                 "ok": False,
                 "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "skins": [],
+                "owned_skins": [],
             }
         future = asyncio.run_coroutine_threadsafe(self._fetch_owned_skins_for_champion(champion_id), self.loop)
         try:
@@ -251,15 +255,46 @@ class WebSocketManager(ChampSelectMixin):
             return {
                 "ok": False,
                 "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "skins": [],
+                "owned_skins": [],
             }
+
+    @staticmethod
+    def _inventory_skin_is_owned(item: Dict[str, Any]) -> bool:
+        bool_fields = ("owned", "isOwned", "unlocked", "isUnlocked", "purchaseable", "purchased")
+        ownership_fields_found = False
+        for field in bool_fields:
+            if field in item and isinstance(item.get(field), bool):
+                ownership_fields_found = True
+                if field in {"purchaseable"}:
+                    continue
+                if item[field]:
+                    return True
+        string_fields = ("ownershipType", "ownership", "purchaseState", "status")
+        for field in string_fields:
+            raw_value = item.get(field)
+            if raw_value in {None, ""}:
+                continue
+            ownership_fields_found = True
+            normalized = str(raw_value).strip().lower()
+            if normalized in {"owned", "ownership_owned", "rental", "rent", "free_to_play", "freetoplay", "unlocked"}:
+                return True
+            if normalized in {"unowned", "not_owned", "locked", "purchasable", "purchaseable"}:
+                return False
+        nested_ownership = item.get("ownership")
+        if isinstance(nested_ownership, dict):
+            ownership_fields_found = True
+            if isinstance(nested_ownership.get("owned"), bool):
+                return bool(nested_ownership.get("owned"))
+            if isinstance(nested_ownership.get("isOwned"), bool):
+                return bool(nested_ownership.get("isOwned"))
+        return not ownership_fields_found
 
     async def _fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.connection:
             return {
                 "ok": False,
                 "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "skins": [],
+                "owned_skins": [],
             }
         summoner_id = self.get_current_summoner_id()
         if not summoner_id:
@@ -269,7 +304,7 @@ class WebSocketManager(ChampSelectMixin):
             return {
                 "ok": False,
                 "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "skins": [],
+                "owned_skins": [],
             }
 
         endpoint = f"/lol-champions/v1/inventories/{summoner_id}/champions/{champion_id}/skins"
@@ -279,7 +314,7 @@ class WebSocketManager(ChampSelectMixin):
                 return {
                     "ok": False,
                     "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                    "skins": [],
+                    "owned_skins": [],
                 }
             payload = await response.json()
         except Exception as e:
@@ -287,19 +322,21 @@ class WebSocketManager(ChampSelectMixin):
             return {
                 "ok": False,
                 "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "skins": [],
+                "owned_skins": [],
             }
 
         champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
         catalog = self.dd.get_skin_catalog(champion_name)
         by_skin_id = {int(entry.get("skin_id") or 0): entry for entry in catalog}
         by_name = {str(entry.get("skin_name") or "").strip().lower(): entry for entry in catalog}
-        skins: List[Dict[str, Any]] = []
+        owned_skins: List[Dict[str, Any]] = []
         for item in payload if isinstance(payload, list) else []:
             if not isinstance(item, dict):
                 continue
+            if not self._inventory_skin_is_owned(item):
+                continue
             try:
-                skin_id = int(item.get("id") or item.get("skinId") or 0)
+                skin_id = int(item.get("id") or item.get("skinId") or item.get("championSkinId") or 0)
             except (TypeError, ValueError):
                 skin_id = 0
             skin_name = str(item.get("name") or item.get("displayName") or "")
@@ -308,23 +345,30 @@ class WebSocketManager(ChampSelectMixin):
                 skin_data = self.dd.resolve_skin_data(champion_name, skin_id=skin_id, skin_name=skin_name)
             if not skin_data:
                 continue
-            skins.append(
+            owned_skins.append(
                 {
                     "skin_id": int(skin_data.get("skin_id") or skin_id or 0),
                     "skin_num": int(skin_data.get("skin_num") or 0),
                     "skin_name": str(skin_data.get("skin_name") or skin_name or ""),
                     "splash_url": skin_data.get("splash_url", ""),
+                    "tile_url": skin_data.get("tile_url", ""),
+                    "preview_url": (
+                        skin_data.get("tile_url")
+                        or skin_data.get("centered_splash_url")
+                        or skin_data.get("uncentered_splash_url")
+                        or skin_data.get("splash_url", "")
+                    ),
                 }
             )
 
         unique_skins = []
         seen_ids = set()
-        for skin in skins:
+        for skin in owned_skins:
             if skin["skin_id"] in seen_ids:
                 continue
             seen_ids.add(skin["skin_id"])
             unique_skins.append(skin)
-        return {"ok": True, "message": "", "skins": unique_skins}
+        return {"ok": True, "message": "", "owned_skins": unique_skins}
 
     def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
         if not self.update_param:

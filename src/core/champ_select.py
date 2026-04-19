@@ -446,6 +446,7 @@ class ChampSelectMixin:
                 "skin_id": int(slot_data.get("random_skin_id") or fallback_slot.get("random_skin_id") or 0),
                 "skin_name": slot_data.get("random_skin_name") or fallback_slot.get("random_skin_name") or "",
                 "skin_num": int(slot_data.get("random_skin_num") or fallback_slot.get("random_skin_num") or 0),
+                "random_skin_pool": slot_data.get("random_skin_pool") or fallback_slot.get("random_skin_pool") or [],
                 "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
             },
             chosen_slot,
@@ -459,6 +460,38 @@ class ChampSelectMixin:
     ) -> Optional[Dict[str, Any]]:
         pool = [skin for skin in skins if int(skin.get("skin_id") or 0) != int(exclude_skin_id or 0)] or skins
         return random.choice(pool) if pool else None
+
+    def _build_random_skin_pool_candidates(
+        self: "WebSocketManager",
+        pool: List[Dict[str, Any]],
+        pickable_skins: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        if not pool:
+            return []
+        pickable_by_id = {int(entry.get("skin_id") or 0): entry for entry in pickable_skins}
+        candidates: List[Dict[str, Any]] = []
+        seen_ids: Set[int] = set()
+        for entry in pool:
+            if not isinstance(entry, dict):
+                continue
+            skin_id = int(entry.get("skin_id") or 0)
+            if skin_id <= 0 or skin_id in seen_ids:
+                continue
+            seen_ids.add(skin_id)
+            if pickable_by_id:
+                resolved = pickable_by_id.get(skin_id)
+                if not resolved:
+                    continue
+                candidates.append(dict(resolved))
+                continue
+            candidates.append(
+                {
+                    "skin_id": skin_id,
+                    "skin_name": str(entry.get("skin_name") or ""),
+                    "skin_num": int(entry.get("skin_num") or 0),
+                }
+            )
+        return candidates
 
     def _extract_local_player_selection(
         self: "WebSocketManager",
@@ -786,7 +819,13 @@ class ChampSelectMixin:
                 continue
 
             try:
-                skin_id = int(item.get("id") or item.get("skinId") or item.get("selectedSkinId") or 0)
+                skin_id = int(
+                    item.get("id")
+                    or item.get("skinId")
+                    or item.get("championSkinId")
+                    or item.get("selectedSkinId")
+                    or 0
+                )
             except (TypeError, ValueError):
                 skin_id = 0
             skin_name = str(item.get("name") or item.get("displayName") or "")
@@ -1088,8 +1127,12 @@ class ChampSelectMixin:
             pickable_skins: List[Dict[str, Any]] = []
             if selected_skin.get("mode") == "random":
                 pickable_skins = await self._fetch_pickable_skins(champion_id)
+                pool_candidates = self._build_random_skin_pool_candidates(
+                    list(selected_skin.get("random_skin_pool") or []),
+                    pickable_skins,
+                )
                 if int(selected_skin.get("skin_id") or 0) <= 0:
-                    selected_skin = self._choose_random_skin_entry(pickable_skins) or selected_skin
+                    selected_skin = self._choose_random_skin_entry(pool_candidates) or selected_skin
                 if int(selected_skin.get("skin_id") or 0) <= 0:
                     return
 
@@ -1146,7 +1189,11 @@ class ChampSelectMixin:
                     if selected_skin.get("mode") == "random":
                         if not pickable_skins:
                             pickable_skins = await self._fetch_pickable_skins(champion_id)
-                        next_skin = self._choose_random_skin_entry(pickable_skins, exclude_skin_id=skin_id)
+                        next_pool = self._build_random_skin_pool_candidates(
+                            list(selected_skin.get("random_skin_pool") or []),
+                            pickable_skins,
+                        )
+                        next_skin = self._choose_random_skin_entry(next_pool, exclude_skin_id=skin_id)
                         if next_skin:
                             self._persist_random_skin_preview(
                                 chosen_slot,

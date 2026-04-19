@@ -23,6 +23,7 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
             "random_skin_id": 0,
             "random_skin_name": "",
             "random_skin_num": 0,
+            "random_skin_pool": [],
         }
         for slot in PICK_SLOT_ORDER
     }
@@ -155,6 +156,28 @@ def _normalize_skin_id(value: Any) -> int:
     return skin_id if skin_id >= 0 else 0
 
 
+def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    normalized_pool: list[Dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        skin_id = _normalize_skin_id(item.get("skin_id", item.get("id", item.get("skinId", 0))))
+        if skin_id <= 0 or skin_id in seen_ids:
+            continue
+        seen_ids.add(skin_id)
+        normalized_pool.append(
+            {
+                "skin_id": skin_id,
+                "skin_name": str(item.get("skin_name", item.get("name", "")) or ""),
+                "skin_num": _normalize_skin_id(item.get("skin_num", item.get("num", 0))),
+            }
+        )
+    return normalized_pool
+
+
 def _build_normalized_pick_slots(
     raw_slots: Any,
     *,
@@ -187,6 +210,9 @@ def _build_normalized_pick_slots(
                 "random_skin_name": str(slot_data.get("random_skin_name", slots[slot]["random_skin_name"]) or ""),
                 "random_skin_num": _normalize_skin_id(
                     slot_data.get("random_skin_num", slots[slot]["random_skin_num"])
+                ),
+                "random_skin_pool": _normalize_skin_pool(
+                    slot_data.get("random_skin_pool", slots[slot]["random_skin_pool"])
                 ),
             }
         )

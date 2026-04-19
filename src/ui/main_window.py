@@ -226,7 +226,10 @@ class LoLAssistantUI:
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
             skin_source_role = (
                 resolved_role
-                if any(role_slot.get(field) for field in ("skin_mode", "skin_id", "skin_name", "skin_num"))
+                if any(
+                    role_slot.get(field)
+                    for field in ("skin_mode", "skin_id", "skin_name", "skin_num", "random_skin_pool")
+                )
                 else "GLOBAL"
             )
             return {
@@ -240,6 +243,7 @@ class LoLAssistantUI:
                 "random_skin_id": int(role_slot.get("random_skin_id") or global_slot.get("random_skin_id", 0) or 0),
                 "random_skin_name": role_slot.get("random_skin_name") or global_slot.get("random_skin_name", ""),
                 "random_skin_num": int(role_slot.get("random_skin_num") or global_slot.get("random_skin_num", 0) or 0),
+                "random_skin_pool": role_slot.get("random_skin_pool") or global_slot.get("random_skin_pool", []),
                 "skin_source_role": skin_source_role,
             }
 

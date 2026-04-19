@@ -63,6 +63,7 @@ class SettingsWindow:
         self.scroll_frame: Optional[ScrolledFrame] = None
         self.role_icon_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.website_logo_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
+        self.local_button_image_cache: Dict[tuple[str, tuple[int, int], bool], ImageTk.PhotoImage] = {}
         self.role_picker_window: Optional[ttk.Toplevel] = None
         self.site_picker_window: Optional[ttk.Toplevel] = None
         self._capture_target: Optional[str] = None
@@ -576,10 +577,16 @@ class SettingsWindow:
 
         def _pick(field: str, default: Any = "") -> Any:
             value = slot_data.get(field) if isinstance(slot_data, dict) else ""
-            if value not in {"", 0, None}:
+            if isinstance(value, list):
+                if value:
+                    return value
+            elif value not in {"", 0, None}:
                 return value
             fallback = global_slot.get(field) if isinstance(global_slot, dict) else ""
-            if fallback not in {"", 0, None}:
+            if isinstance(fallback, list):
+                if fallback:
+                    return fallback
+            elif fallback not in {"", 0, None}:
                 return fallback
             return default
 
@@ -593,6 +600,7 @@ class SettingsWindow:
             "random_skin_id": int(_pick("random_skin_id", 0) or 0),
             "random_skin_name": str(_pick("random_skin_name", "") or ""),
             "random_skin_num": int(_pick("random_skin_num", 0) or 0),
+            "random_skin_pool": [dict(entry) for entry in (_pick("random_skin_pool", []) or []) if isinstance(entry, dict)],
         }
 
     def _set_pick_slot_value(self, slot_key: str, field: str, value: str) -> None:
@@ -629,6 +637,29 @@ class SettingsWindow:
     def _clear_pick_slot_skin(self, slot_key: str) -> None:
         self._set_pick_slot_skin_selection(slot_key, mode="none")
 
+    def _get_random_skin_pool(self, slot_key: str) -> list[Dict[str, Any]]:
+        pool = self._get_effective_pick_slot_config(slot_key).get("random_skin_pool", [])
+        return [dict(entry) for entry in pool if isinstance(entry, dict)]
+
+    def _set_random_skin_pool(self, slot_key: str, skins: list[Dict[str, Any]]) -> None:
+        normalized_pool: list[Dict[str, Any]] = []
+        seen_ids: set[int] = set()
+        for skin in skins:
+            if not isinstance(skin, dict):
+                continue
+            skin_id = int(skin.get("skin_id") or 0)
+            if skin_id <= 0 or skin_id in seen_ids:
+                continue
+            seen_ids.add(skin_id)
+            normalized_pool.append(
+                {
+                    "skin_id": skin_id,
+                    "skin_name": str(skin.get("skin_name") or ""),
+                    "skin_num": int(skin.get("skin_num") or 0),
+                }
+            )
+        self._set_pick_slot_value(slot_key, "random_skin_pool", normalized_pool)
+
     def _set_pick_slot_skin_selection(
         self,
         slot_key: str,
@@ -659,6 +690,9 @@ class SettingsWindow:
             self._set_pick_slot_value(slot_key, "random_skin_id", int(random_skin.get("skin_id") or 0))
             self._set_pick_slot_value(slot_key, "random_skin_name", str(random_skin.get("skin_name") or ""))
             self._set_pick_slot_value(slot_key, "random_skin_num", int(random_skin.get("skin_num") or 0))
+            current_pool = self._get_random_skin_pool(slot_key)
+            if not any(int(entry.get("skin_id") or 0) == int(random_skin.get("skin_id") or 0) for entry in current_pool):
+                self._set_random_skin_pool(slot_key, [*current_pool, random_skin])
             return
 
         self._set_pick_slot_value(slot_key, "skin_mode", "none")
@@ -668,6 +702,7 @@ class SettingsWindow:
         self._set_pick_slot_value(slot_key, "random_skin_id", 0)
         self._set_pick_slot_value(slot_key, "random_skin_name", "")
         self._set_pick_slot_value(slot_key, "random_skin_num", 0)
+        self._set_random_skin_pool(slot_key, [])
 
     @staticmethod
     def _choose_random_skin_entry(
@@ -691,11 +726,15 @@ class SettingsWindow:
         skin_mode = str(skin_config.get("skin_mode") or "none")
         if skin_mode == "fixed" and skin_config.get("skin_name"):
             return str(skin_config["skin_name"])
-        if skin_mode == "random" and skin_config.get("random_skin_name"):
-            return f"Random: {skin_config['random_skin_name']}"
         if skin_mode == "random":
-            return "Random skin"
+            return "Random"
         return "Skin"
+
+    def _get_random_skin_placeholder_asset(self) -> str:
+        theme = str(self.theme_var.get() or "darkly").strip().lower()
+        if theme == "flatly":
+            return APP_IMAGE_FILES["question_mark_black_mode"]
+        return APP_IMAGE_FILES["question_mark_white_mode"]
 
     def _select_champion(self, context: str, champ_name: str, slot_num: int = 1) -> None:
         if context == "ban":
@@ -774,6 +813,8 @@ class SettingsWindow:
         self.theme_var.set(next_theme)
         self.parent.update_param("theme", next_theme)
         self._refresh_theme_button()
+        if hasattr(self, "pick_skin_buttons"):
+            self._refresh_skin_buttons()
 
     @staticmethod
     def _format_hotkey_display(value: str) -> str:
@@ -1067,6 +1108,33 @@ class SettingsWindow:
 
         self.parent.executor.submit(task)
 
+    def _load_local_img_into_btn(
+        self,
+        btn_widget: ttk.Button,
+        relative_path: str,
+        *,
+        size: tuple[int, int] = (40, 40),
+        cover: bool = False,
+    ) -> None:
+        cache_key = (relative_path, size, cover)
+        cached = self.local_button_image_cache.get(cache_key)
+        if cached:
+            if btn_widget.winfo_exists():
+                btn_widget.configure(image=cached)
+                btn_widget.image = cached
+            return
+
+        try:
+            img = Image.open(resource_path(relative_path))
+            img = self._resize_cover_image(img, size) if cover else img.resize(size, Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            self.local_button_image_cache[cache_key] = photo
+            if btn_widget.winfo_exists():
+                btn_widget.configure(image=photo)
+                btn_widget.image = photo
+        except Exception as e:
+            logging.debug(f"Local image loading error for {relative_path}: {e}")
+
     def _refresh_rune_buttons(self) -> None:
         for slot_key, button in self.pick_rune_buttons.items():
             if not button.winfo_exists():
@@ -1096,6 +1164,14 @@ class SettingsWindow:
             if champion_name in {"", "(None)"} or skin_mode == "none":
                 continue
 
+            if skin_mode == "random":
+                self._load_local_img_into_btn(
+                    button,
+                    self._get_random_skin_placeholder_asset(),
+                    size=self.PICK_ICON_SIZE,
+                )
+                continue
+
             skin_kwargs: Dict[str, Any] = {}
             if skin_mode == "fixed":
                 skin_kwargs = {
@@ -1103,20 +1179,13 @@ class SettingsWindow:
                     "skin_num": skin_config.get("skin_num"),
                     "skin_name": skin_config.get("skin_name"),
                 }
-            elif skin_mode == "random":
-                skin_kwargs = {
-                    "skin_id": skin_config.get("random_skin_id"),
-                    "skin_num": skin_config.get("random_skin_num"),
-                    "skin_name": skin_config.get("random_skin_name"),
-                }
-
-            splash_url = self.parent.dd.get_skin_splash_url(champion_name, **skin_kwargs)
-            if not splash_url:
+            preview_url = self.parent.dd.get_skin_preview_url(champion_name, **skin_kwargs)
+            if not preview_url:
                 continue
             cache_suffix = skin_kwargs.get("skin_num") or skin_kwargs.get("skin_id") or skin_kwargs.get("skin_name") or "0"
             self._load_remote_img_into_btn(
                 button,
-                splash_url,
+                preview_url,
                 cache_key=f"skin_btn_{champion_name}_{cache_suffix}",
                 size=(52, 30),
                 cover=True,

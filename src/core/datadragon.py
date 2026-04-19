@@ -17,6 +17,8 @@ from ..config import (
     ICONS_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
+    URL_CDRAGON_ASSET_PREFIX,
+    URL_CDRAGON_CHAMPION_DETAIL,
     URL_DD_CHAMPIONS,
     URL_DD_CHAMPION_DETAIL,
     URL_DD_IMG_CHAMP,
@@ -43,6 +45,7 @@ class DataDragon:
         self.summoner_loaded: bool = False
         self._image_cache: Dict[str, Image.Image] = {}
         self._champion_detail_cache: Dict[int, Dict[str, Any]] = {}
+        self._cdragon_champion_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._cache_lock = Lock()
 
     @staticmethod
@@ -346,6 +349,47 @@ class DataDragon:
             logging.warning(f"DataDragon: Champion detail parsing error - {e}")
         return None
 
+    @staticmethod
+    def cdragon_url_from_asset_path(asset_path: str) -> Optional[str]:
+        raw_path = str(asset_path or "").strip()
+        if not raw_path:
+            return None
+        normalized = raw_path.replace("\\", "/")
+        prefix = "/lol-game-data/assets/"
+        lowered = normalized.lower()
+        if lowered.startswith(prefix):
+            relative = lowered[len(prefix):]
+        else:
+            relative = lowered.lstrip("/")
+        if not relative.startswith("assets/"):
+            return None
+        return f"{URL_CDRAGON_ASSET_PREFIX}{relative}"
+
+    def get_cdragon_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
+            return None
+
+        with self._cache_lock:
+            cached = self._cdragon_champion_detail_cache.get(champion_id)
+            if cached:
+                return dict(cached)
+
+        try:
+            url = URL_CDRAGON_CHAMPION_DETAIL.format(champion_id=champion_id)
+            response = requests.get(url, timeout=8)
+            response.raise_for_status()
+            detail = response.json()
+            if isinstance(detail, dict):
+                with self._cache_lock:
+                    self._cdragon_champion_detail_cache[champion_id] = detail
+                return dict(detail)
+        except requests.RequestException as e:
+            logging.warning(f"DataDragon: CDragon champion detail download error - {e}")
+        except Exception as e:
+            logging.warning(f"DataDragon: CDragon champion detail parsing error - {e}")
+        return None
+
     def get_skin_catalog(self, name_or_id: Any) -> List[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
@@ -354,12 +398,37 @@ class DataDragon:
         detail = self.get_champion_detail(champion_id)
         if not detail:
             return []
+        cdragon_detail = self.get_cdragon_champion_detail(champion_id) or {}
 
         champion_slug = detail.get("id") or self.by_id.get(champion_id, {}).get("id")
         champion_name = detail.get("name") or self.id_to_name(champion_id) or str(name_or_id)
         skins = detail.get("skins", [])
+        cdragon_skins = cdragon_detail.get("skins", []) if isinstance(cdragon_detail, dict) else []
+        cdragon_by_skin_id: Dict[int, Dict[str, Any]] = {}
+        cdragon_by_num: Dict[int, Dict[str, Any]] = {}
+        cdragon_by_name: Dict[str, Dict[str, Any]] = {}
+        for item in cdragon_skins if isinstance(cdragon_skins, list) else []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                cdragon_skin_id = int(item.get("id") or item.get("skinId") or 0)
+            except (TypeError, ValueError):
+                cdragon_skin_id = 0
+            try:
+                cdragon_skin_num = int(item.get("num") or 0)
+            except (TypeError, ValueError):
+                cdragon_skin_num = 0
+            if cdragon_skin_id:
+                cdragon_by_skin_id[cdragon_skin_id] = item
+            if cdragon_skin_num >= 0:
+                cdragon_by_num[cdragon_skin_num] = item
+            normalized_name = self._normalize(str(item.get("name") or ""))
+            if normalized_name:
+                cdragon_by_name[normalized_name] = item
         catalog: List[Dict[str, Any]] = []
         for skin in skins:
+            if skin.get("parentSkin") not in {None, "", 0}:
+                continue
             try:
                 skin_id = int(skin.get("id") or 0)
             except (TypeError, ValueError):
@@ -369,6 +438,12 @@ class DataDragon:
             except (TypeError, ValueError):
                 skin_num = 0
             name = str(skin.get("name") or "")
+            cdragon_skin = (
+                cdragon_by_skin_id.get(skin_id)
+                or cdragon_by_num.get(skin_num)
+                or cdragon_by_name.get(self._normalize(name))
+                or {}
+            )
             entry = {
                 "champion_id": champion_id,
                 "champion_name": champion_name,
@@ -377,6 +452,11 @@ class DataDragon:
                 "skin_num": skin_num,
                 "skin_name": name,
                 "splash_url": URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=skin_num),
+                "tile_url": self.cdragon_url_from_asset_path(cdragon_skin.get("tilePath", "")),
+                "centered_splash_url": self.cdragon_url_from_asset_path(cdragon_skin.get("splashPath", "")),
+                "uncentered_splash_url": self.cdragon_url_from_asset_path(
+                    cdragon_skin.get("uncenteredSplashPath", "")
+                ),
             }
             catalog.append(entry)
         return catalog
@@ -435,6 +515,67 @@ class DataDragon:
             skin_num=skin_num,
         )
         return skin_data.get("splash_url") if skin_data else None
+
+    def get_skin_tile_url(
+        self,
+        champion_name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[str]:
+        skin_data = self.resolve_skin_data(
+            champion_name_or_id,
+            skin_name=skin_name,
+            skin_id=skin_id,
+            skin_num=skin_num,
+        )
+        return skin_data.get("tile_url") if skin_data else None
+
+    def get_skin_preview_url(
+        self,
+        champion_name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[str]:
+        skin_data = self.resolve_skin_data(
+            champion_name_or_id,
+            skin_name=skin_name,
+            skin_id=skin_id,
+            skin_num=skin_num,
+        )
+        if not skin_data:
+            return None
+        return (
+            skin_data.get("tile_url")
+            or skin_data.get("centered_splash_url")
+            or skin_data.get("uncentered_splash_url")
+            or skin_data.get("splash_url")
+        )
+
+    def get_skin_picker_url(
+        self,
+        champion_name_or_id: Any,
+        *,
+        skin_name: Optional[str] = None,
+        skin_id: Optional[Any] = None,
+        skin_num: Optional[Any] = None,
+    ) -> Optional[str]:
+        skin_data = self.resolve_skin_data(
+            champion_name_or_id,
+            skin_name=skin_name,
+            skin_id=skin_id,
+            skin_num=skin_num,
+        )
+        if not skin_data:
+            return None
+        return (
+            skin_data.get("centered_splash_url")
+            or skin_data.get("splash_url")
+            or skin_data.get("tile_url")
+        )
 
     def get_skin_splash_art(
         self,
