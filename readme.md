@@ -63,12 +63,16 @@ Version `10.0` focuses on skin automation, skin UI improvements, and better cham
 
 - `Skin inventory detection and validation`
   The app now resolves owned skins more reliably, logs inventory and pickable-skin fallbacks more clearly, and validates fixed skins against the skins that are actually pickable in champion select.
+
 - `Reworked skin picker`
   The settings window now exposes a cleaner skin picker with direct `fixed` or `random list` selection, centered skin art in the picker, tile previews in settings, and confirmation when a skin is not detected on the current account.
+
 - `Global skin fallback that really works`
   Global skin configuration now correctly falls back when the detected role profile does not override skins, so a skin configured in `Global` can still apply in `Top`, `Jungle`, `Mid`, `ADC`, or `Support`.
+
 - `Main window skin mode control`
   The main interface now includes a dedicated `Skin` control that cycles between `OFF`, `FIXED`, and `RANDOM`, and shows slot-by-slot skin previews directly from the home screen.
+
 - `Cleaner startup behavior`
   Audio initialization was adjusted so `pygame` no longer pollutes startup output with its support prompt and deprecated `pkg_resources` warning.
 
