@@ -22,11 +22,17 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text("{ invalid json", encoding="utf-8")
+            skins_cache_dir = Path(tmpdir) / "mainlol_skins"
+            skins_cache_dir.mkdir()
+            (skins_cache_dir / "old_skin.img").write_text("cached", encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config, "SKINS_CACHE_DIR", str(skins_cache_dir)
+            ):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+        self.assertFalse((skins_cache_dir / "old_skin.img").exists())
 
     def test_load_parameters_resets_when_config_version_is_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:

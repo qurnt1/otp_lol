@@ -1,6 +1,8 @@
 import unittest
+import base64
 from unittest.mock import Mock, patch
 
+from src.services.updates import extract_highlights_section, extract_version_from_readme, format_highlights_for_popup
 from src.utils import (
     build_dpm_url,
     build_deeplol_url,
@@ -125,17 +127,54 @@ class UtilsTests(unittest.TestCase):
         self.assertFalse(is_valid_riot_id("MonCompte-EUW"))
         self.assertFalse(is_valid_riot_id("MonCompte"))
 
-    def test_check_for_updates_uses_semantic_comparison(self):
+    def test_extract_version_from_readme_supports_version_highlights_header(self):
+        readme_text = (
+            "## Version 11.0 Highlights\n\n"
+            "Version `11.0` focuses on updates.\n"
+        )
+
+        self.assertEqual(extract_version_from_readme(readme_text), "11.0")
+
+    def test_extract_highlights_section_returns_matching_block(self):
+        readme_text = (
+            "## Version 11.0 Highlights\n\n"
+            "Version `11.0` focuses on updates.\n\n"
+            "- `Feature A`\n"
+            "  Description A.\n\n"
+            "## Version 10.0 Highlights\n\n"
+            "Old notes.\n"
+        )
+
+        self.assertIn("Feature A", extract_highlights_section(readme_text, "11.0"))
+        self.assertNotIn("Old notes", extract_highlights_section(readme_text, "11.0"))
+
+    def test_format_highlights_for_popup_converts_markdown_lightly(self):
+        formatted = format_highlights_for_popup("- `Feature A`\n  Description A.")
+
+        self.assertIn("• Feature A", formatted)
+        self.assertIn("Description A.", formatted)
+
+    def test_check_for_updates_returns_version_and_highlights(self):
         response = Mock()
         response.status_code = 200
-        response.json.return_value = {"tag_name": "v9.0.0"}
+        readme_text = (
+            "## Version 11.0 Highlights\n\n"
+            "Version `11.0` focuses on updates.\n\n"
+            "- `Feature A`\n"
+            "  Description A.\n"
+        )
+        response.json.return_value = {
+            "content": base64.b64encode(readme_text.encode("utf-8")).decode("ascii"),
+            "encoding": "base64",
+        }
 
         with patch("src.utils.requests.get", return_value=response):
-            self.assertIsNone(check_for_updates())
+            update_info = check_for_updates()
 
-        response.json.return_value = {"tag_name": "v10.1.0"}
-        with patch("src.utils.requests.get", return_value=response):
-            self.assertEqual(check_for_updates(), normalize_version("v10.1.0"))
+        self.assertIsNotNone(update_info)
+        self.assertEqual(update_info["version"], normalize_version("11.0"))
+        self.assertIn("`Feature A`", update_info["highlights"])
+        self.assertIn("Description A.", update_info["highlights"])
 
 
 if __name__ == "__main__":

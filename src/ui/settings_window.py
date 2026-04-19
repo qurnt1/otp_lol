@@ -63,7 +63,7 @@ class SettingsWindow:
         self.scroll_frame: Optional[ScrolledFrame] = None
         self.role_icon_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.website_logo_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
-        self.local_button_image_cache: Dict[tuple[str, tuple[int, int], bool], ImageTk.PhotoImage] = {}
+        self.local_button_image_cache: Dict[Any, ImageTk.PhotoImage] = {}
         self.role_picker_window: Optional[ttk.Toplevel] = None
         self.site_picker_window: Optional[ttk.Toplevel] = None
         self._capture_target: Optional[str] = None
@@ -266,7 +266,7 @@ class SettingsWindow:
 
             rune_btn = ttk.Button(
                 row_frame,
-                text="Rune",
+                text="Runes",
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
@@ -286,8 +286,15 @@ class SettingsWindow:
             skin_btn.grid(row=0, column=4, sticky="ew", padx=(6, 0))
             self.pick_skin_buttons[slot_key] = skin_btn
 
-        ttk.Separator(self.main_frame).grid(row=start_row + 6, column=0, columnspan=4, sticky="we", pady=(10, 8))
-        return start_row + 7
+        ttk.Label(
+            self.main_frame,
+            text="Runes are not automated yet. The app does not change your in-game runes for now.",
+            bootstyle="secondary",
+            justify="left",
+        ).grid(row=start_row + 6, column=1, columnspan=3, sticky="w", padx=5, pady=(0, 2))
+
+        ttk.Separator(self.main_frame).grid(row=start_row + 7, column=0, columnspan=4, sticky="we", pady=(10, 8))
+        return start_row + 8
 
     def _create_ban_section(self, start_row: int) -> int:
         ttk.Checkbutton(
@@ -725,6 +732,13 @@ class SettingsWindow:
             return value
         return self._get_global_fallback_value(f"selected_pick_{slot_number}")
 
+    @staticmethod
+    def _truncate_button_label(label: str, max_chars: int = 16) -> str:
+        text = str(label or "").strip()
+        if len(text) <= max_chars:
+            return text
+        return f"{text[: max_chars - 3].rstrip()}..."
+
     def _get_skin_button_label(self, slot_key: str) -> str:
         skin_config = self._get_effective_pick_slot_config(slot_key)
         skin_mode = str(skin_config.get("skin_mode") or "none")
@@ -733,6 +747,9 @@ class SettingsWindow:
         if skin_mode == "random":
             return "Random"
         return "Skin"
+
+    def _get_skin_button_display_text(self, slot_key: str) -> str:
+        return self._truncate_button_label(self._get_skin_button_label(slot_key))
 
     def _get_random_skin_placeholder_asset(self) -> str:
         theme = str(self.theme_var.get() or "darkly").strip().lower()
@@ -1074,10 +1091,23 @@ class SettingsWindow:
         ).pack(fill="x", pady=(8, 6))
         ttk.Label(
             container,
-            text="Rune automation will arrive in the next update.",
+            text="Rune automation is not available yet.",
             anchor="center",
             justify="center",
         ).pack(fill="x")
+        ttk.Label(
+            container,
+            text="For now, the app does not automatically change your in-game runes.",
+            anchor="center",
+            justify="center",
+            wraplength=300,
+        ).pack(fill="x", pady=(6, 0))
+        ttk.Label(
+            container,
+            text="This feature is planned for a future update.",
+            anchor="center",
+            justify="center",
+        ).pack(fill="x", pady=(6, 0))
         ttk.Button(container, text="Close", bootstyle="secondary-outline", command=_close_popup, width=12).pack(
             pady=(14, 0)
         )
@@ -1196,11 +1226,28 @@ class SettingsWindow:
         except Exception as e:
             logging.debug(f"Local image loading error for {relative_path}: {e}")
 
+    def _load_empty_img_into_btn(
+        self,
+        btn_widget: ttk.Button,
+        *,
+        size: Optional[tuple[int, int]] = None,
+    ) -> None:
+        final_size = size or self.PICK_ICON_SIZE
+        cache_key = ("__empty__", final_size)
+        cached = self.local_button_image_cache.get(cache_key)
+        if not cached:
+            photo = ImageTk.PhotoImage(Image.new("RGBA", final_size, (0, 0, 0, 0)))
+            self.local_button_image_cache[cache_key] = photo
+            cached = photo
+        if btn_widget.winfo_exists():
+            btn_widget.configure(image=cached)
+            btn_widget.image = cached
+
     def _refresh_rune_buttons(self) -> None:
         for slot_key, button in self.pick_rune_buttons.items():
             if not button.winfo_exists():
                 continue
-            button.configure(text="  Phase Rush", image="", compound="left")
+            button.configure(text="  Runes", image="", compound="left")
             self._load_remote_img_into_btn(
                 button,
                 URL_PHASE_RUSH_ICON,
@@ -1216,11 +1263,11 @@ class SettingsWindow:
             skin_config = self._get_effective_pick_slot_config(slot_key)
             skin_mode = str(skin_config.get("skin_mode") or "none")
             button.configure(
-                text=f"  {self._get_skin_button_label(slot_key)}",
-                image="",
+                text=f"  {self._get_skin_button_display_text(slot_key)}",
                 compound="left",
                 bootstyle="secondary-outline",
             )
+            self._load_empty_img_into_btn(button, size=self.PICK_ICON_SIZE)
 
             if champion_name in {"", "(None)"} or skin_mode == "none":
                 continue

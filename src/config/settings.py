@@ -4,6 +4,7 @@ import copy
 import json
 import logging
 import os
+import shutil
 from typing import Any, Dict
 
 from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
@@ -77,6 +78,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_play_again_enabled": False,
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
+    "ignored_update_version": "",
     "main_skin_mode_override": "inherit",
     "main_skin_mode_overrides": build_main_skin_mode_overrides(),
 }
@@ -107,8 +109,24 @@ def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
     return sanitized
 
 
+def _clear_skin_cache() -> None:
+    if not os.path.isdir(SKINS_CACHE_DIR):
+        return
+    logging.info("Clearing skin cache: %s", SKINS_CACHE_DIR)
+    for entry in os.listdir(SKINS_CACHE_DIR):
+        target = os.path.join(SKINS_CACHE_DIR, entry)
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(target, ignore_errors=False)
+            else:
+                os.remove(target)
+        except OSError as e:
+            logging.debug("Unable to remove skin cache entry %s: %s", target, e)
+
+
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
+    _clear_skin_cache()
     return _write_parameters_file(_build_first_launch_payload())
 
 
@@ -357,6 +375,9 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     hotkey_open_site = str(config.get("hotkey_open_site", DEFAULT_PARAMS["hotkey_open_site"])).strip().lower()
     merged["hotkey_toggle_window"] = hotkey_toggle_window or DEFAULT_PARAMS["hotkey_toggle_window"]
     merged["hotkey_open_site"] = hotkey_open_site or DEFAULT_PARAMS["hotkey_open_site"]
+    merged["ignored_update_version"] = str(
+        config.get("ignored_update_version", DEFAULT_PARAMS["ignored_update_version"])
+    ).strip()
 
     theme = str(config.get("theme", DEFAULT_PARAMS["theme"])).strip().lower()
     if theme not in {"darkly", "flatly"}:

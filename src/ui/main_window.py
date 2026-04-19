@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import scrolledtext
@@ -15,6 +16,7 @@ from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
+    GITHUB_DOWNLOAD_ZIP_URL,
     GITHUB_REPO_URL,
     PICK_SLOT_ORDER,
     ROLE_PROFILE_LABELS,
@@ -343,6 +345,7 @@ class LoLAssistantUI:
         style.configure("Feature.TFrame", background=palette["surface_bg"])
         style.configure("FeatureSlot.TLabel", font=("Segoe UI", 9), background=palette["surface_bg"], foreground=palette["muted"])
         style.configure("AppSecondary.TButton", padding=(10, 8))
+        style.configure("UpdatePopup.TButton", padding=(14, 8))
 
     def _create_banner(self) -> None:
         try:
@@ -1412,11 +1415,17 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Toast display error: {e}")
 
-    def show_update_popup(self, new_version: str) -> None:
+    def show_update_popup(self, update_info: Dict[str, str]) -> None:
+        new_version = str(update_info.get("version") or "").strip()
+        highlights = str(update_info.get("highlights") or "").strip()
+        palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
+
         popup = ttk.Toplevel(self.root)
         popup.title(f"{APP_NAME} Update")
-        popup.geometry("400x250")
+        popup.geometry("650x520")
         popup.resizable(False, False)
+        popup.transient(self.root)
+
         popup.update_idletasks()
         width = popup.winfo_width()
         height = popup.winfo_height()
@@ -1434,29 +1443,242 @@ class LoLAssistantUI:
         except Exception as e:
             logging.debug(f"Update popup icon error: {e}")
 
-        title_lbl = ttk.Label(popup, text="New version detected!", font=("Segoe UI Emoji", 14, "bold"), bootstyle="inverse-primary")
-        title_lbl.pack(fill="x", pady=(0, 15), ipady=10)
+        outer = tk.Frame(popup, bg=palette["window_bg"], padx=20, pady=20)
+        outer.pack(fill="both", expand=True)
 
-        info_frame = ttk.Frame(popup, padding=10)
-        info_frame.pack(fill="both", expand=True)
-        info_text = (
-            "An update is available on GitHub.\n\n"
-            f"Current version: {CURRENT_VERSION}\n"
-            f"New version: {new_version}"
+        header = tk.Frame(outer, bg=palette["window_bg"])
+        header.pack(fill="x", pady=(0, 20))
+
+        try:
+            banner_img = ImageTk.PhotoImage(Image.open(resource_path(APP_IMAGE_FILES["icon_webp"])).resize((42, 42)))
+            icon_label = tk.Label(header, image=banner_img, bg=palette["window_bg"])
+            icon_label.image = banner_img
+            icon_label.pack(side="left", padx=(0, 12))
+        except Exception as e:
+            logging.debug(f"Update popup banner icon error: {e}")
+
+        title_block = tk.Frame(header, bg=palette["window_bg"])
+        title_block.pack(side="left", fill="x", expand=True)
+        tk.Label(
+            title_block,
+            text="Update available",
+            font=("Segoe UI", 18, "bold"),
+            bg=palette["window_bg"],
+            fg=palette["text"],
+        ).pack(anchor="w")
+        tk.Label(
+            title_block,
+            text="A newer version of OTP LOL was detected on GitHub.",
+            font=("Segoe UI", 11),
+            bg=palette["window_bg"],
+            fg=palette["muted"],
+        ).pack(anchor="w", pady=(2, 0))
+
+        summary_card = tk.Frame(
+            outer,
+            bg=palette["surface_bg"],
+            bd=0,
+            highlightthickness=0,
+            padx=16,
+            pady=12,
         )
-        ttk.Label(info_frame, text=info_text, justify="center", font=("Segoe UI", 11)).pack(pady=5)
+        summary_card.pack(fill="x", pady=(0, 15))
 
-        btn_frame = ttk.Frame(popup, padding=(0, 0, 0, 20))
+        badges = tk.Frame(summary_card, bg=palette["surface_bg"])
+        badges.pack(anchor="w")
+
+        # Utiliser des boutons désactivés ttk pour avoir l'effet d'arrondi "Ikea pill"
+        ttk.Button(
+            badges,
+            text=f"Current version: {CURRENT_VERSION}",
+            bootstyle="secondary-outline",
+            state="disabled",
+        ).pack(side="left")
+        ttk.Button(
+            badges,
+            text=f"Latest version: {new_version}",
+            bootstyle="success-outline",
+            state="disabled",
+        ).pack(side="left", padx=(10, 0))
+
+        content_frame = tk.Frame(outer, bg=palette["window_bg"])
+        content_frame.pack(fill="both", expand=True)
+
+        ttk.Label(
+            content_frame, 
+            text="What's new", 
+            font=("Segoe UI", 12, "bold"), 
+            background=palette["window_bg"], 
+            foreground=palette["text"]
+        ).pack(anchor="w", pady=(0, 6))
+
+        sep = tk.Frame(content_frame, bg=palette["muted"], height=1)
+        sep.pack(fill="x", pady=(0, 10))
+
+        highlights_box = scrolledtext.ScrolledText(
+            content_frame,
+            wrap="word",
+            font=("Segoe UI", 10),
+            relief="flat",
+            borderwidth=0,
+            highlightthickness=0,
+            height=10,
+        )
+        highlights_box.pack(fill="both", expand=True, pady=(0, 15))
+        highlights_box.configure(
+            background=palette["window_bg"],
+            foreground=palette["text"],
+            insertbackground=palette["text"],
+            highlightbackground=palette["window_bg"],
+            highlightcolor=palette["window_bg"],
+        )
+        self._render_update_markdown(highlights_box, highlights, palette)
+        highlights_box.configure(state="disabled")
+
+        btn_frame = tk.Frame(outer, bg=palette["window_bg"], bd=0, highlightthickness=0)
         btn_frame.pack(fill="x")
+        btn_frame.columnconfigure(0, weight=1)
+        btn_frame.columnconfigure(1, weight=1)
+        btn_frame.columnconfigure(2, weight=1)
 
-        def on_download():
+        left_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        left_actions.grid(row=0, column=0, sticky="w")
+        center_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        center_actions.grid(row=0, column=1)
+        right_actions = tk.Frame(btn_frame, bg=palette["window_bg"], bd=0, highlightthickness=0)
+        right_actions.grid(row=0, column=2, sticky="e")
+
+        def _make_text_action(
+            parent: tk.Widget,
+            text: str,
+            command: Callable[[], None],
+            *,
+            foreground: Optional[str] = None,
+            hover_foreground: Optional[str] = None,
+        ) -> tk.Label:
+            label = tk.Label(
+                parent,
+                text=text,
+                bg=palette["window_bg"],
+                fg=foreground or palette["muted"],
+                font=("Segoe UI", 10, "bold"),
+                cursor="hand2",
+                bd=0,
+                padx=0,
+                pady=0,
+            )
+
+            def on_enter(_event: object) -> None:
+                label.configure(fg=hover_foreground or palette["text"])
+
+            def on_leave(_event: object) -> None:
+                label.configure(fg=foreground or palette["muted"])
+
+            label.bind("<Button-1>", lambda _event: command())
+            label.bind("<Enter>", on_enter)
+            label.bind("<Leave>", on_leave)
+            return label
+
+        def on_download() -> None:
+            webbrowser.open(GITHUB_DOWNLOAD_ZIP_URL)
+
+        def on_open_repo() -> None:
             webbrowser.open(GITHUB_REPO_URL)
+
+        def on_ignore() -> None:
+            self.update_param("ignored_update_version", new_version)
+            self.save_params()
             popup.destroy()
 
-        ttk.Button(btn_frame, text="Download", bootstyle="success", command=on_download, width=15).pack(side="left", padx=(40, 10), expand=True)
-        ttk.Button(btn_frame, text="Later", bootstyle="secondary", command=popup.destroy, width=15).pack(side="right", padx=(10, 40), expand=True)
+        _make_text_action(
+            left_actions,
+            "Do not remind me again",
+            on_ignore,
+            foreground=palette["muted"],
+            hover_foreground=palette["history_warning"],
+        ).pack(side="left")
+        _make_text_action(
+            center_actions,
+            "Later",
+            popup.destroy,
+            foreground=palette["muted"],
+            hover_foreground=palette["text"],
+        ).pack()
+        
+        # En inversant l'ordre de packing avec side="right", on assure que Download est tout à droite.
+        ttk.Button(
+            right_actions,
+            text="Download",
+            bootstyle="primary",
+            command=on_download,
+            width=16,
+        ).pack(side="right", padx=(10, 0))
+        ttk.Button(
+            right_actions,
+            text="Open in browser",
+            bootstyle="info-outline",
+            command=on_open_repo,
+            width=18,
+        ).pack(side="right")
+
         popup.attributes("-topmost", True)
+        popup.grab_set()
         popup.focus_force()
+
+    @staticmethod
+    def _insert_markdown_inline(text_widget: scrolledtext.ScrolledText, text: str) -> None:
+        parts = re.split(r"(`[^`]+`)", text)
+        for part in parts:
+            if not part:
+                continue
+            if part.startswith("`") and part.endswith("`") and len(part) >= 2:
+                text_widget.insert("end", part[1:-1], ("update_code",))
+            else:
+                text_widget.insert("end", part)
+
+    def _render_update_markdown(
+        self,
+        text_widget: scrolledtext.ScrolledText,
+        markdown_text: str,
+        palette: Dict[str, str],
+    ) -> None:
+        text_widget.delete("1.0", "end")
+        text_widget.tag_configure(
+            "update_body",
+            font=("Segoe UI", 10),
+            foreground=palette["text"],
+            lmargin1=8,
+            lmargin2=8,
+            spacing3=3,
+        )
+        text_widget.tag_configure(
+            "update_bullet",
+            font=("Segoe UI", 10),
+            foreground=palette["text"],
+            lmargin1=12,
+            lmargin2=28,
+            spacing1=4,
+            spacing3=4,
+        )
+        text_widget.tag_configure(
+            "update_code",
+            font=("Consolas", 10),
+            foreground=palette["history_info"],
+        )
+
+        content = markdown_text.strip() or "Release notes are not available for this version yet."
+        for raw_line in content.splitlines():
+            stripped = raw_line.strip()
+            if not stripped:
+                text_widget.insert("end", "\n")
+                continue
+            if stripped.startswith("- "):
+                text_widget.insert("end", "• ", ("update_bullet",))
+                self._insert_markdown_inline(text_widget, stripped[2:])
+                text_widget.insert("end", "\n", ("update_bullet",))
+            else:
+                self._insert_markdown_inline(text_widget, stripped)
+                text_widget.insert("end", "\n", ("update_body",))
 
     def on_core_event(self, event_type: str, data: Any) -> None:
         self.root.after(0, lambda: self._handle_core_event(event_type, data))

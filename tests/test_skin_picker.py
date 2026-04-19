@@ -124,7 +124,18 @@ class SkinPickerMergeTests(unittest.TestCase):
                     "message": "Unable to fetch skins. Check your League of Legends connection.",
                 }
             ),
-            "Impossible to fetch skins: LoL LCU not detected",
+            "Unable to fetch owned skins: LoL client is not detected.",
+        )
+
+    def test_get_skin_fetch_status_text_uses_explicit_missing_client_message(self):
+        self.assertEqual(
+            _get_skin_fetch_status_text(
+                {
+                    "ok": False,
+                    "message": "LoL client is not detected.",
+                }
+            ),
+            "Unable to fetch owned skins: LoL client is not detected.",
         )
 
 

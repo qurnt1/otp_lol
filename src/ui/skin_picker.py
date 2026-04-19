@@ -179,11 +179,11 @@ def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
         return ""
     message = str(result.get("message") or "").strip()
     if not message:
-        return "Impossible to fetch skins: LoL LCU not detected"
+        return "Unable to fetch owned skins: LoL client is not detected."
     lowered = message.lower()
     if "connection" in lowered or "league of legends" in lowered or "lcu" in lowered:
-        return "Impossible to fetch skins: LoL LCU not detected"
-    return f"Impossible to fetch skins: {message}"
+        return "Unable to fetch owned skins: LoL client is not detected."
+    return f"Unable to fetch owned skins: {message}"
 
 
 def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
@@ -209,6 +209,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
 
     champion_name = owner._get_slot_champion_name(slot_key)
     champion_id = owner.parent.dd.resolve_champion(champion_name) if champion_name not in {"", "(None)"} else None
+    ws_manager = getattr(owner.parent, "ws_manager", None)
     picker_mode_var = tk.StringVar(
         value="random" if owner._get_effective_pick_slot_config(slot_key).get("skin_mode") == "random" else "fixed"
     )
@@ -221,6 +222,9 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     status_var = tk.StringVar(value="")
     status_label = ttk.Label(container, textvariable=status_var, bootstyle="warning")
     status_label.pack(fill="x", pady=(0, 8))
+    status_label.configure(wraplength=340, justify="left")
+    if not ws_manager or not getattr(ws_manager, "is_active", False):
+        status_var.set("Unable to fetch owned skins: LoL client is not detected.")
 
     mode_bar = ttk.Frame(container)
     mode_bar.pack(fill="x")
@@ -381,11 +385,10 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     catalog_skins.extend(owner.parent.dd.get_skin_catalog(champion_name))
 
     def load_skins() -> None:
-        ws_manager = getattr(owner.parent, "ws_manager", None)
-        if not ws_manager:
+        if not ws_manager or not getattr(ws_manager, "is_active", False):
             result = {
                 "ok": False,
-                "message": "Unable to fetch skins. Check your League of Legends connection.",
+                "message": "LoL client is not detected.",
                 "owned_skins": [],
             }
         else:

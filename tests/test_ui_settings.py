@@ -163,6 +163,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         class FakeButton:
             def __init__(self):
                 self.config = {}
+                self.image = None
 
             def winfo_exists(self):
                 return True
@@ -181,9 +182,14 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._load_remote_img_into_btn = (
             lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
         )
+        window._load_empty_img_into_btn_calls = []
+        window._load_empty_img_into_btn = (
+            lambda btn, **kwargs: window._load_empty_img_into_btn_calls.append(kwargs)
+        )
 
         window._refresh_skin_buttons()
 
+        self.assertEqual(window._load_empty_img_into_btn_calls[0]["size"], (30, 30))
         self.assertEqual(window._load_remote_img_into_btn_calls[0][0], "https://example.com/tile.jpg")
         self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
         self.assertEqual(window.pick_skin_buttons["pick_1"].config["bootstyle"], "secondary-outline")
@@ -192,6 +198,7 @@ class SettingsWindowLogicTests(unittest.TestCase):
         class FakeButton:
             def __init__(self):
                 self.config = {}
+                self.image = None
 
             def winfo_exists(self):
                 return True
@@ -210,15 +217,29 @@ class SettingsWindowLogicTests(unittest.TestCase):
         window._load_local_img_into_btn = (
             lambda btn, path, **kwargs: window._load_local_img_into_btn_calls.append((path, kwargs))
         )
+        window._load_empty_img_into_btn_calls = []
+        window._load_empty_img_into_btn = (
+            lambda btn, **kwargs: window._load_empty_img_into_btn_calls.append(kwargs)
+        )
 
         window._refresh_skin_buttons()
 
+        self.assertEqual(window._load_empty_img_into_btn_calls[0]["size"], (30, 30))
         self.assertEqual(window._load_remote_img_into_btn_calls, [])
         self.assertEqual(
             window._load_local_img_into_btn_calls[0][0],
             "config/images/app/question-mark-white_mode.png",
         )
         self.assertEqual(window.pick_skin_buttons["pick_1"].config["text"], "  Random")
+
+    def test_skin_button_display_text_truncates_long_skin_names(self):
+        window = self.make_window()
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_mode"] = "fixed"
+        window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["skin_name"] = "Mr. Mundoverse Forever"
+
+        text = window._get_skin_button_display_text("pick_1")
+
+        self.assertEqual(text, "Mr. Mundovers...")
 
     def test_random_skin_placeholder_uses_black_icon_on_light_theme(self):
         window = self.make_window()
@@ -228,6 +249,30 @@ class SettingsWindowLogicTests(unittest.TestCase):
             window._get_random_skin_placeholder_asset(),
             "config/images/app/question-mark-black_mode.png",
         )
+
+    def test_refresh_rune_buttons_uses_generic_runes_label(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def winfo_exists(self):
+                return True
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        window.pick_rune_buttons = {"pick_1": FakeButton()}
+        window._load_remote_img_into_btn_calls = []
+        window._load_remote_img_into_btn = (
+            lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
+        )
+
+        window._refresh_rune_buttons()
+
+        self.assertEqual(window.pick_rune_buttons["pick_1"].config["text"], "  Runes")
+        self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
 
     def test_refresh_site_buttons_show_logo_and_left_compound(self):
         class FakeButton:
