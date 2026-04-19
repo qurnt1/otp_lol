@@ -59,8 +59,9 @@ The application is designed to work as a lightweight desktop tool:
 
 ## Version 10.0 Highlights
 
-Version `10.0` focuses on skin automation, skin UI improvements, and better champion select control from the main window.
+Version `10.0` introduces advanced skin automation, a complete UI overhaul for update notifications, and a robust configuration migration system.
 
+<<<<<<< Updated upstream
 - `Skin inventory detection and validation`
   The app now resolves owned skins more reliably, logs inventory and pickable-skin fallbacks more clearly, and validates fixed skins against the skins that are actually pickable in champion select.
 
@@ -75,6 +76,25 @@ Version `10.0` focuses on skin automation, skin UI improvements, and better cham
 
 - `Cleaner startup behavior`
   Audio initialization was adjusted so `pygame` no longer pollutes startup output with its support prompt and deprecated `pkg_resources` warning.
+=======
+- `Advanced Skin Automation Modes`
+  Users can now force specific skin selections in Champion Select. Two modes are available:
+  - **Fixed Mode:** Automatically selects a single pre-determined skin.
+  - **Random Mode:** Randomly picks a skin from a custom user-defined list for each game.
+
+- `Modernized Update Interface`
+  The update popup UI has been completely redesigned to be more aesthetic, intuitive, and aligned with modern design standards (improved spacing, typography, and visual hierarchy).
+
+- `Robust JSON Configuration Migration`
+  The settings logic has been overhauled to prevent bugs during version transitions. The app now detects outdated JSON structures (missing parameters or legacy keys) and automatically regenerates the configuration file while preserving integrity.
+
+- `Intuitive "Default-Off" Initialization`
+  On the first launch, the application now initializes with all automation features (Presets for Champions, Summoners, Runes, and Skins) disabled by default to prevent unexpected behavior. 
+  - **Improved UX:** Although disabled, these presets come with pre-selected placeholders (Champions/Summoners) to make the interface more intuitive and show the user how to configure them once activated.
+
+- `Codebase Cleanup`
+  Optimized internal logic and removed redundant startup logs for a faster and cleaner application launch.
+>>>>>>> Stashed changes
 
 ## Features
 
