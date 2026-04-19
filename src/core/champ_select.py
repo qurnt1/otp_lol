@@ -792,8 +792,11 @@ class ChampSelectMixin:
     ) -> List[Dict[str, Any]]:
         if not self.connection:
             return []
+        endpoint = "/lol-champ-select/v1/pickable-skins"
         try:
-            response = await self.connection.request("get", "/lol-champ-select/v1/pickable-skins")
+            response = await self.connection.request("get", endpoint)
+            status = response.status if response else "no-response"
+            logging.info("[SKIN] Pickable skins request champion_id=%s status=%s", champion_id, status)
             if not response or response.status != 200:
                 return []
             payload = await response.json()
@@ -805,6 +808,7 @@ class ChampSelectMixin:
             payload = payload.get("skins") or payload.get("pickableSkins") or []
         if not isinstance(payload, list):
             return []
+        logging.info("[SKIN] Pickable skins payload champion_id=%s items=%s", champion_id, len(payload))
 
         skins: List[Dict[str, Any]] = []
         for item in payload:
@@ -849,6 +853,7 @@ class ChampSelectMixin:
                 continue
             seen_ids.add(skin_id)
             unique_skins.append(skin)
+        logging.info("[SKIN] Pickable skins mapped champion_id=%s usable=%s", champion_id, len(unique_skins))
         return unique_skins
 
     async def _confirm_skin_applied(self: "WebSocketManager", skin_id: int) -> bool:
@@ -1105,28 +1110,35 @@ class ChampSelectMixin:
 
     async def _set_skin(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
         if not self.connection or self.state.skin_apply_in_progress:
+            logging.info(
+                "[SKIN] Skipping _set_skin connection=%s in_progress=%s",
+                bool(self.connection),
+                self.state.skin_apply_in_progress,
+            )
             return
 
         skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
         if not skin_selection:
+            logging.info("[SKIN] No skin selection resolved for slot=%s", slot_key or self.state.last_locked_pick_slot or "pick_1")
             return
 
         session = await self._fetch_current_champ_select_session(area="SKIN")
         local_selection = self._extract_local_player_selection(session)
         if not local_selection:
+            logging.info("[SKIN] No local player selection available for slot=%s", chosen_slot)
             return
 
         champion_id = int(local_selection.get("championId") or 0)
         if champion_id <= 0:
+            logging.info("[SKIN] Champion id is unavailable for slot=%s; selected champion not locked yet", chosen_slot)
             return
 
         self.state.skin_apply_in_progress = True
         effective = self.get_effective_profile_config(params=params)
         selected_skin = dict(skin_selection)
         try:
-            pickable_skins: List[Dict[str, Any]] = []
+            pickable_skins = await self._fetch_pickable_skins(champion_id)
             if selected_skin.get("mode") == "random":
-                pickable_skins = await self._fetch_pickable_skins(champion_id)
                 pool_candidates = self._build_random_skin_pool_candidates(
                     list(selected_skin.get("random_skin_pool") or []),
                     pickable_skins,
@@ -1139,6 +1151,25 @@ class ChampSelectMixin:
             skin_id = int(selected_skin.get("skin_id") or 0)
             if skin_id <= 0:
                 return
+            pickable_ids = {int(entry.get("skin_id") or 0) for entry in pickable_skins if int(entry.get("skin_id") or 0) > 0}
+            champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+            if pickable_ids and skin_id not in pickable_ids:
+                logging.warning(
+                    "[SKIN] Refusing non-pickable skin champion=%s champion_id=%s skin_id=%s slot=%s mode=%s",
+                    champion_name,
+                    champion_id,
+                    skin_id,
+                    chosen_slot,
+                    selected_skin.get("mode"),
+                )
+                return
+            if not pickable_ids:
+                logging.warning(
+                    "[SKIN] Pickable skin list unavailable for champion=%s champion_id=%s; continuing with configured skin_id=%s",
+                    champion_name,
+                    champion_id,
+                    skin_id,
+                )
 
             self.state.desired_skin_id = skin_id
             self.state.last_skin_try_ts = time()

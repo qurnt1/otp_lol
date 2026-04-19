@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import tkinter as tk
+from tkinter import messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledFrame
 
@@ -91,6 +92,35 @@ def _sort_skins_for_display(
     return [*prioritized, *others]
 
 
+def _confirm_unowned_skin_selection(
+    skin: Dict[str, Any],
+    *,
+    ask_fn: Optional[Any] = None,
+) -> bool:
+    if bool(skin.get("owned")):
+        return True
+    prompt = ask_fn or messagebox.askyesno
+    return bool(
+        prompt(
+            "Skin non detecte",
+            "Attention, ce skin n'est pas detecte sur ce compte.\n"
+            "Etes-vous sur de vouloir le selectionner ?",
+        )
+    )
+
+
+def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
+    if result.get("ok"):
+        return ""
+    message = str(result.get("message") or "").strip()
+    if not message:
+        return "Impossible to fetch skins: LoL LCU not detected"
+    lowered = message.lower()
+    if "connexion" in lowered or "league of legends" in lowered or "lcu" in lowered:
+        return "Impossible to fetch skins: LoL LCU not detected"
+    return f"Impossible to fetch skins: {message}"
+
+
 def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     """Open the skin picker for a preset slot."""
     if getattr(owner, "skin_picker_window", None) and owner.skin_picker_window.winfo_exists():
@@ -122,6 +152,10 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
 
     container = ttk.Frame(picker, padding=12)
     container.pack(fill="both", expand=True)
+
+    status_var = tk.StringVar(value="")
+    status_label = ttk.Label(container, textvariable=status_var, bootstyle="warning")
+    status_label.pack(fill="x", pady=(0, 8))
 
     mode_bar = ttk.Frame(container)
     mode_bar.pack(fill="x")
@@ -179,6 +213,8 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             if int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed":
                 owner._clear_pick_slot_skin(slot_key)
             else:
+                if not _confirm_unowned_skin_selection(skin):
+                    return
                 owner._set_pick_slot_skin_selection(slot_key, mode="fixed", fixed_skin=skin)
             refresh_parent_buttons()
             populate_list()
@@ -188,6 +224,8 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         if skin_id in pool_ids:
             pool_ids.discard(skin_id)
         else:
+            if not _confirm_unowned_skin_selection(skin):
+                return
             pool_ids.add(skin_id)
         selected_skins = [entry for entry in available_skins if int(entry.get("skin_id") or 0) in pool_ids]
         owner._set_random_skin_pool(slot_key, selected_skins)
@@ -293,6 +331,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
                 return
             available_skins.clear()
             available_skins.extend(_merge_catalog_and_owned_skins(catalog_skins, result.get("owned_skins", [])))
+            status_var.set(_get_skin_fetch_status_text(result))
             refresh_mode_buttons()
             populate_list()
 

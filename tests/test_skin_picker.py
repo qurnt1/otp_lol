@@ -1,6 +1,8 @@
 import unittest
 
 from src.ui.skin_picker import (
+    _confirm_unowned_skin_selection,
+    _get_skin_fetch_status_text,
     _get_picker_image_url,
     _merge_catalog_and_owned_skins,
     _sort_skins_for_display,
@@ -88,6 +90,42 @@ class SkinPickerMergeTests(unittest.TestCase):
         ordered = _sort_skins_for_display(skins, mode="random", pool_ids={3, 1})
 
         self.assertEqual([skin["skin_id"] for skin in ordered], [1, 3, 2])
+
+    def test_confirm_unowned_skin_selection_skips_prompt_for_owned_skin(self):
+        prompts = []
+
+        result = _confirm_unowned_skin_selection(
+            {"skin_id": 1, "skin_name": "Owned", "owned": True},
+            ask_fn=lambda *args, **kwargs: prompts.append((args, kwargs)),
+        )
+
+        self.assertTrue(result)
+        self.assertEqual(prompts, [])
+
+    def test_confirm_unowned_skin_selection_uses_prompt_result(self):
+        self.assertTrue(
+            _confirm_unowned_skin_selection(
+                {"skin_id": 2, "skin_name": "Unknown", "owned": False},
+                ask_fn=lambda *args, **kwargs: True,
+            )
+        )
+        self.assertFalse(
+            _confirm_unowned_skin_selection(
+                {"skin_id": 2, "skin_name": "Unknown", "owned": False},
+                ask_fn=lambda *args, **kwargs: False,
+            )
+        )
+
+    def test_get_skin_fetch_status_text_uses_lcu_message_for_missing_client(self):
+        self.assertEqual(
+            _get_skin_fetch_status_text(
+                {
+                    "ok": False,
+                    "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+                }
+            ),
+            "Impossible to fetch skins: LoL LCU not detected",
+        )
 
 
 if __name__ == "__main__":

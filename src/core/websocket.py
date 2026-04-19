@@ -169,26 +169,67 @@ class WebSocketManager(ChampSelectMixin):
                 global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             )
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+
+            def _to_int(value: Any) -> int:
+                try:
+                    return int(value or 0)
+                except (TypeError, ValueError):
+                    return 0
+
+            def _pick_skin_mode() -> str:
+                role_mode = str(role_slot.get("skin_mode") or "").strip().lower()
+                global_mode = str(global_slot.get("skin_mode") or "").strip().lower()
+                if role_mode in {"fixed", "random"}:
+                    return role_mode
+                if global_mode in {"fixed", "random"}:
+                    return global_mode
+                return "none"
+
+            def _pick_skin_text(field: str) -> str:
+                role_value = str(role_slot.get(field) or "").strip()
+                if role_value:
+                    return role_value
+                return str(global_slot.get(field) or "").strip()
+
+            def _pick_skin_int(field: str) -> int:
+                role_value = _to_int(role_slot.get(field))
+                if role_value > 0:
+                    return role_value
+                return _to_int(global_slot.get(field))
+
+            def _pick_skin_pool() -> List[Dict[str, Any]]:
+                role_pool = role_slot.get("random_skin_pool")
+                if isinstance(role_pool, list) and role_pool:
+                    return role_pool
+                global_pool = global_slot.get("random_skin_pool")
+                if isinstance(global_pool, list) and global_pool:
+                    return global_pool
+                return []
+
+            role_skin_mode = str(role_slot.get("skin_mode") or "").strip().lower()
+            role_has_skin_override = (
+                role_skin_mode in {"fixed", "random"}
+                or _to_int(role_slot.get("skin_id")) > 0
+                or _to_int(role_slot.get("random_skin_id")) > 0
+                or bool(str(role_slot.get("skin_name") or "").strip())
+                or bool(str(role_slot.get("random_skin_name") or "").strip())
+                or bool(role_slot.get("random_skin_pool"))
+            )
             skin_source_role = (
-                resolved_role
-                if any(
-                    role_slot.get(field)
-                    for field in ("skin_mode", "skin_id", "skin_name", "skin_num", "random_skin_pool")
-                )
-                else "GLOBAL"
+                resolved_role if role_has_skin_override else "GLOBAL"
             )
             return {
                 "champion": role_data.get(pick_key) or params.get(pick_key, ""),
                 "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
                 "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
-                "skin_mode": role_slot.get("skin_mode") or global_slot.get("skin_mode", "none"),
-                "skin_id": int(role_slot.get("skin_id") or global_slot.get("skin_id", 0) or 0),
-                "skin_name": role_slot.get("skin_name") or global_slot.get("skin_name", ""),
-                "skin_num": int(role_slot.get("skin_num") or global_slot.get("skin_num", 0) or 0),
-                "random_skin_id": int(role_slot.get("random_skin_id") or global_slot.get("random_skin_id", 0) or 0),
-                "random_skin_name": role_slot.get("random_skin_name") or global_slot.get("random_skin_name", ""),
-                "random_skin_num": int(role_slot.get("random_skin_num") or global_slot.get("random_skin_num", 0) or 0),
-                "random_skin_pool": role_slot.get("random_skin_pool") or global_slot.get("random_skin_pool", []),
+                "skin_mode": _pick_skin_mode(),
+                "skin_id": _pick_skin_int("skin_id"),
+                "skin_name": _pick_skin_text("skin_name"),
+                "skin_num": _pick_skin_int("skin_num"),
+                "random_skin_id": _pick_skin_int("random_skin_id"),
+                "random_skin_name": _pick_skin_text("random_skin_name"),
+                "random_skin_num": _pick_skin_int("random_skin_num"),
+                "random_skin_pool": _pick_skin_pool(),
                 "skin_source_role": skin_source_role,
             }
 
@@ -260,34 +301,266 @@ class WebSocketManager(ChampSelectMixin):
 
     @staticmethod
     def _inventory_skin_is_owned(item: Dict[str, Any]) -> bool:
-        bool_fields = ("owned", "isOwned", "unlocked", "isUnlocked", "purchaseable", "purchased")
-        ownership_fields_found = False
-        for field in bool_fields:
-            if field in item and isinstance(item.get(field), bool):
-                ownership_fields_found = True
-                if field in {"purchaseable"}:
-                    continue
-                if item[field]:
-                    return True
-        string_fields = ("ownershipType", "ownership", "purchaseState", "status")
-        for field in string_fields:
+        for field in ("owned", "isOwned", "unlocked", "isUnlocked", "purchased"):
+            if item.get(field) is True:
+                return True
+            if item.get(field) is False:
+                return False
+
+        for field in ("purchaseable", "purchasable"):
+            if item.get(field) is True:
+                return False
+
+        for field in ("ownershipType", "purchaseState", "status"):
             raw_value = item.get(field)
             if raw_value in {None, ""}:
                 continue
-            ownership_fields_found = True
             normalized = str(raw_value).strip().lower()
             if normalized in {"owned", "ownership_owned", "rental", "rent", "free_to_play", "freetoplay", "unlocked"}:
                 return True
             if normalized in {"unowned", "not_owned", "locked", "purchasable", "purchaseable"}:
                 return False
+
         nested_ownership = item.get("ownership")
         if isinstance(nested_ownership, dict):
-            ownership_fields_found = True
-            if isinstance(nested_ownership.get("owned"), bool):
-                return bool(nested_ownership.get("owned"))
-            if isinstance(nested_ownership.get("isOwned"), bool):
-                return bool(nested_ownership.get("isOwned"))
-        return not ownership_fields_found
+            if nested_ownership.get("owned") is True or nested_ownership.get("isOwned") is True:
+                return True
+            if nested_ownership.get("owned") is False or nested_ownership.get("isOwned") is False:
+                return False
+
+        return True
+
+    @staticmethod
+    async def _read_response_text(response: Any) -> str:
+        if not response:
+            return ""
+        try:
+            return await response.text()
+        except Exception:
+            return ""
+
+    def _resolve_owned_skin_entry(
+        self,
+        champion_name: str,
+        *,
+        skin_id: int = 0,
+        skin_name: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        skin_data = None
+        if skin_id > 0:
+            skin_data = self.dd.resolve_skin_data(champion_name, skin_id=skin_id)
+        if not skin_data and skin_name:
+            skin_data = self.dd.resolve_skin_data(champion_name, skin_name=skin_name)
+        return skin_data
+
+    @staticmethod
+    def _normalize_skin_collection_payload(payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, dict):
+            payload = payload.get("skins") or payload.get("pickableSkins") or payload.get("inventory") or []
+        if not isinstance(payload, list):
+            return []
+        return [item for item in payload if isinstance(item, dict)]
+
+    def _build_owned_skin_result_entry(
+        self,
+        skin_data: Dict[str, Any],
+        *,
+        fallback_skin_id: int = 0,
+        fallback_skin_name: str = "",
+    ) -> Dict[str, Any]:
+        return {
+            "skin_id": int(skin_data.get("skin_id") or fallback_skin_id or 0),
+            "skin_num": int(skin_data.get("skin_num") or 0),
+            "skin_name": str(skin_data.get("skin_name") or fallback_skin_name or ""),
+            "splash_url": skin_data.get("splash_url", ""),
+            "tile_url": skin_data.get("tile_url", ""),
+            "preview_url": (
+                skin_data.get("tile_url")
+                or skin_data.get("centered_splash_url")
+                or skin_data.get("uncentered_splash_url")
+                or skin_data.get("splash_url", "")
+            ),
+        }
+
+    async def _fetch_owned_skins_from_inventory(
+        self,
+        champion_id: int,
+        *,
+        summoner_id: int,
+    ) -> Dict[str, Any]:
+        endpoint = f"/lol-champions/v1/inventories/{summoner_id}/champions/{champion_id}/skins"
+        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+        try:
+            response = await self.connection.request("get", endpoint)
+            status = response.status if response else "no-response"
+            logging.info(
+                "[SKIN][OWNED] Inventory request endpoint=%s summoner_id=%s champion_id=%s status=%s",
+                endpoint,
+                summoner_id,
+                champion_id,
+                status,
+            )
+            if not response or response.status != 200:
+                body = await self._read_response_text(response)
+                logging.warning("[SKIN][OWNED] Inventory request failed: %s", body or "<empty>")
+                return {
+                    "ok": False,
+                    "message": f"LCU inventory error {status}: {body or 'empty response'}",
+                    "owned_skins": [],
+                    "source": "inventory",
+                }
+            payload = await response.json()
+        except Exception as e:
+            logging.exception("[SKIN][OWNED] Inventory request exception for champion_id=%s", champion_id)
+            return {
+                "ok": False,
+                "message": str(e),
+                "owned_skins": [],
+                "source": "inventory",
+            }
+
+        items = self._normalize_skin_collection_payload(payload)
+        logging.info("[SKIN][OWNED] Inventory payload items=%s", len(items))
+        owned_skins: List[Dict[str, Any]] = []
+        unmapped_items = 0
+        for item in items:
+            if not self._inventory_skin_is_owned(item):
+                continue
+            try:
+                skin_id = int(item.get("id") or item.get("skinId") or item.get("championSkinId") or 0)
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                unmapped_items += 1
+                logging.debug(
+                    "[SKIN][OWNED] Inventory skin mapping failed champion=%s skin_id=%s skin_name=%s",
+                    champion_name,
+                    skin_id,
+                    skin_name,
+                )
+                continue
+            owned_skins.append(
+                self._build_owned_skin_result_entry(
+                    skin_data,
+                    fallback_skin_id=skin_id,
+                    fallback_skin_name=skin_name,
+                )
+            )
+
+        unique_skins = []
+        seen_ids = set()
+        for skin in owned_skins:
+            skin_id = int(skin.get("skin_id") or 0)
+            if skin_id in seen_ids:
+                continue
+            seen_ids.add(skin_id)
+            unique_skins.append(skin)
+        logging.info(
+            "[SKIN][OWNED] Inventory parsed champion=%s mapped=%s unmapped=%s",
+            champion_name,
+            len(unique_skins),
+            unmapped_items,
+        )
+        return {
+            "ok": True,
+            "message": "",
+            "owned_skins": unique_skins,
+            "source": "inventory",
+        }
+
+    async def _fetch_owned_skins_from_pickable(self, champion_id: int) -> Dict[str, Any]:
+        endpoint = "/lol-champ-select/v1/pickable-skins"
+        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
+        try:
+            response = await self.connection.request("get", endpoint)
+            status = response.status if response else "no-response"
+            logging.info(
+                "[SKIN][OWNED] Pickable fallback endpoint=%s champion_id=%s status=%s",
+                endpoint,
+                champion_id,
+                status,
+            )
+            if not response or response.status != 200:
+                body = await self._read_response_text(response)
+                logging.warning("[SKIN][OWNED] Pickable fallback failed: %s", body or "<empty>")
+                return {
+                    "ok": False,
+                    "message": f"LCU pickable error {status}: {body or 'empty response'}",
+                    "owned_skins": [],
+                    "source": "pickable",
+                }
+            payload = await response.json()
+        except Exception as e:
+            logging.debug("[SKIN][OWNED] Pickable fallback exception: %s", e)
+            return {
+                "ok": False,
+                "message": str(e),
+                "owned_skins": [],
+                "source": "pickable",
+            }
+
+        items = self._normalize_skin_collection_payload(payload)
+        logging.info("[SKIN][OWNED] Pickable fallback payload items=%s", len(items))
+        owned_skins: List[Dict[str, Any]] = []
+        unmapped_items = 0
+        for item in items:
+            try:
+                item_champion_id = int(item.get("championId") or champion_id or 0)
+            except (TypeError, ValueError):
+                item_champion_id = champion_id
+            if champion_id and item_champion_id != champion_id:
+                continue
+            try:
+                skin_id = int(
+                    item.get("id")
+                    or item.get("skinId")
+                    or item.get("championSkinId")
+                    or item.get("selectedSkinId")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                unmapped_items += 1
+                logging.debug(
+                    "[SKIN][OWNED] Pickable skin mapping failed champion=%s skin_id=%s skin_name=%s",
+                    champion_name,
+                    skin_id,
+                    skin_name,
+                )
+                continue
+            owned_skins.append(
+                self._build_owned_skin_result_entry(
+                    skin_data,
+                    fallback_skin_id=skin_id,
+                    fallback_skin_name=skin_name,
+                )
+            )
+
+        unique_skins = []
+        seen_ids = set()
+        for skin in owned_skins:
+            skin_id = int(skin.get("skin_id") or 0)
+            if skin_id in seen_ids:
+                continue
+            seen_ids.add(skin_id)
+            unique_skins.append(skin)
+        logging.info(
+            "[SKIN][OWNED] Pickable fallback parsed champion=%s mapped=%s unmapped=%s",
+            champion_name,
+            len(unique_skins),
+            unmapped_items,
+        )
+        return {
+            "ok": True,
+            "message": "",
+            "owned_skins": unique_skins,
+            "source": "pickable",
+        }
 
     async def _fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.connection:
@@ -300,75 +573,31 @@ class WebSocketManager(ChampSelectMixin):
         if not summoner_id:
             await self._refresh_player_and_region()
             summoner_id = self.get_current_summoner_id()
-        if not summoner_id:
-            return {
-                "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "owned_skins": [],
-            }
 
-        endpoint = f"/lol-champions/v1/inventories/{summoner_id}/champions/{champion_id}/skins"
-        try:
-            response = await self.connection.request("get", endpoint)
-            if response.status != 200:
-                return {
-                    "ok": False,
-                    "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                    "owned_skins": [],
-                }
-            payload = await response.json()
-        except Exception as e:
-            logging.debug("WebSocket: inventory skins request failed - %s", e)
-            return {
-                "ok": False,
-                "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
-                "owned_skins": [],
-            }
+        inventory_result = None
+        if summoner_id:
+            inventory_result = await self._fetch_owned_skins_from_inventory(champion_id, summoner_id=summoner_id)
+            if inventory_result.get("ok") and inventory_result.get("owned_skins"):
+                return inventory_result
+        else:
+            logging.warning("[SKIN][OWNED] Missing summoner_id for champion_id=%s", champion_id)
 
-        champion_name = self.dd.id_to_name(champion_id) or str(champion_id)
-        catalog = self.dd.get_skin_catalog(champion_name)
-        by_skin_id = {int(entry.get("skin_id") or 0): entry for entry in catalog}
-        by_name = {str(entry.get("skin_name") or "").strip().lower(): entry for entry in catalog}
-        owned_skins: List[Dict[str, Any]] = []
-        for item in payload if isinstance(payload, list) else []:
-            if not isinstance(item, dict):
-                continue
-            if not self._inventory_skin_is_owned(item):
-                continue
-            try:
-                skin_id = int(item.get("id") or item.get("skinId") or item.get("championSkinId") or 0)
-            except (TypeError, ValueError):
-                skin_id = 0
-            skin_name = str(item.get("name") or item.get("displayName") or "")
-            skin_data = by_skin_id.get(skin_id) or by_name.get(skin_name.strip().lower())
-            if not skin_data:
-                skin_data = self.dd.resolve_skin_data(champion_name, skin_id=skin_id, skin_name=skin_name)
-            if not skin_data:
-                continue
-            owned_skins.append(
-                {
-                    "skin_id": int(skin_data.get("skin_id") or skin_id or 0),
-                    "skin_num": int(skin_data.get("skin_num") or 0),
-                    "skin_name": str(skin_data.get("skin_name") or skin_name or ""),
-                    "splash_url": skin_data.get("splash_url", ""),
-                    "tile_url": skin_data.get("tile_url", ""),
-                    "preview_url": (
-                        skin_data.get("tile_url")
-                        or skin_data.get("centered_splash_url")
-                        or skin_data.get("uncentered_splash_url")
-                        or skin_data.get("splash_url", "")
-                    ),
-                }
-            )
-
-        unique_skins = []
-        seen_ids = set()
-        for skin in owned_skins:
-            if skin["skin_id"] in seen_ids:
-                continue
-            seen_ids.add(skin["skin_id"])
-            unique_skins.append(skin)
-        return {"ok": True, "message": "", "owned_skins": unique_skins}
+        logging.info(
+            "[SKIN][OWNED] Falling back to pickable skins champion_id=%s inventory_ok=%s inventory_count=%s",
+            champion_id,
+            bool(inventory_result and inventory_result.get("ok")),
+            len(inventory_result.get("owned_skins", [])) if inventory_result else 0,
+        )
+        pickable_result = await self._fetch_owned_skins_from_pickable(champion_id)
+        if pickable_result.get("ok") and pickable_result.get("owned_skins"):
+            return pickable_result
+        if inventory_result and inventory_result.get("ok"):
+            return inventory_result
+        return pickable_result or {
+            "ok": False,
+            "message": "Impossible de recuperer les skins. Verifiez votre connexion a League of Legends.",
+            "owned_skins": [],
+        }
 
     def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
         if not self.update_param:
