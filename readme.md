@@ -57,7 +57,7 @@ The application is designed to work as a lightweight desktop tool:
 - keyboard shortcuts
 - local cache for some Data Dragon data
 
-## Version 9.0 Highlights
+## Version 11.0 Highlights
 
 Version `9.0` focuses on champion select reliability, cleaner settings, and better runtime behavior.
 
