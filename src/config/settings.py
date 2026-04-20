@@ -1,4 +1,30 @@
-"""Settings loading, defaults and migration helpers."""
+"""
+FILE NAME: src/config/settings.py
+GLOBAL PURPOSE:
+- Define default configuration payloads for the application.
+- Load, normalize, reset, import, and export persisted settings.
+- Keep schema migration rules explicit for profile data, pick slots, and skin settings.
+
+KEY FUNCTIONS:
+- build_pick_slot_defaults: Build a normalized pick-slot structure.
+- build_role_profile_defaults: Build default role-profile payloads.
+- load_parameters: Load and validate the persisted settings file.
+- save_parameters: Persist normalized settings to disk.
+- _normalize_parameters: Enforce the current configuration schema.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so settings schema rules, first-launch defaults, and migration behavior remain centralized and predictable.
+For whom:
+Developers maintaining settings persistence, schema evolution, and configuration import or export.
+
+DEPENDENCIES:
+Used by:
+- src.config.__init__ and runtime modules that load or save settings.
+Uses:
+- Standard library: copy, json, logging, os, shutil, typing
+- Local modules: src.config.constants, src.config.paths
+"""
 
 import copy
 import json
@@ -12,7 +38,7 @@ from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CAC
 
 
 def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
-    """Return a pick-slot payload with optional default summs."""
+    """Return a normalized pick-slot payload with optional default summoner spells."""
     return {
         slot: {
             "spell_1": spell_1,
@@ -98,10 +124,12 @@ FIRST_LAUNCH_PARAMS.update(
 
 
 def _build_first_launch_payload() -> Dict[str, Any]:
+    """Return the fully normalized settings payload used for a true first launch."""
     return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
 
 
 def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize and write the settings payload to the main parameters file."""
     os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
     sanitized = _normalize_parameters(payload)
     with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
@@ -110,6 +138,7 @@ def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _clear_skin_cache() -> None:
+    """Remove cached skin previews when settings are reset to a clean baseline."""
     if not os.path.isdir(SKINS_CACHE_DIR):
         return
     logging.info("Clearing skin cache: %s", SKINS_CACHE_DIR)
@@ -125,13 +154,14 @@ def _clear_skin_cache() -> None:
 
 
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
+    """Reset the settings file to first-launch defaults after a validation failure."""
     logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
     _clear_skin_cache()
     return _write_parameters_file(_build_first_launch_payload())
 
 
 def load_parameters() -> Dict[str, Any]:
-    """Load parameters from the JSON file."""
+    """Load, validate, and normalize parameters from the JSON settings file."""
     if not os.path.exists(PARAMETERS_PATH):
         return _reset_parameters_file("missing file")
 
@@ -157,7 +187,7 @@ def load_parameters() -> Dict[str, Any]:
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
-    """Save parameters to the JSON file."""
+    """Persist normalized parameters to the JSON settings file."""
     try:
         _write_parameters_file(params)
         return True
@@ -179,7 +209,7 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
 
 
 def import_parameters_from_file(path: str) -> Dict[str, Any]:
-    """Import parameters from a JSON file and normalize them."""
+    """Import parameters from a JSON file and normalize them to the current schema."""
     with open(path, "r", encoding="utf-8") as f:
         payload = json.load(f)
     if not isinstance(payload, dict):
@@ -196,16 +226,19 @@ def _normalize_spell_value(value: Any) -> str:
 
 
 def _normalize_skin_mode(value: Any) -> str:
+    """Normalize stored skin modes to the supported values."""
     mode = str(value or "none").strip().lower()
     return mode if mode in {"none", "fixed", "random"} else "none"
 
 
 def _normalize_main_skin_mode_override(value: Any) -> str:
+    """Normalize the main-window skin override value to a supported mode."""
     mode = str(value or "inherit").strip().lower()
     return mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
 
 
 def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inherit") -> Dict[str, str]:
+    """Build the per-slot main-window skin override mapping, including legacy fallbacks."""
     normalized = build_main_skin_mode_overrides()
     legacy_mode = _normalize_main_skin_mode_override(legacy_value)
     if legacy_mode != "inherit":
@@ -218,6 +251,7 @@ def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inhe
 
 
 def _normalize_skin_id(value: Any) -> int:
+    """Convert persisted skin identifiers to a safe non-negative integer."""
     try:
         skin_id = int(value or 0)
     except (TypeError, ValueError):
@@ -226,6 +260,7 @@ def _normalize_skin_id(value: Any) -> int:
 
 
 def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
+    """Normalize and deduplicate a persisted random-skin pool."""
     if not isinstance(value, list):
         return []
     normalized_pool: list[Dict[str, Any]] = []

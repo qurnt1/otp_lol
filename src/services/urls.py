@@ -1,4 +1,28 @@
-"""External website URL builders."""
+"""
+FILE NAME: src/services/urls.py
+GLOBAL PURPOSE:
+- Build external player and in-game statistics URLs from a Riot ID and region.
+- Keep provider-specific URL patterns centralized in one module.
+- Normalize Riot IDs before they are sent to third-party websites.
+
+KEY FUNCTIONS:
+- is_valid_riot_id: Validate the basic `GameName#Tag` structure.
+- build_player_stats_url: Build a profile page URL for the chosen provider.
+- build_ingame_stats_url: Build a live-game URL for the chosen provider.
+- _normalize_riot_id_for_url: Convert Riot IDs into the provider-friendly URL format.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so third-party URL rules stay out of UI code and can be changed in one place.
+For whom:
+Developers maintaining external website integration and Riot ID normalization.
+
+DEPENDENCIES:
+Used by:
+- src.utils, src.ui.main_window, and tests.
+Uses:
+- Standard library: urllib.parse
+"""
 
 import urllib.parse
 

@@ -1,4 +1,30 @@
-"""LCU connection lifecycle and event dispatch."""
+"""
+FILE NAME: src/core/websocket.py
+GLOBAL PURPOSE:
+- Maintain the live connection to the League Client Update API.
+- Translate raw LCU events into application-level callbacks, state updates, and automation triggers.
+- Bridge websocket transport, game-state tracking, and champion-select orchestration.
+
+KEY FUNCTIONS:
+- WebSocketManager: Own the LCU connector lifecycle and runtime state.
+- _ws_loop: Run the connector inside a dedicated asyncio loop and register event handlers.
+- get_effective_profile_config: Resolve global and role-specific settings into one effective profile.
+- _refresh_player_and_region: Keep detected account and region data synchronized with the client.
+
+AUDIENCE & LOGIC:
+Why:
+This module isolates transport concerns from UI code so client reconnects, event dispatch, and automation triggers remain explicit and testable.
+For whom:
+Developers maintaining the live client integration, reconnect behavior, and runtime profile resolution.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and src/ui/main_window.py through MainLoLApplication wiring.
+Uses:
+- Standard library: asyncio, logging, threading, time, typing
+- Optional third-party libraries: lcu_driver, psutil
+- Local modules: src.config, src.services.history, src.core.champ_select, src.core.game_state
+"""
 
 import asyncio
 import logging
@@ -35,7 +61,7 @@ from .game_state import GameState
 
 
 class WebSocketManager(ChampSelectMixin):
-    """WebSocket manager for communication with the LoL client."""
+    """Manage the LCU connector lifecycle and dispatch live client events."""
 
     EVENT_CONNECTED = "connected"
     EVENT_DISCONNECTED = "disconnected"
@@ -57,6 +83,7 @@ class WebSocketManager(ChampSelectMixin):
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
     ):
+        """Store shared collaborators and initialize per-run websocket state."""
         self.ui_callback = ui_callback
         self.dd = dd
         self.get_params = get_params
@@ -87,6 +114,7 @@ class WebSocketManager(ChampSelectMixin):
         log_history_event(event_type, message, details, level=level, category=category, action=action)
 
     def start(self) -> None:
+        """Start the background LCU loop if the connector is available."""
         if Connector is None:
             self._notify_ui(self.EVENT_STATUS, ("Error: 'lcu_driver' is missing.", "ERROR"))
             return
@@ -97,6 +125,7 @@ class WebSocketManager(ChampSelectMixin):
         self.thread.start()
 
     def stop(self) -> None:
+        """Request connector shutdown and wait briefly for the worker thread to exit."""
         self._stop_event.set()
         if self.connector and self.connection and self.loop and not self.loop.is_closed():
             try:
@@ -159,6 +188,7 @@ class WebSocketManager(ChampSelectMixin):
         role: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
+        """Resolve the effective profile by combining role overrides with global fallbacks."""
         params = params or self.get_params()
         role = self._normalize_role(role or self.state.assigned_position)
         resolved_role = role if role in ROLE_PROFILE_LABELS and role != "GLOBAL" else "GLOBAL"
@@ -175,6 +205,8 @@ class WebSocketManager(ChampSelectMixin):
                 global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             )
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            # Slot-level data follows the same rule everywhere: explicit role
+            # overrides win, otherwise global values fill the gaps.
 
             def _to_int(value: Any) -> int:
                 try:
@@ -619,6 +651,7 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def _reset_ws_runtime_state(self) -> None:
+        """Clear per-connection runtime fields before a reconnect or final shutdown."""
         self.connection = None
         self.ws_active = False
         self.state.current_phase = "None"
@@ -626,6 +659,7 @@ class WebSocketManager(ChampSelectMixin):
         self.state.reset_between_games()
 
     def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_message: Optional[str] = None) -> None:
+        """Emit a structured disconnect event unless shutdown was explicitly requested."""
         if self._stop_event.is_set():
             return
         self._notify_ui(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
@@ -656,11 +690,14 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.set_event_loop(loop)
             self.loop = loop
             while not self._stop_event.is_set():
+                # Recreate the connector on every retry so a broken connection does
+                # not leak stale event handlers or internal transport state.
                 connector = Connector(loop=loop)
                 self.connector = connector
 
                 @connector.ready
                 async def on_ready(connection):
+                    """Store the live connection and refresh cached player context."""
                     self.connection = connection
                     self.ws_active = True
                     log_history_event(
@@ -678,6 +715,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.close
                 async def on_close(connection):
+                    """Reset local state and notify the UI that the client disappeared."""
                     self._reset_ws_runtime_state()
                     if not self._stop_event.is_set():
                         log_history_event(
@@ -713,6 +751,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_GAMEFLOW)
                 async def _ws_phase(connection, event):
+                    # Phase changes are the main trigger for match-flow automation.
                     phase = event.data
                     if not phase:
                         return
@@ -761,6 +800,8 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):
+                    # Session events can burst quickly; serialize ticks so the mixin
+                    # never reads and writes champ-select state concurrently.
                     if self._cs_tick_lock.locked():
                         return
                     async with self._cs_tick_lock:
@@ -768,6 +809,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION_TIMER)
                 async def _ws_cs_timer(connection, event):
+                    # Timer polling is rate-limited because the LCU can emit frequent updates.
                     if time() - self.state._last_cs_timer_fetch > 0.2:
                         await self._champ_select_timer_tick()
                         self.state._last_cs_timer_fetch = time()
@@ -805,6 +847,7 @@ class WebSocketManager(ChampSelectMixin):
                 finally:
                     self.connector = None
 
+                # Back off briefly between retries so the loop does not hammer process detection.
                 if self._stop_event.wait(self.WS_RETRY_DELAY_S):
                     break
         finally:
@@ -815,9 +858,11 @@ class WebSocketManager(ChampSelectMixin):
                 loop.close()
 
     async def _refresh_player_and_region(self) -> None:
+        """Refresh detected Riot ID and routing data from whichever endpoint is currently available."""
         if not self.connection:
             return
 
+        # Chat identity often exposes the canonical Riot ID earlier than the summoner endpoint.
         chat_me = None
         resp_chat = await self.connection.request("get", "/lol-chat/v1/me")
         if resp_chat.status == 200:
@@ -844,6 +889,7 @@ class WebSocketManager(ChampSelectMixin):
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
+        # Region routing can come from different client endpoints depending on the client state.
         reg = None
         resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
         if resp_reg.status != 200:

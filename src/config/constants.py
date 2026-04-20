@@ -1,4 +1,25 @@
-"""Static constants for OTP LOL."""
+"""
+FILE NAME: src/config/constants.py
+GLOBAL PURPOSE:
+- Store static application constants and labels in one place.
+- Centralize endpoint strings, UI labels, asset paths, and routing maps.
+- Provide immutable reference data shared across runtime modules.
+
+KEY FUNCTIONS:
+- None.
+
+AUDIENCE & LOGIC:
+Why:
+This module keeps repeated literals out of business logic so configuration drift and label mismatches are easier to avoid.
+For whom:
+Developers maintaining shared constants for networking, UI labels, assets, and settings defaults.
+
+DEPENDENCIES:
+Used by:
+- Most modules under `src.config`, `src.core`, `src.services`, and `src.ui`.
+Uses:
+- Standard library typing helpers.
+"""
 
 from typing import Any, Dict
 

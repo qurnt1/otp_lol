@@ -1,4 +1,30 @@
-"""Update checking helpers."""
+"""
+FILE NAME: src/services/updates.py
+GLOBAL PURPOSE:
+- Check whether the repository README advertises a newer application version.
+- Extract release highlights from the README and format them for the update popup.
+- Keep remote version parsing and comparison logic in one service module.
+
+KEY FUNCTIONS:
+- fetch_remote_readme: Download the repository README through the GitHub API.
+- check_for_updates: Return update metadata when the remote version is newer.
+- extract_version_from_readme: Find the advertised version inside README content.
+- format_highlights_for_popup: Convert markdown highlights into readable plain text.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so update detection stays consistent and independent from UI presentation code.
+For whom:
+Developers maintaining release detection, semantic version comparison, and update notes formatting.
+
+DEPENDENCIES:
+Used by:
+- launcher.py through src.utils and src.ui.main_window.
+Uses:
+- Standard library: base64, logging, re, typing
+- Third-party libraries: packaging, requests
+- Local modules: src.config
+"""
 
 import base64
 import logging

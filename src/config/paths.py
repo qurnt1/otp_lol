@@ -1,4 +1,26 @@
-"""Filesystem paths and resource helpers."""
+"""
+FILE NAME: src/config/paths.py
+GLOBAL PURPOSE:
+- Resolve filesystem paths used by the application at runtime.
+- Bridge local source execution and PyInstaller execution through one resource helper.
+- Define stable locations for settings, history, caches, and temporary files.
+
+KEY FUNCTIONS:
+- resource_path: Resolve an asset path for source runs and packaged runs.
+- get_appdata_path: Build a file path inside the user AppData folder when available.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so every runtime path is built from one consistent place instead of being duplicated across the codebase.
+For whom:
+Developers working on filesystem access, caching, packaging, or resource loading.
+
+DEPENDENCIES:
+Used by:
+- src.config, src.core, src.services, and src.ui modules that read files or write caches.
+Uses:
+- Standard library: os, sys, tempfile
+"""
 
 import os
 import sys
@@ -6,7 +28,7 @@ import tempfile
 
 
 def resource_path(relative_path: str) -> str:
-    """Return the absolute path to a resource, compatible with PyInstaller."""
+    """Return the absolute path to a bundled resource for source and packaged runs."""
     if hasattr(sys, "_MEIPASS"):
         base_path = sys._MEIPASS
     else:
@@ -23,7 +45,7 @@ def resource_path(relative_path: str) -> str:
 
 
 def get_appdata_path(filename: str) -> str:
-    """Return a file path inside AppData/MainLoL."""
+    """Return a file path inside the application AppData folder when available."""
     app_data_dir = os.getenv("APPDATA")
     if not app_data_dir:
         return filename

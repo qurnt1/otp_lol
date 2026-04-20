@@ -1,4 +1,30 @@
-"""Data Dragon access and local caching."""
+"""
+FILE NAME: src/core/datadragon.py
+GLOBAL PURPOSE:
+- Fetch, cache, and resolve champion and summoner metadata from Riot sources.
+- Provide image-loading helpers for champion icons, spells, and skin previews.
+- Offer resilient fallback behavior when network access or cache data is unavailable.
+
+KEY FUNCTIONS:
+- DataDragon: Own champion metadata, image caches, and lookup helpers.
+- load: Populate champion metadata from Data Dragon, cache, or local fallback data.
+- resolve_champion: Convert a champion name or identifier into a champion id.
+- get_remote_image: Fetch and cache remote images used by the UI.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so metadata retrieval, caching, and image access stay consistent across automation and UI code.
+For whom:
+Developers maintaining champion metadata, image caches, and Riot data integration.
+
+DEPENDENCIES:
+Used by:
+- launcher.py, src.core.websocket, and multiple UI modules.
+Uses:
+- Standard library: io, json, logging, os, re, threading, typing, unicodedata
+- Third-party libraries: Pillow, requests
+- Local modules: src.config
+"""
 
 import json
 import logging
@@ -32,9 +58,10 @@ from ..config import (
 
 
 class DataDragon:
-    """Gestionnaire des donnees Data Dragon."""
+    """Manage Riot metadata lookups, local caches, and image retrieval helpers."""
 
     def __init__(self):
+        """Initialize metadata containers and in-memory image caches."""
         self.loaded: bool = False
         self.version: Optional[str] = None
         self.by_norm_name: Dict[str, int] = {}
@@ -50,6 +77,7 @@ class DataDragon:
 
     @staticmethod
     def _normalize(s: str) -> str:
+        """Normalize champion names so user-friendly aliases map to stable lookup keys."""
         s = s.strip().lower()
         s = unicodedata.normalize("NFD", s)
         s = "".join(c for c in s if unicodedata.category(c) != "Mn")
@@ -57,6 +85,7 @@ class DataDragon:
         return s
 
     def _load_from_cache(self, target_version: Optional[str] = None) -> bool:
+        """Load cached champion metadata when the cache matches the requested version."""
         try:
             if os.path.exists(DDRAGON_CACHE_FILE):
                 with open(DDRAGON_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -76,6 +105,7 @@ class DataDragon:
         return False
 
     def _save_cache(self) -> None:
+        """Persist the current champion metadata cache to disk."""
         try:
             with open(DDRAGON_CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(
@@ -95,6 +125,8 @@ class DataDragon:
         if self.loaded:
             return
 
+        # Cache directories are prepared up front because both metadata and image
+        # fetches rely on them later in the session.
         get_cache_dirs()
         online_version = self._fetch_latest_version()
         if self._load_from_cache(target_version=online_version):
@@ -140,6 +172,7 @@ class DataDragon:
             self._load_fallback_data()
 
     def _fetch_latest_version(self) -> Optional[str]:
+        """Return the latest online Data Dragon version when the network is reachable."""
         try:
             response = requests.get(URL_DD_VERSIONS, timeout=5)
             response.raise_for_status()
@@ -153,6 +186,7 @@ class DataDragon:
         return None
 
     def _add_champion_aliases(self) -> None:
+        """Register manual aliases for champions whose public names differ from internal slugs."""
         aliases = {
             "wukong": "monkeyking",
             "renata": "renataglasc",
@@ -164,6 +198,7 @@ class DataDragon:
                 self.by_norm_name[norm_alias] = self.by_norm_name[norm_internal]
 
     def _load_fallback_data(self) -> None:
+        """Load a minimal offline champion list when full metadata cannot be fetched."""
         logging.info("DataDragon: Loading fallback data")
         basic_champions = {
             "Garen": 86,
@@ -184,6 +219,7 @@ class DataDragon:
         self.loaded = True
 
     def resolve_champion(self, name_or_id: Any) -> Optional[int]:
+        """Resolve a champion name or identifier to a numeric champion id."""
         self.load()
         if name_or_id is None:
             return None
@@ -195,10 +231,12 @@ class DataDragon:
         return self.by_norm_name.get(normalized_name)
 
     def id_to_name(self, champion_id: int) -> Optional[str]:
+        """Return the public champion name for a numeric champion id."""
         self.load()
         return self.name_by_id.get(champion_id)
 
     def get_champion_tags(self, name_or_id: Any) -> List[str]:
+        """Return champion role tags from the loaded champion metadata."""
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
             return []

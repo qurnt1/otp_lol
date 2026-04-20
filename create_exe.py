@@ -1,3 +1,30 @@
+"""
+FILE NAME: create_exe.py
+GLOBAL PURPOSE:
+- Build the Windows executable distribution with PyInstaller.
+- Make packaging rules explicit for assets, hidden imports, and entry-point resolution.
+- Produce a single executable, optionally create a desktop shortcut, and clean temporary artifacts.
+
+KEY FUNCTIONS:
+- _prompt_yes_no: Normalize an interactive yes or no answer from the console.
+- _create_desktop_shortcut: Create a Windows desktop shortcut for the packaged executable.
+- main: Prepare build arguments, run PyInstaller, move the final executable, and clean generated files.
+
+AUDIENCE & LOGIC:
+Why:
+This script keeps release packaging reproducible and documents why the build includes assets and modules explicitly instead of relying only on auto-detection.
+For whom:
+Developers or maintainers who build the Windows executable from source.
+
+DEPENDENCIES:
+Used by:
+- Executed manually as a build script.
+Uses:
+- Standard library: os, shutil, subprocess, sys
+- Local config exports from src.config
+- External tool: PyInstaller
+"""
+
 import os
 import subprocess
 import sys
@@ -7,7 +34,7 @@ from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
 
 def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
-    """Ask a yes/no question in the console and return the normalized answer."""
+    """Return a normalized boolean answer for an interactive console prompt."""
     yes_values = {"y", "yes", "o", "oui"}
     no_values = {"n", "no", "non"}
     suffix = "[Y/n]" if default else "[y/N]"
@@ -24,7 +51,7 @@ def _prompt_yes_no(prompt: str, default: bool = True) -> bool:
 
 
 def _create_desktop_shortcut(target_exe: str, app_name: str) -> bool:
-    """Create a Windows desktop shortcut to the generated executable."""
+    """Create a desktop shortcut for the packaged executable on Windows."""
     powershell = shutil.which("powershell") or shutil.which("powershell.exe")
     if not powershell:
         print("⚠️  PowerShell not found. Desktop shortcut skipped.")
@@ -61,6 +88,7 @@ $shortcut.Save()
         return False
 
 def main():
+    """Run the end-to-end executable build workflow for the current project root."""
     print("=" * 60)
     print(f"   {APP_NAME} - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
@@ -68,7 +96,8 @@ def main():
 
     create_shortcut = _prompt_yes_no("Create a desktop shortcut after build?", default=True)
     
-    # Définition des chemins
+    # Resolve the repository root from the script location so every relative
+    # build path stays stable no matter where the command is launched from.
     try:
         script_path = os.path.abspath(__file__)
     except NameError:
@@ -77,37 +106,34 @@ def main():
     root_dir = os.path.dirname(script_path)
     os.chdir(root_dir)
 
-    # ─────────────────────────────────────────────────────────────────────
-    # CONFIGURATION PYINSTALLER
-    # ─────────────────────────────────────────────────────────────────────
-    
+    # Keep packaging rules in one place so PyInstaller behavior stays predictable
+    # across local environments and future refactors.
     raw_args = [
-        '--onefile',      # Fichier unique portable
-        '--windowed',     # Pas de console
-        '--noconfirm',    # Écraser sans confirmation
+        '--onefile',      # Produce one portable executable.
+        '--windowed',     # Hide the extra console window for the desktop app.
+        '--noconfirm',    # Allow rebuilds without an extra prompt.
         '--name', APP_BUILD_NAME,
         '--icon', r'.\config\images\app\garen.ico',
         
-        # ─── INCLUSION DES ASSETS ───
+        # Ship runtime assets explicitly because they are loaded from disk at runtime.
         '--add-data', r'.\config;config',
         
-        # ─── INCLUSION DU PACKAGE SRC ───
-        # PyInstaller détecte automatiquement les imports, mais on force
-        # l'inclusion du dossier src pour être sûr
+        # Include the source tree as data as an extra safety net for modules and
+        # resources that are resolved dynamically at runtime.
         '--add-data', r'.\src;src',
         
-        # ─── DÉPENDANCES UI ───
+        # ttkbootstrap bundles theme assets that are easier to keep intact via collect-all.
         '--collect-all', 'ttkbootstrap',
         
-        # ─── HIDDEN IMPORTS (Modules non détectés automatiquement) ───
-        # Modules du package src (pour être sûr qu'ils sont inclus)
+        # Hidden imports document packaging assumptions for modules that may be
+        # missed when imports are optional, indirect, or environment-dependent.
         '--hidden-import=src',
         '--hidden-import=src.config',
         '--hidden-import=src.core',
         '--hidden-import=src.ui',
         '--hidden-import=src.utils',
         
-        # Dépendances tierces
+        # Third-party modules referenced through dynamic code paths.
         '--hidden-import=keyboard',
         '--hidden-import=pygame',
         '--hidden-import=pygame.mixer',
@@ -122,14 +148,12 @@ def main():
         '--hidden-import=packaging',
         '--hidden-import=requests',
         
-        # ─── POINT D'ENTRÉE ───
+        # Application entry point.
         'launcher.py'
     ]
     
-    # ─────────────────────────────────────────────────────────────────────
-    # PRÉ-TRAITEMENT DES ARGUMENTS (chemins absolus)
-    # ─────────────────────────────────────────────────────────────────────
-    
+    # Convert file-based options to absolute paths before invoking PyInstaller.
+    # This avoids failures caused by the current working directory.
     processed_args = []
     app_name = None 
     arg_iter = iter(raw_args)
@@ -167,13 +191,11 @@ def main():
         else:
             processed_args.append(arg)
 
-    # ─────────────────────────────────────────────────────────────────────
-    # LANCEMENT DE PYINSTALLER
-    # ─────────────────────────────────────────────────────────────────────
-    
     dist_path = os.path.join(root_dir, 'dist')
     build_path = os.path.join(root_dir, 'build')
     
+    # Use dedicated dist/build/spec paths so the script can clean its own
+    # artifacts without affecting unrelated files in the repository.
     py_command = [sys.executable, "-m", "PyInstaller"] + processed_args
     py_command.extend([
         "--clean", 
@@ -191,10 +213,8 @@ def main():
         print(f"\n❌ ERREUR COMPILATION: {e}")
         sys.exit(1)
 
-    # ─────────────────────────────────────────────────────────────────────
-    # DÉPLACEMENT ET NETTOYAGE
-    # ─────────────────────────────────────────────────────────────────────
-    
+    # Move the final executable to the repository root so the output path stays
+    # stable for release usage and shortcut creation.
     exe_name = f"{app_name}.exe"
     source = os.path.join(dist_path, exe_name)
     target = os.path.join(root_dir, exe_name)
@@ -215,7 +235,8 @@ def main():
         else:
             print("\nℹ️  Desktop shortcut skipped by user choice.")
         
-        # Nettoyage
+        # Clean generated folders and legacy build outputs so repeated runs do
+        # not leave stale artifacts that could confuse future packaging steps.
         print("\n🧹 Nettoyage des fichiers temporaires...")
         try:
             if os.path.exists(build_path):
@@ -225,7 +246,7 @@ def main():
             spec_file = os.path.join(root_dir, f"{app_name}.spec")
             if os.path.exists(spec_file):
                 os.remove(spec_file)
-            # Nettoyage de l'ancien dossier onedir s'il existe
+            # Remove the old one-dir folder if a previous build left it behind.
             old_dir = os.path.join(root_dir, app_name)
             if os.path.exists(old_dir):
                 shutil.rmtree(old_dir)

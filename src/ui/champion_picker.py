@@ -1,4 +1,26 @@
-"""Champion picker helpers for settings."""
+"""
+FILE NAME: src/ui/champion_picker.py
+GLOBAL PURPOSE:
+- Build the champion-selection dialog used by the settings window.
+- Filter unavailable champions based on the current editing context.
+- Keep picker-specific layout and search behavior outside the main settings module.
+
+KEY FUNCTIONS:
+- open_champion_picker: Open the searchable champion picker for a pick or ban slot.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so champion-picker layout and filtering logic do not clutter the larger settings window implementation.
+For whom:
+Developers maintaining the settings pickers and champion selection UX.
+
+DEPENDENCIES:
+Used by:
+- src.ui.settings_window
+Uses:
+- Standard library: tkinter, typing
+- Third-party library: ttkbootstrap
+"""
 
 from typing import TYPE_CHECKING
 
@@ -11,7 +33,7 @@ if TYPE_CHECKING:
 
 
 def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 1) -> None:
-    """Open the champion picker without favorites."""
+    """Open the searchable champion picker for the requested settings context."""
     is_pick_context = context == "pick"
     enabled = owner.auto_pick_var.get() if is_pick_context else owner.auto_ban_var.get()
     if not enabled:
@@ -40,6 +62,8 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
     scroll_container.pack(fill="both", expand=True, padx=5, pady=5)
     grid_frame = scroll_container
 
+    # Excluded champions prevent duplicate picks or invalid pick-ban combinations
+    # while the user is editing one profile.
     excluded = owner._get_excluded_champions(context, slot_num)
     valid_champs = [champion for champion in owner.all_champions if champion not in excluded]
     layout_state = {"columns": 3, "after_id": None}
@@ -101,6 +125,7 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
         ttk.Label(card, text="Leave this slot empty", bootstyle="secondary").pack(pady=(6, 0))
 
     def populate_grid(filter_text: str = "") -> None:
+        """Rebuild the visible card grid after a search or resize event."""
         for widget in grid_frame.winfo_children():
             widget.destroy()
 

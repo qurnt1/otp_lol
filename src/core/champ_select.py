@@ -1,4 +1,30 @@
-"""Champion select logic extracted from the LCU manager."""
+"""
+FILE NAME: src/core/champ_select.py
+GLOBAL PURPOSE:
+- Hold the champion-select and post-game automation flow used by the websocket manager.
+- Resolve picks, bans, summoner spells, and skins from the current session plus stored settings.
+- Reconcile desired automation state with the live LCU session through retries and confirmations.
+
+KEY FUNCTIONS:
+- _champ_select_tick: Read the current session and decide which safe automation step should run next.
+- _logic_do_pick: Try configured pick presets in priority order until one is confirmed.
+- _resolve_spell_selection: Compute the effective summoner spells for the active pick slot.
+- _resolve_skin_selection: Compute the effective fixed or random skin request for the active pick slot.
+- _set_spells / _set_skin: Apply and confirm the requested selection against the LCU.
+
+AUDIENCE & LOGIC:
+Why:
+This mixin keeps the highest-risk automation logic separate from websocket transport code so retry rules and session reconciliation stay maintainable.
+For whom:
+Developers working on champion-select automation, fallback behavior, and LCU confirmation flows.
+
+DEPENDENCIES:
+Used by:
+- src/core/websocket.py via WebSocketManager inheritance.
+Uses:
+- Standard library: asyncio, json, logging, random, time, typing
+- Local config exports from src.config
+"""
 
 import asyncio
 import json
@@ -14,7 +40,7 @@ if TYPE_CHECKING:
 
 
 class ChampSelectMixin:
-    """Mixin regroupant la logique de champ select et post-game."""
+    """Provide reusable champion-select and post-game automation helpers."""
 
     SPELL_CONFIRM_RETRIES = 5
     SPELL_CONFIRM_DELAY_S = 0.18
@@ -28,6 +54,7 @@ class ChampSelectMixin:
 
     @staticmethod
     def _format_debug_value(payload: Any, limit: int = 240) -> str:
+        """Serialize debug payloads into a compact single-line string for logs."""
         try:
             text = json.dumps(payload, ensure_ascii=True, sort_keys=True)
         except TypeError:
@@ -83,6 +110,7 @@ class ChampSelectMixin:
         return None
 
     def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[tuple[str, str]]:
+        """Return configured pick presets in the order they should be attempted."""
         effective = self._get_effective_champ_select_config(params)
         if not effective.get("presets_enabled", True):
             return []
@@ -98,6 +126,7 @@ class ChampSelectMixin:
         pickable_ids: Optional[Set[int]],
         banned_ids: Optional[Set[int]] = None,
     ) -> List[tuple[str, str, int]]:
+        """Filter configured presets down to champions that can still be picked now."""
         banned_ids = banned_ids or set()
         candidates: List[tuple[str, str, int]] = []
         for slot_key, champion_name in self._get_pick_priority(params):
@@ -122,6 +151,7 @@ class ChampSelectMixin:
         pickable_ids: Optional[Set[int]],
         banned_ids: Optional[Set[int]] = None,
     ) -> Optional[tuple[str, str, int]]:
+        """Return the first configured champion that survives current session constraints."""
         candidates = self._get_viable_pick_candidates(params, pickable_ids, banned_ids)
         return candidates[0] if candidates else None
 
@@ -185,6 +215,8 @@ class ChampSelectMixin:
 
         params = self.get_params()
 
+        # Capture the assigned role as soon as it appears so later profile resolution
+        # can consistently use role-specific overrides.
         if not self.state.assigned_position:
             my_team = session.get("myTeam", [])
             my_player_obj = next((p for p in my_team if p.get("cellId") == local_id), None)
@@ -201,6 +233,8 @@ class ChampSelectMixin:
                 if action.get("actorCellId") == local_id and not action.get("completed"):
                     my_actions.append(action)
 
+        # Collect the live constraints first so every downstream decision uses the
+        # same snapshot of pickability, bans, and prepick state.
         effective = self._get_effective_champ_select_config(params)
         presets_enabled = bool(effective.get("presets_enabled", True))
         pickable_set = await self._fetch_pickable_ids()
@@ -220,6 +254,8 @@ class ChampSelectMixin:
             None,
         )
 
+        # Pre-pick comes first because the client can expose a hover-only action
+        # before the final ban or pick phase begins.
         if params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1"):
             if prepick_action:
                 best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
@@ -251,6 +287,8 @@ class ChampSelectMixin:
                 return
             self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
 
+        # Summoner spells can be prepared during the hover phase without blocking the
+        # rest of champion-select automation.
         prepick_sequence_active = params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and (
             prepick_required or (self.state.has_prepicked and not self.state.has_picked)
         )
@@ -267,6 +305,8 @@ class ChampSelectMixin:
         elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
             await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
 
+        # After a successful lock-in, keep reconciling spells and skins because the
+        # Riot client can overwrite selections after an apparently successful patch.
         if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
         if self.state.has_picked and presets_enabled:
@@ -395,6 +435,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> tuple[str, str, int, int, str]:
+        """Resolve the effective summoner spell pair for the current pick slot."""
         effective = self.get_effective_profile_config(params=params)
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
@@ -413,6 +454,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> tuple[Optional[Dict[str, Any]], str]:
+        """Resolve the effective fixed or random skin request for the current slot."""
         effective = self.get_effective_profile_config(params=params)
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
@@ -422,6 +464,8 @@ class ChampSelectMixin:
         if not champion_name:
             return None, chosen_slot
 
+        # Main-window overrides can temporarily force a slot away from the saved
+        # profile mode without rewriting the underlying configuration.
         skin_mode_overrides = params.get("main_skin_mode_overrides", {})
         if isinstance(skin_mode_overrides, dict):
             raw_override = skin_mode_overrides.get(chosen_slot, "inherit")
@@ -787,6 +831,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> None:
+        """Re-apply spells when live session state drifts away from the expected values."""
         if self.state.spell_apply_in_progress or not self.connection:
             return
         local_selection = self._extract_local_player_selection(session)
@@ -921,6 +966,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> None:
+        """Re-apply the desired skin when the client does not keep the requested value."""
         if self.state.skin_apply_in_progress or not self.connection:
             return
         local_selection = self._extract_local_player_selection(session)
@@ -1267,6 +1313,7 @@ class ChampSelectMixin:
             self.state.skin_apply_in_progress = False
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
+        """Try to return to lobby after the game when that automation is enabled."""
         params = self.get_params()
         if not params.get("auto_play_again_enabled"):
             return

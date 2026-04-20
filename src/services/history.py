@@ -1,4 +1,28 @@
-"""Persistent action history helpers."""
+"""
+FILE NAME: src/services/history.py
+GLOBAL PURPOSE:
+- Persist user-visible action history to a local JSON file.
+- Format raw history entries into a display-friendly structure for the UI.
+- Keep event categories, labels, and detail lines consistent across the app.
+
+KEY FUNCTIONS:
+- log_history_event: Append one normalized history entry to persistent storage.
+- get_history_entries: Return recent entries in reverse chronological order.
+- format_history_entry: Convert a raw entry into the structure expected by the UI.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so every feature records history in the same structure and the UI can render it without repeating formatting logic.
+For whom:
+Developers maintaining action history, event labeling, and history display behavior.
+
+DEPENDENCIES:
+Used by:
+- src.core.websocket, src.core.champ_select, and src.ui.main_window.
+Uses:
+- Standard library: datetime, json, logging, os, typing
+- Local modules: src.config
+"""
 
 import json
 import logging
@@ -40,6 +64,7 @@ CATEGORY_LABELS = {
 
 
 def _read_history() -> List[Dict[str, Any]]:
+    """Read the persisted history file and return only valid dictionary entries."""
     if not os.path.exists(HISTORY_PATH):
         return []
     try:
@@ -53,6 +78,7 @@ def _read_history() -> List[Dict[str, Any]]:
 
 
 def _write_history(entries: List[Dict[str, Any]]) -> None:
+    """Write the bounded history list back to disk."""
     os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
     with open(HISTORY_PATH, "w", encoding="utf-8") as f:
         json.dump(entries[-MAX_HISTORY_ENTRIES:], f, indent=2, ensure_ascii=False)
@@ -67,6 +93,7 @@ def log_history_event(
     category: Optional[str] = None,
     action: Optional[str] = None,
 ) -> None:
+    """Append a normalized history entry to the persistent history store."""
     defaults = EVENT_DEFAULTS.get(event_type, {})
     entry = {
         "timestamp": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -86,11 +113,13 @@ def log_history_event(
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
+    """Return the newest history entries first, limited to the requested count."""
     entries = _read_history()
     return list(reversed(entries[-limit:]))
 
 
 def clear_history_entries() -> None:
+    """Remove all persisted history entries."""
     try:
         _write_history([])
     except OSError as e:
@@ -98,6 +127,7 @@ def clear_history_entries() -> None:
 
 
 def _format_timestamp(timestamp: str) -> str:
+    """Convert ISO timestamps into a short local-time label for the UI."""
     if not timestamp:
         return "--:--:--"
     try:
@@ -107,6 +137,7 @@ def _format_timestamp(timestamp: str) -> str:
 
 
 def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
+    """Convert raw history details into readable UI lines."""
     if not isinstance(details, dict):
         return []
 
@@ -145,6 +176,7 @@ def _build_detail_lines(details: Dict[str, Any]) -> List[str]:
 
 
 def format_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the UI-ready representation of one raw history entry."""
     event_type = entry.get("type", "info")
     defaults = EVENT_DEFAULTS.get(event_type, {})
     level = entry.get("level") or defaults.get("level", "info")

@@ -1,4 +1,27 @@
-"""Backward-compatible utility facade."""
+"""
+FILE NAME: src/utils.py
+GLOBAL PURPOSE:
+- Expose legacy utility imports through one compatibility module.
+- Re-export helpers that were split into smaller service modules.
+- Preserve older import paths while the internal architecture stays modular.
+
+KEY FUNCTIONS:
+- check_for_updates: Re-export the update check helper.
+- check_single_instance: Re-export the single-instance guard.
+- enable_high_dpi: Re-export the Windows DPI helper.
+
+AUDIENCE & LOGIC:
+Why:
+This facade keeps older call sites stable while utility logic lives in dedicated service modules.
+For whom:
+Developers maintaining legacy imports or calling shared utility helpers from runtime code.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and modules that still import shared helpers from `src.utils`.
+Uses:
+- Local modules from `src.services`
+"""
 
 from .services import updates as _updates
 from .services.platform import enable_high_dpi

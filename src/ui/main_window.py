@@ -1,4 +1,31 @@
-"""Main application window UI."""
+"""
+FILE NAME: src/ui/main_window.py
+GLOBAL PURPOSE:
+- Render the main desktop window and keep it synchronized with live client state.
+- Centralize user-facing controls such as status, previews, tray integration, hotkeys, history, and update prompts.
+- Expose a safe UI-thread boundary for events emitted by the websocket layer.
+
+KEY FUNCTIONS:
+- LoLAssistantUI: Own the main window, shared UI services, and event wiring.
+- get_effective_profile_config: Resolve the profile data shown by the main preview when the websocket is unavailable.
+- _refresh_feature_preview: Rebuild the compact home-screen summary of picks, ban, and skin state.
+- _handle_core_event: Translate core-layer events into safe Tk UI updates.
+- stop: Shut down background helpers and destroy the Tk root cleanly.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists as the single UI shell so cross-cutting behaviors such as tray control, hotkeys, preview state, and event marshaling stay consistent.
+For whom:
+Developers maintaining the desktop UX, UI-thread boundaries, and interactions with core services.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and src/ui/settings_window.py
+Uses:
+- Standard library: concurrent.futures, logging, os, re, tkinter, typing, webbrowser
+- Third-party libraries: Pillow, ttkbootstrap
+- Local modules: src.config, src.services.history, src.utils, src.ui.hotkeys, src.ui.media, src.ui.settings_window, src.ui.tray
+"""
 
 import logging
 import os
@@ -34,7 +61,7 @@ from .tray import TrayController
 
 
 class LoLAssistantUI:
-    """Main OTP LOL graphical interface."""
+    """Own the primary application window and its user-facing runtime helpers."""
 
     MAX_WORKERS = 4
     DISCONNECT_CLOSE_DELAY_MS = 8000
@@ -64,6 +91,7 @@ class LoLAssistantUI:
         get_params_callback: Callable[[], Dict[str, Any]],
         quit_callback: Callable[[], None],
     ):
+        """Initialize the main window and the helper services it coordinates."""
         self.dd = dd
         self._params = params
         self._save_callback = save_callback
@@ -106,6 +134,8 @@ class LoLAssistantUI:
         self.stats_btn: Optional[ttk.Button] = None
         self.settings_gear_label: Optional[ttk.Label] = None
         self.history_filter_var = tk.StringVar(value="All")
+        # Build the window before tray and hotkey services so callbacks always
+        # have a valid Tk root to target.
         self.create_ui()
         self.apply_theme(self.theme)
         self.create_system_tray()
@@ -121,6 +151,7 @@ class LoLAssistantUI:
         return self.hotkey_manager.available
 
     def set_ws_manager(self, ws_manager) -> None:
+        """Attach the live websocket manager once launcher wiring is complete."""
         self.ws_manager = ws_manager
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
@@ -129,6 +160,7 @@ class LoLAssistantUI:
         return self._get_params_callback()
 
     def update_param(self, key: str, value: Any) -> None:
+        """Update one parameter and refresh the UI surfaces that depend on it."""
         self._update_param_callback(key, value)
         self._queue_feature_preview_refresh(force=True)
         self._refresh_stats_button()
@@ -202,6 +234,7 @@ class LoLAssistantUI:
             self.ws_manager.force_refresh_summoner()
 
     def get_effective_profile_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+        """Return the effective preview profile, even before the websocket is ready."""
         if self.ws_manager:
             return self.ws_manager.get_effective_profile_config(role=role)
 
@@ -228,6 +261,8 @@ class LoLAssistantUI:
         def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
             global_slot = global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
             role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            # The preview mirrors runtime resolution rules: role-specific values win,
+            # and global values act as the fallback for empty fields.
             def _to_int(value: Any) -> int:
                 try:
                     return int(value or 0)
@@ -325,6 +360,7 @@ class LoLAssistantUI:
         }
 
     def create_ui(self) -> None:
+        """Build the persistent main-window sections in the order they appear on screen."""
         self._configure_styles()
         self._create_banner()
         self._create_connection_indicator()
@@ -1489,7 +1525,7 @@ class LoLAssistantUI:
         badges = tk.Frame(summary_card, bg=palette["surface_bg"])
         badges.pack(anchor="w")
 
-        # Utiliser des boutons désactivés ttk pour avoir l'effet d'arrondi "Ikea pill"
+        # Disabled ttk buttons give the compact rounded badge style used for version pills.
         ttk.Button(
             badges,
             text=f"Current version: {CURRENT_VERSION}",
@@ -1607,7 +1643,7 @@ class LoLAssistantUI:
             hover_foreground=palette["text"],
         ).pack()
         
-        # En inversant l'ordre de packing avec side="right", on assure que Download est tout à droite.
+        # Pack from the right so the primary download action stays aligned to the far edge.
         ttk.Button(
             right_actions,
             text="Download",
@@ -1683,9 +1719,11 @@ class LoLAssistantUI:
                 text_widget.insert("end", "\n", ("update_body",))
 
     def on_core_event(self, event_type: str, data: Any) -> None:
+        """Marshal core events back to Tk because websocket callbacks run off the UI thread."""
         self.root.after(0, lambda: self._handle_core_event(event_type, data))
 
     def _handle_core_event(self, event_type: str, data: Any) -> None:
+        """Update UI surfaces in response to normalized events from the core layer."""
         from ..core import WebSocketManager
 
         if event_type == WebSocketManager.EVENT_CONNECTED:
@@ -1711,6 +1749,8 @@ class LoLAssistantUI:
         elif event_type == WebSocketManager.EVENT_READY_CHECK_ACCEPTED:
             self.play_accept_sound()
 
+        # Refresh secondary surfaces after every core event so the window, stats
+        # button, and history stay consistent with the latest runtime state.
         self._queue_feature_preview_refresh()
         self._refresh_stats_button()
         if self.history_window and self.history_window.winfo_exists():
@@ -1720,6 +1760,7 @@ class LoLAssistantUI:
         self.root.mainloop()
 
     def stop(self) -> None:
+        """Shut down UI-owned helpers and destroy the Tk root without leaving callbacks behind."""
         if self.closing_requested:
             return
         self.closing_requested = True

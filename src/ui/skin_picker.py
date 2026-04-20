@@ -1,4 +1,30 @@
-"""Skin picker helpers for preset settings."""
+"""
+FILE NAME: src/ui/skin_picker.py
+GLOBAL PURPOSE:
+- Build the skin-selection dialog used by the settings window.
+- Merge catalog metadata with detected ownership and random-pool selections.
+- Keep skin-picker-specific sorting, confirmation, and preview behavior isolated from the main settings module.
+
+KEY FUNCTIONS:
+- open_skin_picker: Open the skin picker for one preset slot.
+- _merge_catalog_and_owned_skins: Merge catalog entries with owned-skin metadata.
+- _sort_skins_for_display: Prioritize selected skins at the top of the picker.
+- _confirm_unowned_skin_selection: Confirm selection when a skin is not detected on the account.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so skin-picking rules, ownership prompts, and preview ordering remain maintainable outside the already large settings module.
+For whom:
+Developers maintaining skin selection UX and random skin pool behavior.
+
+DEPENDENCIES:
+Used by:
+- src.ui.settings_window
+Uses:
+- Standard library: tkinter, typing
+- Third-party library: ttkbootstrap
+- Local modules: src.config
+"""
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -16,6 +42,7 @@ def _merge_catalog_and_owned_skins(
     catalog_skins: List[Dict[str, Any]],
     owned_skins: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
+    """Merge catalog skin entries with owned-skin metadata while preserving one row per skin."""
     owned_by_id: dict[int, Dict[str, Any]] = {}
     for entry in owned_skins:
         if not isinstance(entry, dict):
@@ -66,6 +93,7 @@ def _merge_catalog_and_owned_skins(
 
 
 def _get_picker_image_url(skin: Dict[str, Any]) -> str:
+    """Return the best available preview image URL for the picker card."""
     return str(
         skin.get("centered_splash_url")
         or skin.get("splash_url")
@@ -82,6 +110,7 @@ def _sort_skins_for_display(
     fixed_skin_id: int = 0,
     pool_ids: Optional[set[int]] = None,
 ) -> List[Dict[str, Any]]:
+    """Move selected skins to the top while keeping the remaining list order stable."""
     normalized_mode = str(mode or "fixed").strip().lower()
     selected_ids = set(pool_ids or set()) if normalized_mode == "random" else set()
     prioritized: List[Dict[str, Any]] = []
@@ -99,6 +128,7 @@ def _confirm_unowned_skin_selection(
     owner: Optional["SettingsWindow"] = None,
     ask_fn: Optional[Any] = None,
 ) -> bool:
+    """Ask for confirmation before selecting a skin that was not detected on the account."""
     if bool(skin.get("owned")):
         return True
     if ask_fn is not None:
@@ -175,6 +205,7 @@ def _confirm_unowned_skin_selection(
 
 
 def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
+    """Convert an owned-skins fetch result into a user-facing status message."""
     if result.get("ok"):
         return ""
     message = str(result.get("message") or "").strip()
@@ -207,6 +238,8 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
 
     picker.protocol("WM_DELETE_WINDOW", on_close)
 
+    # The picker depends on the currently assigned champion because ownership and
+    # preview data are champion-specific.
     champion_name = owner._get_slot_champion_name(slot_key)
     champion_id = owner.parent.dd.resolve_champion(champion_name) if champion_name not in {"", "(None)"} else None
     ws_manager = getattr(owner.parent, "ws_manager", None)

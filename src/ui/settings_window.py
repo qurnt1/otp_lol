@@ -1,4 +1,31 @@
-"""Settings window UI."""
+"""
+FILE NAME: src/ui/settings_window.py
+GLOBAL PURPOSE:
+- Render and manage the editable application settings window.
+- Resolve profile-specific overrides versus global defaults for picks, spells, skins, and preferences.
+- Persist user edits back to the main window state while keeping previews and shortcuts synchronized.
+
+KEY FUNCTIONS:
+- SettingsWindow: Own the settings dialog and its editing state.
+- _get_profile_role_data: Return the editable data source for the selected role profile.
+- _get_effective_pick_slot_config: Compute the effective slot configuration with global fallbacks.
+- _start_hotkey_capture: Temporarily enter shortcut capture mode without triggering existing hotkeys.
+- on_close: Persist edited values back into the parent UI state before destroying the window.
+
+AUDIENCE & LOGIC:
+Why:
+This module isolates settings editing complexity so profile overrides, picker dialogs, and shortcut capture rules do not leak into the main window.
+For whom:
+Developers maintaining configuration UX, profile fallback behavior, and settings persistence.
+
+DEPENDENCIES:
+Used by:
+- src/ui/main_window.py
+Uses:
+- Standard library: datetime, logging, os, random, tkinter, typing
+- Third-party libraries: Pillow, ttkbootstrap
+- Local modules: src.config, src.ui.champion_picker, src.ui.role_picker, src.ui.skin_picker, src.ui.site_picker
+"""
 
 import logging
 import os
@@ -42,7 +69,7 @@ if TYPE_CHECKING:
 
 
 class SettingsWindow:
-    """Application settings window."""
+    """Manage the settings dialog and the profile-aware configuration it edits."""
 
     PRESET_LABELS = {
         "pick_1": "Preset 1",
@@ -52,6 +79,7 @@ class SettingsWindow:
     PICK_ICON_SIZE = (30, 30)
 
     def __init__(self, parent: "LoLAssistantUI"):
+        """Create the settings dialog and initialize its editable view state."""
         self.parent = parent
         self.window = ttk.Toplevel(parent.root)
         self.window.title(f"Settings - {APP_NAME}")
@@ -79,6 +107,8 @@ class SettingsWindow:
 
         self._setup_window_icon()
         self._init_variables()
+        # Widget creation is separated from state initialization so the window can
+        # immediately reflect the current profile and parameter snapshot.
         self.create_widgets()
         self.window.bind("<KeyPress>", self._on_hotkey_capture_keypress)
         self.window.bind("<KeyRelease>", self._on_hotkey_capture_keyrelease)
@@ -96,6 +126,7 @@ class SettingsWindow:
             self.window._icon_img = None
 
     def _init_variables(self) -> None:
+        """Populate Tk variables from the current parent parameter snapshot."""
         params = self.parent.get_params()
         self.auto_accept_var = tk.BooleanVar(value=params.get("auto_accept_enabled", True))
         self.auto_pick_var = tk.BooleanVar(value=True)
@@ -117,6 +148,7 @@ class SettingsWindow:
         self.close_on_exit_var = tk.BooleanVar(value=params.get("close_app_on_lol_exit", True))
 
     def create_widgets(self) -> None:
+        """Build the settings UI sections and synchronize their initial state."""
         self.scroll_frame = ScrolledFrame(self.window, autohide=True, height=780)
         self.scroll_frame.pack(fill="both", expand=True)
 
@@ -458,6 +490,7 @@ class SettingsWindow:
         return self._normalize_role(self.profile_role_var.get())
 
     def _get_profile_role_data(self, role: Optional[str] = None) -> Dict[str, object]:
+        """Return the editable data source for the selected role or the global profile."""
         params = self.parent.get_params()
         target_role = self._normalize_role(role or self._get_selected_profile_role())
         if target_role == "GLOBAL":
@@ -581,12 +614,15 @@ class SettingsWindow:
         return "..."
 
     def _get_effective_pick_slot_config(self, slot_key: str) -> Dict[str, Any]:
+        """Return the slot config that the UI should display after applying global fallbacks."""
         slot_data = self._get_profile_role_data().get("pick_slots", {})
         slot_data = slot_data.get(slot_key, {}) if isinstance(slot_data, dict) else {}
         global_slot = self.parent.get_params().get("pick_slots", {})
         global_slot = global_slot.get(slot_key, {}) if isinstance(global_slot, dict) else {}
 
         def _pick(field: str, default: Any = "") -> Any:
+            # A role profile only overrides fields it explicitly defines; empty values
+            # intentionally fall back to the global configuration shown in the UI.
             value = slot_data.get(field) if isinstance(slot_data, dict) else ""
             if isinstance(value, list):
                 if value:
@@ -1320,6 +1356,7 @@ class SettingsWindow:
         self._refresh_skin_buttons()
 
     def toggle_summoner_entry(self) -> None:
+        """Switch between auto-detected and manual account entry modes."""
         if self.summoner_auto_detect_var.get():
             self.summ_entry.configure(state="readonly")
             self.region_cb.configure(state="disabled")
@@ -1408,6 +1445,7 @@ class SettingsWindow:
             self.parent.update_param("manual_region", selected)
 
     def _export_config(self) -> None:
+        """Export the current parameter snapshot to a user-selected JSON file."""
         default_name = f"main_lol_config_{datetime.now().strftime('%Y-%m-%d')}.json"
         path = filedialog.asksaveasfilename(
             parent=self.window,
@@ -1424,6 +1462,7 @@ class SettingsWindow:
             self.parent.show_toast("Export failed.")
 
     def _import_config(self) -> None:
+        """Import a JSON configuration file and refresh the settings UI from it."""
         path = filedialog.askopenfilename(
             parent=self.window,
             title="Import configuration",
@@ -1445,6 +1484,7 @@ class SettingsWindow:
         self.parent.show_toast("Configuration imported!")
 
     def _poll_summoner_label(self) -> None:
+        """Refresh auto-detected account labels while the settings window stays open."""
         if not self.window.winfo_exists():
             return
 
@@ -1464,6 +1504,7 @@ class SettingsWindow:
         self.window.after(1000, self._poll_summoner_label)
 
     def on_close(self) -> None:
+        """Persist edited settings back to the parent UI and close the dialog."""
         if self._capture_target:
             self._cancel_hotkey_capture()
         if getattr(self, "skin_picker_window", None) and self.skin_picker_window.winfo_exists():

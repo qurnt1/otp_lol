@@ -1,4 +1,27 @@
-"""Role picker helpers for settings."""
+"""
+FILE NAME: src/ui/role_picker.py
+GLOBAL PURPOSE:
+- Build the role-profile picker used by the settings window.
+- Keep role-selection UI separate from the main settings implementation.
+- Highlight the currently selected profile while allowing fast profile switching.
+
+KEY FUNCTIONS:
+- open_role_picker: Open the role-profile picker dialog for the settings window.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so profile-role selection remains a small, isolated UI helper instead of inflating the settings module further.
+For whom:
+Developers maintaining settings navigation and role-profile editing.
+
+DEPENDENCIES:
+Used by:
+- src.ui.settings_window
+Uses:
+- Standard library typing helpers
+- Third-party library: ttkbootstrap
+- Local modules: src.config
+"""
 
 from typing import TYPE_CHECKING
 
@@ -37,6 +60,8 @@ def open_role_picker(owner: "SettingsWindow") -> None:
         font=("Segoe UI", 10, "bold"),
     ).pack(anchor="w", pady=(0, 10))
 
+    # Show the global profile first because it acts as the fallback source for all
+    # role-specific overrides elsewhere in the application.
     roles = ["GLOBAL", *ROLE_PROFILE_ORDER]
     current_role = owner._get_selected_profile_role()
 
