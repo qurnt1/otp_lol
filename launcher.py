@@ -6,7 +6,7 @@ GLOBAL PURPOSE:
 - Guarantee orderly shutdown, cleanup, and background task handoff.
 
 KEY FUNCTIONS:
-- MainLoLApplication: Own the application lifecycle from startup to cleanup.
+- OtpLolApplication: Own the application lifecycle from startup to cleanup.
 - _load_datadragon_async: Load champion metadata without blocking the UI thread.
 - _check_updates_async: Fetch update metadata in the background and surface it to the UI.
 - main: Start the application and guard the top-level error path.
@@ -39,7 +39,7 @@ from src.core import DataDragon, WebSocketManager
 from src.ui import LoLAssistantUI
 
 
-class MainLoLApplication:
+class OtpLolApplication:
     """Coordinate startup, background services, and final cleanup for the app."""
     
     def __init__(self):
@@ -165,7 +165,7 @@ class MainLoLApplication:
     
     def run(self) -> None:
         """Enter the UI main loop and guarantee cleanup when it exits."""
-        logging.info(f"MAIN LOL v{CURRENT_VERSION} started.")
+        logging.info(f"OTP LOL v{CURRENT_VERSION} started.")
         try:
             self.ui.run()
         finally:
@@ -198,7 +198,7 @@ class MainLoLApplication:
 def main() -> None:
     """Run the desktop application and guard the top-level failure path."""
     try:
-        app = MainLoLApplication()
+        app = OtpLolApplication()
         app.run()
     except KeyboardInterrupt:
         logging.info("Keyboard interrupt detected.")

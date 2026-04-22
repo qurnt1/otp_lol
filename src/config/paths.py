@@ -26,6 +26,9 @@ import os
 import sys
 import tempfile
 
+APP_STORAGE_FOLDER = "OTP LOL"
+APP_TEMP_PREFIX = "otp_lol"
+
 
 def resource_path(relative_path: str) -> str:
     """Return the absolute path to a bundled resource for source and packaged runs."""
@@ -50,7 +53,7 @@ def get_appdata_path(filename: str) -> str:
     if not app_data_dir:
         return filename
 
-    app_folder = os.path.join(app_data_dir, "MainLoL")
+    app_folder = os.path.join(app_data_dir, APP_STORAGE_FOLDER)
     if not os.path.exists(app_folder):
         try:
             os.makedirs(app_folder)
@@ -62,8 +65,8 @@ def get_appdata_path(filename: str) -> str:
 
 PARAMETERS_PATH: str = get_appdata_path("parameters.json")
 HISTORY_PATH: str = get_appdata_path("history.json")
-LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), "main_lol.lock")
-DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), "mainlol_ddragon_champions.json")
-ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), "mainlol_icons")
-SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), "mainlol_spells")
-SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), "mainlol_skins")
+LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}.lock")
+DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json")
+ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_icons")
+SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
+SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")

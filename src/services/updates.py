@@ -41,7 +41,7 @@ def fetch_remote_readme() -> Optional[str]:
     """Return the remote README text from GitHub, or None on failure."""
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "MainLoL-UpdateChecker",
+        "User-Agent": "OTP-LOL-UpdateChecker",
         "X-GitHub-Api-Version": "2022-11-28",
     }
 

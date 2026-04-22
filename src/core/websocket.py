@@ -19,7 +19,7 @@ Developers maintaining the live client integration, reconnect behavior, and runt
 
 DEPENDENCIES:
 Used by:
-- launcher.py and src/ui/main_window.py through MainLoLApplication wiring.
+- launcher.py and src/ui/main_window.py through OtpLolApplication wiring.
 Uses:
 - Standard library: asyncio, logging, threading, time, typing
 - Optional third-party libraries: lcu_driver, psutil
@@ -121,7 +121,7 @@ class WebSocketManager(ChampSelectMixin):
         if self.thread and self.thread.is_alive():
             return
         self._stop_event.clear()
-        self.thread = Thread(target=self._ws_loop, daemon=True, name="mainlol-lcu")
+        self.thread = Thread(target=self._ws_loop, daemon=True, name="otp-lol-lcu")
         self.thread.start()
 
     def stop(self) -> None:

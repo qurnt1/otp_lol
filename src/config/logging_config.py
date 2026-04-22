@@ -26,6 +26,8 @@ import os
 import sys
 import tempfile
 
+APP_LOG_FOLDER = "OTP LOL"
+
 
 def _setup_logging() -> str:
     """Configure root logging handlers and return the resolved log-file path."""
@@ -33,7 +35,7 @@ def _setup_logging() -> str:
     if not app_data_dir:
         app_data_dir = os.path.expanduser("~")
 
-    log_folder = os.path.join(app_data_dir, "MainLoL")
+    log_folder = os.path.join(app_data_dir, APP_LOG_FOLDER)
 
     if not os.path.exists(log_folder):
         try:

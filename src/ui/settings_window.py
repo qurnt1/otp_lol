@@ -1446,7 +1446,7 @@ class SettingsWindow:
 
     def _export_config(self) -> None:
         """Export the current parameter snapshot to a user-selected JSON file."""
-        default_name = f"main_lol_config_{datetime.now().strftime('%Y-%m-%d')}.json"
+        default_name = f"otp_lol_config_{datetime.now().strftime('%Y-%m-%d')}.json"
         path = filedialog.asksaveasfilename(
             parent=self.window,
             title="Export configuration",

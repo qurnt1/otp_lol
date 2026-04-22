@@ -22,7 +22,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text("{ invalid json", encoding="utf-8")
-            skins_cache_dir = Path(tmpdir) / "mainlol_skins"
+            skins_cache_dir = Path(tmpdir) / "otp_lol_skins"
             skins_cache_dir.mkdir()
             (skins_cache_dir / "old_skin.img").write_text("cached", encoding="utf-8")
 

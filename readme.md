@@ -236,20 +236,20 @@ The script also handles:
 ### User Files
 
 - Settings:
-  `%APPDATA%\MainLoL\parameters.json`
+  `%APPDATA%\OTP LOL\parameters.json`
 - Action history:
-  `%APPDATA%\MainLoL\history.json`
+  `%APPDATA%\OTP LOL\history.json`
 - Logs:
-  `%APPDATA%\MainLoL\app_debug.log`
+  `%APPDATA%\OTP LOL\app_debug.log`
 
 ### Local Cache
 
 - Champion cache:
-  `%TEMP%\mainlol_ddragon_champions.json`
+  `%TEMP%\otp_lol_ddragon_champions.json`
 - Champion icon cache:
-  `%TEMP%\mainlol_icons\`
+  `%TEMP%\otp_lol_icons\`
 - Summs icon cache:
-  `%TEMP%\mainlol_spells\`
+  `%TEMP%\otp_lol_spells\`
 
 ### Main Settings
 
@@ -435,7 +435,7 @@ config/
 If something goes wrong, the first file to check is:
 
 ```text
-%APPDATA%\MainLoL\app_debug.log
+%APPDATA%\OTP LOL\app_debug.log
 ```
 
 ## Possible Roadmap
