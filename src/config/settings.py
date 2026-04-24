@@ -76,6 +76,46 @@ def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str
     return {slot: default_mode for slot in PICK_SLOT_ORDER}
 
 
+def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
+    """Return first-launch preset slots with visible spell and skin examples."""
+    slots = build_pick_slot_defaults()
+    slots["pick_1"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Ignite",
+            "skin_mode": "fixed",
+            "skin_id": 86013,
+            "skin_name": "God-King Garen",
+            "skin_num": 13,
+        }
+    )
+    slots["pick_2"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Teleport",
+            "skin_mode": "random",
+            "random_skin_id": 99007,
+            "random_skin_name": "Star Guardian Lux",
+            "random_skin_num": 7,
+            "random_skin_pool": [
+                {"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7},
+                {"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10},
+            ],
+        }
+    )
+    slots["pick_3"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Barrier",
+            "skin_mode": "fixed",
+            "skin_id": 22004,
+            "skin_name": "Queen Ashe",
+            "skin_num": 4,
+        }
+    )
+    return slots
+
+
 DEFAULT_PARAMS: Dict[str, Any] = {
     "config_version": CURRENT_VERSION,
     "auto_accept_enabled": True,
@@ -87,7 +127,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
     "selected_ban": "Teemo",
-    "pick_slots": build_pick_slot_defaults(spell_1="Heal", spell_2="Flash"),
+    "pick_slots": build_demo_pick_slots(),
     "theme": "darkly",
     "summoner_name_auto_detect": True,
     "manual_summoner_name": "VotrePseudo#VotreTag",

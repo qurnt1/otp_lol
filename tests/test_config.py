@@ -18,6 +18,28 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
 
+    def test_first_launch_defaults_include_demo_spells_and_skins(self):
+        slots = config.FIRST_LAUNCH_PARAMS["pick_slots"]
+
+        self.assertEqual(slots["pick_1"]["spell_1"], "Flash")
+        self.assertEqual(slots["pick_1"]["spell_2"], "Ignite")
+        self.assertEqual(slots["pick_1"]["skin_mode"], "fixed")
+        self.assertEqual(slots["pick_1"]["skin_name"], "God-King Garen")
+
+        self.assertEqual(slots["pick_2"]["spell_1"], "Flash")
+        self.assertEqual(slots["pick_2"]["spell_2"], "Teleport")
+        self.assertEqual(slots["pick_2"]["skin_mode"], "random")
+        self.assertEqual(slots["pick_2"]["random_skin_name"], "Star Guardian Lux")
+        self.assertEqual(
+            [skin["skin_name"] for skin in slots["pick_2"]["random_skin_pool"]],
+            ["Star Guardian Lux", "Battle Academia Lux"],
+        )
+
+        self.assertEqual(slots["pick_3"]["spell_1"], "Flash")
+        self.assertEqual(slots["pick_3"]["spell_2"], "Barrier")
+        self.assertEqual(slots["pick_3"]["skin_mode"], "fixed")
+        self.assertEqual(slots["pick_3"]["skin_name"], "Queen Ashe")
+
     def test_load_parameters_resets_invalid_json_to_first_launch_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
