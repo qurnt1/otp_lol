@@ -16,7 +16,7 @@ class SkinPickerMergeTests(unittest.TestCase):
                 {
                     "skin_id": 1,
                     "skin_name": "Base",
-                    "skin_num": 0,
+                    "skin_num": 1,
                     "tile_url": "tile-1",
                     "splash_url": "splash-1",
                 },
@@ -43,6 +43,30 @@ class SkinPickerMergeTests(unittest.TestCase):
         self.assertEqual(merged[0]["preview_url"], "tile-1")
         self.assertTrue(merged[1]["owned"])
         self.assertEqual(merged[1]["preview_url"], "owned-preview-2")
+
+    def test_merge_catalog_marks_default_skin_as_owned_without_lcu_inventory(self):
+        merged = _merge_catalog_and_owned_skins(
+            [
+                {
+                    "skin_id": 86000,
+                    "skin_name": "default",
+                    "skin_num": 0,
+                    "tile_url": "tile-default",
+                    "splash_url": "splash-default",
+                },
+                {
+                    "skin_id": 86001,
+                    "skin_name": "Sanguine Garen",
+                    "skin_num": 1,
+                    "tile_url": "tile-1",
+                    "splash_url": "splash-1",
+                },
+            ],
+            [],
+        )
+
+        self.assertTrue(merged[0]["owned"])
+        self.assertFalse(merged[1]["owned"])
 
     def test_picker_image_url_prefers_splash_over_tile(self):
         self.assertEqual(
@@ -124,7 +148,7 @@ class SkinPickerMergeTests(unittest.TestCase):
                     "message": "Unable to fetch skins. Check your League of Legends connection.",
                 }
             ),
-            "Unable to fetch owned skins: LoL client is not detected.",
+            "Impossible to fetch skins: LCU is not detected. To update the list, launch League of Legends.",
         )
 
     def test_get_skin_fetch_status_text_uses_explicit_missing_client_message(self):
@@ -135,7 +159,7 @@ class SkinPickerMergeTests(unittest.TestCase):
                     "message": "LoL client is not detected.",
                 }
             ),
-            "Unable to fetch owned skins: LoL client is not detected.",
+            "Impossible to fetch skins: LCU is not detected. To update the list, launch League of Legends.",
         )
 
 
