@@ -395,6 +395,7 @@ class SettingsWindow:
         misc_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="ew")
         misc_frame.columnconfigure(0, weight=0, minsize=145)
         misc_frame.columnconfigure(1, weight=0, minsize=250)
+        misc_frame.columnconfigure(2, weight=1)
 
         ttk.Label(misc_frame, text="Preferred stats site:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.stats_site_btn = ttk.Button(
@@ -420,7 +421,7 @@ class SettingsWindow:
         self.hotkey_site_btn.grid(row=1, column=1, sticky="w", pady=(0, 8))
         self._refresh_hotkey_site_button()
 
-        ttk.Separator(misc_frame).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(4, 10))
+        ttk.Separator(misc_frame).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
         ttk.Label(misc_frame, text="Show/hide app:").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
         self.hotkey_toggle_btn = ttk.Button(
@@ -444,7 +445,7 @@ class SettingsWindow:
         )
         self.hotkey_open_btn.grid(row=4, column=1, sticky="w", pady=(0, 8))
 
-        ttk.Separator(misc_frame).grid(row=5, column=0, columnspan=2, sticky="ew", pady=(4, 10))
+        ttk.Separator(misc_frame).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(4, 10))
 
         ttk.Checkbutton(
             misc_frame,
@@ -1083,7 +1084,8 @@ class SettingsWindow:
             picker.destroy()
 
         row, col = 0, 0
-        for spell in ["(None)", *self.spell_list]:
+        spell_choices = ["(None)", *[spell for spell in self.spell_list if spell != "(None)"]]
+        for spell in spell_choices:
             spell_frame = ttk.Frame(container)
             spell_frame.grid(row=row, column=col, padx=5, pady=5)
             btn = ttk.Button(spell_frame, text="None" if spell == "(None)" else spell, bootstyle="link", command=lambda s=spell: on_pick(s), compound="top")
