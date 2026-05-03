@@ -2,6 +2,8 @@ import unittest
 import json
 from unittest.mock import patch
 
+from PIL import Image
+
 from src.core.datadragon import DataDragon
 
 
@@ -64,6 +66,17 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
             "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perks.json",
             timeout=8,
         )
+
+    def test_rune_button_composite_supports_rectangular_button_size(self):
+        dd = DataDragon()
+        dd.get_rune_perk_icon = lambda path: Image.new("RGBA", (64, 64), (30, 80, 255, 255))
+        dd.get_rune_style_icon = lambda path: Image.new("RGBA", (64, 64), (0, 220, 120, 255))
+
+        composite = dd.compose_rune_button_icon("keystone.png", "style.png", size=(44, 30))
+
+        self.assertIsNotNone(composite)
+        self.assertEqual(composite.size, (44, 30))
+        self.assertNotEqual(composite.getpixel((38, 15))[3], 0)
 
     def test_cdragon_asset_path_is_converted_to_raw_url(self):
         url = DataDragon.cdragon_url_from_asset_path(

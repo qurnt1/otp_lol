@@ -36,7 +36,7 @@ from threading import Lock
 from typing import Any, Dict, List, Optional
 
 import requests
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from ..config import (
     DDRAGON_CACHE_FILE,
@@ -755,28 +755,64 @@ class DataDragon:
         self._print_rune_debug(f"perk_icon_path id={normalized_perk_id} iconPath={icon_path!r}")
         return icon_path
 
-    def compose_rune_button_icon(self, keystone_icon_path: str, sub_style_icon_path: str = "", size: int = 32) -> Optional[Image.Image]:
+    @staticmethod
+    def _normalize_rune_icon_size(size: Any) -> tuple[int, int]:
+        if isinstance(size, tuple) and len(size) == 2:
+            try:
+                width = int(size[0] or 0)
+                height = int(size[1] or 0)
+                if width > 0 and height > 0:
+                    return width, height
+            except (TypeError, ValueError):
+                pass
+        try:
+            square_size = int(size or 32)
+        except (TypeError, ValueError):
+            square_size = 32
+        square_size = max(square_size, 1)
+        return square_size, square_size
+
+    def compose_rune_button_icon(self, keystone_icon_path: str, sub_style_icon_path: str = "", size: Any = 32) -> Optional[Image.Image]:
         """Return a composite image with the keystone as the main icon and the sub-style overlaid smaller."""
+        target_width, target_height = self._normalize_rune_icon_size(size)
         self._print_rune_debug(
-            f"compose start keystone_path={keystone_icon_path!r} sub_style_path={sub_style_icon_path!r} size={size}"
+            f"compose start keystone_path={keystone_icon_path!r} sub_style_path={sub_style_icon_path!r} "
+            f"size={(target_width, target_height)}"
         )
         keystone_img = self.get_rune_perk_icon(keystone_icon_path)
         if not keystone_img:
             self._print_rune_debug("compose stop: keystone image missing")
             return None
-        keystone_img = keystone_img.resize((size, size), Image.LANCZOS).convert("RGBA")
+        main_size = min(target_width, target_height)
+        keystone_img = keystone_img.resize((main_size, main_size), Image.LANCZOS).convert("RGBA")
+        composite = Image.new("RGBA", (target_width, target_height), (0, 0, 0, 0))
+        composite.paste(keystone_img, (0, (target_height - main_size) // 2), keystone_img)
         if not sub_style_icon_path:
-            self._print_rune_debug(f"compose ok: keystone only size={keystone_img.size}")
-            return keystone_img
+            self._print_rune_debug(f"compose ok: keystone only size={composite.size}")
+            return composite
         sub_img = self.get_rune_style_icon(sub_style_icon_path)
         if not sub_img:
-            self._print_rune_debug(f"compose ok: sub style missing, keystone only size={keystone_img.size}")
-            return keystone_img
-        overlay_size = max(size // 2, 16)
+            self._print_rune_debug(f"compose ok: sub style missing, keystone only size={composite.size}")
+            return composite
+        overlay_size = max(min(target_height // 2, target_width - main_size), 14)
+        overlay_size = min(overlay_size, target_width, target_height)
         sub_img = sub_img.resize((overlay_size, overlay_size), Image.LANCZOS).convert("RGBA")
-        composite = keystone_img.copy()
-        margin = 2
-        position = (size - overlay_size - margin, size - overlay_size - margin)
+        position = (
+            max(main_size - overlay_size // 3, target_width - overlay_size),
+            (target_height - overlay_size) // 2,
+        )
+        if position[0] + overlay_size > target_width:
+            position = (target_width - overlay_size, position[1])
+        backing = Image.new("RGBA", composite.size, (0, 0, 0, 0))
+        circle_box = (
+            position[0] - 1,
+            position[1] - 1,
+            position[0] + overlay_size + 1,
+            position[1] + overlay_size + 1,
+        )
+        draw = ImageDraw.Draw(backing)
+        draw.ellipse(circle_box, fill=(6, 9, 14, 210), outline=(124, 137, 153, 140))
+        composite.alpha_composite(backing)
         composite.paste(sub_img, position, sub_img)
         self._print_rune_debug(f"compose ok: composite size={composite.size} overlay_size={overlay_size}")
         return composite

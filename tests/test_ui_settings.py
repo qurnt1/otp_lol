@@ -297,6 +297,24 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
         self.assertEqual(window._find_rune_keystone_path(page, primary_style), "conqueror.png")
 
+    def test_get_rune_page_icon_paths_returns_keystone_and_sub_style(self):
+        window = self.make_window()
+        page = {
+            "id": 12,
+            "primaryStyleId": 8200,
+            "subStyleId": 8400,
+            "selectedPerkIds": ["8214"],
+        }
+        styles = {
+            8200: {"perks": []},
+            8400: {"iconPath": "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"},
+        }
+
+        keystone_path, sub_style_path = window._get_rune_page_icon_paths(page, styles)
+
+        self.assertIn("SummonAery.png", keystone_path)
+        self.assertEqual(sub_style_path, "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png")
+
     def test_refresh_site_buttons_show_logo_and_left_compound(self):
         class FakeButton:
             def __init__(self):

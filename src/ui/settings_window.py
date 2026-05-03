@@ -77,6 +77,7 @@ class SettingsWindow:
         "pick_3": "Preset 3",
     }
     PICK_ICON_SIZE = (30, 30)
+    RUNE_BUTTON_ICON_SIZE = (44, 30)
 
     def __init__(self, parent: "LoLAssistantUI"):
         """Create the settings dialog and initialize its editable view state."""
@@ -265,6 +266,65 @@ class SettingsWindow:
             return icon_path
         self._print_rune_debug("find_keystone failed: no iconPath")
         return ""
+
+    def _get_rune_page_icon_paths(
+        self,
+        page: Dict[str, Any],
+        styles: Dict[Any, Any],
+    ) -> tuple[str, str]:
+        primary_style = styles.get(page.get("primaryStyleId"), {}) if isinstance(styles, dict) else {}
+        sub_style = styles.get(page.get("subStyleId"), {}) if isinstance(styles, dict) else {}
+        sub_style_icon_path = str(sub_style.get("iconPath") or "") if isinstance(sub_style, dict) else ""
+        keystone_path = self._find_rune_keystone_path(page, primary_style)
+        self._print_rune_debug(
+            "page_icon_paths "
+            f"page_id={page.get('id') if isinstance(page, dict) else None} "
+            f"primaryStyleId={page.get('primaryStyleId') if isinstance(page, dict) else None} "
+            f"subStyleId={page.get('subStyleId') if isinstance(page, dict) else None} "
+            f"keystone_path={keystone_path!r} sub_style_icon_path={sub_style_icon_path!r}"
+        )
+        return keystone_path, sub_style_icon_path
+
+    def _load_rune_page_icon_into_btn(
+        self,
+        btn_widget: ttk.Button,
+        page: Dict[str, Any],
+        styles: Dict[Any, Any],
+        *,
+        context: str,
+    ) -> None:
+        def task():
+            try:
+                keystone_path, sub_style_icon_path = self._get_rune_page_icon_paths(page, styles)
+                self._print_rune_debug(
+                    f"{context} load_page_icon start keystone_path={keystone_path!r} "
+                    f"sub_style_icon_path={sub_style_icon_path!r}"
+                )
+                composite = self.parent.dd.compose_rune_button_icon(
+                    keystone_path,
+                    sub_style_icon_path,
+                    size=self.RUNE_BUTTON_ICON_SIZE,
+                )
+                if not composite:
+                    self._print_rune_debug(f"{context} load_page_icon missing composite")
+                    return
+                self._print_rune_debug(f"{context} load_page_icon PIL ok size={composite.size} mode={composite.mode}")
+
+                def update_ui():
+                    if btn_widget.winfo_exists():
+                        photo = ImageTk.PhotoImage(composite)
+                        btn_widget.configure(image=photo, compound="left")
+                        btn_widget.image = photo
+                        self._print_rune_debug(f"{context} load_page_icon button configured")
+                    else:
+                        self._print_rune_debug(f"{context} load_page_icon button gone")
+
+                btn_widget.after(0, update_ui)
+            except Exception as e:
+                self._print_rune_debug(f"{context} load_page_icon exception error={e!r}")
+                logging.debug("Rune page icon load error: %s", e)
+
+        self.parent.executor.submit(task)
 
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
@@ -1245,26 +1305,6 @@ class SettingsWindow:
             self._refresh_rune_buttons()
             _close_popup()
 
-        def _load_keystone_on_button(btn: ttk.Button, keystone_path: str) -> None:
-            try:
-                self._print_rune_debug(f"picker load_keystone start path={keystone_path!r}")
-                img = self.parent.dd.get_rune_perk_icon(keystone_path)
-                if img:
-                    self._print_rune_debug(f"picker load_keystone PIL ok size={img.size} mode={img.mode}")
-                    img = img.resize(self.PICK_ICON_SIZE, Image.LANCZOS)
-                    photo = ImageTk.PhotoImage(img)
-                    if btn.winfo_exists():
-                        btn.configure(image=photo, compound="left")
-                        btn.image = photo
-                        self._print_rune_debug("picker load_keystone button configured")
-                    else:
-                        self._print_rune_debug("picker load_keystone button no longer exists")
-                else:
-                    self._print_rune_debug(f"picker load_keystone missing image path={keystone_path!r}")
-            except Exception as e:
-                self._print_rune_debug(f"picker load_keystone exception path={keystone_path!r} error={e!r}")
-                logging.debug("Keystone icon load error: %s", e)
-
         def _refresh_pages():
             self._print_rune_debug(f"picker refresh_pages slot={slot_key} ws_active={bool(ws and getattr(ws, 'is_active', False))}")
             for widget in pages_frame.winfo_children():
@@ -1308,16 +1348,12 @@ class SettingsWindow:
                 )
                 btn.pack(fill="x", expand=True)
                 if isinstance(styles, dict):
-                    style = styles.get(page.get("primaryStyleId", 0), {})
-                    keystone_path = self._find_rune_keystone_path(page, style)
-                    self._print_rune_debug(
-                        f"picker page button page_id={page_id} primaryStyleId={page.get('primaryStyleId')} "
-                        f"subStyleId={page.get('subStyleId')} keystone_path={keystone_path!r}"
+                    self._load_rune_page_icon_into_btn(
+                        btn,
+                        page,
+                        styles,
+                        context=f"picker page_id={page_id}",
                     )
-                    if keystone_path:
-                        _load_keystone_on_button(btn, keystone_path)
-                    else:
-                        self._print_rune_debug(f"picker no keystone path for page_id={page_id}")
 
         pages_frame = ttk.Frame(container)
         pages_frame.pack(fill="both", expand=True)
@@ -1541,10 +1577,7 @@ class SettingsWindow:
                     f"settings composite fetched styles_count={len(styles) if isinstance(styles, dict) else 'not-dict'} "
                     f"style_ids={list(styles.keys()) if isinstance(styles, dict) else []}"
                 )
-                primary_style = styles.get(page["primaryStyleId"], {})
-                sub_style = styles.get(page["subStyleId"], {})
-                sub_style_icon_path = sub_style.get("iconPath", "")
-                keystone_path = self._find_rune_keystone_path(page, primary_style)
+                keystone_path, sub_style_icon_path = self._get_rune_page_icon_paths(page, styles)
                 self._print_rune_debug(
                     f"settings composite resolved slot={slot_key} page_id={rune_page_id} "
                     f"primaryStyleId={page.get('primaryStyleId')} subStyleId={page.get('subStyleId')} "
@@ -1553,7 +1586,7 @@ class SettingsWindow:
                 composite = self.parent.dd.compose_rune_button_icon(
                     keystone_path,
                     sub_style_icon_path,
-                    size=self.PICK_ICON_SIZE,
+                    size=self.RUNE_BUTTON_ICON_SIZE,
                 )
                 if composite:
                     self._print_rune_debug(f"settings composite PIL ok slot={slot_key} size={composite.size} mode={composite.mode}")
