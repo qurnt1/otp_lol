@@ -57,7 +57,7 @@ class AudioManager:
             pygame.mixer.init()
             self.sound_effect = pygame.mixer.Sound(resource_path("config/son.wav"))
         except Exception as e:
-            logging.debug(f"Unable to initialize sound: {e}")
+            logging.debug("Unable to initialize sound: %s", e)
             self.sound_effect = None
             self._pygame = None
 
@@ -68,7 +68,7 @@ class AudioManager:
         try:
             self.sound_effect.play()
         except Exception as e:
-            logging.debug(f"Unable to play accept sound: {e}")
+            logging.debug("Unable to play accept sound: %s", e)
 
     def shutdown(self) -> None:
         """Stop the pygame mixer during application shutdown when it was initialized."""
@@ -76,4 +76,4 @@ class AudioManager:
             if self._pygame and self._pygame.mixer.get_init():
                 self._pygame.mixer.quit()
         except Exception as e:
-            logging.debug(f"Error stopping pygame mixer: {e}")
+            logging.debug("Error stopping pygame mixer: %s", e)

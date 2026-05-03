@@ -6,12 +6,13 @@ GLOBAL PURPOSE:
 - Keep instance-detection behavior separate from launcher startup logic.
 
 KEY FUNCTIONS:
-- check_single_instance: Validate the existing lock file and write the current process id.
-- remove_lockfile: Delete the lock file during shutdown.
+- check_single_instance: Atomically create and lock the instance file.
+- remove_lockfile: Release the lock and delete the file during shutdown.
 
 AUDIENCE & LOGIC:
 Why:
-This module exists so single-instance enforcement is explicit and reusable without mixing process checks into launcher code.
+This module exists so single-instance enforcement is explicit and reusable without
+mixing process checks into launcher code.
 For whom:
 Developers maintaining startup guards and shutdown cleanup.
 
@@ -19,44 +20,44 @@ DEPENDENCIES:
 Used by:
 - launcher.py through src.utils.
 Uses:
-- Standard library: logging, os
-- Third-party library: psutil
+- Standard library: logging, msvcrt, os
 - Local modules: src.config
 """
 
 import logging
+import msvcrt
 import os
-
-import psutil
 
 from src.config import LOCKFILE_PATH
 
+_lock_fd = None
+
 
 def check_single_instance() -> bool:
-    """Return False when another live process still owns the lock file."""
-    if os.path.exists(LOCKFILE_PATH):
-        try:
-            with open(LOCKFILE_PATH, "r") as f:
-                pid = int(f.read())
-            if pid != os.getpid() and psutil.pid_exists(pid):
-                logging.info(f"Existing instance detected (PID: {pid})")
-                return False
-        except (ValueError, IOError):
-            pass
-
+    """Atomically create and lock the instance file. Returns False when another instance holds the lock."""
+    global _lock_fd
     try:
-        with open(LOCKFILE_PATH, "w") as f:
-            f.write(str(os.getpid()))
-    except IOError:
-        pass
-
-    return True
+        _lock_fd = os.open(LOCKFILE_PATH, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        msvcrt.locking(_lock_fd, msvcrt.LK_NBLCK, 1)
+        os.write(_lock_fd, str(os.getpid()).encode())
+        return True
+    except (OSError, IOError):
+        logging.info("Existing instance detected (lock file in use).")
+        return False
 
 
 def remove_lockfile() -> None:
-    """Delete the lock file during shutdown when it still exists."""
+    """Release the lock and delete the file during shutdown."""
+    global _lock_fd
+    try:
+        if _lock_fd is not None:
+            msvcrt.locking(_lock_fd, msvcrt.LK_UNLCK, 1)
+            os.close(_lock_fd)
+            _lock_fd = None
+    except (OSError, IOError):
+        pass
     try:
         if os.path.exists(LOCKFILE_PATH):
             os.remove(LOCKFILE_PATH)
-    except IOError:
+    except (OSError, IOError):
         pass

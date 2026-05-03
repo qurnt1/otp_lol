@@ -214,7 +214,7 @@ def load_parameters() -> Dict[str, Any]:
         with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
     except (json.JSONDecodeError, IOError, OSError) as e:
-        logging.warning(f"Error loading settings: {e}")
+        logging.warning("Error loading settings: %s", e)
         return _reset_parameters_file("invalid json")
 
     if not isinstance(config, dict):
@@ -237,7 +237,7 @@ def save_parameters(params: Dict[str, Any]) -> bool:
         _write_parameters_file(params)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Error saving settings: {e}")
+        logging.error("Error saving settings: %s", e)
         return False
 
 
@@ -249,7 +249,7 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
             json.dump(sanitized, f, indent=4, ensure_ascii=False)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Error exporting settings: {e}")
+        logging.error("Error exporting settings: %s", e)
         return False
 
 

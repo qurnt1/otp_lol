@@ -54,7 +54,7 @@ class HotkeyManager:
                     pass
             self.available = False
             self.handles = []
-            logging.debug(f"Unable to configure hotkeys: {e}")
+            logging.debug("Unable to configure hotkeys: %s", e)
         return self.available
 
     def shutdown(self) -> None:
@@ -63,6 +63,6 @@ class HotkeyManager:
             try:
                 keyboard.remove_hotkey(handle)
             except Exception as e:
-                logging.debug(f"Error removing hotkey: {e}")
+                logging.debug("Error removing hotkey: %s", e)
         self.handles = []
         self.available = False

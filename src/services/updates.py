@@ -59,7 +59,7 @@ def fetch_remote_readme() -> Optional[str]:
     if resp.status_code == 404:
         logging.warning("[Update] README not found in the repository")
     else:
-        logging.warning(f"[Update] API response: {resp.status_code}")
+        logging.warning("[Update] API response: %s", resp.status_code)
     return None
 
 
@@ -72,7 +72,7 @@ def check_for_updates() -> Optional[Dict[str, str]]:
             return None
 
         remote_version = extract_version_from_readme(readme_text)
-        logging.info(f"[Update] Remote version: {remote_version}, local: {CURRENT_VERSION}")
+        logging.info("[Update] Remote version: %s, local: %s", remote_version, CURRENT_VERSION)
 
         if remote_version and is_newer_version(remote_version, CURRENT_VERSION):
             return {
@@ -81,9 +81,9 @@ def check_for_updates() -> Optional[Dict[str, str]]:
             }
 
     except requests.RequestException as e:
-        logging.warning(f"[Update] Network error: {e}")
+        logging.warning("[Update] Network error: %s", e)
     except Exception as e:
-        logging.error(f"[Update] Unexpected error: {e}")
+        logging.error("[Update] Unexpected error: %s", e)
 
     return None
 
@@ -166,5 +166,5 @@ def is_newer_version(remote_version: str, current_version: str) -> bool:
     try:
         return parse_version(remote_version) > parse_version(current_version)
     except InvalidVersion as e:
-        logging.warning(f"[Update] Invalid version ignored: {e}")
+        logging.warning("[Update] Invalid version ignored: %s", e)
         return False

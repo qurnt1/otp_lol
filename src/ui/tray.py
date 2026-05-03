@@ -60,13 +60,13 @@ class TrayController:
                 try:
                     toggle_window()
                 except Exception as e:
-                    logging.debug(f"Tray toggle callback error: {e}")
+                    logging.debug("Tray toggle callback error: %s", e)
 
             def on_settings(icon=None, item=None):
                 try:
                     open_settings()
                 except Exception as e:
-                    logging.debug(f"Tray settings callback error: {e}")
+                    logging.debug("Tray settings callback error: %s", e)
 
             def on_presets(icon=None, item=None):
                 try:
@@ -74,7 +74,7 @@ class TrayController:
                     if self.icon:
                         self.icon.update_menu()
                 except Exception as e:
-                    logging.debug(f"Tray presets callback error: {e}")
+                    logging.debug("Tray presets callback error: %s", e)
 
             def on_auto_ban(icon=None, item=None):
                 try:
@@ -82,13 +82,13 @@ class TrayController:
                     if self.icon:
                         self.icon.update_menu()
                 except Exception as e:
-                    logging.debug(f"Tray auto-ban callback error: {e}")
+                    logging.debug("Tray auto-ban callback error: %s", e)
 
             def on_quit(icon=None, item=None):
                 try:
                     quit_callback()
                 except Exception as e:
-                    logging.debug(f"Tray quit callback error: {e}")
+                    logging.debug("Tray quit callback error: %s", e)
 
             menu = pystray.Menu(
                 pystray.MenuItem("Show/Hide", on_toggle),
@@ -114,13 +114,13 @@ class TrayController:
                     self.icon.run()
                 except Exception as e:
                     self.available = False
-                    logging.debug(f"System tray error: {e}")
+                    logging.debug("System tray error: %s", e)
                     on_failure()
 
             executor.submit(run_tray)
         except Exception as e:
             self.available = False
-            logging.warning(f"Unable to create system tray: {e}")
+            logging.warning("Unable to create system tray: %s", e)
         return self.available
 
     def shutdown(self) -> None:
@@ -129,4 +129,4 @@ class TrayController:
             if self.icon:
                 self.icon.stop()
         except Exception as e:
-            logging.debug(f"Error stopping tray icon: {e}")
+            logging.debug("Error stopping tray icon: %s", e)

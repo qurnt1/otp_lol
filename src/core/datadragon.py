@@ -31,6 +31,7 @@ import logging
 import os
 import re
 import unicodedata
+from collections import OrderedDict
 from io import BytesIO
 from threading import Lock
 from typing import Any, Dict, List, Optional
@@ -71,12 +72,28 @@ class DataDragon:
         self.all_names: List[str] = []
         self.summoner_data: Dict[str, str] = {}
         self.summoner_loaded: bool = False
-        self._image_cache: Dict[str, Image.Image] = {}
+        self._image_cache: OrderedDict[str, Image.Image] = OrderedDict()
+        self._image_cache_maxsize: int = 200
         self._champion_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._cdragon_champion_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._rune_perk_icon_path_by_id: Optional[Dict[int, str]] = None
         self._rune_perk_name_by_id: Optional[Dict[int, str]] = None
         self._cache_lock = Lock()
+
+    def _cache_get(self, key: str) -> Optional[Image.Image]:
+        with self._cache_lock:
+            if key in self._image_cache:
+                self._image_cache.move_to_end(key)
+                return self._image_cache[key].copy()
+        return None
+
+    def _cache_put(self, key: str, image: Image.Image) -> None:
+        with self._cache_lock:
+            if key in self._image_cache:
+                self._image_cache.move_to_end(key)
+            self._image_cache[key] = image
+            while len(self._image_cache) > self._image_cache_maxsize:
+                self._image_cache.popitem(last=False)
 
     @staticmethod
     def _normalize(s: str) -> str:
@@ -104,7 +121,7 @@ class DataDragon:
                 self.loaded = True
                 return True
         except Exception as e:
-            logging.warning(f"DataDragon: Cache error - {e}")
+            logging.warning("DataDragon: Cache error - %s", e)
         return False
 
     def _save_cache(self) -> None:
@@ -121,7 +138,7 @@ class DataDragon:
                     f,
                 )
         except Exception as e:
-            logging.warning(f"DataDragon: Cache save error - {e}")
+            logging.warning("DataDragon: Cache save error - %s", e)
 
     def load(self) -> None:
         """Load champion metadata, preferring fresh Data Dragon data, then cache, then fallback."""
@@ -133,7 +150,7 @@ class DataDragon:
         get_cache_dirs()
         online_version = self._fetch_latest_version()
         if self._load_from_cache(target_version=online_version):
-            logging.info(f"DataDragon: Loaded from cache (version {self.version})")
+            logging.info("DataDragon: Loaded from cache (version %s)", self.version)
             return
 
         if not online_version:
@@ -165,13 +182,13 @@ class DataDragon:
             self.loaded = True
             self._save_cache()
             logging.info(
-                f"DataDragon: Loaded from API (version {online_version}, {len(self.all_names)} champions)"
+                "DataDragon: Loaded from API (version %s, %s champions)", online_version, len(self.all_names)
             )
         except requests.RequestException as e:
-            logging.error(f"DataDragon: Network error while loading - {e}")
+            logging.error("DataDragon: Network error while loading - %s", e)
             self._load_fallback_data()
         except Exception as e:
-            logging.error(f"DataDragon: Unexpected error - {e}")
+            logging.error("DataDragon: Unexpected error - %s", e)
             self._load_fallback_data()
 
     def _fetch_latest_version(self) -> Optional[str]:
@@ -183,9 +200,9 @@ class DataDragon:
             if versions:
                 return versions[0]
         except requests.RequestException as e:
-            logging.warning(f"DataDragon: Unable to fetch online version - {e}")
+            logging.warning("DataDragon: Unable to fetch online version - %s", e)
         except Exception as e:
-            logging.warning(f"DataDragon: Version parsing error - {e}")
+            logging.warning("DataDragon: Version parsing error - %s", e)
         return None
 
     def _add_champion_aliases(self) -> None:
@@ -253,9 +270,9 @@ class DataDragon:
             return None
 
         cache_key = f"champ_{champion_id}"
-        with self._cache_lock:
-            if cache_key in self._image_cache:
-                return self._image_cache[cache_key].copy()
+        cached = self._cache_get(cache_key)
+        if cached:
+            return cached
 
         champ_data = self.by_id.get(champion_id)
         if not champ_data:
@@ -269,11 +286,10 @@ class DataDragon:
         if os.path.exists(local_path):
             try:
                 img = Image.open(local_path)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
             except Exception as e:
-                logging.debug(f"Icon cache read error for {image_filename}: {e}")
+                logging.debug("Icon cache read error for %s: %s", image_filename, e)
 
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
         try:
@@ -282,11 +298,10 @@ class DataDragon:
                 img = Image.open(BytesIO(response.content))
                 with open(local_path, "wb") as f:
                     f.write(response.content)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Champion icon download error - {e}")
+            logging.warning("DataDragon: Champion icon download error - %s", e)
         return None
 
     def load_summoners(self) -> None:
@@ -307,16 +322,16 @@ class DataDragon:
                         self.summoner_data[name] = image_full
                 self.summoner_loaded = True
         except Exception as e:
-            logging.warning(f"DataDragon: Summoner data loading error - {e}")
+            logging.warning("DataDragon: Summoner data loading error - %s", e)
 
     def get_summoner_icon(self, spell_name: str) -> Optional[Image.Image]:
         if spell_name in {"(None)", "(Aucun)"} or not spell_name:
             return None
 
         cache_key = f"spell_{spell_name}"
-        with self._cache_lock:
-            if cache_key in self._image_cache:
-                return self._image_cache[cache_key].copy()
+        cached = self._cache_get(cache_key)
+        if cached:
+            return cached
 
         self.load_summoners()
         image_filename = self.summoner_data.get(spell_name)
@@ -327,11 +342,10 @@ class DataDragon:
         if os.path.exists(local_path):
             try:
                 img = Image.open(local_path)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
             except Exception as e:
-                logging.debug(f"Summ icon cache read error for {image_filename}: {e}")
+                logging.debug("Summ icon cache read error for %s: %s", image_filename, e)
 
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
         try:
@@ -340,11 +354,10 @@ class DataDragon:
                 img = Image.open(BytesIO(response.content))
                 with open(local_path, "wb") as f:
                     f.write(response.content)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Summ icon download error - {e}")
+            logging.warning("DataDragon: Summ icon download error - %s", e)
         return None
 
     def get_splash_art(self, champion_name: str) -> Optional[Image.Image]:
@@ -385,9 +398,9 @@ class DataDragon:
                     self._champion_detail_cache[champion_id] = detail
                 return dict(detail)
         except requests.RequestException as e:
-            logging.warning(f"DataDragon: Champion detail download error - {e}")
+            logging.warning("DataDragon: Champion detail download error - %s", e)
         except Exception as e:
-            logging.warning(f"DataDragon: Champion detail parsing error - {e}")
+            logging.warning("DataDragon: Champion detail parsing error - %s", e)
         return None
 
     @staticmethod
@@ -426,9 +439,9 @@ class DataDragon:
                     self._cdragon_champion_detail_cache[champion_id] = detail
                 return dict(detail)
         except requests.RequestException as e:
-            logging.warning(f"DataDragon: CDragon champion detail download error - {e}")
+            logging.warning("DataDragon: CDragon champion detail download error - %s", e)
         except Exception as e:
-            logging.warning(f"DataDragon: CDragon champion detail parsing error - {e}")
+            logging.warning("DataDragon: CDragon champion detail parsing error - %s", e)
         return None
 
     def get_skin_catalog(self, name_or_id: Any) -> List[Dict[str, Any]]:
@@ -658,16 +671,15 @@ class DataDragon:
         if not url:
             return None
         cache_key = f"{cache_prefix}_{url.rsplit('/', 1)[-1].replace('.png', '')}"
-        with self._cache_lock:
-            if cache_key in self._image_cache:
-                return self._image_cache[cache_key].copy()
+        cached = self._cache_get(cache_key)
+        if cached:
+            return cached
 
         try:
             response = requests.get(url, timeout=8)
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
         except Exception as e:
             logging.warning("DataDragon: CommunityDragon rune icon download error for %s: %s", url, e)
@@ -800,17 +812,16 @@ class DataDragon:
         return composite
 
     def get_remote_image(self, url: str, *, cache_key: str) -> Optional[Image.Image]:
-        with self._cache_lock:
-            if cache_key in self._image_cache:
-                return self._image_cache[cache_key].copy()
+        cached = self._cache_get(cache_key)
+        if cached:
+            return cached
 
         try:
             cache_filename = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in cache_key)
             cache_path = os.path.join(SKINS_CACHE_DIR, f"{cache_filename}.img")
             if os.path.exists(cache_path):
                 img = Image.open(cache_path)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
 
             response = requests.get(url, stream=True, timeout=8)
@@ -818,9 +829,8 @@ class DataDragon:
                 img = Image.open(BytesIO(response.content))
                 with open(cache_path, "wb") as f:
                     f.write(response.content)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
+                self._cache_put(cache_key, img)
                 return img
         except Exception as e:
-            logging.warning(f"DataDragon: Remote image error for {url} - {e}")
+            logging.warning("DataDragon: Remote image error for %s - %s", url, e)
         return None

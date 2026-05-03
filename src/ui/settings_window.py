@@ -123,7 +123,7 @@ class SettingsWindow:
             self.window.iconphoto(False, photo)
             self.window._icon_img = photo
         except Exception as e:
-            logging.debug(f"Unable to load the settings window icon: {e}")
+            logging.debug("Unable to load the settings window icon: %s", e)
             self.window._icon_img = None
 
     def _init_variables(self) -> None:
@@ -999,7 +999,7 @@ class SettingsWindow:
             self.role_icon_cache[cache_key] = photo
             return photo
         except Exception as e:
-            logging.debug(f"Unable to load role icon {role}: {e}")
+            logging.debug("Unable to load role icon %s: %s", role, e)
             return None
 
     def _refresh_role_selector_button(self) -> None:
@@ -1576,7 +1576,7 @@ class SettingsWindow:
 
                     btn_widget.after(0, update_ui_no_img)
             except Exception as e:
-                logging.debug(f"Icon loading error for {display_name}: {e}")
+                logging.debug("Icon loading error for %s: %s", display_name, e)
 
         self.parent.executor.submit(task)
 
@@ -1608,7 +1608,7 @@ class SettingsWindow:
 
                     btn_widget.after(0, update_ui)
             except Exception as e:
-                logging.debug(f"Image loading error for {name}: {e}")
+                logging.debug("Image loading error for %s: %s", name, e)
 
         self.parent.executor.submit(task)
 
@@ -1635,7 +1635,7 @@ class SettingsWindow:
 
                     btn_widget.after(0, update_ui)
             except Exception as e:
-                logging.debug(f"Remote image loading error for {url}: {e}")
+                logging.debug("Remote image loading error for %s: %s", url, e)
 
         self.parent.executor.submit(task)
 
@@ -1664,7 +1664,7 @@ class SettingsWindow:
                 btn_widget.configure(image=photo)
                 btn_widget.image = photo
         except Exception as e:
-            logging.debug(f"Local image loading error for {relative_path}: {e}")
+            logging.debug("Local image loading error for %s: %s", relative_path, e)
 
     def _load_empty_img_into_btn(
         self,
@@ -2002,7 +2002,7 @@ class SettingsWindow:
         try:
             imported = import_parameters_from_file(path)
         except Exception as e:
-            logging.warning(f"Import failed: {e}")
+            logging.warning("Import failed: %s", e)
             self.parent.show_toast("Invalid configuration.")
             return
 

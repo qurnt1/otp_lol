@@ -73,7 +73,7 @@ def _read_history() -> List[Dict[str, Any]]:
         if isinstance(payload, list):
             return [entry for entry in payload if isinstance(entry, dict)]
     except (OSError, json.JSONDecodeError) as e:
-        logging.debug(f"Unreadable history: {e}")
+        logging.debug("Unreadable history: %s", e)
     return []
 
 
@@ -109,7 +109,7 @@ def log_history_event(
     try:
         _write_history(entries)
     except OSError as e:
-        logging.debug(f"Unable to write history: {e}")
+        logging.debug("Unable to write history: %s", e)
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
@@ -123,7 +123,7 @@ def clear_history_entries() -> None:
     try:
         _write_history([])
     except OSError as e:
-        logging.debug(f"Unable to clear history: {e}")
+        logging.debug("Unable to clear history: %s", e)
 
 
 def _format_timestamp(timestamp: str) -> str:

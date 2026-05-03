@@ -197,7 +197,7 @@ class LoLAssistantUI:
         try:
             self.root.style.theme_use(theme_name)
         except Exception as e:
-            logging.debug(f"Unable to apply theme {theme_name}: {e}")
+            logging.debug("Unable to apply theme %s: %s", theme_name, e)
 
         self._configure_styles()
 
@@ -394,7 +394,7 @@ class LoLAssistantUI:
             self.banner_label.image = banner_img
             self.banner_label.place(relx=0.5, rely=0.08, anchor="n")
         except Exception as e:
-            logging.debug(f"Unable to load banner images: {e}")
+            logging.debug("Unable to load banner images: %s", e)
 
     def _create_connection_indicator(self) -> None:
         palette = THEME_PALETTE.get(self.theme, THEME_PALETTE["darkly"])
@@ -492,7 +492,7 @@ class LoLAssistantUI:
                 self.settings_gear_label.image = gear_img
                 return
             except Exception as e:
-                logging.debug(f"Unable to load gear icon: {e}")
+                logging.debug("Unable to load gear icon: %s", e)
         self.settings_gear_label.configure(image="", text="⚙")
         self.settings_gear_label.image = None
 
@@ -695,7 +695,7 @@ class LoLAssistantUI:
 
                     widget.after(0, update_ui_no_img)
             except Exception as e:
-                logging.debug(f"Main preview loading error for {display_name}: {e}")
+                logging.debug("Main preview loading error for %s: %s", display_name, e)
 
         self.executor.submit(task)
 
@@ -1215,14 +1215,14 @@ class LoLAssistantUI:
         try:
             self.root.after(0, self.toggle_window)
         except Exception as e:
-            logging.debug(f"Unable to schedule tray toggle on UI thread: {e}")
+            logging.debug("Unable to schedule tray toggle on UI thread: %s", e)
 
     def request_quit_from_external_thread(self) -> None:
         logging.info("[TRAY] Quit requested from tray thread.")
         try:
             self.root.after(0, self._quit_callback)
         except Exception as e:
-            logging.debug(f"Unable to schedule tray quit on UI thread: {e}")
+            logging.debug("Unable to schedule tray quit on UI thread: %s", e)
 
     @staticmethod
     def _normalize_profile_role(role: str) -> str:
@@ -1329,21 +1329,21 @@ class LoLAssistantUI:
         try:
             self.root.after(0, self.open_settings)
         except Exception as e:
-            logging.debug(f"Unable to schedule tray settings on UI thread: {e}")
+            logging.debug("Unable to schedule tray settings on UI thread: %s", e)
 
     def request_toggle_presets_automation_from_external_thread(self) -> None:
         logging.info("[TRAY] Presets automation requested from tray thread.")
         try:
             self.root.after(0, self.toggle_tray_presets_automation)
         except Exception as e:
-            logging.debug(f"Unable to schedule tray presets toggle on UI thread: {e}")
+            logging.debug("Unable to schedule tray presets toggle on UI thread: %s", e)
 
     def request_toggle_auto_ban_from_external_thread(self) -> None:
         logging.info("[TRAY] Auto-ban requested from tray thread.")
         try:
             self.root.after(0, self.toggle_tray_auto_ban)
         except Exception as e:
-            logging.debug(f"Unable to schedule tray auto-ban toggle on UI thread: {e}")
+            logging.debug("Unable to schedule tray auto-ban toggle on UI thread: %s", e)
 
     def open_settings(self) -> None:
         if self.settings_win and self.settings_win.window.winfo_exists():
@@ -1373,7 +1373,7 @@ class LoLAssistantUI:
                 self.history_window.iconphoto(False, photo)
                 self.history_window._icon_ref = photo
         except Exception as e:
-            logging.debug(f"History icon error: {e}")
+            logging.debug("History icon error: %s", e)
 
         container = ttk.Frame(self.history_window, padding=12)
         container.pack(fill="both", expand=True)
@@ -1514,7 +1514,7 @@ class LoLAssistantUI:
             toast.place(relx=0.5, rely=0.98, anchor="s")
             self.root.after(duration, toast.destroy)
         except Exception as e:
-            logging.debug(f"Toast display error: {e}")
+            logging.debug("Toast display error: %s", e)
 
     def show_update_popup(self, update_info: Dict[str, str]) -> None:
         new_version = str(update_info.get("version") or "").strip()
@@ -1542,7 +1542,7 @@ class LoLAssistantUI:
                 popup.iconphoto(False, photo)
                 popup._icon_ref = photo
         except Exception as e:
-            logging.debug(f"Update popup icon error: {e}")
+            logging.debug("Update popup icon error: %s", e)
 
         outer = tk.Frame(popup, bg=palette["window_bg"], padx=20, pady=20)
         outer.pack(fill="both", expand=True)
@@ -1556,7 +1556,7 @@ class LoLAssistantUI:
             icon_label.image = banner_img
             icon_label.pack(side="left", padx=(0, 12))
         except Exception as e:
-            logging.debug(f"Update popup banner icon error: {e}")
+            logging.debug("Update popup banner icon error: %s", e)
 
         title_block = tk.Frame(header, bg=palette["window_bg"])
         title_block.pack(side="left", fill="x", expand=True)
@@ -1844,7 +1844,7 @@ class LoLAssistantUI:
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:
-            logging.debug(f"Executor shutdown error: {e}")
+            logging.debug("Executor shutdown error: %s", e)
 
         def destroy_root():
             if self.root.winfo_exists():
