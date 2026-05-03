@@ -40,6 +40,21 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(slots["pick_3"]["skin_mode"], "fixed")
         self.assertEqual(slots["pick_3"]["skin_name"], "Queen Ashe")
 
+    def test_pick_slot_defaults_include_rune_fields(self):
+        from src.config.settings import build_pick_slot_defaults
+        slots = build_pick_slot_defaults()
+        for slot_key in ("pick_1", "pick_2", "pick_3"):
+            self.assertIn("rune_page_id", slots[slot_key])
+            self.assertIn("rune_page_name", slots[slot_key])
+            self.assertIn("rune_auto_apply", slots[slot_key])
+            self.assertEqual(slots[slot_key]["rune_page_id"], 0)
+            self.assertEqual(slots[slot_key]["rune_page_name"], "")
+            self.assertTrue(slots[slot_key]["rune_auto_apply"])
+
+    def test_default_params_no_longer_has_global_auto_runes_enabled(self):
+        self.assertNotIn("auto_runes_enabled", config.DEFAULT_PARAMS)
+        self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
+
     def test_load_parameters_resets_invalid_json_to_first_launch_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"

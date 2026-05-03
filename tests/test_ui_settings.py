@@ -24,9 +24,9 @@ class FakeParent:
             "selected_pick_3": "Ashe",
             "selected_ban": "Teemo",
             "pick_slots": {
-                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                "pick_1": {"spell_1": "Heal", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
+                "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
             },
             "preferred_stats_site": "opgg",
             "preferred_hotkey_site": "porofessor",
@@ -41,9 +41,9 @@ class FakeParent:
                     "selected_pick_3": "",
                     "selected_ban": "Zed",
                     "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 9999, "random_skin_name": "Star Guardian Ahri", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 9999, "skin_name": "Star Guardian Ahri", "skin_num": 7}]},
-                        "pick_2": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
+                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 9999, "random_skin_name": "Star Guardian Ahri", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 9999, "skin_name": "Star Guardian Ahri", "skin_num": 7}], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
+                        "pick_2": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
+                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
                     },
                 }
             },
