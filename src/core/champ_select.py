@@ -51,6 +51,9 @@ class ChampSelectMixin:
     PREPICK_RETRY_COOLDOWN_S = 0.5
     PREPICK_SOFT_TIMEOUT_S = 2.2
     ACTION_RETRY_COOLDOWN_S = 0.25
+    RUNE_CONFIRM_RETRIES = 4
+    RUNE_CONFIRM_DELAY_S = 0.18
+    RUNE_RETRY_COOLDOWN_S = 0.45
 
     @staticmethod
     def _format_debug_value(payload: Any, limit: int = 240) -> str:
@@ -278,6 +281,21 @@ class ChampSelectMixin:
             and effective.get("selected_pick_1")
             and prepick_action is not None
         )
+
+        # Start applying runes as soon as champ select starts, before the prepick wait
+        # blocks on ban/pick resolution. This fires on the very first tick.
+        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
+        if presets_enabled and not self.state.rune_applied_for_session and not self.state.rune_apply_in_progress:
+            if self.state.rune_task_scheduled < 3:
+                self.state.rune_task_scheduled += 1
+                logging.info(
+                    "[RUNES] Early application attempt %s/3 for %s (prepick=%s picked=%s, phase=%s).",
+                    self.state.rune_task_scheduled, prepick_slot,
+                    self.state.has_prepicked, self.state.has_picked,
+                    self.state.current_phase,
+                )
+                asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
+
         if prepick_required and not self.state.has_prepicked:
             if self.state.prepick_wait_started_ts <= 0:
                 self.state.prepick_wait_started_ts = time()
@@ -292,7 +310,6 @@ class ChampSelectMixin:
         prepick_sequence_active = params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and (
             prepick_required or (self.state.has_prepicked and not self.state.has_picked)
         )
-        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
         if params.get("auto_summoners_enabled") and presets_enabled and prepick_sequence_active:
             if not self._selection_has_expected_spells(session, params, slot_key=prepick_slot):
                 self._log_flow_once(
@@ -309,6 +326,8 @@ class ChampSelectMixin:
         # Riot client can overwrite selections after an apparently successful patch.
         if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
+        if self.state.has_picked and presets_enabled:
+            self._ensure_rune_is_applied(session, params)
         if self.state.has_picked and presets_enabled:
             self._ensure_skin_is_applied(session, params)
 
@@ -415,6 +434,7 @@ class ChampSelectMixin:
                 if params.get("auto_summoners_enabled"):
                     asyncio.create_task(self._set_spells(params, slot_key=slot_key))
                 asyncio.create_task(self._set_skin(params, slot_key=slot_key))
+                asyncio.create_task(self._set_rune_page(params, slot_key=slot_key))
                 return
 
             logging.warning(
@@ -975,7 +995,12 @@ class ChampSelectMixin:
         skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
         if not skin_selection:
             return
-        desired_skin_id = int(skin_selection.get("skin_id") or 0)
+        
+        if skin_selection.get("mode") == "random" and self.state.locked_random_skin_id is not None:
+            desired_skin_id = self.state.locked_random_skin_id
+        else:
+            desired_skin_id = int(skin_selection.get("skin_id") or 0)
+            
         if desired_skin_id <= 0 and skin_selection.get("mode") != "random":
             return
         self.state.desired_skin_id = desired_skin_id or None
@@ -1268,6 +1293,10 @@ class ChampSelectMixin:
                 if response and response.status < 400 and await self._confirm_skin_applied(skin_id):
                     previous_confirmed = self.state.last_confirmed_skin_id
                     self.state.last_confirmed_skin_id = skin_id
+                    
+                    if selected_skin.get("mode") == "random":
+                        self.state.locked_random_skin_id = skin_id
+                        
                     if previous_confirmed != skin_id:
                         self._log_history(
                             "skin",
@@ -1311,6 +1340,160 @@ class ChampSelectMixin:
             )
         finally:
             self.state.skin_apply_in_progress = False
+
+    def _resolve_rune_selection(
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> tuple[int, str, str, bool]:
+        """Resolve the effective rune page id and auto-apply flag for the current pick slot."""
+        effective = self.get_effective_profile_config(params=params)
+        chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
+        pick_slots = effective.get("pick_slots", {})
+        slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
+        fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
+        rune_page_id = int(slot_data.get("rune_page_id") or fallback_slot.get("rune_page_id") or 0)
+        rune_page_name = str(slot_data.get("rune_page_name") or fallback_slot.get("rune_page_name") or "")
+        rune_auto_apply = bool(slot_data.get("rune_auto_apply", fallback_slot.get("rune_auto_apply", True)))
+        return rune_page_id, rune_page_name, chosen_slot, rune_auto_apply
+
+    def _ensure_rune_is_applied(
+        self: "WebSocketManager",
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> None:
+        """Re-apply the rune page when the live session state does not match the expected value."""
+        if self.state.rune_applied_for_session:
+            return
+        if self.state.rune_apply_in_progress or not self.connection:
+            return
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+        if rune_page_id <= 0 or not rune_auto_apply:
+            return
+        self.state.desired_rune_page_id = rune_page_id
+        current_rune_page_id = int(local_selection.get("selectedRunePageId") or 0)
+        if current_rune_page_id == rune_page_id:
+            self.state.last_confirmed_rune_page_id = rune_page_id
+            return
+        if time() - self.state.last_rune_try_ts < self.RUNE_RETRY_COOLDOWN_S:
+            return
+        logging.info(
+            "[RUNES] Mismatch detected for %s: current=%s expected=%s. Retrying.",
+            chosen_slot,
+            current_rune_page_id,
+            rune_page_id,
+        )
+        asyncio.create_task(self._set_rune_page(params, slot_key=chosen_slot))
+
+    async def _confirm_rune_applied(self: "WebSocketManager", rune_page_id: int) -> bool:
+        for attempt in range(self.RUNE_CONFIRM_RETRIES + 1):
+            # Primary check: the session's selectedRunePageId (may stay 0 during early prepick).
+            session = await self._fetch_current_champ_select_session(area="RUNES")
+            local_selection = self._extract_local_player_selection(session)
+            selected_rune = int(local_selection.get("selectedRunePageId") or 0) if local_selection else 0
+
+            # Secondary check: ask the perks API which page is actually active.
+            current_page = await self._fetch_current_rune_page_async()
+            perks_active_id = int(current_page.get("id") or 0) if current_page else 0
+
+            logging.info(
+                "[RUNES] Confirmation %s/%s selectedRunePageId=%s perksCurrentId=%s expected=%s",
+                attempt + 1, self.RUNE_CONFIRM_RETRIES + 1,
+                selected_rune, perks_active_id, rune_page_id,
+            )
+
+            if selected_rune == rune_page_id or perks_active_id == rune_page_id:
+                logging.info(
+                    "[RUNES] Confirmed via %s (id=%s).",
+                    "selectedRunePageId" if selected_rune == rune_page_id else "perks/currentpage",
+                    rune_page_id,
+                )
+                return True
+
+            if attempt < self.RUNE_CONFIRM_RETRIES:
+                await asyncio.sleep(self.RUNE_CONFIRM_DELAY_S)
+        return False
+
+    async def _set_rune_page(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
+        if not self.connection or self.state.rune_apply_in_progress:
+            return
+
+        self.state.rune_apply_in_progress = True
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+        if rune_page_id <= 0:
+            logging.info("[RUNES] No rune page configured for %s; skipping.", chosen_slot)
+            self.state.rune_apply_in_progress = False
+            return
+        if not rune_auto_apply:
+            logging.info("[RUNES] Auto-apply disabled for %s; skipping.", chosen_slot)
+            self.state.rune_apply_in_progress = False
+            return
+
+        self.state.desired_rune_page_id = rune_page_id
+        self.state.last_rune_try_ts = time()
+        effective = self.get_effective_profile_config(params=params)
+        logging.info(
+            "[RUNES] Applying for %s: page \"%s\" (id=%s) via role=%s.",
+            chosen_slot,
+            rune_page_name or rune_page_id,
+            rune_page_id,
+            effective.get("resolved_role", "GLOBAL"),
+        )
+
+        try:
+            # Fetch the target page's full data from the list so we can PUT it back.
+            all_pages = await self._fetch_rune_pages_async()
+            target_page = next((p for p in all_pages if p["id"] == rune_page_id), None)
+            if not target_page:
+                logging.warning("[RUNES] Target page %s not found in account pages, cannot apply.", rune_page_id)
+                return
+
+            # PUT the page data with current: true via lol-perks API.
+            logging.info(
+                "[RUNES] Setting page \"%s\" (id=%s) as active via PUT /lol-perks/v1/pages/%s.",
+                target_page.get("name", ""), rune_page_id, rune_page_id,
+            )
+            put_ok = await self._set_rune_page_via_perks_async(target_page)
+            logging.info("[RUNES] PUT /lol-perks/v1/pages/%s -> %s.", rune_page_id, "OK" if put_ok else "FAILED")
+
+            if put_ok:
+                confirmed = await self._confirm_rune_applied(rune_page_id)
+                logging.info("[RUNES] Confirmation after PUT -> %s.", "CONFIRMED" if confirmed else "NOT CONFIRMED")
+            else:
+                confirmed = False
+
+            if confirmed:
+                previous_confirmed = self.state.last_confirmed_rune_page_id
+                self.state.last_confirmed_rune_page_id = rune_page_id
+                self.state.rune_applied_for_session = True
+                logging.info(
+                    "[RUNES] Successfully applied page \"%s\" (id=%s) for %s.",
+                    rune_page_name or rune_page_id, rune_page_id, chosen_slot,
+                )
+                if previous_confirmed != rune_page_id:
+                    self._log_history(
+                        "runes",
+                        f"Rune page applied: \"{rune_page_name}\" (id={rune_page_id}).",
+                        {
+                            "rune_page_id": rune_page_id,
+                            "rune_page_name": rune_page_name,
+                            "role": effective.get("resolved_role", "GLOBAL"),
+                            "pick_slot": chosen_slot,
+                        },
+                        level="success",
+                        category="Champion Select",
+                        action="runes",
+                    )
+                    self._notify_ui(self.EVENT_STATUS, (f"Runes set: {rune_page_name}.", "RUNES"))
+                return
+
+            logging.warning("[RUNES] Unable to confirm rune page %s for %s after PUT attempt.", rune_page_id, chosen_slot)
+        finally:
+            self.state.rune_apply_in_progress = False
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         """Try to return to lobby after the game when that automation is enabled."""

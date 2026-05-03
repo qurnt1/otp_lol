@@ -70,3 +70,4 @@ DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX
 ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_icons")
 SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
 SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")
+RUNES_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes")

@@ -49,6 +49,7 @@ URL_CDRAGON_ASSET_PREFIX: str = (
 URL_PHASE_RUSH_ICON: str = (
     "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
 )
+URL_PERK_ICON_PREFIX: str = "https://ddragon.canisback.com/img/perk-images/Styles"
 
 EP_SESSION: str = "/lol-champ-select/v1/session"
 EP_SESSION_TIMER: str = "/lol-champ-select/v1/session/timer"
@@ -59,6 +60,11 @@ EP_PICKABLE: str = "/lol-champ-select/v1/pickable-champion-ids"
 EP_CURRENT_SUMMONER: str = "/lol-summoner/v1/current-summoner"
 EP_CHAT_ME: str = "/lol-chat/v1/me"
 EP_LOGIN: str = "/lol-login/v1/session"
+EP_PERKS_PAGES: str = "/lol-perks/v1/pages"
+EP_PERKS_STYLES: str = "/lol-perks/v1/styles"
+EP_PERKS_INVENTORY: str = "/lol-perks/v1/inventory"
+EP_CS_RUNE_PAGE: str = "/lol-champ-select/v1/session/rune-page"
+EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
 
 REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
 

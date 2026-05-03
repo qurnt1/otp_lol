@@ -47,6 +47,9 @@ from ..config import (
     EP_CURRENT_SUMMONER,
     EP_GAMEFLOW,
     EP_LOGIN,
+    EP_PERKS_CURRENT_PAGE,
+    EP_PERKS_PAGES,
+    EP_PERKS_STYLES,
     EP_READY_CHECK,
     EP_SESSION,
     EP_SESSION_TIMER,
@@ -269,6 +272,8 @@ class WebSocketManager(ChampSelectMixin):
                 "random_skin_num": _pick_skin_int("random_skin_num"),
                 "random_skin_pool": _pick_skin_pool(),
                 "skin_source_role": skin_source_role,
+                "rune_page_id": int(role_slot.get("rune_page_id") or global_slot.get("rune_page_id") or 0),
+                "rune_page_name": str(role_slot.get("rune_page_name") or global_slot.get("rune_page_name") or ""),
             }
 
         pick_slots = {
@@ -318,6 +323,210 @@ class WebSocketManager(ChampSelectMixin):
             return int(self.state.summoner_id or 0) or None
         except (TypeError, ValueError):
             return None
+
+    async def _fetch_rune_pages_async(self) -> List[Dict[str, Any]]:
+        """Fetch all valid rune pages from the LCU."""
+        if not self.connection:
+            return []
+        try:
+            response = await self.connection.request("get", EP_PERKS_PAGES)
+            if not response or response.status != 200:
+                return []
+            payload = await response.json()
+            if not isinstance(payload, list):
+                return []
+            pages: List[Dict[str, Any]] = []
+            for page in payload:
+                if not isinstance(page, dict):
+                    continue
+                if not page.get("isValid", True):
+                    continue
+                pages.append({
+                    "id": page.get("id", 0),
+                    "name": str(page.get("name") or ""),
+                    "primaryStyleId": page.get("primaryStyleId", 0),
+                    "subStyleId": page.get("subStyleId", 0),
+                    "selectedPerkIds": page.get("selectedPerkIds", []),
+                    "current": page.get("current", False),
+                })
+            return pages
+        except Exception as e:
+            logging.debug("Error fetching rune pages: %s", e)
+            return []
+
+    async def _fetch_rune_styles_async(self) -> Dict[int, Dict[str, Any]]:
+        """Fetch rune style metadata from the LCU keyed by style id."""
+        if not self.connection:
+            return {}
+        try:
+            response = await self.connection.request("get", EP_PERKS_STYLES)
+            if not response or response.status != 200:
+                return {}
+            payload = await response.json()
+            if not isinstance(payload, list):
+                return {}
+            styles: Dict[int, Dict[str, Any]] = {}
+            for style in payload:
+                if not isinstance(style, dict):
+                    continue
+                style_id = style.get("id", 0)
+                if not style_id:
+                    continue
+                slots = style.get("slots", [])
+                perks: List[Dict[str, Any]] = []
+                for slot in slots if isinstance(slots, list) else []:
+                    if not isinstance(slot, dict):
+                        continue
+                    for perk in slot.get("perks", []) if isinstance(slot.get("perks", []), list) else []:
+                        if isinstance(perk, dict):
+                            perks.append({
+                                "id": perk.get("id", 0),
+                                "name": str(perk.get("name") or ""),
+                                "iconPath": str(perk.get("iconPath") or ""),
+                            })
+                styles[style_id] = {
+                    "name": str(style.get("name") or ""),
+                    "iconPath": str(style.get("iconPath") or ""),
+                    "perks": perks,
+                }
+            return styles
+        except Exception as e:
+            logging.debug("Error fetching rune styles: %s", e)
+            return {}
+
+    def fetch_rune_pages(self) -> List[Dict[str, Any]]:
+        """Synchronous wrapper to fetch rune pages from the LCU."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return []
+        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_pages_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: rune pages fetch failed - %s", e)
+            return []
+
+    def fetch_rune_styles(self) -> Dict[int, Dict[str, Any]]:
+        """Synchronous wrapper to fetch rune style metadata from the LCU."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return {}
+        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_styles_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: rune styles fetch failed - %s", e)
+            return {}
+
+    async def _fetch_current_rune_page_async(self) -> Optional[Dict[str, Any]]:
+        """GET /lol-perks/v1/currentpage — return the currently active rune page or None."""
+        if not self.connection:
+            return None
+        try:
+            response = await self.connection.request("get", EP_PERKS_CURRENT_PAGE)
+            if not response or response.status != 200:
+                return None
+            payload = await response.json()
+            if not isinstance(payload, dict):
+                return None
+            return payload
+        except Exception as e:
+            logging.debug("Error fetching current rune page: %s", e)
+            return None
+
+    async def _set_rune_page_via_perks_async(self, page_data: Dict[str, Any]) -> bool:
+        """PUT /lol-perks/v1/pages/{id} with full page data + current: true."""
+        if not self.connection:
+            return False
+        page_id = page_data.get("id")
+        if not page_id:
+            return False
+        try:
+            payload = dict(page_data)
+            payload["current"] = True
+            endpoint = f"{EP_PERKS_PAGES}/{page_id}"
+            self._log_lcu_request("RUNES", "put", endpoint, payload)
+            response = await self.connection.request("put", endpoint, json=payload)
+            self._log_lcu_response("RUNES", "put", endpoint, response)
+            return bool(response and response.status < 400)
+        except Exception as e:
+            logging.warning("[RUNES] PUT /lol-perks/v1/pages/%s failed: %s", page_id, e)
+            return False
+
+    async def _create_rune_page_async(self, page_data: Dict[str, Any]) -> Optional[int]:
+        """POST /lol-perks/v1/pages with current: true, return the new page id or None."""
+        if not self.connection:
+            return None
+        try:
+            payload = dict(page_data)
+            payload.pop("id", None)
+            payload["current"] = True
+            self._log_lcu_request("RUNES", "post", EP_PERKS_PAGES, payload)
+            response = await self.connection.request("post", EP_PERKS_PAGES, json=payload)
+            self._log_lcu_response("RUNES", "post", EP_PERKS_PAGES, response)
+            if response and response.status < 400:
+                created = await response.json()
+                return int(created.get("id") or 0) if isinstance(created, dict) else None
+            return None
+        except Exception as e:
+            logging.warning("[RUNES] POST /lol-perks/v1/pages failed: %s", e)
+            return None
+
+    async def _delete_rune_page_async(self, page_id: int) -> bool:
+        """DELETE /lol-perks/v1/pages/{id}."""
+        if not self.connection or page_id <= 0:
+            return False
+        try:
+            endpoint = f"{EP_PERKS_PAGES}/{page_id}"
+            self._log_lcu_request("RUNES", "delete", endpoint)
+            response = await self.connection.request("delete", endpoint)
+            self._log_lcu_response("RUNES", "delete", endpoint, response)
+            return bool(response and response.status < 400)
+        except Exception as e:
+            logging.warning("[RUNES] DELETE /lol-perks/v1/pages/%s failed: %s", page_id, e)
+            return False
+
+    def fetch_current_rune_page(self) -> Optional[Dict[str, Any]]:
+        """Sync wrapper: get the current active rune page."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return None
+        future = asyncio.run_coroutine_threadsafe(self._fetch_current_rune_page_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: current rune page fetch failed - %s", e)
+            return None
+
+    def set_rune_page_via_perks(self, page_data: Dict[str, Any]) -> bool:
+        """Sync wrapper: set a rune page as current via PUT."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return False
+        future = asyncio.run_coroutine_threadsafe(self._set_rune_page_via_perks_async(page_data), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: set rune page via perks failed - %s", e)
+            return False
+
+    def create_rune_page(self, page_data: Dict[str, Any]) -> Optional[int]:
+        """Sync wrapper: create a new rune page with current: true, return its id."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return None
+        future = asyncio.run_coroutine_threadsafe(self._create_rune_page_async(page_data), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: create rune page failed - %s", e)
+            return None
+
+    def delete_rune_page(self, page_id: int) -> bool:
+        """Sync wrapper: delete a rune page by id."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return False
+        future = asyncio.run_coroutine_threadsafe(self._delete_rune_page_async(page_id), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: delete rune page failed - %s", e)
+            return False
 
     def fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.ws_active or not self.connection or not self.loop:

@@ -34,7 +34,7 @@ import shutil
 from typing import Any, Dict
 
 from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
-from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
+from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, RUNES_CACHE_DIR, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
 
 
 def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
@@ -51,6 +51,9 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
             "random_skin_name": "",
             "random_skin_num": 0,
             "random_skin_pool": [],
+            "rune_page_id": 0,
+            "rune_page_name": "",
+            "rune_auto_apply": True,
         }
         for slot in PICK_SLOT_ORDER
     }
@@ -358,6 +361,9 @@ def _build_normalized_pick_slots(
                 "random_skin_pool": _normalize_skin_pool(
                     slot_data.get("random_skin_pool", slots[slot]["random_skin_pool"])
                 ),
+                "rune_page_id": int(slot_data.get("rune_page_id", slots[slot]["rune_page_id"]) or 0),
+                "rune_page_name": str(slot_data.get("rune_page_name", slots[slot]["rune_page_name"]) or ""),
+                "rune_auto_apply": bool(slot_data.get("rune_auto_apply", slots[slot]["rune_auto_apply"])),
             }
         )
     return slots
@@ -464,6 +470,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
-    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR]:
+    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR, RUNES_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)
