@@ -47,9 +47,10 @@ URL_CDRAGON_ASSET_PREFIX: str = (
     "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
 )
 URL_PHASE_RUSH_ICON: str = (
-    "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+    "v1/perk-images/styles/runesicon.png"
 )
-URL_PERK_ICON_PREFIX: str = "https://ddragon.canisback.com/img/perk-images/Styles"
+URL_PERK_ICON_PREFIX: str = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default"
 
 EP_SESSION: str = "/lol-champ-select/v1/session"
 EP_SESSION_TIMER: str = "/lol-champ-select/v1/session/timer"

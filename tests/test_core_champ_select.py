@@ -144,6 +144,57 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.manager._is_transient_ws_scan_error(RuntimeError("process no longer exists (pid=356)")))
         self.assertFalse(self.manager._is_transient_ws_scan_error(RuntimeError("boom")))
 
+    async def test_fetch_rune_styles_parses_slot_based_perks(self):
+        async def request(method, url, **kwargs):
+            self.assertEqual(method, "get")
+            self.assertEqual(url, "/lol-perks/v1/styles")
+            return FakeResponse(
+                200,
+                [
+                    {
+                        "id": "8000",
+                        "name": "Precision",
+                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/7201_Precision.png",
+                        "slots": [
+                            {
+                                "perks": [
+                                    {
+                                        "id": "8010",
+                                        "name": "Conqueror",
+                                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Precision/Conqueror/Conqueror.png",
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ],
+            )
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+
+        styles = await self.manager._fetch_rune_styles_async()
+
+        self.assertEqual(styles[8000]["perks"][0]["id"], 8010)
+        self.assertEqual(styles[8000]["perks"][0]["name"], "Conqueror")
+        self.assertIn("Conqueror.png", styles[8000]["perks"][0]["iconPath"])
+
+    async def test_extract_rune_style_perks_accepts_flat_perks(self):
+        perks = self.manager._extract_rune_style_perks(
+            {
+                "perks": [
+                    {
+                        "id": "8214",
+                        "name": "Summon Aery",
+                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(perks[0]["id"], 8214)
+        self.assertEqual(perks[0]["name"], "Summon Aery")
+
     async def test_logic_do_pick_falls_back_to_second_pick(self):
         async def request(method, url, **kwargs):
             self.assertEqual(method, "get")

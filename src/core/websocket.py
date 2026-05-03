@@ -364,35 +364,81 @@ class WebSocketManager(ChampSelectMixin):
                 return {}
             payload = await response.json()
             if not isinstance(payload, list):
+                print(f"[RUNES][LCU] styles payload is not list: type={type(payload).__name__}", flush=True)
                 return {}
+            print(f"[RUNES][LCU] styles payload_count={len(payload)}", flush=True)
             styles: Dict[int, Dict[str, Any]] = {}
             for style in payload:
                 if not isinstance(style, dict):
                     continue
-                style_id = style.get("id", 0)
-                if not style_id:
+                style_id = self._to_int(style.get("id"))
+                if style_id <= 0:
                     continue
                 slots = style.get("slots", [])
-                perks: List[Dict[str, Any]] = []
-                for slot in slots if isinstance(slots, list) else []:
-                    if not isinstance(slot, dict):
-                        continue
-                    for perk in slot.get("perks", []) if isinstance(slot.get("perks", []), list) else []:
-                        if isinstance(perk, dict):
-                            perks.append({
-                                "id": perk.get("id", 0),
-                                "name": str(perk.get("name") or ""),
-                                "iconPath": str(perk.get("iconPath") or ""),
-                            })
+                raw_perks = style.get("perks", [])
+                parsed_perks = self._extract_rune_style_perks(style)
+                print(
+                    "[RUNES][LCU] style "
+                    f"id={style_id} name={style.get('name')!r} keys={list(style.keys())} "
+                    f"iconPath={style.get('iconPath')!r} "
+                    f"slots_count={len(slots) if isinstance(slots, list) else 'not-list'} "
+                    f"raw_perks_count={len(raw_perks) if isinstance(raw_perks, list) else 'not-list'} "
+                    f"parsed_perks_count={len(parsed_perks)} "
+                    f"parsed_ids_sample={[perk.get('id') for perk in parsed_perks[:8]]}",
+                    flush=True,
+                )
                 styles[style_id] = {
                     "name": str(style.get("name") or ""),
                     "iconPath": str(style.get("iconPath") or ""),
-                    "perks": perks,
+                    "perks": parsed_perks,
                 }
             return styles
         except Exception as e:
             logging.debug("Error fetching rune styles: %s", e)
             return {}
+
+    @staticmethod
+    def _to_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _extract_rune_style_perks(cls, style: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Return rune perks from either the flattened or slot-based LCU style shape."""
+        if not isinstance(style, dict):
+            return []
+
+        raw_perks = style.get("perks")
+        if isinstance(raw_perks, list) and raw_perks:
+            return [
+                {
+                    "id": cls._to_int(perk.get("id")),
+                    "name": str(perk.get("name") or ""),
+                    "iconPath": str(perk.get("iconPath") or ""),
+                }
+                for perk in raw_perks
+                if isinstance(perk, dict)
+            ]
+
+        perks: List[Dict[str, Any]] = []
+        slots = style.get("slots", [])
+        for slot in slots if isinstance(slots, list) else []:
+            if not isinstance(slot, dict):
+                continue
+            slot_perks = slot.get("perks", [])
+            for perk in slot_perks if isinstance(slot_perks, list) else []:
+                if not isinstance(perk, dict):
+                    continue
+                perks.append(
+                    {
+                        "id": cls._to_int(perk.get("id")),
+                        "name": str(perk.get("name") or ""),
+                        "iconPath": str(perk.get("iconPath") or ""),
+                    }
+                )
+        return perks
 
     def fetch_rune_pages(self) -> List[Dict[str, Any]]:
         """Synchronous wrapper to fetch rune pages from the LCU."""

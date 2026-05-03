@@ -1,12 +1,17 @@
 import unittest
+import json
 from unittest.mock import patch
 
 from src.core.datadragon import DataDragon
 
 
 class FakeResponse:
-    def __init__(self, payload):
+    def __init__(self, payload, *, status_code=200, headers=None):
         self._payload = payload
+        self.status_code = status_code
+        self.headers = headers or {"content-type": "application/json"}
+        self.content = json.dumps(payload).encode("utf-8")
+        self.text = json.dumps(payload)
 
     def raise_for_status(self):
         return None
@@ -16,6 +21,50 @@ class FakeResponse:
 
 
 class DataDragonSkinCatalogTests(unittest.TestCase):
+    def test_rune_asset_path_is_converted_to_communitydragon_url(self):
+        url = DataDragon._communitydragon_asset_url(
+            "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"
+        )
+
+        self.assertEqual(
+            url,
+            (
+                "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+                "v1/perk-images/styles/7204_resolve.png"
+            ),
+        )
+
+    @patch("src.core.datadragon.requests.get")
+    def test_rune_perk_icon_path_uses_communitydragon_perks_index(self, mock_get):
+        dd = DataDragon()
+        mock_get.return_value = FakeResponse(
+            [
+                {
+                    "id": 8010,
+                    "name": "Conqueror",
+                    "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Precision/Conqueror/Conqueror.png",
+                },
+                {
+                    "id": "8214",
+                    "name": "Summon Aery",
+                    "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
+                },
+            ]
+        )
+
+        self.assertEqual(
+            dd.get_rune_perk_icon_path(8010),
+            "/lol-game-data/assets/v1/perk-images/Styles/Precision/Conqueror/Conqueror.png",
+        )
+        self.assertEqual(
+            dd.get_rune_perk_icon_path("8214"),
+            "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
+        )
+        mock_get.assert_called_once_with(
+            "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perks.json",
+            timeout=8,
+        )
+
     def test_cdragon_asset_path_is_converted_to_raw_url(self):
         url = DataDragon.cdragon_url_from_asset_path(
             "/lol-game-data/assets/ASSETS/Characters/Garen/Skins/Skin13/Images/garen_splash_tile_13.jpg"

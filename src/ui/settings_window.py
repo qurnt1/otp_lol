@@ -31,7 +31,6 @@ import logging
 import os
 import random
 from datetime import datetime
-from threading import Thread
 from tkinter import filedialog
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -50,7 +49,6 @@ from ..config import (
     ROLE_PROFILE_ICON_FILES,
     ROLE_PROFILE_LABELS,
     ROLE_PROFILE_ORDER,
-    RUNES_CACHE_DIR,
     STATS_SITE_LABELS,
     SUMMONER_SPELL_LIST,
     URL_PHASE_RUSH_ICON,
@@ -221,6 +219,52 @@ class SettingsWindow:
 
     def _get_preset_label(self, slot_key: str) -> str:
         return self.PRESET_LABELS.get(slot_key, PICK_SLOT_LABELS.get(slot_key, slot_key))
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _print_rune_debug(message: str) -> None:
+        print(f"[RUNES][UI] {message}", flush=True)
+
+    def _find_rune_keystone_path(self, page: Dict[str, Any], primary_style: Dict[str, Any]) -> str:
+        selected_ids = page.get("selectedPerkIds") if isinstance(page, dict) else []
+        keystone_id = self._safe_int(selected_ids[0]) if isinstance(selected_ids, list) and selected_ids else 0
+        perks = primary_style.get("perks", []) if isinstance(primary_style, dict) else []
+        perk_ids = [perk.get("id") for perk in perks[:10] if isinstance(perk, dict)] if isinstance(perks, list) else []
+        self._print_rune_debug(
+            "find_keystone "
+            f"page_id={page.get('id') if isinstance(page, dict) else None} "
+            f"page_name={page.get('name') if isinstance(page, dict) else None!r} "
+            f"primaryStyleId={page.get('primaryStyleId') if isinstance(page, dict) else None} "
+            f"selected_ids={selected_ids!r} keystone_id={keystone_id} "
+            f"primary_style_keys={list(primary_style.keys()) if isinstance(primary_style, dict) else 'not-dict'} "
+            f"perks_count={len(perks) if isinstance(perks, list) else 'not-list'} "
+            f"perk_ids_sample={perk_ids}"
+        )
+
+        if keystone_id > 0 and hasattr(self.parent, "dd"):
+            icon_path = self.parent.dd.get_rune_perk_icon_path(keystone_id)
+            self._print_rune_debug(f"find_keystone cdragon_index id={keystone_id} iconPath={icon_path!r}")
+            if icon_path:
+                return icon_path
+
+        if keystone_id > 0:
+            for perk in perks if isinstance(perks, list) else []:
+                if isinstance(perk, dict) and self._safe_int(perk.get("id")) == keystone_id:
+                    icon_path = str(perk.get("iconPath") or "")
+                    self._print_rune_debug(f"find_keystone style_fallback matched id={keystone_id} iconPath={icon_path!r}")
+                    return icon_path
+        if isinstance(perks, list) and perks and isinstance(perks[0], dict):
+            icon_path = str(perks[0].get("iconPath") or "")
+            self._print_rune_debug(f"find_keystone fallback_first_perk iconPath={icon_path!r}")
+            return icon_path
+        self._print_rune_debug("find_keystone failed: no iconPath")
+        return ""
 
     def _create_pick_section(self, start_row: int) -> int:
         role_frame = ttk.Frame(self.main_frame)
@@ -1192,6 +1236,7 @@ class SettingsWindow:
             _refresh_pages()
 
         def _select_page(page_id: int, page_name: str) -> None:
+            self._print_rune_debug(f"picker select_page slot={slot_key} page_id={page_id} page_name={page_name!r}")
             slot_config = self._get_effective_pick_slot_config(slot_key)
             self._save_rune_page_for_slot(
                 slot_key, page_id, page_name,
@@ -1202,17 +1247,26 @@ class SettingsWindow:
 
         def _load_keystone_on_button(btn: ttk.Button, keystone_path: str) -> None:
             try:
+                self._print_rune_debug(f"picker load_keystone start path={keystone_path!r}")
                 img = self.parent.dd.get_rune_perk_icon(keystone_path)
                 if img:
+                    self._print_rune_debug(f"picker load_keystone PIL ok size={img.size} mode={img.mode}")
                     img = img.resize(self.PICK_ICON_SIZE, Image.LANCZOS)
                     photo = ImageTk.PhotoImage(img)
                     if btn.winfo_exists():
                         btn.configure(image=photo, compound="left")
                         btn.image = photo
+                        self._print_rune_debug("picker load_keystone button configured")
+                    else:
+                        self._print_rune_debug("picker load_keystone button no longer exists")
+                else:
+                    self._print_rune_debug(f"picker load_keystone missing image path={keystone_path!r}")
             except Exception as e:
+                self._print_rune_debug(f"picker load_keystone exception path={keystone_path!r} error={e!r}")
                 logging.debug("Keystone icon load error: %s", e)
 
         def _refresh_pages():
+            self._print_rune_debug(f"picker refresh_pages slot={slot_key} ws_active={bool(ws and getattr(ws, 'is_active', False))}")
             for widget in pages_frame.winfo_children():
                 widget.destroy()
 
@@ -1226,12 +1280,14 @@ class SettingsWindow:
             status_var.set("")
 
             pages = ws.fetch_rune_pages()
+            self._print_rune_debug(f"picker pages_count={len(pages)} pages={pages!r}")
             if not pages:
                 ttk.Label(pages_frame, text="No valid rune pages found on your account.", bootstyle="secondary").pack(pady=10)
                 ttk.Label(pages_frame, text="Create a rune page in the League client first.", bootstyle="secondary").pack(pady=(0, 10))
                 return
 
             styles = ws.fetch_rune_styles()
+            self._print_rune_debug(f"picker styles_count={len(styles) if isinstance(styles, dict) else 'not-dict'} style_ids={list(styles.keys()) if isinstance(styles, dict) else []}")
             current_slot_config = self._get_effective_pick_slot_config(slot_key)
             current_rune_page_id = int(current_slot_config.get("rune_page_id") or 0)
 
@@ -1251,14 +1307,17 @@ class SettingsWindow:
                     command=lambda pid=page_id, pname=page_name: _select_page(pid, pname),
                 )
                 btn.pack(fill="x", expand=True)
-                # Load keystone icon for this page
                 if isinstance(styles, dict):
                     style = styles.get(page.get("primaryStyleId", 0), {})
-                    perks = style.get("perks", []) if isinstance(style, dict) else []
-                    if perks:
-                        keystone_path = perks[0].get("iconPath", "")
-                        if keystone_path:
-                            _load_keystone_on_button(btn, keystone_path)
+                    keystone_path = self._find_rune_keystone_path(page, style)
+                    self._print_rune_debug(
+                        f"picker page button page_id={page_id} primaryStyleId={page.get('primaryStyleId')} "
+                        f"subStyleId={page.get('subStyleId')} keystone_path={keystone_path!r}"
+                    )
+                    if keystone_path:
+                        _load_keystone_on_button(btn, keystone_path)
+                    else:
+                        self._print_rune_debug(f"picker no keystone path for page_id={page_id}")
 
         pages_frame = ttk.Frame(container)
         pages_frame.pack(fill="both", expand=True)
@@ -1431,75 +1490,126 @@ class SettingsWindow:
             slot_config = self._get_effective_pick_slot_config(slot_key)
             rune_page_id = int(slot_config.get("rune_page_id") or 0)
             rune_page_name = str(slot_config.get("rune_page_name") or "")
+            self._print_rune_debug(
+                f"settings refresh_button slot={slot_key} rune_page_id={rune_page_id} "
+                f"rune_page_name={rune_page_name!r} slot_config={slot_config!r}"
+            )
             if rune_page_id > 0 and rune_page_name:
                 display_name = rune_page_name if len(rune_page_name) <= 18 else rune_page_name[:16] + "..."
                 button.configure(text=f"  {display_name}", image="", compound="left")
                 self._load_rune_page_composite_into_btn(button, rune_page_id, slot_key)
             else:
                 button.configure(text="  Runes", image="", compound="left")
-                self._load_remote_img_into_btn(
+                self._load_rune_img_into_btn(
                     button,
                     URL_PHASE_RUSH_ICON,
-                    cache_key=f"rune_phase_rush_{slot_key}",
                     size=self.PICK_ICON_SIZE,
                 )
 
     def _load_rune_page_composite_into_btn(self, button: ttk.Button, rune_page_id: int, slot_key: str) -> None:
         ws = getattr(self.parent, "ws_manager", None)
 
-        def _update_btn_with_photo(photo: ImageTk.PhotoImage) -> None:
+        self._print_rune_debug(
+            f"settings composite start slot={slot_key} rune_page_id={rune_page_id} ws_present={bool(ws)} "
+            f"ws_active={bool(ws and getattr(ws, 'is_active', False))}"
+        )
+
+        def _update_btn_with_image(img: Image.Image) -> None:
             if button.winfo_exists():
+                self._print_rune_debug(f"settings composite Tk update start slot={slot_key} PIL size={img.size} mode={img.mode}")
+                photo = ImageTk.PhotoImage(img)
                 button.configure(image=photo)
                 button.image = photo
-
-        # Check disk cache first
-        cache_filename = f"rune_composite_{rune_page_id}_{slot_key}.png"
-        cached_path = os.path.join(RUNES_CACHE_DIR, cache_filename)
-        if os.path.exists(cached_path):
-            try:
-                img = Image.open(cached_path).convert("RGBA")
-                photo = ImageTk.PhotoImage(img)
-                button.after(0, lambda p=photo: _update_btn_with_photo(p))
-                return
-            except Exception as e:
-                logging.debug("Rune composite cache read error: %s", e)
+                self._print_rune_debug(f"settings composite button configured slot={slot_key}")
+            else:
+                self._print_rune_debug(f"settings composite Tk update skipped: button gone slot={slot_key}")
 
         if not ws:
+            self._print_rune_debug(f"settings composite stop: ws missing slot={slot_key}")
             return
 
         def task():
             try:
                 pages = ws.fetch_rune_pages()
+                self._print_rune_debug(f"settings composite fetched pages_count={len(pages)} slot={slot_key}")
                 page = next((p for p in pages if p["id"] == rune_page_id), None)
                 if not page:
+                    self._print_rune_debug(f"settings composite stop: page_id={rune_page_id} not found pages={pages!r}")
                     return
                 styles = ws.fetch_rune_styles()
+                self._print_rune_debug(
+                    f"settings composite fetched styles_count={len(styles) if isinstance(styles, dict) else 'not-dict'} "
+                    f"style_ids={list(styles.keys()) if isinstance(styles, dict) else []}"
+                )
                 primary_style = styles.get(page["primaryStyleId"], {})
                 sub_style = styles.get(page["subStyleId"], {})
-                keystone_path = ""
-                primary_perks = primary_style.get("perks", [])
-                if primary_perks:
-                    keystone_path = primary_perks[0].get("iconPath", "")
                 sub_style_icon_path = sub_style.get("iconPath", "")
+                keystone_path = self._find_rune_keystone_path(page, primary_style)
+                self._print_rune_debug(
+                    f"settings composite resolved slot={slot_key} page_id={rune_page_id} "
+                    f"primaryStyleId={page.get('primaryStyleId')} subStyleId={page.get('subStyleId')} "
+                    f"keystone_path={keystone_path!r} sub_style_icon_path={sub_style_icon_path!r}"
+                )
                 composite = self.parent.dd.compose_rune_button_icon(
                     keystone_path,
                     sub_style_icon_path,
                     size=self.PICK_ICON_SIZE,
                 )
                 if composite:
-                    # Save to disk cache for next time
-                    try:
-                        os.makedirs(RUNES_CACHE_DIR, exist_ok=True)
-                        composite.save(cached_path, "PNG")
-                    except Exception as e:
-                        logging.debug("Rune composite cache save error: %s", e)
-
-                    photo = ImageTk.PhotoImage(composite)
-                    button.after(0, lambda p=photo: _update_btn_with_photo(p))
+                    self._print_rune_debug(f"settings composite PIL ok slot={slot_key} size={composite.size} mode={composite.mode}")
+                    button.after(0, lambda img=composite: _update_btn_with_image(img))
+                else:
+                    self._print_rune_debug(f"settings composite missing image slot={slot_key}; fallback Phase Rush")
+                    self._load_rune_img_into_btn(
+                        button,
+                        URL_PHASE_RUSH_ICON,
+                        size=self.PICK_ICON_SIZE,
+                    )
             except Exception as e:
+                self._print_rune_debug(f"settings composite exception slot={slot_key} error={e!r}")
                 logging.debug("Rune composite icon load error: %s", e)
+                self._load_rune_img_into_btn(
+                    button,
+                    URL_PHASE_RUSH_ICON,
+                    size=self.PICK_ICON_SIZE,
+                )
 
-        Thread(target=task, daemon=True).start()
+        self.parent.executor.submit(task)
+
+    def _load_rune_img_into_btn(
+        self,
+        btn_widget: ttk.Button,
+        asset_path: str,
+        *,
+        size: tuple[int, int] = PICK_ICON_SIZE,
+    ) -> None:
+        self._print_rune_debug(f"settings single_icon start asset_path={asset_path!r} size={size}")
+
+        def task():
+            try:
+                img = self.parent.dd.get_rune_perk_icon(asset_path)
+                if not img:
+                    self._print_rune_debug(f"settings single_icon missing image asset_path={asset_path!r}")
+                    return
+                img = img.resize(size, Image.LANCZOS)
+                self._print_rune_debug(f"settings single_icon PIL ok asset_path={asset_path!r} size={img.size} mode={img.mode}")
+
+                def update_ui():
+                    if btn_widget.winfo_exists():
+                        self._print_rune_debug(f"settings single_icon Tk update start asset_path={asset_path!r}")
+                        photo = ImageTk.PhotoImage(img)
+                        btn_widget.configure(image=photo)
+                        btn_widget.image = photo
+                        self._print_rune_debug(f"settings single_icon button configured asset_path={asset_path!r}")
+                    else:
+                        self._print_rune_debug(f"settings single_icon Tk update skipped: button gone asset_path={asset_path!r}")
+
+                btn_widget.after(0, update_ui)
+            except Exception as e:
+                self._print_rune_debug(f"settings single_icon exception asset_path={asset_path!r} error={e!r}")
+                logging.debug("Rune image loading error for %s: %s", asset_path, e)
+
+        self.parent.executor.submit(task)
 
     def _refresh_skin_buttons(self) -> None:
         for slot_key, button in self.pick_skin_buttons.items():

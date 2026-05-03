@@ -56,6 +56,9 @@ class FakeParent:
             (),
             {
                 "get_skin_preview_url": lambda self, champion_name, **kwargs: "https://example.com/tile.jpg",
+                "get_rune_perk_icon_path": lambda self, perk_id: {
+                    8214: "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
+                }.get(int(perk_id or 0), ""),
             },
         )()
 
@@ -264,15 +267,35 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
         window = self.make_window()
         window.pick_rune_buttons = {"pick_1": FakeButton()}
-        window._load_remote_img_into_btn_calls = []
-        window._load_remote_img_into_btn = (
-            lambda btn, url, **kwargs: window._load_remote_img_into_btn_calls.append((url, kwargs))
+        window._load_rune_img_into_btn_calls = []
+        window._load_rune_img_into_btn = (
+            lambda btn, asset_path, **kwargs: window._load_rune_img_into_btn_calls.append((asset_path, kwargs))
         )
 
         window._refresh_rune_buttons()
 
         self.assertEqual(window.pick_rune_buttons["pick_1"].config["text"], "  Runes")
-        self.assertEqual(window._load_remote_img_into_btn_calls[0][1]["size"], (30, 30))
+        self.assertEqual(window._load_rune_img_into_btn_calls[0][1]["size"], (30, 30))
+
+    def test_find_rune_keystone_path_uses_selected_perk_id(self):
+        window = self.make_window()
+        page = {"selectedPerkIds": ["8214"]}
+        primary_style = {
+            "perks": [
+                {"id": 8229, "iconPath": "wrong.png"},
+            ]
+        }
+
+        path = window._find_rune_keystone_path(page, primary_style)
+
+        self.assertIn("SummonAery.png", path)
+
+    def test_find_rune_keystone_path_falls_back_to_first_perk(self):
+        window = self.make_window()
+        page = {"selectedPerkIds": []}
+        primary_style = {"perks": [{"id": 8010, "iconPath": "conqueror.png"}]}
+
+        self.assertEqual(window._find_rune_keystone_path(page, primary_style), "conqueror.png")
 
     def test_refresh_site_buttons_show_logo_and_left_compound(self):
         class FakeButton:

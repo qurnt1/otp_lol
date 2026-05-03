@@ -41,7 +41,6 @@ from PIL import Image
 from ..config import (
     DDRAGON_CACHE_FILE,
     ICONS_CACHE_DIR,
-    RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
     URL_CDRAGON_ASSET_PREFIX,
@@ -75,6 +74,7 @@ class DataDragon:
         self._image_cache: Dict[str, Image.Image] = {}
         self._champion_detail_cache: Dict[int, Dict[str, Any]] = {}
         self._cdragon_champion_detail_cache: Dict[int, Dict[str, Any]] = {}
+        self._rune_perk_icon_path_by_id: Optional[Dict[int, str]] = None
         self._cache_lock = Lock()
 
     @staticmethod
@@ -636,81 +636,141 @@ class DataDragon:
         cache_key = f"skin_{skin_data['champion_slug']}_{skin_data['skin_num']}"
         return self.get_remote_image(skin_data["splash_url"], cache_key=cache_key)
 
-    def get_rune_perk_icon(self, perk_icon_path: str) -> Optional[Image.Image]:
-        """Download and cache a rune perk icon from the CDN."""
-        normalized_path = str(perk_icon_path or "").strip().replace("\\", "/")
+    @staticmethod
+    def _communitydragon_asset_url(asset_path: str) -> Optional[str]:
+        normalized_path = str(asset_path or "").strip().replace("\\", "/")
         if not normalized_path:
             return None
-        cache_key = f"rune_perk_{normalized_path.split('/')[-1].replace('.png', '')}"
+        if normalized_path.startswith(("http://", "https://")):
+            return normalized_path
+        normalized_path = normalized_path.lstrip("/")
+        lcu_prefix = "lol-game-data/assets/"
+        if normalized_path.startswith(lcu_prefix):
+            normalized_path = normalized_path[len(lcu_prefix):]
+        normalized_path = normalized_path.lower().lstrip("/")
+        if not normalized_path:
+            return None
+        return f"{URL_PERK_ICON_PREFIX}/{normalized_path}"
+
+    @staticmethod
+    def _print_rune_debug(message: str) -> None:
+        print(f"[RUNES][IMG] {message}", flush=True)
+
+    def _get_communitydragon_image(self, asset_path: str, *, cache_prefix: str) -> Optional[Image.Image]:
+        url = self._communitydragon_asset_url(asset_path)
+        self._print_rune_debug(f"asset_path={asset_path!r} resolved_url={url!r}")
+        if not url:
+            self._print_rune_debug("skip: resolved_url is empty")
+            return None
+        cache_key = f"{cache_prefix}_{url.rsplit('/', 1)[-1].replace('.png', '')}"
         with self._cache_lock:
             if cache_key in self._image_cache:
+                self._print_rune_debug(f"memory_cache_hit cache_key={cache_key}")
                 return self._image_cache[cache_key].copy()
-        cached_file = os.path.join(RUNES_CACHE_DIR, f"{cache_key}.png")
-        if os.path.exists(cached_file):
-            try:
-                img = Image.open(cached_file)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
-                return img
-            except Exception as e:
-                logging.debug("Rune perk cache read error for %s: %s", cache_key, e)
-        url = f"{URL_PERK_ICON_PREFIX}/{normalized_path}"
+
         try:
             response = requests.get(url, timeout=8)
+            content_type = response.headers.get("content-type", "")
+            self._print_rune_debug(
+                f"GET url={url} status={response.status_code} content_type={content_type!r} bytes={len(response.content)}"
+            )
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
-                with open(cached_file, "wb") as f:
-                    f.write(response.content)
+                self._print_rune_debug(f"PIL open ok mode={img.mode} size={img.size} url={url}")
                 with self._cache_lock:
                     self._image_cache[cache_key] = img.copy()
                 return img
+            self._print_rune_debug(f"non_200 body_preview={response.text[:220]!r}")
         except Exception as e:
-            logging.warning("DataDragon: Rune perk icon download error for %s: %s", cache_key, e)
+            self._print_rune_debug(f"exception url={url} error={e!r}")
+            logging.warning("DataDragon: CommunityDragon rune icon download error for %s: %s", url, e)
         return None
 
+    def get_rune_perk_icon(self, perk_icon_path: str) -> Optional[Image.Image]:
+        """Download a rune perk icon from CommunityDragon."""
+        return self._get_communitydragon_image(perk_icon_path, cache_prefix="rune_perk")
+
     def get_rune_style_icon(self, style_icon_path: str) -> Optional[Image.Image]:
-        """Download and cache a rune style (tree) icon from the CDN."""
-        normalized_path = str(style_icon_path or "").strip().replace("\\", "/")
-        if not normalized_path:
-            return None
-        filename = normalized_path.split("/")[-1].replace(".png", "")
-        cache_key = f"rune_style_{filename}"
-        with self._cache_lock:
-            if cache_key in self._image_cache:
-                return self._image_cache[cache_key].copy()
-        cached_file = os.path.join(RUNES_CACHE_DIR, f"{cache_key}.png")
-        if os.path.exists(cached_file):
-            try:
-                img = Image.open(cached_file)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
-                return img
-            except Exception as e:
-                logging.debug("Rune style cache read error for %s: %s", cache_key, e)
-        url = f"{URL_PERK_ICON_PREFIX}/{normalized_path}"
+        """Download a rune style (tree) icon from CommunityDragon."""
+        return self._get_communitydragon_image(style_icon_path, cache_prefix="rune_style")
+
+    def _fetch_rune_perk_icon_index(self) -> Dict[int, str]:
+        if self._rune_perk_icon_path_by_id is not None:
+            self._print_rune_debug(f"perk_index memory_cache_hit count={len(self._rune_perk_icon_path_by_id)}")
+            return self._rune_perk_icon_path_by_id
+
+        url = f"{URL_PERK_ICON_PREFIX}/v1/perks.json"
+        self._print_rune_debug(f"perk_index GET url={url}")
         try:
             response = requests.get(url, timeout=8)
-            if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
-                with open(cached_file, "wb") as f:
-                    f.write(response.content)
-                with self._cache_lock:
-                    self._image_cache[cache_key] = img.copy()
-                return img
+            content_type = response.headers.get("content-type", "")
+            self._print_rune_debug(
+                f"perk_index response status={response.status_code} content_type={content_type!r} bytes={len(response.content)}"
+            )
+            if response.status_code != 200:
+                self._print_rune_debug(f"perk_index non_200 body_preview={response.text[:220]!r}")
+                self._rune_perk_icon_path_by_id = {}
+                return self._rune_perk_icon_path_by_id
+            payload = response.json()
         except Exception as e:
-            logging.warning("DataDragon: Rune style icon download error for %s: %s", cache_key, e)
-        return None
+            self._print_rune_debug(f"perk_index exception error={e!r}")
+            logging.warning("DataDragon: CommunityDragon rune perk index error: %s", e)
+            self._rune_perk_icon_path_by_id = {}
+            return self._rune_perk_icon_path_by_id
+
+        if not isinstance(payload, list):
+            self._print_rune_debug(f"perk_index invalid_payload type={type(payload).__name__}")
+            self._rune_perk_icon_path_by_id = {}
+            return self._rune_perk_icon_path_by_id
+
+        index: Dict[int, str] = {}
+        for perk in payload:
+            if not isinstance(perk, dict):
+                continue
+            try:
+                perk_id = int(perk.get("id") or 0)
+            except (TypeError, ValueError):
+                continue
+            icon_path = str(perk.get("iconPath") or "")
+            if perk_id > 0 and icon_path:
+                index[perk_id] = icon_path
+
+        self._rune_perk_icon_path_by_id = index
+        self._print_rune_debug(
+            f"perk_index parsed count={len(index)} ids_sample={list(index)[:12]}"
+        )
+        return self._rune_perk_icon_path_by_id
+
+    def get_rune_perk_icon_path(self, perk_id: Any) -> str:
+        """Resolve a rune perk id to its CommunityDragon LCU asset path."""
+        try:
+            normalized_perk_id = int(perk_id or 0)
+        except (TypeError, ValueError):
+            normalized_perk_id = 0
+        if normalized_perk_id <= 0:
+            self._print_rune_debug(f"perk_icon_path skip invalid_id={perk_id!r}")
+            return ""
+
+        icon_path = self._fetch_rune_perk_icon_index().get(normalized_perk_id, "")
+        self._print_rune_debug(f"perk_icon_path id={normalized_perk_id} iconPath={icon_path!r}")
+        return icon_path
 
     def compose_rune_button_icon(self, keystone_icon_path: str, sub_style_icon_path: str = "", size: int = 32) -> Optional[Image.Image]:
         """Return a composite image with the keystone as the main icon and the sub-style overlaid smaller."""
+        self._print_rune_debug(
+            f"compose start keystone_path={keystone_icon_path!r} sub_style_path={sub_style_icon_path!r} size={size}"
+        )
         keystone_img = self.get_rune_perk_icon(keystone_icon_path)
         if not keystone_img:
+            self._print_rune_debug("compose stop: keystone image missing")
             return None
         keystone_img = keystone_img.resize((size, size), Image.LANCZOS).convert("RGBA")
         if not sub_style_icon_path:
+            self._print_rune_debug(f"compose ok: keystone only size={keystone_img.size}")
             return keystone_img
         sub_img = self.get_rune_style_icon(sub_style_icon_path)
         if not sub_img:
+            self._print_rune_debug(f"compose ok: sub style missing, keystone only size={keystone_img.size}")
             return keystone_img
         overlay_size = max(size // 2, 16)
         sub_img = sub_img.resize((overlay_size, overlay_size), Image.LANCZOS).convert("RGBA")
@@ -718,6 +778,7 @@ class DataDragon:
         margin = 2
         position = (size - overlay_size - margin, size - overlay_size - margin)
         composite.paste(sub_img, position, sub_img)
+        self._print_rune_debug(f"compose ok: composite size={composite.size} overlay_size={overlay_size}")
         return composite
 
     def get_remote_image(self, url: str, *, cache_key: str) -> Optional[Image.Image]:
