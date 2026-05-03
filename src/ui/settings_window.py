@@ -29,7 +29,6 @@ Uses:
 
 import logging
 import os
-import random
 from datetime import datetime
 from tkinter import filedialog
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -61,14 +60,16 @@ from ..config import (
 )
 from .champion_picker import open_champion_picker
 from .role_picker import open_role_picker
-from .skin_picker import open_skin_picker
+from .settings_hotkeys import SettingsHotkeysMixin
+from .settings_runes import SettingsRunesMixin
+from .settings_skin import SettingsSkinMixin
 from .site_picker import _load_site_logo, open_site_picker
 
 if TYPE_CHECKING:
     from .main_window import LoLAssistantUI
 
 
-class SettingsWindow:
+class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin):
     """Manage the settings dialog and the profile-aware configuration it edits."""
 
     PRESET_LABELS = {
@@ -155,17 +156,15 @@ class SettingsWindow:
 
         self.main_frame = ttk.Frame(self.scroll_frame, padding=15)
         self.main_frame.pack(fill="both", expand=True)
-        self.main_frame.columnconfigure(0, weight=0)
-        self.main_frame.columnconfigure(1, weight=1)
-        self.main_frame.columnconfigure(2, weight=1)
-        self.main_frame.columnconfigure(3, weight=1)
+        for col in range(4):
+            self.main_frame.columnconfigure(col, weight=1 if col > 0 else 0)
 
-        current_row = 0
-        current_row = self._create_top_actions_section(current_row)
-        current_row = self._create_pick_section(current_row)
-        current_row = self._create_ban_section(current_row)
-        current_row = self._create_summoner_detection_section(current_row)
-        self._create_misc_section(current_row)
+        row = 0
+        row = self._create_general_section(row)
+        row = self._create_champ_select_section(row)
+        row = self._create_websites_section(row)
+        row = self._create_shortcuts_section(row)
+        self._create_other_section(row)
 
         self.toggle_pick()
         self.toggle_ban()
@@ -173,11 +172,25 @@ class SettingsWindow:
         self.toggle_summoner_entry()
         self._load_initial_icons()
 
-    def _create_top_actions_section(self, start_row: int) -> int:
+    @staticmethod
+    def _create_section_title(parent: ttk.Frame, text: str, row: int) -> int:
+        """Create a styled section header spanning all columns."""
+        ttk.Separator(parent).grid(row=row, column=0, columnspan=4, sticky="we", pady=(18, 8))
+        title = ttk.Label(
+            parent,
+            text=text,
+            font=("Segoe UI", 11, "bold"),
+        )
+        title.grid(row=row + 1, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        return row + 2
+
+    def _create_general_section(self, start_row: int) -> int:
+        row = start_row
+        # ── Action buttons ──
         top_frame = ttk.Frame(self.main_frame)
-        top_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 10))
-        for column in range(4):
-            top_frame.columnconfigure(column, weight=1, uniform="top-actions")
+        top_frame.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        for col in range(4):
+            top_frame.columnconfigure(col, weight=1, uniform="top-actions")
 
         self.theme_btn = ttk.Button(
             top_frame,
@@ -208,15 +221,63 @@ class SettingsWindow:
             command=self._import_config,
             padding=(10, 8),
         ).grid(row=0, column=3, sticky="ew", padx=(6, 0))
+        row += 1
 
+        # ── Auto-accept ──
         ttk.Checkbutton(
-            top_frame,
+            self.main_frame,
             text="Automatically accept the game when a match is found",
             variable=self.auto_accept_var,
             command=lambda: self.parent.update_param("auto_accept_enabled", self.auto_accept_var.get()),
             bootstyle="success-round-toggle",
-        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(10, 0))
-        return start_row + 1
+        ).grid(row=row, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        row += 1
+
+        # ── Account detection ──
+        row = self._create_section_title(self.main_frame, "ACCOUNT", row)
+        params = self.parent.get_params()
+        detect_frame = ttk.Frame(self.main_frame)
+        detect_frame.grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        row += 1
+
+        def on_auto_toggle():
+            if self.summoner_auto_detect_var.get():
+                manual_name = self.summoner_entry_var.get().strip()
+                if manual_name and manual_name != "(auto detection...)":
+                    self.saved_manual_name = manual_name
+                manual_region = self.region_var.get().strip().lower()
+                if manual_region in REGION_LIST:
+                    self.saved_manual_region = manual_region
+                    self.parent.update_param("manual_region", manual_region)
+            self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
+            self.toggle_summoner_entry()
+            if self.summoner_auto_detect_var.get():
+                self.parent.force_refresh_summoner()
+            self._update_detect_label_text()
+
+        self.switch_auto = ttk.Checkbutton(
+            detect_frame,
+            variable=self.summoner_auto_detect_var,
+            command=on_auto_toggle,
+            bootstyle="round-toggle",
+        )
+        self.switch_auto.pack(side="left", padx=(0, 10))
+        self.lbl_auto_detect = ttk.Label(detect_frame, text="Automatic account detection")
+        self.lbl_auto_detect.pack(side="left")
+
+        ttk.Label(self.main_frame, text="Riot ID:", anchor="w").grid(row=row, column=0, sticky="e", padx=5, pady=5)
+        self.summ_entry = ttk.Entry(self.main_frame, textvariable=self.summoner_entry_var, state="readonly")
+        self.summ_entry.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5)
+        row += 1
+
+        ttk.Label(self.main_frame, text="Region:", anchor="w").grid(row=row, column=0, sticky="e", padx=5, pady=5)
+        self.region_var = tk.StringVar(value=params.get("manual_region", "euw"))
+        self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
+        self.region_cb.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5)
+        self.region_cb.bind("<<ComboboxSelected>>", self._on_manual_region_selected)
+        row += 1
+
+        return row
 
     def _get_preset_label(self, slot_key: str) -> str:
         return self.PRESET_LABELS.get(slot_key, PICK_SLOT_LABELS.get(slot_key, slot_key))
@@ -227,111 +288,6 @@ class SettingsWindow:
             return int(value or 0)
         except (TypeError, ValueError):
             return 0
-
-    def _find_rune_keystone_path(self, page: Dict[str, Any], primary_style: Dict[str, Any]) -> str:
-        selected_ids = page.get("selectedPerkIds") if isinstance(page, dict) else []
-        keystone_id = self._safe_int(selected_ids[0]) if isinstance(selected_ids, list) and selected_ids else 0
-        perks = primary_style.get("perks", []) if isinstance(primary_style, dict) else []
-
-        if keystone_id > 0 and hasattr(self.parent, "dd"):
-            icon_path = self.parent.dd.get_rune_perk_icon_path(keystone_id)
-            if icon_path:
-                return icon_path
-
-        if keystone_id > 0:
-            for perk in perks if isinstance(perks, list) else []:
-                if isinstance(perk, dict) and self._safe_int(perk.get("id")) == keystone_id:
-                    return str(perk.get("iconPath") or "")
-        if isinstance(perks, list) and perks and isinstance(perks[0], dict):
-            return str(perks[0].get("iconPath") or "")
-        return ""
-
-    def _get_rune_page_icon_paths(
-        self,
-        page: Dict[str, Any],
-        styles: Dict[Any, Any],
-    ) -> tuple[str, str]:
-        primary_style = styles.get(page.get("primaryStyleId"), {}) if isinstance(styles, dict) else {}
-        sub_style = styles.get(page.get("subStyleId"), {}) if isinstance(styles, dict) else {}
-        sub_style_icon_path = str(sub_style.get("iconPath") or "") if isinstance(sub_style, dict) else ""
-        keystone_path = self._find_rune_keystone_path(page, primary_style)
-        return keystone_path, sub_style_icon_path
-
-    @classmethod
-    def _split_rune_page_perk_ids(cls, page: Dict[str, Any]) -> tuple[list[int], list[int], list[int]]:
-        selected_ids = page.get("selectedPerkIds") if isinstance(page, dict) else []
-        if not isinstance(selected_ids, list):
-            selected_ids = []
-        normalized_ids = [cls._safe_int(perk_id) for perk_id in selected_ids]
-        normalized_ids = [perk_id for perk_id in normalized_ids if perk_id > 0]
-        return normalized_ids[:4], normalized_ids[4:6], normalized_ids[6:9]
-
-    def _load_rune_perk_icon_into_label(
-        self,
-        label_widget: ttk.Label,
-        perk_id: Any,
-        *,
-        size: tuple[int, int],
-    ) -> None:
-        normalized_perk_id = self._safe_int(perk_id)
-        if normalized_perk_id <= 0:
-            return
-
-        def task():
-            try:
-                icon_path = self.parent.dd.get_rune_perk_icon_path(normalized_perk_id)
-                perk_name = self.parent.dd.get_rune_perk_name(normalized_perk_id)
-                if not icon_path:
-                    return
-                img = self.parent.dd.get_rune_perk_icon(icon_path)
-                if not img:
-                    return
-                img = img.resize(size, Image.LANCZOS)
-
-                def update_ui():
-                    if label_widget.winfo_exists():
-                        photo = ImageTk.PhotoImage(img)
-                        label_widget.configure(image=photo)
-                        label_widget.image = photo
-                        self._attach_tooltip(label_widget, perk_name or f"Rune {normalized_perk_id}")
-
-                label_widget.after(0, update_ui)
-            except Exception as e:
-                logging.debug("Rune perk label load error: %s", e)
-
-        self.parent.executor.submit(task)
-
-    def _load_rune_style_icon_into_label(
-        self,
-        label_widget: ttk.Label,
-        style_icon_path: str,
-        *,
-        size: tuple[int, int],
-        tooltip_text: str = "",
-    ) -> None:
-        if not style_icon_path:
-            return
-
-        def task():
-            try:
-                img = self.parent.dd.get_rune_style_icon(style_icon_path)
-                if not img:
-                    return
-                img = img.resize(size, Image.LANCZOS)
-
-                def update_ui():
-                    if label_widget.winfo_exists():
-                        photo = ImageTk.PhotoImage(img)
-                        label_widget.configure(image=photo)
-                        label_widget.image = photo
-                        if tooltip_text:
-                            self._attach_tooltip(label_widget, tooltip_text)
-
-                label_widget.after(0, update_ui)
-            except Exception as e:
-                logging.debug("Rune style label load error: %s", e)
-
-        self.parent.executor.submit(task)
 
     def _attach_tooltip(self, widget: tk.Widget, text: str) -> None:
         text = str(text or "").strip()
@@ -370,9 +326,12 @@ class SettingsWindow:
         widget.bind("<Leave>", hide_tooltip, add="+")
         widget.bind("<ButtonPress>", hide_tooltip, add="+")
 
-    def _create_pick_section(self, start_row: int) -> int:
+    def _create_champ_select_section(self, start_row: int) -> int:
+        row = self._create_section_title(self.main_frame, "CHAMPION SELECT", start_row)
+
+        # ── Role profile ──
         role_frame = ttk.Frame(self.main_frame)
-        role_frame.grid(row=start_row, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        role_frame.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(0, 6))
         ttk.Label(role_frame, text="Role profile:").pack(side="left")
         self.role_selector_btn = ttk.Button(
             role_frame,
@@ -385,11 +344,11 @@ class SettingsWindow:
         )
         self.role_selector_btn.pack(side="left", padx=(10, 0))
         self._refresh_role_selector_button()
+        row += 1
 
-        ttk.Separator(self.main_frame).grid(row=start_row + 1, column=0, columnspan=4, sticky="we", pady=(4, 8))
-
+        # ── Presets toggle ──
         presets_frame = ttk.Frame(self.main_frame)
-        presets_frame.grid(row=start_row + 2, column=0, columnspan=4, sticky="w", pady=(0, 8))
+        presets_frame.grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 8))
         self.presets_toggle = ttk.Checkbutton(
             presets_frame,
             text="Enable presets for this profile",
@@ -398,8 +357,10 @@ class SettingsWindow:
             bootstyle="info-round-toggle",
         )
         self.presets_toggle.pack(side="left")
+        row += 1
 
-        picks_first_row = start_row + 3
+        # ── Three preset slots ──
+        picks_first_row = row
         picks_frame = ttk.Frame(self.main_frame)
         picks_frame.grid(row=picks_first_row, column=1, columnspan=3, sticky="ew", padx=5, pady=4, rowspan=3)
         picks_frame.columnconfigure(0, weight=2, minsize=130)
@@ -409,7 +370,7 @@ class SettingsWindow:
         picks_frame.columnconfigure(4, weight=2, minsize=140)
 
         for slot_num, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
-            row_index = start_row + slot_num + 2
+            row_index = row + slot_num - 1
             ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
                 row=row_index,
                 column=0,
@@ -473,10 +434,9 @@ class SettingsWindow:
             skin_btn.grid(row=inner_row, column=4, sticky="ew", padx=(6, 0), pady=inner_pady)
             self.pick_skin_buttons[slot_key] = skin_btn
 
-        ttk.Separator(self.main_frame).grid(row=start_row + 7, column=0, columnspan=4, sticky="we", pady=(10, 8))
-        return start_row + 8
+        row += 3
 
-    def _create_ban_section(self, start_row: int) -> int:
+        # ── Ban ── (directly after presets, no separator)
         ttk.Checkbutton(
             self.main_frame,
             text="Ban a champion",
@@ -486,138 +446,103 @@ class SettingsWindow:
                 self.toggle_ban(),
             ),
             bootstyle="danger-round-toggle",
-        ).grid(row=start_row, column=0, columnspan=4, sticky="w", pady=(15, 5))
+        ).grid(row=row, column=0, columnspan=4, sticky="w", pady=(10, 4))
+        row += 1
 
-        ttk.Label(self.main_frame, text="Ban:").grid(row=start_row + 1, column=0, sticky="e", padx=5)
+        ttk.Label(self.main_frame, text="Ban:").grid(row=row, column=0, sticky="e", padx=5)
         self.btn_ban = ttk.Button(self.main_frame, bootstyle="secondary-outline", padding=(10, 8))
-        self.btn_ban.grid(row=start_row + 1, column=1, columnspan=3, sticky="ew", padx=5)
+        self.btn_ban.grid(row=row, column=1, columnspan=3, sticky="ew", padx=5)
         self.btn_ban.configure(command=lambda: self._open_champion_picker("ban"))
-        return start_row + 2
+        row += 1
 
-    def _create_summoner_detection_section(self, start_row: int) -> int:
-        params = self.parent.get_params()
-        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=4, sticky="we", pady=(15, 10))
-        detect_frame = ttk.Frame(self.main_frame)
-        detect_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="w", pady=(0, 5))
+        return row
 
-        def on_auto_toggle():
-            if self.summoner_auto_detect_var.get():
-                manual_name = self.summoner_entry_var.get().strip()
-                if manual_name and manual_name != "(auto detection...)":
-                    self.saved_manual_name = manual_name
-                manual_region = self.region_var.get().strip().lower()
-                if manual_region in REGION_LIST:
-                    self.saved_manual_region = manual_region
-                    self.parent.update_param("manual_region", manual_region)
-            self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())
-            self.toggle_summoner_entry()
-            if self.summoner_auto_detect_var.get():
-                self.parent.force_refresh_summoner()
-            self._update_detect_label_text()
+    def _create_websites_section(self, start_row: int) -> int:
+        row = self._create_section_title(self.main_frame, "WEBSITES", start_row)
 
-        self.switch_auto = ttk.Checkbutton(
-            detect_frame,
-            variable=self.summoner_auto_detect_var,
-            command=on_auto_toggle,
-            bootstyle="round-toggle",
-        )
-        self.switch_auto.pack(side="left", padx=(0, 10))
-
-        self.lbl_auto_detect = ttk.Label(detect_frame, text="Automatic account detection")
-        self.lbl_auto_detect.pack(side="left")
-
-        ttk.Label(self.main_frame, text="Riot ID:", anchor="w").grid(row=start_row + 2, column=0, sticky="e", padx=5, pady=5)
-        self.summ_entry = ttk.Entry(self.main_frame, textvariable=self.summoner_entry_var, state="readonly")
-        self.summ_entry.grid(row=start_row + 2, column=1, columnspan=3, sticky="ew", padx=5)
-
-        ttk.Label(self.main_frame, text="Region:", anchor="w").grid(row=start_row + 3, column=0, sticky="e", padx=5, pady=5)
-        self.region_var = tk.StringVar(value=params.get("manual_region", "euw"))
-        self.region_cb = ttk.Combobox(self.main_frame, values=REGION_LIST, textvariable=self.region_var, state="readonly")
-        self.region_cb.grid(row=start_row + 3, column=1, columnspan=3, sticky="ew", padx=5)
-        self.region_cb.bind("<<ComboboxSelected>>", self._on_manual_region_selected)
-        return start_row + 4
-
-    def _create_misc_section(self, start_row: int) -> None:
-        ttk.Separator(self.main_frame).grid(row=start_row, column=0, columnspan=4, sticky="we", pady=(15, 8))
-        misc_frame = ttk.Frame(self.main_frame)
-        misc_frame.grid(row=start_row + 1, column=0, columnspan=4, sticky="ew")
-        misc_frame.columnconfigure(0, weight=0, minsize=145)
-        misc_frame.columnconfigure(1, weight=0, minsize=250)
-        misc_frame.columnconfigure(2, weight=1)
-
-        ttk.Label(misc_frame, text="Preferred stats site:").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+        ttk.Label(self.main_frame, text="Preferred stats site:").grid(row=row, column=0, sticky="e", padx=5, pady=(0, 8))
         self.stats_site_btn = ttk.Button(
-            misc_frame,
+            self.main_frame,
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("stats"),
             width=26,
             padding=(8, 8),
             compound="left",
         )
-        self.stats_site_btn.grid(row=0, column=1, sticky="w", pady=(0, 8))
+        self.stats_site_btn.grid(row=row, column=1, sticky="w", columnspan=3, pady=(0, 8))
         self._refresh_stats_site_button()
+        row += 1
 
-        ttk.Label(misc_frame, text="Shortcut website:").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+        ttk.Label(self.main_frame, text="Shortcut website:").grid(row=row, column=0, sticky="e", padx=5, pady=(0, 8))
         self.hotkey_site_btn = ttk.Button(
-            misc_frame,
+            self.main_frame,
             bootstyle="secondary-outline",
             command=lambda: self._open_site_picker("hotkey"),
             width=26,
             padding=(8, 8),
             compound="left",
         )
-        self.hotkey_site_btn.grid(row=1, column=1, sticky="w", pady=(0, 8))
+        self.hotkey_site_btn.grid(row=row, column=1, sticky="w", columnspan=3, pady=(0, 8))
         self._refresh_hotkey_site_button()
+        row += 1
 
-        ttk.Separator(misc_frame).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+        return row
 
-        ttk.Label(misc_frame, text="Show/hide app:").grid(row=3, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+    def _create_shortcuts_section(self, start_row: int) -> int:
+        row = self._create_section_title(self.main_frame, "SHORTCUTS", start_row)
+
+        ttk.Label(self.main_frame, text="Show / hide app:").grid(row=row, column=0, sticky="e", padx=5, pady=(0, 8))
         self.hotkey_toggle_btn = ttk.Button(
-            misc_frame,
+            self.main_frame,
             text=self._format_hotkey_display(self.hotkey_toggle_var.get()),
             bootstyle="secondary-outline",
             width=26,
             command=lambda: self._start_hotkey_capture("toggle"),
             padding=(8, 8),
         )
-        self.hotkey_toggle_btn.grid(row=3, column=1, sticky="w", pady=(0, 8))
+        self.hotkey_toggle_btn.grid(row=row, column=1, sticky="w", columnspan=3, pady=(0, 8))
+        row += 1
 
-        ttk.Label(misc_frame, text="Open website shortcut:").grid(row=4, column=0, sticky="w", padx=(0, 10), pady=(0, 8))
+        ttk.Label(self.main_frame, text="Open website:").grid(row=row, column=0, sticky="e", padx=5, pady=(0, 8))
         self.hotkey_open_btn = ttk.Button(
-            misc_frame,
+            self.main_frame,
             text=self._format_hotkey_display(self.hotkey_open_site_var.get()),
             bootstyle="secondary-outline",
             width=26,
             command=lambda: self._start_hotkey_capture("site"),
             padding=(8, 8),
         )
-        self.hotkey_open_btn.grid(row=4, column=1, sticky="w", pady=(0, 8))
+        self.hotkey_open_btn.grid(row=row, column=1, sticky="w", columnspan=3, pady=(0, 8))
+        row += 1
 
-        ttk.Separator(misc_frame).grid(row=5, column=0, columnspan=3, sticky="ew", pady=(4, 10))
+        return row
+
+    def _create_other_section(self, start_row: int) -> None:
+        self._create_section_title(self.main_frame, "OTHER", start_row)
 
         ttk.Checkbutton(
-            misc_frame,
+            self.main_frame,
             text="Automatically return to lobby after the game",
             variable=self.play_again_var,
             command=lambda: self.parent.update_param("auto_play_again_enabled", self.play_again_var.get()),
             bootstyle="info-round-toggle",
-        ).grid(row=6, column=0, columnspan=2, sticky="w", pady=2)
+        ).grid(row=start_row + 2, column=0, columnspan=4, sticky="w", pady=(0, 4))
 
         ttk.Checkbutton(
-            misc_frame,
+            self.main_frame,
             text=f"Hide {APP_NAME} when LoL starts (3 seconds)",
             variable=self.auto_hide_var,
             command=lambda: self.parent.update_param("auto_hide_on_connect", self.auto_hide_var.get()),
             bootstyle="secondary-round-toggle",
-        ).grid(row=7, column=0, columnspan=2, sticky="w", pady=2)
+        ).grid(row=start_row + 3, column=0, columnspan=4, sticky="w", pady=4)
 
         ttk.Checkbutton(
-            misc_frame,
+            self.main_frame,
             text=f"Close {APP_NAME} when LoL closes",
             variable=self.close_on_exit_var,
             command=lambda: self.parent.update_param("close_app_on_lol_exit", self.close_on_exit_var.get()),
             bootstyle="danger-round-toggle",
-        ).grid(row=8, column=0, columnspan=2, sticky="w", pady=2)
+        ).grid(row=start_row + 4, column=0, columnspan=4, sticky="w", pady=4)
 
     def _load_initial_icons(self) -> None:
         self._refresh_profile_buttons()
@@ -843,96 +768,6 @@ class SettingsWindow:
         new_profiles[role] = role_data
         self.parent.update_param("role_profiles", new_profiles)
 
-    def _clear_pick_slot_skin(self, slot_key: str) -> None:
-        self._set_pick_slot_skin_selection(slot_key, mode="none")
-
-    def _get_random_skin_pool(self, slot_key: str) -> list[Dict[str, Any]]:
-        pool = self._get_effective_pick_slot_config(slot_key).get("random_skin_pool", [])
-        return [dict(entry) for entry in pool if isinstance(entry, dict)]
-
-    def _set_random_skin_pool(self, slot_key: str, skins: list[Dict[str, Any]]) -> None:
-        normalized_pool: list[Dict[str, Any]] = []
-        seen_ids: set[int] = set()
-        for skin in skins:
-            if not isinstance(skin, dict):
-                continue
-            skin_id = int(skin.get("skin_id") or 0)
-            if skin_id <= 0 or skin_id in seen_ids:
-                continue
-            seen_ids.add(skin_id)
-            normalized_pool.append(
-                {
-                    "skin_id": skin_id,
-                    "skin_name": str(skin.get("skin_name") or ""),
-                    "skin_num": int(skin.get("skin_num") or 0),
-                }
-            )
-        self._set_pick_slot_value(slot_key, "random_skin_pool", normalized_pool)
-
-    def _set_pick_slot_skin_selection(
-        self,
-        slot_key: str,
-        *,
-        mode: str,
-        fixed_skin: Optional[Dict[str, Any]] = None,
-        random_skin: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        normalized_mode = str(mode or "none").strip().lower()
-        if normalized_mode not in {"none", "fixed", "random"}:
-            normalized_mode = "none"
-
-        if normalized_mode == "fixed" and fixed_skin:
-            self._set_pick_slot_value(slot_key, "skin_mode", "fixed")
-            self._set_pick_slot_value(slot_key, "skin_id", int(fixed_skin.get("skin_id") or 0))
-            self._set_pick_slot_value(slot_key, "skin_name", str(fixed_skin.get("skin_name") or ""))
-            self._set_pick_slot_value(slot_key, "skin_num", int(fixed_skin.get("skin_num") or 0))
-            self._set_pick_slot_value(slot_key, "random_skin_id", 0)
-            self._set_pick_slot_value(slot_key, "random_skin_name", "")
-            self._set_pick_slot_value(slot_key, "random_skin_num", 0)
-            self._reset_main_skin_override(slot_key)
-            return
-
-        if normalized_mode == "random" and random_skin:
-            self._set_pick_slot_value(slot_key, "skin_mode", "random")
-            self._set_pick_slot_value(slot_key, "skin_id", 0)
-            self._set_pick_slot_value(slot_key, "skin_name", "")
-            self._set_pick_slot_value(slot_key, "skin_num", 0)
-            self._set_pick_slot_value(slot_key, "random_skin_id", int(random_skin.get("skin_id") or 0))
-            self._set_pick_slot_value(slot_key, "random_skin_name", str(random_skin.get("skin_name") or ""))
-            self._set_pick_slot_value(slot_key, "random_skin_num", int(random_skin.get("skin_num") or 0))
-            current_pool = self._get_random_skin_pool(slot_key)
-            if not any(int(entry.get("skin_id") or 0) == int(random_skin.get("skin_id") or 0) for entry in current_pool):
-                self._set_random_skin_pool(slot_key, [*current_pool, random_skin])
-            self._reset_main_skin_override(slot_key)
-            return
-
-        self._set_pick_slot_value(slot_key, "skin_mode", "none")
-        self._set_pick_slot_value(slot_key, "skin_id", 0)
-        self._set_pick_slot_value(slot_key, "skin_name", "")
-        self._set_pick_slot_value(slot_key, "skin_num", 0)
-        self._set_pick_slot_value(slot_key, "random_skin_id", 0)
-        self._set_pick_slot_value(slot_key, "random_skin_name", "")
-        self._set_pick_slot_value(slot_key, "random_skin_num", 0)
-        self._set_random_skin_pool(slot_key, [])
-        self._reset_main_skin_override(slot_key)
-
-    def _reset_main_skin_override(self, slot_key: str) -> None:
-        overrides = self.parent.get_params().get("main_skin_mode_overrides", {})
-        if isinstance(overrides, dict) and overrides.get(slot_key) != "inherit":
-            new_overrides = dict(overrides)
-            new_overrides[slot_key] = "inherit"
-            self.parent.update_param("main_skin_mode_overrides", new_overrides)
-
-    @staticmethod
-    def _choose_random_skin_entry(
-        skins: list[Dict[str, Any]],
-        *,
-        exclude_skin_id: int = 0,
-    ) -> Optional[Dict[str, Any]]:
-        available = [skin for skin in skins if int(skin.get("skin_id") or 0) != int(exclude_skin_id or 0)]
-        pool = available or skins
-        return random.choice(pool) if pool else None
-
     def _get_slot_champion_name(self, slot_key: str) -> str:
         slot_number = self._slot_number_from_key(slot_key)
         value = self._get_profile_value(f"selected_pick_{slot_number}")
@@ -946,24 +781,6 @@ class SettingsWindow:
         if len(text) <= max_chars:
             return text
         return f"{text[: max_chars - 3].rstrip()}..."
-
-    def _get_skin_button_label(self, slot_key: str) -> str:
-        skin_config = self._get_effective_pick_slot_config(slot_key)
-        skin_mode = str(skin_config.get("skin_mode") or "none")
-        if skin_mode == "fixed" and skin_config.get("skin_name"):
-            return str(skin_config["skin_name"])
-        if skin_mode == "random":
-            return "Random"
-        return "Skin"
-
-    def _get_skin_button_display_text(self, slot_key: str) -> str:
-        return self._truncate_button_label(self._get_skin_button_label(slot_key))
-
-    def _get_random_skin_placeholder_asset(self) -> str:
-        theme = str(self.theme_var.get() or "darkly").strip().lower()
-        if theme == "flatly":
-            return APP_IMAGE_FILES["question_mark_black_mode"]
-        return APP_IMAGE_FILES["question_mark_white_mode"]
 
     def _select_champion(self, context: str, champ_name: str, slot_num: int = 1) -> None:
         if context == "ban":
@@ -1065,104 +882,6 @@ class SettingsWindow:
         if hasattr(self, "pick_skin_buttons"):
             self._refresh_skin_buttons()
 
-    @staticmethod
-    def _format_hotkey_display(value: str) -> str:
-        return (value or "Set").replace("+", " + ").upper()
-
-    def _refresh_hotkey_buttons(self) -> None:
-        if hasattr(self, "hotkey_toggle_btn"):
-            self.hotkey_toggle_btn.configure(text=self._format_hotkey_display(self.hotkey_toggle_var.get()))
-        if hasattr(self, "hotkey_open_btn"):
-            self.hotkey_open_btn.configure(text=self._format_hotkey_display(self.hotkey_open_site_var.get()))
-
-    def _start_hotkey_capture(self, target: str) -> None:
-        """Enter the one-shot shortcut capture mode for the selected hotkey button."""
-        # While capturing a new shortcut, the already registered global hotkeys
-        # must be disabled so pressing the old shortcut does not trigger its action.
-        if self._capture_target and self._capture_target != target:
-            self._refresh_hotkey_buttons()
-        if not self._capture_target and hasattr(self.parent, "suspend_hotkeys"):
-            self.parent.suspend_hotkeys()
-        self._capture_target = target
-        self._pressed_modifiers.clear()
-        if target == "toggle" and hasattr(self, "hotkey_toggle_btn"):
-            self.hotkey_toggle_btn.configure(text="Press a shortcut...")
-        if target == "site" and hasattr(self, "hotkey_open_btn"):
-            self.hotkey_open_btn.configure(text="Press a shortcut...")
-        self.window.focus_force()
-
-    def _cancel_hotkey_capture(self) -> None:
-        """Leave shortcut capture mode without changing the saved shortcut."""
-        self._capture_target = None
-        self._pressed_modifiers.clear()
-        self._refresh_hotkey_buttons()
-        if hasattr(self.parent, "resume_hotkeys"):
-            self.parent.resume_hotkeys()
-
-    def _finish_hotkey_capture(self, sequence: str) -> None:
-        """Persist the captured shortcut and let the main window re-register global hotkeys."""
-        target_var = self.hotkey_toggle_var if self._capture_target == "toggle" else self.hotkey_open_site_var
-        other_var = self.hotkey_open_site_var if self._capture_target == "toggle" else self.hotkey_toggle_var
-        if sequence == other_var.get():
-            self.parent.show_toast("Shortcut already in use.")
-            self._cancel_hotkey_capture()
-            return
-
-        target_var.set(sequence)
-        target_key = "hotkey_toggle_window" if self._capture_target == "toggle" else "hotkey_open_site"
-        self.parent.update_param(target_key, sequence)
-        self._cancel_hotkey_capture()
-
-    def _normalize_capture_key(self, keysym: str) -> Optional[str]:
-        key = (keysym or "").lower()
-        mapping = {
-            "control_l": "ctrl",
-            "control_r": "ctrl",
-            "alt_l": "alt",
-            "alt_r": "alt",
-            "shift_l": "shift",
-            "shift_r": "shift",
-            "prior": "pageup",
-            "next": "pagedown",
-            "return": "enter",
-            "escape": "esc",
-            "space": "space",
-        }
-        return mapping.get(key, key if key else None)
-
-    def _on_hotkey_capture_keypress(self, event) -> Optional[str]:
-        """Build a normalized hotkey sequence from Tk key events."""
-        if not self._capture_target:
-            return None
-
-        key = self._normalize_capture_key(event.keysym)
-        if not key:
-            return "break"
-        if key == "esc":
-            self._cancel_hotkey_capture()
-            return "break"
-
-        if key in {"ctrl", "alt", "shift"}:
-            self._pressed_modifiers.add(key)
-            return "break"
-
-        modifiers = [modifier for modifier in ("ctrl", "alt", "shift") if modifier in self._pressed_modifiers]
-        if not modifiers:
-            self.parent.show_toast("Use at least Ctrl, Alt, or Shift.")
-            self._cancel_hotkey_capture()
-            return "break"
-
-        self._finish_hotkey_capture("+".join([*modifiers, key]))
-        return "break"
-
-    def _on_hotkey_capture_keyrelease(self, event) -> Optional[str]:
-        if not self._capture_target:
-            return None
-        key = self._normalize_capture_key(event.keysym)
-        if key in {"ctrl", "alt", "shift"} and key in self._pressed_modifiers:
-            self._pressed_modifiers.discard(key)
-        return "break"
-
     def _select_profile_role(self, selected_role: str) -> None:
         self.profile_role_var.set(selected_role)
         self.parent.update_param("selected_profile_role", selected_role)
@@ -1226,11 +945,6 @@ class SettingsWindow:
             return
         open_champion_picker(self, context, slot_num)
 
-    def _open_skin_picker(self, slot_key: str) -> None:
-        if not self.presets_enabled_var.get():
-            return
-        open_skin_picker(self, slot_key)
-
     def _open_spell_picker(self, pick_slot_key: str, spell_slot_num: int) -> None:
         if not self.auto_summoners_var.get() or not self.presets_enabled_var.get():
             return
@@ -1270,287 +984,6 @@ class SettingsWindow:
             if col > 3:
                 col = 0
                 row += 1
-
-    def _open_rune_picker(self, slot_key: str) -> None:
-        if not self.presets_enabled_var.get():
-            return
-
-        popup = ttk.Toplevel(self.window)
-        if self.window._icon_img:
-            popup.iconphoto(False, self.window._icon_img)
-        popup.title(f"{self._get_preset_label(slot_key)} - Rune Page")
-        popup.geometry(f"460x520+{self.window.winfo_x()+60}+{self.window.winfo_y()+80}")
-        popup.resizable(False, False)
-        popup.transient(self.window)
-
-        def _close_popup() -> None:
-            self.rune_picker_window = None
-            popup.destroy()
-
-        popup.protocol("WM_DELETE_WINDOW", _close_popup)
-        self.rune_picker_window = popup
-
-        container = ttk.Frame(popup, padding=12)
-        container.pack(fill="both", expand=True)
-
-        # Status bar for LCU detection (like skin_picker.py)
-        status_var = tk.StringVar(value="")
-        status_label = tk.Label(
-            container,
-            textvariable=status_var,
-            font=("Segoe UI", 9, "bold"),
-            justify="left",
-            anchor="w",
-            wraplength=420,
-        )
-        status_label.pack(fill="x", pady=(0, 6))
-
-        if self.parent and hasattr(self.parent, "ws_manager"):
-            ws = self.parent.ws_manager
-        else:
-            ws = None
-
-        if not ws or not getattr(ws, "is_active", False):
-            status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
-            status_label.configure(fg="orange")
-        else:
-            status_var.set("")
-
-        header = ttk.Frame(container)
-        header.pack(fill="x", pady=(0, 6))
-        ttk.Label(header, text="Select a rune page", font=("Segoe UI", 13, "bold")).pack(side="left")
-
-        btn_frame = ttk.Frame(header)
-        btn_frame.pack(side="right")
-        ttk.Button(btn_frame, text="Fetch runes", bootstyle="info-outline", command=lambda: _refresh_pages(), width=12
-                   ).pack(side="left", padx=(0, 6))
-
-        def _build_auto_apply_row():
-            """Add the auto-apply toggle as the first row in the pages list."""
-            slot_config = self._get_effective_pick_slot_config(slot_key)
-            auto_apply = bool(slot_config.get("rune_auto_apply", True))
-            row = ttk.Frame(pages_frame)
-            row.pack(fill="x", pady=2)
-            if auto_apply:
-                btn = ttk.Button(
-                    row,
-                    text="Don't apply runes for this preset",
-                    bootstyle="warning-outline",
-                    command=lambda: _toggle_auto_apply(),
-                )
-            else:
-                btn = ttk.Button(
-                    row,
-                    text="Apply runes for this preset",
-                    bootstyle="warning",
-                    command=lambda: _toggle_auto_apply(),
-                )
-            btn.pack(fill="x", expand=True)
-
-        def _toggle_auto_apply():
-            slot_config = self._get_effective_pick_slot_config(slot_key)
-            current_auto_apply = bool(slot_config.get("rune_auto_apply", True))
-            if current_auto_apply:
-                self._save_rune_page_for_slot(slot_key, 0, "", auto_apply=False)
-                self._refresh_rune_buttons()
-                _close_popup()
-            else:
-                current_page_id = int(slot_config.get("rune_page_id") or 0)
-                current_page_name = str(slot_config.get("rune_page_name") or "")
-                self._save_rune_page_for_slot(
-                    slot_key, current_page_id, current_page_name,
-                    auto_apply=True,
-                )
-                self._refresh_rune_buttons()
-                _refresh_pages()
-
-        def _select_page(page_id: int, page_name: str, keystone_path: str = "", sub_style_path: str = "") -> None:
-            page_name = self._strip_active_suffix(page_name)
-            self._save_rune_page_for_slot(
-                slot_key, page_id, page_name,
-                auto_apply=True,
-                keystone_path=keystone_path,
-                sub_style_icon_path=sub_style_path,
-            )
-            self._refresh_rune_buttons()
-            _close_popup()
-
-        def _refresh_pages():
-            for widget in pages_frame.winfo_children():
-                widget.destroy()
-
-            # Always show the auto-apply toggle as first item
-            _build_auto_apply_row()
-            ttk.Separator(pages_frame).pack(fill="x", pady=(6, 4))
-
-            if not ws or not getattr(ws, "is_active", False):
-                status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
-                status_label.configure(fg="orange")
-                return
-            status_var.set("")
-
-            pages = ws.fetch_rune_pages()
-            if not pages:
-                ttk.Label(pages_frame, text="No valid rune pages found on your account.", bootstyle="secondary").pack(pady=10)
-                ttk.Label(pages_frame, text="Create a rune page in the League client first.", bootstyle="secondary").pack(pady=(0, 10))
-                return
-
-            styles = ws.fetch_rune_styles()
-            current_slot_config = self._get_effective_pick_slot_config(slot_key)
-            current_rune_page_id = int(current_slot_config.get("rune_page_id") or 0)
-            is_light_theme = str(self.theme_var.get() or "").strip().lower() == "flatly"
-            card_bg = "#f7f9fb" if is_light_theme else "#202020"
-            card_selected_bg = "#3b6793"
-            card_border = "#8ba3b8" if is_light_theme else "#454545"
-            text_fg = "#101820" if is_light_theme else "#f4f4f4"
-            selected_text_fg = "#ffffff"
-            muted_fg = "#52616f" if is_light_theme else "#b7b7b7"
-
-            def _bind_select(widget, page_id: int, page_name: str, keystone_path: str = "", sub_style_path: str = "") -> None:
-                widget.bind("<Button-1>", lambda _event, pid=page_id, pname=page_name, kp=keystone_path, sp=sub_style_path: _select_page(pid, pname, keystone_path=kp, sub_style_path=sp))
-                try:
-                    widget.configure(cursor="hand2")
-                except tk.TclError:
-                    pass
-
-            def _make_icon_label(parent_widget, size: tuple[int, int], bg: str) -> tk.Label:
-                placeholder = ImageTk.PhotoImage(Image.new("RGBA", size, (0, 0, 0, 0)))
-                label = tk.Label(parent_widget, image=placeholder, bg=bg, borderwidth=0, highlightthickness=0)
-                label.image = placeholder
-                return label
-
-            def _add_group_separator(parent_widget, bg: str) -> None:
-                tk.Label(parent_widget, text="-", bg=bg, fg=muted_fg, borderwidth=0).pack(side="left", padx=(7, 7))
-
-            for index_page, page in enumerate(pages):
-                if index_page > 0:
-                    ttk.Separator(pages_frame).pack(fill="x", pady=(4, 4))
-                page_id = page["id"]
-                page_name = self._strip_active_suffix(page["name"] or f"Page {page_id}")
-                page_icon_paths = self._get_rune_page_icon_paths(page, styles) if isinstance(styles, dict) else ("", "")
-                page_keystone_path, page_sub_style_path = page_icon_paths
-                is_selected = page_id == current_rune_page_id
-                row_bg = card_selected_bg if is_selected else card_bg
-                row = tk.Frame(
-                    pages_frame,
-                    bg=row_bg,
-                    highlightbackground=card_border,
-                    highlightcolor=card_border,
-                    highlightthickness=1,
-                    borderwidth=0,
-                    padx=8,
-                    pady=6,
-                )
-                row.pack(fill="x", pady=(0, 0))
-                _bind_select(row, page_id, page_name, keystone_path=page_keystone_path, sub_style_path=page_sub_style_path)
-
-                title = tk.Label(
-                    row,
-                    text=page_name,
-                    bg=row_bg,
-                    fg=selected_text_fg if is_selected else text_fg,
-                    anchor="w",
-                    font=("Segoe UI", 9, "bold" if is_selected else "normal"),
-                    borderwidth=0,
-                )
-                title.pack(fill="x")
-                _bind_select(title, page_id, page_name, keystone_path=page_keystone_path, sub_style_path=page_sub_style_path)
-
-                icons_row = tk.Frame(row, bg=row_bg, borderwidth=0, highlightthickness=0)
-                icons_row.pack(fill="x", pady=(5, 0))
-                _bind_select(icons_row, page_id, page_name, keystone_path=page_keystone_path, sub_style_path=page_sub_style_path)
-
-                if isinstance(styles, dict):
-                    primary_ids, secondary_ids, shard_ids = self._split_rune_page_perk_ids(page)
-                    sub_style = styles.get(page.get("subStyleId"), {})
-                    sub_style_icon_path = str(sub_style.get("iconPath") or "") if isinstance(sub_style, dict) else ""
-
-                    for index, perk_id in enumerate(primary_ids):
-                        size = (30, 30) if index == 0 else (26, 26)
-                        label = _make_icon_label(icons_row, size, row_bg)
-                        label.pack(side="left", padx=(0, 4))
-                        _bind_select(label, page_id, page_name)
-                        self._load_rune_perk_icon_into_label(
-                            label,
-                            perk_id,
-                            size=size,
-                        )
-
-                    if primary_ids and (sub_style_icon_path or secondary_ids or shard_ids):
-                        _add_group_separator(icons_row, row_bg)
-
-                    if sub_style_icon_path:
-                        sub_style_name = str(sub_style.get("name") or "") if isinstance(sub_style, dict) else ""
-                        label = _make_icon_label(icons_row, (26, 26), row_bg)
-                        label.pack(side="left", padx=(0, 4))
-                        _bind_select(label, page_id, page_name)
-                        self._load_rune_style_icon_into_label(
-                            label,
-                            sub_style_icon_path,
-                            size=(26, 26),
-                            tooltip_text=sub_style_name,
-                        )
-
-                    for index, perk_id in enumerate(secondary_ids):
-                        label = _make_icon_label(icons_row, (26, 26), row_bg)
-                        label.pack(side="left", padx=(0, 4))
-                        _bind_select(label, page_id, page_name)
-                        self._load_rune_perk_icon_into_label(
-                            label,
-                            perk_id,
-                            size=(26, 26),
-                        )
-
-                    if (sub_style_icon_path or secondary_ids) and shard_ids:
-                        _add_group_separator(icons_row, row_bg)
-
-                    for index, perk_id in enumerate(shard_ids):
-                        label = _make_icon_label(icons_row, (24, 24), row_bg)
-                        label.pack(side="left", padx=(0, 4))
-                        _bind_select(label, page_id, page_name)
-                        self._load_rune_perk_icon_into_label(
-                            label,
-                            perk_id,
-                            size=(24, 24),
-                        )
-
-        pages_frame = ttk.Frame(container)
-        pages_frame.pack(fill="both", expand=True)
-
-        if popup.winfo_exists():
-            popup.after(100, _refresh_pages)
-
-    def _save_rune_page_for_slot(self, slot_key: str, page_id: int, page_name: str, auto_apply: bool = True, keystone_path: str = "", sub_style_icon_path: str = "") -> None:
-        page_name = self._strip_active_suffix(page_name)
-        params = self.parent.get_params()
-        current_role = self.profile_role_var.get().upper()
-        if current_role in {"GLOBAL"}:
-            pick_slots = params.get("pick_slots", {})
-            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data["rune_page_id"] = page_id
-            slot_data["rune_page_name"] = page_name
-            slot_data["rune_auto_apply"] = auto_apply
-            slot_data["rune_keystone_path"] = keystone_path
-            slot_data["rune_sub_style_icon_path"] = sub_style_icon_path
-            new_slots[slot_key] = slot_data
-            self.parent.update_param("pick_slots", new_slots)
-        else:
-            role_profiles = params.get("role_profiles", {})
-            new_profiles = {r: (d.copy() if isinstance(d, dict) else {}) for r, d in role_profiles.items()}
-            role_data = new_profiles.get(current_role, {})
-            pick_slots = role_data.get("pick_slots", {})
-            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data["rune_page_id"] = page_id
-            slot_data["rune_page_name"] = page_name
-            slot_data["rune_auto_apply"] = auto_apply
-            slot_data["rune_keystone_path"] = keystone_path
-            slot_data["rune_sub_style_icon_path"] = sub_style_icon_path
-            new_slots[slot_key] = slot_data
-            role_data["pick_slots"] = new_slots
-            new_profiles[current_role] = role_data
-            self.parent.update_param("role_profiles", new_profiles)
 
     def _update_btn_content(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
         display_name = name or "..."
@@ -1682,179 +1115,6 @@ class SettingsWindow:
         if btn_widget.winfo_exists():
             btn_widget.configure(image=cached)
             btn_widget.image = cached
-
-    def _refresh_rune_buttons(self) -> None:
-        for slot_key, button in self.pick_rune_buttons.items():
-            if not button.winfo_exists():
-                continue
-            slot_config = self._get_effective_pick_slot_config(slot_key)
-            rune_page_id = int(slot_config.get("rune_page_id") or 0)
-            rune_page_name = self._strip_active_suffix(str(slot_config.get("rune_page_name") or ""))
-            if rune_page_id > 0 and rune_page_name:
-                auto_apply = bool(slot_config.get("rune_auto_apply", True))
-                if not auto_apply:
-                    base_name = rune_page_name if len(rune_page_name) <= 12 else rune_page_name[:10].rstrip() + "..."
-                    label = f"{base_name} · Auto apply off"
-                else:
-                    label = rune_page_name
-                display_name = label if len(label) <= 30 else label[:28].rstrip() + "..."
-                button.configure(text=f"  {display_name}", image="", compound="left")
-                self._load_rune_page_composite_into_btn(button, rune_page_id, slot_key)
-            else:
-                button.configure(text="  Runes", image="", compound="left")
-                self._load_rune_img_into_btn(
-                    button,
-                    URL_PHASE_RUSH_ICON,
-                    size=self.PICK_ICON_SIZE,
-                )
-
-    def _load_rune_page_composite_into_btn(self, button: ttk.Button, rune_page_id: int, slot_key: str) -> None:
-        ws = getattr(self.parent, "ws_manager", None)
-
-        def _update_btn_with_image(img: Image.Image) -> None:
-            if button.winfo_exists():
-                photo = ImageTk.PhotoImage(img)
-                button.configure(image=photo)
-                button.image = photo
-
-        slot_config = self._get_effective_pick_slot_config(slot_key)
-        saved_keystone = str(slot_config.get("rune_keystone_path") or "")
-        saved_sub_style = str(slot_config.get("rune_sub_style_icon_path") or "")
-
-        if saved_keystone:
-            def use_saved_task():
-                try:
-                    composite = self.parent.dd.compose_rune_button_icon(
-                        saved_keystone,
-                        saved_sub_style,
-                        size=self.RUNE_BUTTON_ICON_SIZE,
-                    )
-                    if composite:
-                        button.after(0, lambda img=composite: _update_btn_with_image(img))
-                    else:
-                        self._load_rune_img_into_btn(
-                            button,
-                            URL_PHASE_RUSH_ICON,
-                            size=self.PICK_ICON_SIZE,
-                        )
-                except Exception as e:
-                    logging.debug("Rune composite (saved paths) load error: %s", e)
-                    self._load_rune_img_into_btn(
-                        button,
-                        URL_PHASE_RUSH_ICON,
-                        size=self.PICK_ICON_SIZE,
-                    )
-
-            self.parent.executor.submit(use_saved_task)
-            return
-
-        if not ws:
-            self._load_rune_img_into_btn(
-                button,
-                URL_PHASE_RUSH_ICON,
-                size=self.PICK_ICON_SIZE,
-            )
-            return
-
-        def task():
-            try:
-                pages = ws.fetch_rune_pages()
-                page = next((p for p in pages if p["id"] == rune_page_id), None)
-                if not page:
-                    return
-                styles = ws.fetch_rune_styles()
-                keystone_path, sub_style_icon_path = self._get_rune_page_icon_paths(page, styles)
-                composite = self.parent.dd.compose_rune_button_icon(
-                    keystone_path,
-                    sub_style_icon_path,
-                    size=self.RUNE_BUTTON_ICON_SIZE,
-                )
-                if composite:
-                    button.after(0, lambda img=composite: _update_btn_with_image(img))
-                else:
-                    self._load_rune_img_into_btn(
-                        button,
-                        URL_PHASE_RUSH_ICON,
-                        size=self.PICK_ICON_SIZE,
-                    )
-            except Exception as e:
-                logging.debug("Rune composite icon load error: %s", e)
-                self._load_rune_img_into_btn(
-                    button,
-                    URL_PHASE_RUSH_ICON,
-                    size=self.PICK_ICON_SIZE,
-                )
-
-        self.parent.executor.submit(task)
-
-    def _load_rune_img_into_btn(
-        self,
-        btn_widget: ttk.Button,
-        asset_path: str,
-        *,
-        size: tuple[int, int] = PICK_ICON_SIZE,
-    ) -> None:
-        def task():
-            try:
-                img = self.parent.dd.get_rune_perk_icon(asset_path)
-                if not img:
-                    return
-                img = img.resize(size, Image.LANCZOS)
-
-                def update_ui():
-                    if btn_widget.winfo_exists():
-                        photo = ImageTk.PhotoImage(img)
-                        btn_widget.configure(image=photo)
-                        btn_widget.image = photo
-
-                btn_widget.after(0, update_ui)
-            except Exception as e:
-                logging.debug("Rune image loading error for %s: %s", asset_path, e)
-
-        self.parent.executor.submit(task)
-
-    def _refresh_skin_buttons(self) -> None:
-        for slot_key, button in self.pick_skin_buttons.items():
-            if not button.winfo_exists():
-                continue
-            champion_name = self._get_slot_champion_name(slot_key)
-            skin_config = self._get_effective_pick_slot_config(slot_key)
-            skin_mode = str(skin_config.get("skin_mode") or "none")
-            button.configure(
-                text=f"  {self._get_skin_button_display_text(slot_key)}",
-                compound="left",
-                bootstyle="secondary-outline",
-            )
-            self._load_empty_img_into_btn(button, size=self.PICK_ICON_SIZE)
-
-            if champion_name in {"", "(None)"} or skin_mode == "none":
-                continue
-
-            if skin_mode == "random":
-                self._load_local_img_into_btn(
-                    button,
-                    self._get_random_skin_placeholder_asset(),
-                    size=self.PICK_ICON_SIZE,
-                )
-                continue
-
-            skin_kwargs: Dict[str, Any] = {}
-            if skin_mode == "fixed":
-                skin_kwargs = {
-                    "skin_id": skin_config.get("skin_id"),
-                    "skin_num": skin_config.get("skin_num"),
-                    "skin_name": skin_config.get("skin_name"),
-                }
-            preview_url = self.parent.dd.get_skin_preview_url(champion_name, **skin_kwargs)
-            if not preview_url:
-                continue
-            cache_suffix = skin_kwargs.get("skin_num") or skin_kwargs.get("skin_id") or skin_kwargs.get("skin_name") or "0"
-            self._load_remote_img_into_btn(
-                button,
-                preview_url,
-                cache_key=f"skin_btn_{champion_name}_{cache_suffix}",
-                size=self.PICK_ICON_SIZE,
-            )
 
     def _refresh_profile_buttons(self) -> None:
         self._update_btn_content(self.btn_ban, self._get_display_value("selected_ban"), True)
