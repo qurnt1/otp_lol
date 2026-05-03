@@ -6,7 +6,6 @@ GLOBAL PURPOSE:
 - Keep runtime path synchronization centralized before settings helpers are called.
 
 KEY FUNCTIONS:
-- _sync_runtime_paths: Keep path constants synchronized across config submodules.
 - load_parameters: Load normalized application settings.
 - save_parameters: Persist normalized application settings.
 - get_cache_dirs: Ensure cache directories exist before use.
@@ -24,7 +23,6 @@ Uses:
 - Local modules: src.config.constants, src.config.logging_config, src.config.paths, src.config.settings
 """
 
-from . import paths as _paths
 from . import settings as _settings
 from .constants import (
     APP_IMAGE_FILES,
@@ -97,45 +95,28 @@ from .paths import (
 from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
 
 
-def _sync_runtime_paths() -> None:
-    """Synchronize mutable path references shared across configuration submodules."""
-    _paths.PARAMETERS_PATH = PARAMETERS_PATH
-    _settings.PARAMETERS_PATH = PARAMETERS_PATH
-    _paths.HISTORY_PATH = HISTORY_PATH
-    _paths.LOCKFILE_PATH = LOCKFILE_PATH
-    _settings.ICONS_CACHE_DIR = ICONS_CACHE_DIR
-    _settings.SPELLS_CACHE_DIR = SPELLS_CACHE_DIR
-    _settings.SKINS_CACHE_DIR = SKINS_CACHE_DIR
-    _settings.RUNES_CACHE_DIR = RUNES_CACHE_DIR
-
-
 def load_parameters():
-    """Load application parameters after syncing runtime path references."""
-    _sync_runtime_paths()
+    """Load application parameters from the JSON settings file."""
     return _settings.load_parameters()
 
 
 def save_parameters(params):
-    """Persist application parameters after syncing runtime path references."""
-    _sync_runtime_paths()
+    """Persist application parameters to the JSON settings file."""
     return _settings.save_parameters(params)
 
 
 def export_parameters_to_file(path, params):
-    """Export parameters to a chosen file after syncing runtime path references."""
-    _sync_runtime_paths()
+    """Export parameters to a chosen JSON file."""
     return _settings.export_parameters_to_file(path, params)
 
 
 def import_parameters_from_file(path):
-    """Import parameters from a chosen file after syncing runtime path references."""
-    _sync_runtime_paths()
+    """Import parameters from a chosen JSON file."""
     return _settings.import_parameters_from_file(path)
 
 
 def get_cache_dirs():
-    """Return cache directories after syncing runtime path references."""
-    _sync_runtime_paths()
+    """Create cache directories if they do not exist."""
     return _settings.get_cache_dirs()
 
 

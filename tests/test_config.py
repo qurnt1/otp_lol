@@ -13,7 +13,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.json"
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
@@ -63,8 +63,8 @@ class ConfigTests(unittest.TestCase):
             skins_cache_dir.mkdir()
             (skins_cache_dir / "old_skin.img").write_text("cached", encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)), patch.object(
-                config, "SKINS_CACHE_DIR", str(skins_cache_dir)
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings, "SKINS_CACHE_DIR", str(skins_cache_dir)
             ):
                 loaded = config.load_parameters()
 
@@ -76,7 +76,7 @@ class ConfigTests(unittest.TestCase):
             params_path = Path(tmpdir) / "parameters.json"
             params_path.write_text(json.dumps({"selected_pick_1": "Ahri"}), encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
@@ -89,7 +89,7 @@ class ConfigTests(unittest.TestCase):
             payload["selected_pick_1"] = "Ahri"
             params_path.write_text(json.dumps(payload), encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
@@ -101,7 +101,7 @@ class ConfigTests(unittest.TestCase):
             del payload["pick_slots"]
             params_path.write_text(json.dumps(payload), encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
@@ -114,7 +114,7 @@ class ConfigTests(unittest.TestCase):
             payload["preferred_hotkey_site"] = "dpm"
             params_path.write_text(json.dumps(payload), encoding="utf-8")
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, payload)
@@ -129,7 +129,7 @@ class ConfigTests(unittest.TestCase):
             payload["preferred_hotkey_site"] = "dpm"
             payload["unexpected_key"] = "should_not_be_saved"
 
-            with patch.object(config, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 saved = config.save_parameters(payload)
                 self.assertTrue(saved)
                 written = json.loads(params_path.read_text(encoding="utf-8"))
