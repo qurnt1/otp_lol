@@ -34,7 +34,7 @@ from src.config import (
     load_parameters, save_parameters,
     get_cache_dirs, CURRENT_VERSION
 )
-from src.utils import enable_high_dpi, check_single_instance, remove_lockfile, check_for_updates
+from src.utils import check_single_instance, remove_lockfile, check_for_updates
 from src.core import DataDragon, WebSocketManager
 from src.ui import LoLAssistantUI
 
@@ -45,7 +45,11 @@ class OtpLolApplication:
     def __init__(self):
         """Initialize shared runtime services in the only safe startup order."""
         # UI scaling must be configured before the Tk window is created.
-        enable_high_dpi()
+        try:
+            from ctypes import windll
+            windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            pass
         self._shutdown_lock = Lock()
         self._shutdown_started = False
         self._cleanup_done = False
