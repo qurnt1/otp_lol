@@ -210,6 +210,9 @@ class ChampSelectMixin:
             return
 
         if session.get("benchEnabled") is True:
+            if not self.state.bench_enabled_notified:
+                self.state.bench_enabled_notified = True
+                self._notify_ui(self.EVENT_STATUS, ("Practice Tool / ARAM — automation disabled", "GAMEMODE"))
             return
 
         local_id = session.get("localPlayerCellId")
@@ -692,6 +695,33 @@ class ChampSelectMixin:
             and int(local_selection.get("spell2Id") or 0) == spell2_id
         )
 
+    async def _parse_champ_select_session_payload(
+        self: "WebSocketManager",
+        response: Any,
+        *,
+        area: str,
+        endpoint: str,
+        include_actions: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        payload = await response.json()
+        if not isinstance(payload, dict):
+            return None
+        body = self._build_selection_debug_snapshot(payload)
+        if include_actions:
+            body["actions"] = [
+                {
+                    "id": action.get("id"),
+                    "actorCellId": action.get("actorCellId"),
+                    "type": action.get("type"),
+                    "completed": action.get("completed"),
+                    "isInProgress": action.get("isInProgress"),
+                    "championId": action.get("championId"),
+                }
+                for action in self._iter_session_actions(payload)
+            ]
+        self._log_lcu_response(area, "get", endpoint, response, body=body)
+        return payload
+
     async def _fetch_current_champ_select_session(
         self: "WebSocketManager",
         *,
@@ -705,56 +735,20 @@ class ChampSelectMixin:
             self._log_lcu_request(area, "get", endpoint)
             response = await self.connection.request("get", endpoint)
             if response and response.status == 200:
-                payload = await response.json()
-                if isinstance(payload, dict):
-                    body = self._build_selection_debug_snapshot(payload)
-                    if include_actions:
-                        body["actions"] = [
-                            {
-                                "id": action.get("id"),
-                                "actorCellId": action.get("actorCellId"),
-                                "type": action.get("type"),
-                                "completed": action.get("completed"),
-                                "isInProgress": action.get("isInProgress"),
-                                "championId": action.get("championId"),
-                            }
-                            for action in self._iter_session_actions(payload)
-                        ]
-                    self._log_lcu_response(
-                        area,
-                        "get",
-                        endpoint,
-                        response,
-                        body=body,
-                    )
+                payload = await self._parse_champ_select_session_payload(
+                    response, area=area, endpoint=endpoint, include_actions=include_actions
+                )
+                if payload is not None:
                     return payload
 
             endpoint = "/lol-champ-select-legacy/v1/session"
             self._log_lcu_request(area, "get", endpoint)
             response = await self.connection.request("get", endpoint)
             if response and response.status == 200:
-                payload = await response.json()
-                if isinstance(payload, dict):
-                    body = self._build_selection_debug_snapshot(payload)
-                    if include_actions:
-                        body["actions"] = [
-                            {
-                                "id": action.get("id"),
-                                "actorCellId": action.get("actorCellId"),
-                                "type": action.get("type"),
-                                "completed": action.get("completed"),
-                                "isInProgress": action.get("isInProgress"),
-                                "championId": action.get("championId"),
-                            }
-                            for action in self._iter_session_actions(payload)
-                        ]
-                    self._log_lcu_response(
-                        area,
-                        "get",
-                        endpoint,
-                        response,
-                        body=body,
-                    )
+                payload = await self._parse_champ_select_session_payload(
+                    response, area=area, endpoint=endpoint, include_actions=include_actions
+                )
+                if payload is not None:
                     return payload
         except Exception as e:
             logging.warning("[%s] Unable to fetch champ-select session for confirmation: %s", area, e)
@@ -1018,6 +1012,18 @@ class ChampSelectMixin:
         )
         asyncio.create_task(self._set_skin(params, slot_key=chosen_slot))
 
+    @staticmethod
+    def _pick_slot_update_value(skin: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "skin_mode": "random",
+            "skin_id": 0,
+            "skin_name": "",
+            "skin_num": 0,
+            "random_skin_id": int(skin.get("skin_id") or 0),
+            "random_skin_name": str(skin.get("skin_name") or ""),
+            "random_skin_num": int(skin.get("skin_num") or 0),
+        }
+
     def _persist_random_skin_preview(
         self: "WebSocketManager",
         slot_key: str,
@@ -1031,29 +1037,20 @@ class ChampSelectMixin:
         if source_role not in {"GLOBAL", "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}:
             source_role = "GLOBAL"
 
+        params = self.get_params()
+        update_value = self._pick_slot_update_value(skin)
+
         if source_role == "GLOBAL":
-            params = self.get_params()
             pick_slots = params.get("pick_slots", {})
             if not isinstance(pick_slots, dict):
                 pick_slots = {}
             new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
             slot_data = new_slots.get(slot_key, {})
-            slot_data.update(
-                {
-                    "skin_mode": "random",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": int(skin.get("skin_id") or 0),
-                    "random_skin_name": str(skin.get("skin_name") or ""),
-                    "random_skin_num": int(skin.get("skin_num") or 0),
-                }
-            )
+            slot_data.update(update_value)
             new_slots[slot_key] = slot_data
             self.update_param("pick_slots", new_slots)
             return
 
-        params = self.get_params()
         role_profiles = params.get("role_profiles", {})
         if not isinstance(role_profiles, dict):
             role_profiles = {}
@@ -1064,17 +1061,7 @@ class ChampSelectMixin:
             pick_slots = {}
         new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
         slot_data = new_slots.get(slot_key, {})
-        slot_data.update(
-            {
-                "skin_mode": "random",
-                "skin_id": 0,
-                "skin_name": "",
-                "skin_num": 0,
-                "random_skin_id": int(skin.get("skin_id") or 0),
-                "random_skin_name": str(skin.get("skin_name") or ""),
-                "random_skin_num": int(skin.get("skin_num") or 0),
-            }
-        )
+        slot_data.update(update_value)
         new_slots[slot_key] = slot_data
         role_data["pick_slots"] = new_slots
         new_profiles[source_role] = role_data
