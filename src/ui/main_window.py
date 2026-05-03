@@ -50,6 +50,7 @@ from ..config import (
     ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
     THEME_PALETTE,
+    WEBSITE_LOGO_FILES,
     resource_path,
 )
 from ..services.history import clear_history_entries, format_history_entry, get_history_entries
@@ -132,6 +133,7 @@ class LoLAssistantUI:
         self._last_preview_signature = None
         self._preview_refresh_after_id = None
         self.stats_btn: Optional[ttk.Button] = None
+        self.website_logo_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.settings_gear_label: Optional[ttk.Label] = None
         self.history_filter_var = tk.StringVar(value="All")
         # Build the window before tray and hotkey services so callbacks always
@@ -494,13 +496,44 @@ class LoLAssistantUI:
         self.settings_gear_label.configure(image="", text="⚙")
         self.settings_gear_label.image = None
 
+    def _load_site_logo(self, site: str, size: int = 28):
+        cache_key = (site, size)
+        if cache_key in self.website_logo_cache:
+            return self.website_logo_cache[cache_key]
+
+        icon_rel_path = WEBSITE_LOGO_FILES.get(site)
+        if not icon_rel_path:
+            return None
+
+        icon_path = resource_path(icon_rel_path)
+        if not os.path.exists(icon_path):
+            alt_path = os.path.splitext(icon_path)[0] + ".webp"
+            if os.path.exists(alt_path):
+                icon_path = alt_path
+            else:
+                return None
+
+        try:
+            image = Image.open(icon_path).convert("RGBA")
+            image.thumbnail((size, size), Image.LANCZOS)
+            canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+            left = (size - image.width) // 2
+            top = (size - image.height) // 2
+            canvas.paste(image, (left, top), image)
+            photo = ImageTk.PhotoImage(canvas)
+            self.website_logo_cache[cache_key] = photo
+            return photo
+        except Exception:
+            return None
+
     def _create_opgg_button(self) -> None:
         self.stats_btn = ttk.Button(
             self.root,
-            text=self._get_stats_button_text(),
+            text="View my stats",
             bootstyle="success-outline",
             padding=(16, 10),
             width=22,
+            compound="right",
             command=self.open_preferred_stats_site,
         )
         self.stats_btn.place(relx=0.5, rely=self.STATS_BUTTON_TOP_RELY, anchor="n")
@@ -784,6 +817,36 @@ class LoLAssistantUI:
             return unique_modes.pop()
         return "mixed"
 
+    def _set_pick_slot_skin_mode(self, slot_key: str, mode: str) -> None:
+        role = self._get_main_preview_role()
+        params = self.get_params()
+        if role == "GLOBAL":
+            pick_slots = params.get("pick_slots", {})
+            if not isinstance(pick_slots, dict):
+                pick_slots = {}
+            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
+            slot_data = new_slots.get(slot_key, {})
+            slot_data["skin_mode"] = mode
+            new_slots[slot_key] = slot_data
+            self.update_param("pick_slots", new_slots)
+            return
+
+        role_profiles = params.get("role_profiles", {})
+        if not isinstance(role_profiles, dict):
+            role_profiles = {}
+        new_profiles = {r: (d.copy() if isinstance(d, dict) else {}) for r, d in role_profiles.items()}
+        role_data = new_profiles.get(role, {})
+        pick_slots = role_data.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
+        new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
+        slot_data = new_slots.get(slot_key, {})
+        slot_data["skin_mode"] = mode
+        new_slots[slot_key] = slot_data
+        role_data["pick_slots"] = new_slots
+        new_profiles[role] = role_data
+        self.update_param("role_profiles", new_profiles)
+
     def _cycle_main_preview_skin_mode(self) -> Optional[str]:
         effective = self.get_effective_profile_config(role=self._get_main_preview_role())
         cycle_modes = self._get_main_preview_skin_cycle_modes(effective=effective)
@@ -796,6 +859,7 @@ class LoLAssistantUI:
         overrides = self._get_main_skin_overrides()
         for slot_key in PICK_SLOT_ORDER:
             overrides[slot_key] = next_mode
+            self._set_pick_slot_skin_mode(slot_key, next_mode)
         self.update_param("main_skin_mode_overrides", overrides)
         return next_mode
 
@@ -812,6 +876,7 @@ class LoLAssistantUI:
         next_mode = cycle_modes[(cycle_modes.index(current_mode) + 1) % len(cycle_modes)]
         overrides = self._get_main_skin_overrides()
         overrides[slot_key] = next_mode
+        self._set_pick_slot_skin_mode(slot_key, next_mode)
         self.update_param("main_skin_mode_overrides", overrides)
         return next_mode
 
@@ -1015,24 +1080,20 @@ class LoLAssistantUI:
         site = params.get("preferred_hotkey_site", "porofessor")
         return build_hotkey_site_url(site, self.get_platform_for_websites(), riot_id)
 
-    def get_preferred_stats_site_label(self) -> str:
-        site = self.get_params().get("preferred_stats_site", "opgg")
-        return STATS_SITE_LABELS.get(site, STATS_SITE_LABELS["opgg"])
-
-    def _get_stats_button_text(self) -> str:
-        return f"View my stats ({self.get_preferred_stats_site_label()})"
-
     def _has_valid_riot_id(self) -> bool:
         return is_valid_riot_id(self._get_riot_id_display() or self.get_params().get("manual_summoner_name", ""))
 
     def _refresh_stats_button(self) -> None:
         if self.stats_btn and self.stats_btn.winfo_exists():
             enabled = self._has_valid_riot_id()
+            site = self.get_params().get("preferred_stats_site", "opgg")
+            logo = self._load_site_logo(site, size=27)
             self.stats_btn.configure(
-                text=self._get_stats_button_text(),
                 state="normal" if enabled else "disabled",
-                image="",
             )
+            if logo:
+                self.stats_btn.configure(image=logo)
+                self.stats_btn.image = logo
 
     def open_preferred_stats_site(self) -> None:
         if not self._has_valid_riot_id():

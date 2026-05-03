@@ -399,6 +399,15 @@ class SettingsWindow:
         )
         self.presets_toggle.pack(side="left")
 
+        picks_first_row = start_row + 3
+        picks_frame = ttk.Frame(self.main_frame)
+        picks_frame.grid(row=picks_first_row, column=1, columnspan=3, sticky="ew", padx=5, pady=4, rowspan=3)
+        picks_frame.columnconfigure(0, weight=2, minsize=130)
+        picks_frame.columnconfigure(1, weight=1, minsize=110)
+        picks_frame.columnconfigure(2, weight=1, minsize=110)
+        picks_frame.columnconfigure(3, weight=1, minsize=110)
+        picks_frame.columnconfigure(4, weight=2, minsize=140)
+
         for slot_num, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
             row_index = start_row + slot_num + 2
             ttk.Label(self.main_frame, text=f"{self._get_preset_label(slot_key)} :").grid(
@@ -408,64 +417,60 @@ class SettingsWindow:
                 padx=5,
                 pady=4,
             )
-            row_frame = ttk.Frame(self.main_frame)
-            row_frame.grid(row=row_index, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
-            row_frame.columnconfigure(0, weight=2, minsize=130)
-            row_frame.columnconfigure(1, weight=1, minsize=110)
-            row_frame.columnconfigure(2, weight=1, minsize=110)
-            row_frame.columnconfigure(3, weight=1, minsize=110)
-            row_frame.columnconfigure(4, weight=2, minsize=140)
+
+            inner_row = slot_num - 1
+            inner_pady = (0, 6) if inner_row < 2 else (0, 0)
 
             champion_btn = ttk.Button(
-                row_frame,
+                picks_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=16,
                 command=lambda key=slot_key: self._open_pick_slot_champion_picker(key),
             )
-            champion_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+            champion_btn.grid(row=inner_row, column=0, sticky="ew", padx=(0, 6), pady=inner_pady)
             self.pick_buttons[slot_key] = champion_btn
 
             spell_1_btn = ttk.Button(
-                row_frame,
+                picks_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
                 command=lambda key=slot_key: self._open_spell_picker(key, 1),
             )
-            spell_1_btn.grid(row=0, column=1, sticky="ew", padx=3)
+            spell_1_btn.grid(row=inner_row, column=1, sticky="ew", padx=3, pady=inner_pady)
             self.pick_spell_buttons[(slot_key, 1)] = spell_1_btn
 
             spell_2_btn = ttk.Button(
-                row_frame,
+                picks_frame,
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
                 command=lambda key=slot_key: self._open_spell_picker(key, 2),
             )
-            spell_2_btn.grid(row=0, column=2, sticky="ew", padx=3)
+            spell_2_btn.grid(row=inner_row, column=2, sticky="ew", padx=3, pady=inner_pady)
             self.pick_spell_buttons[(slot_key, 2)] = spell_2_btn
 
             rune_btn = ttk.Button(
-                row_frame,
+                picks_frame,
                 text="Runes",
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
                 command=lambda key=slot_key: self._open_rune_picker(key),
             )
-            rune_btn.grid(row=0, column=3, sticky="ew", padx=3)
+            rune_btn.grid(row=inner_row, column=3, sticky="ew", padx=3, pady=inner_pady)
             self.pick_rune_buttons[slot_key] = rune_btn
 
             skin_btn = ttk.Button(
-                row_frame,
+                picks_frame,
                 text="Skin",
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=18,
                 command=lambda key=slot_key: self._open_skin_picker(key),
             )
-            skin_btn.grid(row=0, column=4, sticky="ew", padx=(6, 0))
+            skin_btn.grid(row=inner_row, column=4, sticky="ew", padx=(6, 0), pady=inner_pady)
             self.pick_skin_buttons[slot_key] = skin_btn
 
         ttk.Separator(self.main_frame).grid(row=start_row + 7, column=0, columnspan=4, sticky="we", pady=(10, 8))
@@ -884,6 +889,7 @@ class SettingsWindow:
             self._set_pick_slot_value(slot_key, "random_skin_id", 0)
             self._set_pick_slot_value(slot_key, "random_skin_name", "")
             self._set_pick_slot_value(slot_key, "random_skin_num", 0)
+            self._reset_main_skin_override(slot_key)
             return
 
         if normalized_mode == "random" and random_skin:
@@ -897,6 +903,7 @@ class SettingsWindow:
             current_pool = self._get_random_skin_pool(slot_key)
             if not any(int(entry.get("skin_id") or 0) == int(random_skin.get("skin_id") or 0) for entry in current_pool):
                 self._set_random_skin_pool(slot_key, [*current_pool, random_skin])
+            self._reset_main_skin_override(slot_key)
             return
 
         self._set_pick_slot_value(slot_key, "skin_mode", "none")
@@ -907,6 +914,14 @@ class SettingsWindow:
         self._set_pick_slot_value(slot_key, "random_skin_name", "")
         self._set_pick_slot_value(slot_key, "random_skin_num", 0)
         self._set_random_skin_pool(slot_key, [])
+        self._reset_main_skin_override(slot_key)
+
+    def _reset_main_skin_override(self, slot_key: str) -> None:
+        overrides = self.parent.get_params().get("main_skin_mode_overrides", {})
+        if isinstance(overrides, dict) and overrides.get(slot_key) != "inherit":
+            new_overrides = dict(overrides)
+            new_overrides[slot_key] = "inherit"
+            self.parent.update_param("main_skin_mode_overrides", new_overrides)
 
     @staticmethod
     def _choose_random_skin_entry(
@@ -1734,6 +1749,11 @@ class SettingsWindow:
             return
 
         if not ws:
+            self._load_rune_img_into_btn(
+                button,
+                URL_PHASE_RUSH_ICON,
+                size=self.PICK_ICON_SIZE,
+            )
             return
 
         def task():

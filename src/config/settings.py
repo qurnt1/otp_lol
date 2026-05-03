@@ -54,6 +54,8 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
             "rune_page_id": 0,
             "rune_page_name": "",
             "rune_auto_apply": True,
+            "rune_keystone_path": "",
+            "rune_sub_style_icon_path": "",
         }
         for slot in PICK_SLOT_ORDER
     }
@@ -364,6 +366,8 @@ def _build_normalized_pick_slots(
                 "rune_page_id": int(slot_data.get("rune_page_id", slots[slot]["rune_page_id"]) or 0),
                 "rune_page_name": str(slot_data.get("rune_page_name", slots[slot]["rune_page_name"]) or ""),
                 "rune_auto_apply": bool(slot_data.get("rune_auto_apply", slots[slot]["rune_auto_apply"])),
+                "rune_keystone_path": str(slot_data.get("rune_keystone_path", slots[slot]["rune_keystone_path"]) or ""),
+                "rune_sub_style_icon_path": str(slot_data.get("rune_sub_style_icon_path", slots[slot]["rune_sub_style_icon_path"]) or ""),
             }
         )
     return slots
