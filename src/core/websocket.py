@@ -364,9 +364,7 @@ class WebSocketManager(ChampSelectMixin):
                 return {}
             payload = await response.json()
             if not isinstance(payload, list):
-                print(f"[RUNES][LCU] styles payload is not list: type={type(payload).__name__}", flush=True)
                 return {}
-            print(f"[RUNES][LCU] styles payload_count={len(payload)}", flush=True)
             styles: Dict[int, Dict[str, Any]] = {}
             for style in payload:
                 if not isinstance(style, dict):
@@ -374,19 +372,7 @@ class WebSocketManager(ChampSelectMixin):
                 style_id = self._to_int(style.get("id"))
                 if style_id <= 0:
                     continue
-                slots = style.get("slots", [])
-                raw_perks = style.get("perks", [])
                 parsed_perks = self._extract_rune_style_perks(style)
-                print(
-                    "[RUNES][LCU] style "
-                    f"id={style_id} name={style.get('name')!r} keys={list(style.keys())} "
-                    f"iconPath={style.get('iconPath')!r} "
-                    f"slots_count={len(slots) if isinstance(slots, list) else 'not-list'} "
-                    f"raw_perks_count={len(raw_perks) if isinstance(raw_perks, list) else 'not-list'} "
-                    f"parsed_perks_count={len(parsed_perks)} "
-                    f"parsed_ids_sample={[perk.get('id') for perk in parsed_perks[:8]]}",
-                    flush=True,
-                )
                 styles[style_id] = {
                     "name": str(style.get("name") or ""),
                     "iconPath": str(style.get("iconPath") or ""),

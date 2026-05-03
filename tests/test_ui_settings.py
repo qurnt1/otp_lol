@@ -59,6 +59,9 @@ class FakeParent:
                 "get_rune_perk_icon_path": lambda self, perk_id: {
                     8214: "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
                 }.get(int(perk_id or 0), ""),
+                "get_rune_perk_name": lambda self, perk_id: {
+                    8214: "Summon Aery",
+                }.get(int(perk_id or 0), ""),
             },
         )()
 
@@ -277,6 +280,37 @@ class SettingsWindowLogicTests(unittest.TestCase):
         self.assertEqual(window.pick_rune_buttons["pick_1"].config["text"], "  Runes")
         self.assertEqual(window._load_rune_img_into_btn_calls[0][1]["size"], (30, 30))
 
+    def test_refresh_rune_buttons_shows_auto_apply_off_badge(self):
+        class FakeButton:
+            def __init__(self):
+                self.config = {}
+                self.image = None
+
+            def winfo_exists(self):
+                return True
+
+            def configure(self, **kwargs):
+                self.config.update(kwargs)
+
+        window = self.make_window()
+        slot = window.parent.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]
+        slot["rune_page_id"] = 42
+        slot["rune_page_name"] = "Garen Test (active)"
+        slot["rune_auto_apply"] = False
+        window.pick_rune_buttons = {"pick_1": FakeButton()}
+        window._load_rune_page_composite_into_btn_calls = []
+        window._load_rune_page_composite_into_btn = (
+            lambda btn, rune_page_id, slot_key: window._load_rune_page_composite_into_btn_calls.append(
+                (rune_page_id, slot_key)
+            )
+        )
+
+        window._refresh_rune_buttons()
+
+        self.assertIn("Auto apply off", window.pick_rune_buttons["pick_1"].config["text"])
+        self.assertNotIn("(active)", window.pick_rune_buttons["pick_1"].config["text"])
+        self.assertEqual(window._load_rune_page_composite_into_btn_calls, [(42, "pick_1")])
+
     def test_find_rune_keystone_path_uses_selected_perk_id(self):
         window = self.make_window()
         page = {"selectedPerkIds": ["8214"]}
@@ -314,6 +348,19 @@ class SettingsWindowLogicTests(unittest.TestCase):
 
         self.assertIn("SummonAery.png", keystone_path)
         self.assertEqual(sub_style_path, "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png")
+
+    def test_split_rune_page_perk_ids_groups_primary_secondary_and_shards(self):
+        page = {"selectedPerkIds": [8010, "9111", 9104, 8014, 8224, 8234, 5008, 5008, 5001]}
+
+        primary_ids, secondary_ids, shard_ids = SettingsWindow._split_rune_page_perk_ids(page)
+
+        self.assertEqual(primary_ids, [8010, 9111, 9104, 8014])
+        self.assertEqual(secondary_ids, [8224, 8234])
+        self.assertEqual(shard_ids, [5008, 5008, 5001])
+
+    def test_strip_active_suffix_removes_only_lcu_active_marker(self):
+        self.assertEqual(SettingsWindow._strip_active_suffix("Garen Test (active)"), "Garen Test")
+        self.assertEqual(SettingsWindow._strip_active_suffix("Actually active"), "Actually active")
 
     def test_refresh_site_buttons_show_logo_and_left_compound(self):
         class FakeButton:

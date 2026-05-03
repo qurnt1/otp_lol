@@ -288,7 +288,7 @@ class ChampSelectMixin:
         if presets_enabled and not self.state.rune_applied_for_session and not self.state.rune_apply_in_progress:
             if self.state.rune_task_scheduled < 3:
                 self.state.rune_task_scheduled += 1
-                logging.info(
+                logging.debug(
                     "[RUNES] Early application attempt %s/3 for %s (prepick=%s picked=%s, phase=%s).",
                     self.state.rune_task_scheduled, prepick_slot,
                     self.state.has_prepicked, self.state.has_picked,
@@ -1381,7 +1381,7 @@ class ChampSelectMixin:
             return
         if time() - self.state.last_rune_try_ts < self.RUNE_RETRY_COOLDOWN_S:
             return
-        logging.info(
+        logging.debug(
             "[RUNES] Mismatch detected for %s: current=%s expected=%s. Retrying.",
             chosen_slot,
             current_rune_page_id,
@@ -1400,14 +1400,14 @@ class ChampSelectMixin:
             current_page = await self._fetch_current_rune_page_async()
             perks_active_id = int(current_page.get("id") or 0) if current_page else 0
 
-            logging.info(
+            logging.debug(
                 "[RUNES] Confirmation %s/%s selectedRunePageId=%s perksCurrentId=%s expected=%s",
                 attempt + 1, self.RUNE_CONFIRM_RETRIES + 1,
                 selected_rune, perks_active_id, rune_page_id,
             )
 
             if selected_rune == rune_page_id or perks_active_id == rune_page_id:
-                logging.info(
+                logging.debug(
                     "[RUNES] Confirmed via %s (id=%s).",
                     "selectedRunePageId" if selected_rune == rune_page_id else "perks/currentpage",
                     rune_page_id,
@@ -1425,11 +1425,11 @@ class ChampSelectMixin:
         self.state.rune_apply_in_progress = True
         rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
         if rune_page_id <= 0:
-            logging.info("[RUNES] No rune page configured for %s; skipping.", chosen_slot)
+            logging.debug("[RUNES] No rune page configured for %s; skipping.", chosen_slot)
             self.state.rune_apply_in_progress = False
             return
         if not rune_auto_apply:
-            logging.info("[RUNES] Auto-apply disabled for %s; skipping.", chosen_slot)
+            logging.debug("[RUNES] Auto-apply disabled for %s; skipping.", chosen_slot)
             self.state.rune_apply_in_progress = False
             return
 
@@ -1453,16 +1453,16 @@ class ChampSelectMixin:
                 return
 
             # PUT the page data with current: true via lol-perks API.
-            logging.info(
+            logging.debug(
                 "[RUNES] Setting page \"%s\" (id=%s) as active via PUT /lol-perks/v1/pages/%s.",
                 target_page.get("name", ""), rune_page_id, rune_page_id,
             )
             put_ok = await self._set_rune_page_via_perks_async(target_page)
-            logging.info("[RUNES] PUT /lol-perks/v1/pages/%s -> %s.", rune_page_id, "OK" if put_ok else "FAILED")
+            logging.debug("[RUNES] PUT /lol-perks/v1/pages/%s -> %s.", rune_page_id, "OK" if put_ok else "FAILED")
 
             if put_ok:
                 confirmed = await self._confirm_rune_applied(rune_page_id)
-                logging.info("[RUNES] Confirmation after PUT -> %s.", "CONFIRMED" if confirmed else "NOT CONFIRMED")
+                logging.debug("[RUNES] Confirmation after PUT -> %s.", "CONFIRMED" if confirmed else "NOT CONFIRMED")
             else:
                 confirmed = False
 

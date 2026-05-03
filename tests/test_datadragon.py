@@ -62,6 +62,8 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
             dd.get_rune_perk_icon_path("8214"),
             "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
         )
+        self.assertEqual(dd.get_rune_perk_name(8010), "Conqueror")
+        self.assertEqual(dd.get_rune_perk_name("8214"), "Summon Aery")
         mock_get.assert_called_once_with(
             "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/perks.json",
             timeout=8,

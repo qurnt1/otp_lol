@@ -158,8 +158,8 @@ class UtilsTests(unittest.TestCase):
         response = Mock()
         response.status_code = 200
         readme_text = (
-            "## Version 11.0 Highlights\n\n"
-            "Version `11.0` focuses on updates.\n\n"
+            "## Version 12.0 Highlights\n\n"
+            "Version `12.0` focuses on updates.\n\n"
             "- `Feature A`\n"
             "  Description A.\n"
         )
@@ -172,7 +172,7 @@ class UtilsTests(unittest.TestCase):
             update_info = check_for_updates()
 
         self.assertIsNotNone(update_info)
-        self.assertEqual(update_info["version"], normalize_version("11.0"))
+        self.assertEqual(update_info["version"], normalize_version("12.0"))
         self.assertIn("`Feature A`", update_info["highlights"])
         self.assertIn("Description A.", update_info["highlights"])
 
