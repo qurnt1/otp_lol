@@ -31,6 +31,7 @@ import logging
 import os
 import random
 from datetime import datetime
+from threading import Thread
 from tkinter import filedialog
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
@@ -49,6 +50,7 @@ from ..config import (
     ROLE_PROFILE_ICON_FILES,
     ROLE_PROFILE_LABELS,
     ROLE_PROFILE_ORDER,
+    RUNES_CACHE_DIR,
     STATS_SITE_LABELS,
     SUMMONER_SPELL_LIST,
     URL_PHASE_RUSH_ICON,
@@ -101,7 +103,7 @@ class SettingsWindow:
         self.pick_rune_buttons: Dict[str, ttk.Button] = {}
         self.pick_skin_buttons: Dict[str, ttk.Button] = {}
         self.skin_picker_window: Optional[ttk.Toplevel] = None
-        self.rune_placeholder_window: Optional[ttk.Toplevel] = None
+        self.rune_picker_window: Optional[ttk.Toplevel] = None
         self.all_champions = parent.dd.all_names if parent.dd.all_names else ["Garen", "Teemo", "Ashe"]
         self.spell_list = SUMMONER_SPELL_LIST[:]
 
@@ -260,11 +262,11 @@ class SettingsWindow:
             )
             row_frame = ttk.Frame(self.main_frame)
             row_frame.grid(row=row_index, column=1, columnspan=3, sticky="ew", padx=5, pady=4)
-            row_frame.columnconfigure(0, weight=2)
-            row_frame.columnconfigure(1, weight=1)
-            row_frame.columnconfigure(2, weight=1)
-            row_frame.columnconfigure(3, weight=1)
-            row_frame.columnconfigure(4, weight=2)
+            row_frame.columnconfigure(0, weight=2, minsize=130)
+            row_frame.columnconfigure(1, weight=1, minsize=110)
+            row_frame.columnconfigure(2, weight=1, minsize=110)
+            row_frame.columnconfigure(3, weight=1, minsize=110)
+            row_frame.columnconfigure(4, weight=2, minsize=140)
 
             champion_btn = ttk.Button(
                 row_frame,
@@ -302,7 +304,7 @@ class SettingsWindow:
                 bootstyle="secondary-outline",
                 padding=(8, 8),
                 width=13,
-                command=self._open_rune_placeholder,
+                command=lambda key=slot_key: self._open_rune_picker(key),
             )
             rune_btn.grid(row=0, column=3, sticky="ew", padx=3)
             self.pick_rune_buttons[slot_key] = rune_btn
@@ -317,13 +319,6 @@ class SettingsWindow:
             )
             skin_btn.grid(row=0, column=4, sticky="ew", padx=(6, 0))
             self.pick_skin_buttons[slot_key] = skin_btn
-
-        ttk.Label(
-            self.main_frame,
-            text="Runes are not automated yet. The app does not change your in-game runes for now.",
-            bootstyle="secondary",
-            justify="left",
-        ).grid(row=start_row + 6, column=1, columnspan=3, sticky="w", padx=5, pady=(0, 2))
 
         ttk.Separator(self.main_frame).grid(row=start_row + 7, column=0, columnspan=4, sticky="we", pady=(10, 8))
         return start_row + 8
@@ -649,6 +644,9 @@ class SettingsWindow:
             "random_skin_name": str(_pick("random_skin_name", "") or ""),
             "random_skin_num": int(_pick("random_skin_num", 0) or 0),
             "random_skin_pool": [dict(entry) for entry in (_pick("random_skin_pool", []) or []) if isinstance(entry, dict)],
+            "rune_page_id": int(_pick("rune_page_id", 0) or 0),
+            "rune_page_name": str(_pick("rune_page_name", "") or ""),
+            "rune_auto_apply": bool(_pick("rune_auto_apply", True)),
         }
 
     def _set_pick_slot_value(self, slot_key: str, field: str, value: str) -> None:
@@ -871,8 +869,11 @@ class SettingsWindow:
     def _toggle_profile_presets(self) -> None:
         enabled = self.presets_enabled_var.get()
         self._set_profile_presets_enabled(enabled)
+        self.parent.update_param("auto_pick_enabled", enabled)
+        self.parent.update_param("auto_summoners_enabled", enabled)
         self.toggle_pick()
         self.toggle_spells()
+        self.toggle_runes()
 
     def _get_theme_button_text(self) -> str:
         return f"Theme: {THEME_LABELS.get(self.theme_var.get(), THEME_LABELS['darkly'])}"
@@ -1097,58 +1098,200 @@ class SettingsWindow:
                 col = 0
                 row += 1
 
-    def _open_rune_placeholder(self) -> None:
-        if self.rune_placeholder_window and self.rune_placeholder_window.winfo_exists():
-            self.rune_placeholder_window.lift()
-            self.rune_placeholder_window.focus_force()
+    def _open_rune_picker(self, slot_key: str) -> None:
+        if not self.presets_enabled_var.get():
             return
 
         popup = ttk.Toplevel(self.window)
         if self.window._icon_img:
             popup.iconphoto(False, self.window._icon_img)
-        popup.title("Runes")
-        popup.geometry(f"360x190+{self.window.winfo_x()+90}+{self.window.winfo_y()+120}")
+        popup.title(f"{self._get_preset_label(slot_key)} - Rune Page")
+        popup.geometry(f"460x520+{self.window.winfo_x()+60}+{self.window.winfo_y()+80}")
         popup.resizable(False, False)
         popup.transient(self.window)
 
         def _close_popup() -> None:
-            self.rune_placeholder_window = None
+            self.rune_picker_window = None
             popup.destroy()
 
         popup.protocol("WM_DELETE_WINDOW", _close_popup)
-        self.rune_placeholder_window = popup
+        self.rune_picker_window = popup
 
-        container = ttk.Frame(popup, padding=18)
+        container = ttk.Frame(popup, padding=12)
         container.pack(fill="both", expand=True)
-        ttk.Label(
+
+        # Status bar for LCU detection (like skin_picker.py)
+        status_var = tk.StringVar(value="")
+        status_label = tk.Label(
             container,
-            text="Working on it !!",
-            font=("Segoe UI", 16, "bold"),
-            anchor="center",
-            justify="center",
-        ).pack(fill="x", pady=(8, 6))
-        ttk.Label(
-            container,
-            text="Rune automation is not available yet.",
-            anchor="center",
-            justify="center",
-        ).pack(fill="x")
-        ttk.Label(
-            container,
-            text="For now, the app does not automatically change your in-game runes.",
-            anchor="center",
-            justify="center",
-            wraplength=300,
-        ).pack(fill="x", pady=(6, 0))
-        ttk.Label(
-            container,
-            text="This feature is planned for a future update.",
-            anchor="center",
-            justify="center",
-        ).pack(fill="x", pady=(6, 0))
-        ttk.Button(container, text="Close", bootstyle="secondary-outline", command=_close_popup, width=12).pack(
-            pady=(14, 0)
+            textvariable=status_var,
+            font=("Segoe UI", 9, "bold"),
+            justify="left",
+            anchor="w",
+            wraplength=420,
         )
+        status_label.pack(fill="x", pady=(0, 6))
+
+        if self.parent and hasattr(self.parent, "ws_manager"):
+            ws = self.parent.ws_manager
+        else:
+            ws = None
+
+        if not ws or not getattr(ws, "is_active", False):
+            status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
+            status_label.configure(fg="orange")
+        else:
+            status_var.set("")
+
+        header = ttk.Frame(container)
+        header.pack(fill="x", pady=(0, 6))
+        ttk.Label(header, text="Select a rune page", font=("Segoe UI", 13, "bold")).pack(side="left")
+
+        btn_frame = ttk.Frame(header)
+        btn_frame.pack(side="right")
+        ttk.Button(btn_frame, text="Refresh", bootstyle="info-outline", command=lambda: _refresh_pages(), width=10
+                   ).pack(side="left", padx=(0, 6))
+
+        def _build_auto_apply_row():
+            """Add the auto-apply toggle as the first row in the pages list."""
+            slot_config = self._get_effective_pick_slot_config(slot_key)
+            auto_apply = bool(slot_config.get("rune_auto_apply", True))
+            row = ttk.Frame(pages_frame)
+            row.pack(fill="x", pady=2)
+            if auto_apply:
+                btn = ttk.Button(
+                    row,
+                    text="Don't apply runes for this preset",
+                    bootstyle="secondary-outline",
+                    command=lambda: _toggle_auto_apply(),
+                )
+            else:
+                btn = ttk.Button(
+                    row,
+                    text="Apply runes for this preset",
+                    bootstyle="warning",
+                    command=lambda: _toggle_auto_apply(),
+                )
+            btn.pack(fill="x", expand=True)
+
+        def _toggle_auto_apply():
+            slot_config = self._get_effective_pick_slot_config(slot_key)
+            current_auto_apply = bool(slot_config.get("rune_auto_apply", True))
+            if current_auto_apply:
+                # Disabling: also clear the selected rune page (None logic merged here)
+                self._save_rune_page_for_slot(slot_key, 0, "", auto_apply=False)
+            else:
+                # Re-enabling: just toggle the flag, keep current page selection
+                current_page_id = int(slot_config.get("rune_page_id") or 0)
+                current_page_name = str(slot_config.get("rune_page_name") or "")
+                self._save_rune_page_for_slot(
+                    slot_key, current_page_id, current_page_name,
+                    auto_apply=True,
+                )
+            self._refresh_rune_buttons()
+            _refresh_pages()
+
+        def _select_page(page_id: int, page_name: str) -> None:
+            slot_config = self._get_effective_pick_slot_config(slot_key)
+            self._save_rune_page_for_slot(
+                slot_key, page_id, page_name,
+                auto_apply=bool(slot_config.get("rune_auto_apply", True)),
+            )
+            self._refresh_rune_buttons()
+            _close_popup()
+
+        def _load_keystone_on_button(btn: ttk.Button, keystone_path: str) -> None:
+            try:
+                img = self.parent.dd.get_rune_perk_icon(keystone_path)
+                if img:
+                    img = img.resize(self.PICK_ICON_SIZE, Image.LANCZOS)
+                    photo = ImageTk.PhotoImage(img)
+                    if btn.winfo_exists():
+                        btn.configure(image=photo, compound="left")
+                        btn.image = photo
+            except Exception as e:
+                logging.debug("Keystone icon load error: %s", e)
+
+        def _refresh_pages():
+            for widget in pages_frame.winfo_children():
+                widget.destroy()
+
+            # Always show the auto-apply toggle as first item
+            _build_auto_apply_row()
+
+            if not ws or not getattr(ws, "is_active", False):
+                status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
+                status_label.configure(fg="orange")
+                return
+            status_var.set("")
+
+            pages = ws.fetch_rune_pages()
+            if not pages:
+                ttk.Label(pages_frame, text="No valid rune pages found on your account.", bootstyle="secondary").pack(pady=10)
+                ttk.Label(pages_frame, text="Create a rune page in the League client first.", bootstyle="secondary").pack(pady=(0, 10))
+                return
+
+            styles = ws.fetch_rune_styles()
+            current_slot_config = self._get_effective_pick_slot_config(slot_key)
+            current_rune_page_id = int(current_slot_config.get("rune_page_id") or 0)
+
+            for page in pages:
+                page_id = page["id"]
+                page_name = page["name"] or f"Page {page_id}"
+                if page.get("current"):
+                    page_name = f"{page_name} (active)"
+                is_selected = page_id == current_rune_page_id
+                row = ttk.Frame(pages_frame)
+                row.pack(fill="x", pady=2)
+                btn_bootstyle = "primary" if is_selected else "secondary-outline"
+                btn = ttk.Button(
+                    row,
+                    text=page_name,
+                    bootstyle=btn_bootstyle,
+                    command=lambda pid=page_id, pname=page_name: _select_page(pid, pname),
+                )
+                btn.pack(fill="x", expand=True)
+                # Load keystone icon for this page
+                if isinstance(styles, dict):
+                    style = styles.get(page.get("primaryStyleId", 0), {})
+                    perks = style.get("perks", []) if isinstance(style, dict) else []
+                    if perks:
+                        keystone_path = perks[0].get("iconPath", "")
+                        if keystone_path:
+                            _load_keystone_on_button(btn, keystone_path)
+
+        pages_frame = ttk.Frame(container)
+        pages_frame.pack(fill="both", expand=True)
+
+        if popup.winfo_exists():
+            popup.after(100, _refresh_pages)
+
+    def _save_rune_page_for_slot(self, slot_key: str, page_id: int, page_name: str, auto_apply: bool = True) -> None:
+        params = self.parent.get_params()
+        current_role = self.profile_role_var.get().upper()
+        if current_role in {"GLOBAL"}:
+            pick_slots = params.get("pick_slots", {})
+            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
+            slot_data = new_slots.get(slot_key, {})
+            slot_data["rune_page_id"] = page_id
+            slot_data["rune_page_name"] = page_name
+            slot_data["rune_auto_apply"] = auto_apply
+            new_slots[slot_key] = slot_data
+            self.parent.update_param("pick_slots", new_slots)
+        else:
+            role_profiles = params.get("role_profiles", {})
+            new_profiles = {r: (d.copy() if isinstance(d, dict) else {}) for r, d in role_profiles.items()}
+            role_data = new_profiles.get(current_role, {})
+            pick_slots = role_data.get("pick_slots", {})
+            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
+            slot_data = new_slots.get(slot_key, {})
+            slot_data["rune_page_id"] = page_id
+            slot_data["rune_page_name"] = page_name
+            slot_data["rune_auto_apply"] = auto_apply
+            new_slots[slot_key] = slot_data
+            role_data["pick_slots"] = new_slots
+            new_profiles[current_role] = role_data
+            self.parent.update_param("role_profiles", new_profiles)
 
     def _update_btn_content(self, btn_widget: ttk.Button, name: str, is_champ: bool = True) -> None:
         display_name = name or "..."
@@ -1285,13 +1428,78 @@ class SettingsWindow:
         for slot_key, button in self.pick_rune_buttons.items():
             if not button.winfo_exists():
                 continue
-            button.configure(text="  Runes", image="", compound="left")
-            self._load_remote_img_into_btn(
-                button,
-                URL_PHASE_RUSH_ICON,
-                cache_key=f"rune_phase_rush_{slot_key}",
-                size=self.PICK_ICON_SIZE,
-            )
+            slot_config = self._get_effective_pick_slot_config(slot_key)
+            rune_page_id = int(slot_config.get("rune_page_id") or 0)
+            rune_page_name = str(slot_config.get("rune_page_name") or "")
+            if rune_page_id > 0 and rune_page_name:
+                display_name = rune_page_name if len(rune_page_name) <= 18 else rune_page_name[:16] + "..."
+                button.configure(text=f"  {display_name}", image="", compound="left")
+                self._load_rune_page_composite_into_btn(button, rune_page_id, slot_key)
+            else:
+                button.configure(text="  Runes", image="", compound="left")
+                self._load_remote_img_into_btn(
+                    button,
+                    URL_PHASE_RUSH_ICON,
+                    cache_key=f"rune_phase_rush_{slot_key}",
+                    size=self.PICK_ICON_SIZE,
+                )
+
+    def _load_rune_page_composite_into_btn(self, button: ttk.Button, rune_page_id: int, slot_key: str) -> None:
+        ws = getattr(self.parent, "ws_manager", None)
+
+        def _update_btn_with_photo(photo: ImageTk.PhotoImage) -> None:
+            if button.winfo_exists():
+                button.configure(image=photo)
+                button.image = photo
+
+        # Check disk cache first
+        cache_filename = f"rune_composite_{rune_page_id}_{slot_key}.png"
+        cached_path = os.path.join(RUNES_CACHE_DIR, cache_filename)
+        if os.path.exists(cached_path):
+            try:
+                img = Image.open(cached_path).convert("RGBA")
+                photo = ImageTk.PhotoImage(img)
+                button.after(0, lambda p=photo: _update_btn_with_photo(p))
+                return
+            except Exception as e:
+                logging.debug("Rune composite cache read error: %s", e)
+
+        if not ws:
+            return
+
+        def task():
+            try:
+                pages = ws.fetch_rune_pages()
+                page = next((p for p in pages if p["id"] == rune_page_id), None)
+                if not page:
+                    return
+                styles = ws.fetch_rune_styles()
+                primary_style = styles.get(page["primaryStyleId"], {})
+                sub_style = styles.get(page["subStyleId"], {})
+                keystone_path = ""
+                primary_perks = primary_style.get("perks", [])
+                if primary_perks:
+                    keystone_path = primary_perks[0].get("iconPath", "")
+                sub_style_icon_path = sub_style.get("iconPath", "")
+                composite = self.parent.dd.compose_rune_button_icon(
+                    keystone_path,
+                    sub_style_icon_path,
+                    size=self.PICK_ICON_SIZE,
+                )
+                if composite:
+                    # Save to disk cache for next time
+                    try:
+                        os.makedirs(RUNES_CACHE_DIR, exist_ok=True)
+                        composite.save(cached_path, "PNG")
+                    except Exception as e:
+                        logging.debug("Rune composite cache save error: %s", e)
+
+                    photo = ImageTk.PhotoImage(composite)
+                    button.after(0, lambda p=photo: _update_btn_with_photo(p))
+            except Exception as e:
+                logging.debug("Rune composite icon load error: %s", e)
+
+        Thread(target=task, daemon=True).start()
 
     def _refresh_skin_buttons(self) -> None:
         for slot_key, button in self.pick_skin_buttons.items():
@@ -1391,6 +1599,11 @@ class SettingsWindow:
         for button in getattr(self, "pick_spell_buttons", {}).values():
             button.configure(state=state)
 
+    def toggle_runes(self) -> None:
+        state = "normal" if self.presets_enabled_var.get() else "disabled"
+        for button in getattr(self, "pick_rune_buttons", {}).values():
+            button.configure(state=state)
+
     def _update_detect_label_text(self) -> None:
         detected = self.parent.get_auto_summoner_name()
         if self.parent.is_ws_active() and detected:
@@ -1429,6 +1642,8 @@ class SettingsWindow:
         self._refresh_profile_buttons()
         self._refresh_spell_buttons()
         self.toggle_summoner_entry()
+        if self.window.winfo_exists():
+            self.window.update_idletasks()
 
     def _on_stats_site_selected(self, event=None) -> None:
         selected_label = self.stats_site_cb.get().strip()
@@ -1511,8 +1726,8 @@ class SettingsWindow:
             self._cancel_hotkey_capture()
         if getattr(self, "skin_picker_window", None) and self.skin_picker_window.winfo_exists():
             self.skin_picker_window.destroy()
-        if getattr(self, "rune_placeholder_window", None) and self.rune_placeholder_window.winfo_exists():
-            self.rune_placeholder_window.destroy()
+        if getattr(self, "rune_picker_window", None) and self.rune_picker_window.winfo_exists():
+            self.rune_picker_window.destroy()
         self.parent.update_param("auto_pick_enabled", True)
         self.parent.update_param("auto_summoners_enabled", True)
         self.parent.update_param("summoner_name_auto_detect", self.summoner_auto_detect_var.get())

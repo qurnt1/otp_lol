@@ -1249,6 +1249,8 @@ class LoLAssistantUI:
             new_profiles[selected_role] = role_data
             self.update_param("role_profiles", new_profiles)
 
+        self.update_param("auto_pick_enabled", next_value)
+        self.update_param("auto_summoners_enabled", next_value)
         self._sync_settings_window_if_open()
         state_label = "active" if next_value else "disabled"
         role_label = ROLE_PROFILE_LABELS.get(selected_role, "Global")
@@ -1730,7 +1732,8 @@ class LoLAssistantUI:
             self._cancel_disconnect_close()
             self.update_connection_indicator(True)
             if self.get_params().get("auto_hide_on_connect", True):
-                self.root.after(3000, self.hide_window)
+                if not (self.settings_win and self.settings_win.window.winfo_exists()):
+                    self.root.after(3000, self.hide_window)
         elif event_type == WebSocketManager.EVENT_DISCONNECTED:
             disconnect_info = data if isinstance(data, dict) else {}
             is_transient_disconnect = bool(disconnect_info.get("transient"))
