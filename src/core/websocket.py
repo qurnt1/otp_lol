@@ -661,6 +661,69 @@ class WebSocketManager(ChampSelectMixin):
             ),
         }
 
+    def _parse_owned_skins_payload(
+        self,
+        items: List[Dict[str, Any]],
+        champion_name: str,
+        *,
+        source: str,
+        log_tag: str,
+    ) -> Dict[str, Any]:
+        owned_skins: List[Dict[str, Any]] = []
+        unmapped_items = 0
+        for item in items:
+            try:
+                skin_id = int(
+                    item.get("id")
+                    or item.get("skinId")
+                    or item.get("championSkinId")
+                    or item.get("selectedSkinId")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                unmapped_items += 1
+                logging.debug(
+                    "[SKIN][OWNED] %s skin mapping failed champion=%s skin_id=%s skin_name=%s",
+                    log_tag,
+                    champion_name,
+                    skin_id,
+                    skin_name,
+                )
+                continue
+            owned_skins.append(
+                self._build_owned_skin_result_entry(
+                    skin_data,
+                    fallback_skin_id=skin_id,
+                    fallback_skin_name=skin_name,
+                )
+            )
+
+        unique_skins = []
+        seen_ids = set()
+        for skin in owned_skins:
+            sid = int(skin.get("skin_id") or 0)
+            if sid in seen_ids:
+                continue
+            seen_ids.add(sid)
+            unique_skins.append(skin)
+        logging.info(
+            "[SKIN][OWNED] %s parsed champion=%s mapped=%s unmapped=%s",
+            log_tag,
+            champion_name,
+            len(unique_skins),
+            unmapped_items,
+        )
+        return {
+            "ok": True,
+            "message": "",
+            "owned_skins": unique_skins,
+            "source": source,
+        }
+
     async def _fetch_owned_skins_from_inventory(
         self,
         champion_id: int,
@@ -700,54 +763,8 @@ class WebSocketManager(ChampSelectMixin):
 
         items = self._normalize_skin_collection_payload(payload)
         logging.info("[SKIN][OWNED] Inventory payload items=%s", len(items))
-        owned_skins: List[Dict[str, Any]] = []
-        unmapped_items = 0
-        for item in items:
-            if not self._inventory_skin_is_owned(item):
-                continue
-            try:
-                skin_id = int(item.get("id") or item.get("skinId") or item.get("championSkinId") or 0)
-            except (TypeError, ValueError):
-                skin_id = 0
-            skin_name = str(item.get("name") or item.get("displayName") or "")
-            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
-            if not skin_data:
-                unmapped_items += 1
-                logging.debug(
-                    "[SKIN][OWNED] Inventory skin mapping failed champion=%s skin_id=%s skin_name=%s",
-                    champion_name,
-                    skin_id,
-                    skin_name,
-                )
-                continue
-            owned_skins.append(
-                self._build_owned_skin_result_entry(
-                    skin_data,
-                    fallback_skin_id=skin_id,
-                    fallback_skin_name=skin_name,
-                )
-            )
-
-        unique_skins = []
-        seen_ids = set()
-        for skin in owned_skins:
-            skin_id = int(skin.get("skin_id") or 0)
-            if skin_id in seen_ids:
-                continue
-            seen_ids.add(skin_id)
-            unique_skins.append(skin)
-        logging.info(
-            "[SKIN][OWNED] Inventory parsed champion=%s mapped=%s unmapped=%s",
-            champion_name,
-            len(unique_skins),
-            unmapped_items,
-        )
-        return {
-            "ok": True,
-            "message": "",
-            "owned_skins": unique_skins,
-            "source": "inventory",
-        }
+        items = [item for item in items if self._inventory_skin_is_owned(item)]
+        return self._parse_owned_skins_payload(items, champion_name, source="inventory", log_tag="Inventory")
 
     async def _fetch_owned_skins_from_pickable(self, champion_id: int) -> Dict[str, Any]:
         endpoint = "/lol-champ-select/v1/pickable-skins"
@@ -782,64 +799,8 @@ class WebSocketManager(ChampSelectMixin):
 
         items = self._normalize_skin_collection_payload(payload)
         logging.info("[SKIN][OWNED] Pickable fallback payload items=%s", len(items))
-        owned_skins: List[Dict[str, Any]] = []
-        unmapped_items = 0
-        for item in items:
-            try:
-                item_champion_id = int(item.get("championId") or champion_id or 0)
-            except (TypeError, ValueError):
-                item_champion_id = champion_id
-            if champion_id and item_champion_id != champion_id:
-                continue
-            try:
-                skin_id = int(
-                    item.get("id")
-                    or item.get("skinId")
-                    or item.get("championSkinId")
-                    or item.get("selectedSkinId")
-                    or 0
-                )
-            except (TypeError, ValueError):
-                skin_id = 0
-            skin_name = str(item.get("name") or item.get("displayName") or "")
-            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
-            if not skin_data:
-                unmapped_items += 1
-                logging.debug(
-                    "[SKIN][OWNED] Pickable skin mapping failed champion=%s skin_id=%s skin_name=%s",
-                    champion_name,
-                    skin_id,
-                    skin_name,
-                )
-                continue
-            owned_skins.append(
-                self._build_owned_skin_result_entry(
-                    skin_data,
-                    fallback_skin_id=skin_id,
-                    fallback_skin_name=skin_name,
-                )
-            )
-
-        unique_skins = []
-        seen_ids = set()
-        for skin in owned_skins:
-            skin_id = int(skin.get("skin_id") or 0)
-            if skin_id in seen_ids:
-                continue
-            seen_ids.add(skin_id)
-            unique_skins.append(skin)
-        logging.info(
-            "[SKIN][OWNED] Pickable fallback parsed champion=%s mapped=%s unmapped=%s",
-            champion_name,
-            len(unique_skins),
-            unmapped_items,
-        )
-        return {
-            "ok": True,
-            "message": "",
-            "owned_skins": unique_skins,
-            "source": "pickable",
-        }
+        items = [item for item in items if int(item.get("championId") or champion_id or 0) == champion_id]
+        return self._parse_owned_skins_payload(items, champion_name, source="pickable", log_tag="Pickable")
 
     async def _fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.connection:
