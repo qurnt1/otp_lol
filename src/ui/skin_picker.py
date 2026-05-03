@@ -491,7 +491,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
                 image_label,
                 preview_url,
                 cache_key=(
-                    f"skin_picker_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
+                    f"skin_picker_{champion_name}_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
                     f"{'owned' if skin.get('owned') else 'other'}"
                 ),
                 size=(88, 50),
