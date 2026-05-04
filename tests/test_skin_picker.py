@@ -1,8 +1,8 @@
 import unittest
 
+from src.ui._picker_common import picker_lcu_status_message
 from src.ui.skin_picker import (
     _confirm_unowned_skin_selection,
-    _get_skin_fetch_status_text,
     _get_picker_image_url,
     _merge_catalog_and_owned_skins,
     _sort_skins_for_display,
@@ -140,26 +140,34 @@ class SkinPickerMergeTests(unittest.TestCase):
             )
         )
 
-    def test_get_skin_fetch_status_text_uses_lcu_message_for_missing_client(self):
-        self.assertEqual(
-            _get_skin_fetch_status_text(
-                {
-                    "ok": False,
-                    "message": "Unable to fetch skins. Check your League of Legends connection.",
-                }
-            ),
-            "Impossible to fetch skins: LCU is not detected. To update the list, launch League of Legends.",
+    def test_confirm_unowned_skin_lcu_unavailable_shows_different_message(self):
+        """When LCU is not available the prompt uses the client-not-detected wording."""
+        captured_title = []
+        captured_message = []
+
+        def capture(title, message):
+            captured_title.append(title)
+            captured_message.append(message)
+            return True
+
+        result = _confirm_unowned_skin_selection(
+            {"skin_id": 2, "skin_name": "Unknown", "owned": False},
+            ask_fn=capture,
+            lcu_available=False,
         )
 
-    def test_get_skin_fetch_status_text_uses_explicit_missing_client_message(self):
+        self.assertTrue(result)
+        self.assertIn("LoL client not detected", captured_title[0])
+        self.assertIn("Unable to verify", captured_message[0])
+
+    def test_picker_lcu_status_message_uses_standard_wording(self):
         self.assertEqual(
-            _get_skin_fetch_status_text(
-                {
-                    "ok": False,
-                    "message": "LoL client is not detected.",
-                }
-            ),
-            "Impossible to fetch skins: LCU is not detected. To update the list, launch League of Legends.",
+            picker_lcu_status_message("skins"),
+            "Unable to fetch skins: LoL client is not detected. Launch League of Legends to refresh.",
+        )
+        self.assertEqual(
+            picker_lcu_status_message("runes"),
+            "Unable to fetch runes: LoL client is not detected. Launch League of Legends to refresh.",
         )
 
 

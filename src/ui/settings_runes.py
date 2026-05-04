@@ -21,6 +21,7 @@ import ttkbootstrap as ttk
 from PIL import Image, ImageTk
 
 from ..config import URL_PHASE_RUSH_ICON
+from ._picker_common import get_picker_colors, picker_empty_message, picker_lcu_status_message
 
 
 class SettingsRunesMixin:
@@ -149,6 +150,10 @@ class SettingsRunesMixin:
 
         popup.protocol("WM_DELETE_WINDOW", _close_popup)
         self.rune_picker_window = popup
+        _rune_fetch_in_progress = False
+
+        theme_name = str(self.theme_var.get() or "darkly").strip().lower()
+        colors = get_picker_colors(theme_name)
 
         container = ttk.Frame(popup, padding=12)
         container.pack(fill="both", expand=True)
@@ -157,6 +162,8 @@ class SettingsRunesMixin:
         status_label = tk.Label(
             container,
             textvariable=status_var,
+            bg=colors["window_bg"],
+            fg=colors["warning"],
             font=("Segoe UI", 9, "bold"),
             justify="left",
             anchor="w",
@@ -170,8 +177,7 @@ class SettingsRunesMixin:
             ws = None
 
         if not ws or not getattr(ws, "is_active", False):
-            status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
-            status_label.configure(fg="orange")
+            status_var.set(picker_lcu_status_message("runes"))
         else:
             status_var.set("")
 
@@ -235,6 +241,11 @@ class SettingsRunesMixin:
             _close_popup()
 
         def _refresh_pages():
+            nonlocal _rune_fetch_in_progress
+            if _rune_fetch_in_progress:
+                return
+            _rune_fetch_in_progress = True
+
             for widget in pages_frame.winfo_children():
                 widget.destroy()
 
@@ -242,27 +253,27 @@ class SettingsRunesMixin:
             ttk.Separator(pages_frame).pack(fill="x", pady=(6, 4))
 
             if not ws or not getattr(ws, "is_active", False):
-                status_var.set("Impossible to fetch runes: LCU is not detected. Launch League of Legends.")
-                status_label.configure(fg="orange")
+                status_var.set(picker_lcu_status_message("runes"))
+                _rune_fetch_in_progress = False
                 return
             status_var.set("")
 
             pages = ws.fetch_rune_pages()
             if not pages:
-                ttk.Label(pages_frame, text="No valid rune pages found on your account.", bootstyle="secondary").pack(pady=10)
+                ttk.Label(pages_frame, text=picker_empty_message("runes"), bootstyle="secondary").pack(pady=10)
                 ttk.Label(pages_frame, text="Create a rune page in the League client first.", bootstyle="secondary").pack(pady=(0, 10))
+                _rune_fetch_in_progress = False
                 return
 
             styles = ws.fetch_rune_styles()
             current_slot_config = self._get_effective_pick_slot_config(slot_key)
             current_rune_page_id = int(current_slot_config.get("rune_page_id") or 0)
-            is_light_theme = str(self.theme_var.get() or "").strip().lower() == "flatly"
-            card_bg = "#f7f9fb" if is_light_theme else "#202020"
-            card_selected_bg = "#3b6793"
-            card_border = "#8ba3b8" if is_light_theme else "#454545"
-            text_fg = "#101820" if is_light_theme else "#f4f4f4"
-            selected_text_fg = "#ffffff"
-            muted_fg = "#52616f" if is_light_theme else "#b7b7b7"
+            card_bg = colors["surface_bg"]
+            card_selected_bg = colors["selected_bg"]
+            card_border = colors["border"]
+            text_fg = colors["text"]
+            selected_text_fg = colors["selected_text"]
+            muted_fg = colors["muted"]
 
             def _bind_select(widget, page_id: int, page_name: str, keystone_path: str = "", sub_style_path: str = "") -> None:
                 widget.bind("<Button-1>", lambda _event, pid=page_id, pname=page_name, kp=keystone_path, sp=sub_style_path: _select_page(pid, pname, keystone_path=kp, sub_style_path=sp))
@@ -371,6 +382,8 @@ class SettingsRunesMixin:
                             perk_id,
                             size=(24, 24),
                         )
+
+            _rune_fetch_in_progress = False
 
         pages_frame = ttk.Frame(container)
         pages_frame.pack(fill="both", expand=True)
