@@ -33,7 +33,7 @@ import os
 import shutil
 from typing import Any, Dict
 
-from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
+from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
 from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, RUNES_CACHE_DIR, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
 
 
@@ -58,21 +58,6 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
             "rune_sub_style_icon_path": "",
         }
         for slot in PICK_SLOT_ORDER
-    }
-
-
-def build_role_profile_defaults(*, presets_enabled: bool = True) -> Dict[str, Dict[str, Any]]:
-    """Return a fully initialized role profile payload."""
-    return {
-        role: {
-            "presets_enabled": presets_enabled,
-            "selected_pick_1": "",
-            "selected_pick_2": "",
-            "selected_pick_3": "",
-            "selected_ban": "",
-            "pick_slots": build_pick_slot_defaults(),
-        }
-        for role in ROLE_PROFILE_ORDER
     }
 
 
@@ -140,8 +125,6 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_detected_riot_id": "",
     "auto_detected_region": "",
     "auto_detected_platform": "",
-    "selected_profile_role": "GLOBAL",
-    "role_profiles": build_role_profile_defaults(),
     "preferred_stats_site": "opgg",
     "preferred_hotkey_site": "porofessor",
     "hotkey_toggle_window": "alt+c",
@@ -152,6 +135,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "ignored_update_version": "",
     "main_skin_mode_override": "inherit",
     "main_skin_mode_overrides": build_main_skin_mode_overrides(),
+    "window_x": 0,
+    "window_y": 0,
 }
 
 FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
@@ -163,7 +148,6 @@ FIRST_LAUNCH_PARAMS.update(
         "auto_summoners_enabled": False,
         "presets_enabled": False,
         "auto_play_again_enabled": False,
-        "role_profiles": build_role_profile_defaults(presets_enabled=False),
     }
 )
 
@@ -377,7 +361,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize loaded parameters and migrate old keys."""
     merged = copy.deepcopy(DEFAULT_PARAMS)
     for key, value in config.items():
-        if key in {"pick_slots", "role_profiles"}:
+        if key == "pick_slots":
             continue
         merged[key] = value
 
@@ -392,19 +376,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     if "auto_detected_platform" not in config:
         merged["auto_detected_platform"] = ""
-
-    selected_profile_role = str(merged.get("selected_profile_role", "GLOBAL")).upper()
-    selected_profile_role = {
-        "MID": "MIDDLE",
-        "ADC": "BOTTOM",
-        "BOT": "BOTTOM",
-        "SUP": "UTILITY",
-        "SUPPORT": "UTILITY",
-        "JGL": "JUNGLE",
-    }.get(selected_profile_role, selected_profile_role)
-    merged["selected_profile_role"] = (
-        selected_profile_role if selected_profile_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
-    )
 
     merged["selected_pick_1"] = str(config.get("selected_pick_1", DEFAULT_PARAMS["selected_pick_1"]))
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
@@ -423,28 +394,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
         fallback_spell_2=config.get("global_spell_2", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_2"]),
     )
-
-    raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
-    normalized_profiles = build_role_profile_defaults(presets_enabled=merged["presets_enabled"])
-    for role in ROLE_PROFILE_ORDER:
-        role_data = raw_profiles.get(role, {})
-        if not isinstance(role_data, dict):
-            role_data = {}
-        normalized_profiles[role].update(
-            {
-                "presets_enabled": bool(role_data.get("presets_enabled", merged["presets_enabled"])),
-                "selected_pick_1": str(role_data.get("selected_pick_1", "")),
-                "selected_pick_2": str(role_data.get("selected_pick_2", "")),
-                "selected_pick_3": str(role_data.get("selected_pick_3", "")),
-                "selected_ban": str(role_data.get("selected_ban", "")),
-                "pick_slots": _build_normalized_pick_slots(
-                    role_data.get("pick_slots"),
-                    fallback_spell_1=role_data.get("spell_1", ""),
-                    fallback_spell_2=role_data.get("spell_2", ""),
-                ),
-            }
-        )
-    merged["role_profiles"] = normalized_profiles
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:

@@ -46,8 +46,6 @@ from ..config import (
     GITHUB_DOWNLOAD_ZIP_URL,
     GITHUB_REPO_URL,
     PICK_SLOT_ORDER,
-    ROLE_PROFILE_LABELS,
-    ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
     THEME_PALETTE,
     WEBSITE_LOGO_FILES,
@@ -120,7 +118,10 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         self.theme = params.get("theme", "darkly") if params.get("theme", "darkly") in THEME_PALETTE else "darkly"
         self.root = ttk.Window(themename=self.theme)
         self.root.title(APP_NAME)
-        self.root.geometry("420x250")
+        wx = params.get("window_x", 0)
+        wy = params.get("window_y", 0)
+        geometry = f"420x250+{wx}+{wy}" if wx or wy else "420x250"
+        self.root.geometry(geometry)
         self.root.resizable(False, False)
         self.theme_var = tk.StringVar(value=self.theme)
         self.banner_label: Optional[ttk.Label] = None
@@ -561,43 +562,19 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         return "GLOBAL"
 
     def is_tray_presets_automation_enabled(self) -> bool:
-        params = self.get_params()
-        selected_role = self._get_selected_profile_role()
-        if selected_role == "GLOBAL":
-            return bool(params.get("presets_enabled", True))
-
-        role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(selected_role, {}) if isinstance(role_profiles, dict) else {}
-        if not isinstance(role_data, dict):
-            role_data = {}
-        return bool(role_data.get("presets_enabled", params.get("presets_enabled", True)))
+        return bool(self.get_params().get("presets_enabled", True))
 
     def is_tray_auto_ban_enabled(self) -> bool:
         return bool(self.get_params().get("auto_ban_enabled", True))
 
     def toggle_tray_presets_automation(self) -> None:
-        params = self.get_params()
-        selected_role = self._get_selected_profile_role()
         next_value = not self.is_tray_presets_automation_enabled()
-
-        if selected_role == "GLOBAL":
-            self.update_param("presets_enabled", next_value)
-        else:
-            role_profiles = params.get("role_profiles", {})
-            if not isinstance(role_profiles, dict):
-                role_profiles = {}
-            new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-            role_data = new_profiles.get(selected_role, {})
-            role_data["presets_enabled"] = next_value
-            new_profiles[selected_role] = role_data
-            self.update_param("role_profiles", new_profiles)
-
+        self.update_param("presets_enabled", next_value)
         self.update_param("auto_pick_enabled", next_value)
         self.update_param("auto_summoners_enabled", next_value)
         self._sync_settings_window_if_open()
         state_label = "active" if next_value else "disabled"
-        role_label = ROLE_PROFILE_LABELS.get(selected_role, "Global")
-        self.show_toast(f"Presets automation {state_label} for {role_label}.", duration=1200)
+        self.show_toast(f"Presets automation {state_label}.", duration=1200)
 
     def toggle_tray_auto_ban(self) -> None:
         next_value = not self.is_tray_auto_ban_enabled()
@@ -978,23 +955,26 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
             label.bind("<Leave>", on_leave)
             return label
 
+        skip_var = tk.BooleanVar(value=False)
+
+        def _ignore_if_checked() -> None:
+            if skip_var.get():
+                self.update_param("ignored_update_version", new_version)
+                self.save_params()
+
         def on_download() -> None:
+            _ignore_if_checked()
             webbrowser.open(GITHUB_DOWNLOAD_ZIP_URL)
 
         def on_open_repo() -> None:
+            _ignore_if_checked()
             webbrowser.open(GITHUB_REPO_URL)
 
-        def on_ignore() -> None:
-            self.update_param("ignored_update_version", new_version)
-            self.save_params()
-            popup.destroy()
-
-        _make_text_action(
+        ttk.Checkbutton(
             left_actions,
-            "Do not remind me again",
-            on_ignore,
-            foreground=palette["muted"],
-            hover_foreground=palette["history_warning"],
+            text="Do not remind me about this update",
+            variable=skip_var,
+            bootstyle="secondary-round-toggle",
         ).pack(side="left")
         _make_text_action(
             center_actions,
@@ -1140,6 +1120,13 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         self.tray_controller.shutdown()
         self.audio_manager.shutdown()
         self._close_history_window()
+
+        try:
+            if self.root.state() != "withdrawn":
+                self.update_param("window_x", self.root.winfo_x())
+                self.update_param("window_y", self.root.winfo_y())
+        except Exception:
+            pass
 
         try:
             self.executor.shutdown(wait=False, cancel_futures=True)

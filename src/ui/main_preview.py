@@ -24,8 +24,6 @@ from PIL import Image, ImageTk
 from ..config import (
     APP_IMAGE_FILES,
     PICK_SLOT_ORDER,
-    ROLE_PROFILE_LABELS,
-    ROLE_PROFILE_ORDER,
     THEME_PALETTE,
     resource_path,
 )
@@ -480,122 +478,48 @@ class MainPreviewMixin:
             return self.ws_manager.get_effective_profile_config(role=role)
 
         params = self.get_params()
-        resolved_role = (role or "GLOBAL").upper()
-        aliases = {
-            "MID": "MIDDLE",
-            "ADC": "BOTTOM",
-            "BOT": "BOTTOM",
-            "SUP": "UTILITY",
-            "SUPPORT": "UTILITY",
-            "JGL": "JUNGLE",
-        }
-        resolved_role = aliases.get(resolved_role, resolved_role)
-        if resolved_role not in ROLE_PROFILE_ORDER:
-            resolved_role = "GLOBAL"
-        role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
-        if not isinstance(role_data, dict):
-            role_data = {}
-        global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
-        role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
+        pick_slots = params.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
 
         def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
-            global_slot = global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
-            role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
+            slot = pick_slots.get(slot_key, {}) if isinstance(pick_slots.get(slot_key, {}), dict) else {}
             def _to_int(value: Any) -> int:
                 try:
                     return int(value or 0)
                 except (TypeError, ValueError):
                     return 0
-
-            def _pick_skin_mode() -> str:
-                role_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-                global_mode = str(global_slot.get("skin_mode") or "").strip().lower()
-                if role_mode in {"fixed", "random"}:
-                    return role_mode
-                if global_mode in {"fixed", "random"}:
-                    return global_mode
-                return "none"
-
-            def _pick_skin_text(field: str) -> str:
-                role_value = str(role_slot.get(field) or "").strip()
-                if role_value:
-                    return role_value
-                return str(global_slot.get(field) or "").strip()
-
-            def _pick_skin_int(field: str) -> int:
-                role_value = _to_int(role_slot.get(field))
-                if role_value > 0:
-                    return role_value
-                return _to_int(global_slot.get(field))
-
-            def _pick_skin_pool() -> List[Dict[str, Any]]:
-                role_pool = role_slot.get("random_skin_pool")
-                if isinstance(role_pool, list) and role_pool:
-                    return role_pool
-                global_pool = global_slot.get("random_skin_pool")
-                if isinstance(global_pool, list) and global_pool:
-                    return global_pool
-                return []
-
-            role_skin_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-            role_has_skin_override = (
-                role_skin_mode in {"fixed", "random"}
-                or _to_int(role_slot.get("skin_id")) > 0
-                or _to_int(role_slot.get("random_skin_id")) > 0
-                or bool(str(role_slot.get("skin_name") or "").strip())
-                or bool(str(role_slot.get("random_skin_name") or "").strip())
-                or bool(role_slot.get("random_skin_pool"))
-            )
-            skin_source_role = (
-                resolved_role if role_has_skin_override else "GLOBAL"
-            )
             return {
-                "champion": role_data.get(pick_key) or params.get(pick_key, ""),
-                "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
-                "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
-                "skin_mode": _pick_skin_mode(),
-                "skin_id": _pick_skin_int("skin_id"),
-                "skin_name": _pick_skin_text("skin_name"),
-                "skin_num": _pick_skin_int("skin_num"),
-                "random_skin_id": _pick_skin_int("random_skin_id"),
-                "random_skin_name": _pick_skin_text("random_skin_name"),
-                "random_skin_num": _pick_skin_int("random_skin_num"),
-                "random_skin_pool": _pick_skin_pool(),
-                "skin_source_role": skin_source_role,
+                "champion": params.get(pick_key, ""),
+                "spell_1": slot.get("spell_1", ""),
+                "spell_2": slot.get("spell_2", ""),
+                "skin_mode": str(slot.get("skin_mode") or "none").strip().lower(),
+                "skin_id": _to_int(slot.get("skin_id")),
+                "skin_name": str(slot.get("skin_name") or ""),
+                "skin_num": _to_int(slot.get("skin_num")),
+                "random_skin_id": _to_int(slot.get("random_skin_id")),
+                "random_skin_name": str(slot.get("random_skin_name") or ""),
+                "random_skin_num": _to_int(slot.get("random_skin_num")),
+                "random_skin_pool": (
+                    [dict(e) for e in slot["random_skin_pool"]]
+                    if isinstance(slot.get("random_skin_pool"), list) else []
+                ),
             }
 
-        pick_slots = {
-            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
+        slots = {
+            slot_key: _resolve_slot(slot_key, f"selected_pick_{{index}}")
             for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
         }
-        first_slot = pick_slots["pick_1"]
+        first_slot = slots["pick_1"]
         return {
-            "detected_role": resolved_role,
-            "resolved_role": resolved_role,
-            "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
-            "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
-            "presets_enabled": (
-                bool(role_data.get("presets_enabled"))
-                if "presets_enabled" in role_data
-                else bool(params.get("presets_enabled", True))
-            ),
-            "pick_slots": pick_slots,
-            "selected_pick_1": pick_slots["pick_1"]["champion"],
-            "selected_pick_2": pick_slots["pick_2"]["champion"],
-            "selected_pick_3": pick_slots["pick_3"]["champion"],
-            "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
+            "presets_enabled": bool(params.get("presets_enabled", True)),
+            "pick_slots": slots,
+            "selected_pick_1": slots["pick_1"]["champion"],
+            "selected_pick_2": slots["pick_2"]["champion"],
+            "selected_pick_3": slots["pick_3"]["champion"],
+            "selected_ban": params.get("selected_ban", ""),
             "spell_1": first_slot.get("spell_1", ""),
             "spell_2": first_slot.get("spell_2", ""),
-            "sources": {
-                "presets_enabled": resolved_role if "presets_enabled" in role_data else "GLOBAL",
-                "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
-                "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
-                "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
-                "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
-                "spell_1": resolved_role if role_pick_slots.get("pick_1", {}).get("spell_1") else "GLOBAL",
-                "spell_2": resolved_role if role_pick_slots.get("pick_1", {}).get("spell_2") else "GLOBAL",
-            },
         }
 
     def is_main_preview_presets_enabled(self) -> bool:
@@ -609,23 +533,9 @@ class MainPreviewMixin:
 
 
     def set_main_preview_presets_enabled(self, enabled: bool) -> None:
-        params = self.get_params()
-        target_role = self._get_main_preview_role()
         self.update_param("auto_pick_enabled", enabled)
         self.update_param("auto_summoners_enabled", enabled)
-
-        if target_role == "GLOBAL":
-            self.update_param("presets_enabled", enabled)
-            return
-
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(target_role, {})
-        role_data["presets_enabled"] = enabled
-        new_profiles[target_role] = role_data
-        self.update_param("role_profiles", new_profiles)
+        self.update_param("presets_enabled", enabled)
 
 
 

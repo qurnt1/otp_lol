@@ -520,7 +520,7 @@ class ChampSelectMixin:
                     "skin_id": skin_id,
                     "skin_name": skin_name,
                     "skin_num": skin_num,
-                    "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+                    "skin_source_role": "GLOBAL",
                 },
                 chosen_slot,
             )
@@ -539,7 +539,7 @@ class ChampSelectMixin:
                 "skin_name": random_skin_name,
                 "skin_num": random_skin_num,
                 "random_skin_pool": random_skin_pool,
-                "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+                "skin_source_role": "GLOBAL",
             },
             chosen_slot,
         )
@@ -1028,44 +1028,21 @@ class ChampSelectMixin:
         self: "WebSocketManager",
         slot_key: str,
         *,
-        source_role: str,
+        source_role: str = "GLOBAL",
         skin: Dict[str, Any],
     ) -> None:
         if not self.update_param:
             return
 
-        if source_role not in {"GLOBAL", "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}:
-            source_role = "GLOBAL"
-
         params = self.get_params()
-        update_value = self._pick_slot_update_value(skin)
-
-        if source_role == "GLOBAL":
-            pick_slots = params.get("pick_slots", {})
-            if not isinstance(pick_slots, dict):
-                pick_slots = {}
-            new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data.update(update_value)
-            new_slots[slot_key] = slot_data
-            self.update_param("pick_slots", new_slots)
-            return
-
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(source_role, {})
-        pick_slots = role_data.get("pick_slots", {})
+        pick_slots = params.get("pick_slots", {})
         if not isinstance(pick_slots, dict):
             pick_slots = {}
         new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
         slot_data = new_slots.get(slot_key, {})
-        slot_data.update(update_value)
+        slot_data.update(self._pick_slot_update_value(skin))
         new_slots[slot_key] = slot_data
-        role_data["pick_slots"] = new_slots
-        new_profiles[source_role] = role_data
-        self.update_param("role_profiles", new_profiles)
+        self.update_param("pick_slots", new_slots)
 
     async def _lock_in_champion(
         self: "WebSocketManager",
@@ -1132,7 +1109,7 @@ class ChampSelectMixin:
         logging.info(
             "[SPELLS] Applying %s for %s: %s(%s) + %s(%s).",
             chosen_slot,
-            effective.get("resolved_role", "GLOBAL"),
+            "GLOBAL",
             spell1_name,
             spell1_id,
             spell2_name,
@@ -1162,7 +1139,7 @@ class ChampSelectMixin:
                             {
                                 "spell_1": spell1_name,
                                 "spell_2": spell2_name,
-                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "role": "GLOBAL",
                                 "pick_slot": chosen_slot,
                                 "endpoint": endpoint,
                             },
@@ -1260,7 +1237,7 @@ class ChampSelectMixin:
             logging.info(
                 "[SKIN] Applying %s for %s: %s (%s).",
                 chosen_slot,
-                effective.get("resolved_role", "GLOBAL"),
+                "GLOBAL",
                 selected_skin.get("skin_name") or skin_id,
                 skin_id,
             )
@@ -1291,7 +1268,7 @@ class ChampSelectMixin:
                             {
                                 "skin_id": skin_id,
                                 "skin_name": selected_skin.get("skin_name") or "",
-                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "role": "GLOBAL",
                                 "pick_slot": chosen_slot,
                                 "endpoint": endpoint,
                             },
@@ -1315,7 +1292,7 @@ class ChampSelectMixin:
                         if next_skin:
                             self._persist_random_skin_preview(
                                 chosen_slot,
-                                source_role=str(selected_skin.get("skin_source_role") or "GLOBAL"),
+                                source_role="GLOBAL",
                                 skin=next_skin,
                             )
                     return
@@ -1428,7 +1405,7 @@ class ChampSelectMixin:
             chosen_slot,
             rune_page_name or rune_page_id,
             rune_page_id,
-            effective.get("resolved_role", "GLOBAL"),
+            "GLOBAL",
         )
 
         try:
@@ -1468,7 +1445,7 @@ class ChampSelectMixin:
                         {
                             "rune_page_id": rune_page_id,
                             "rune_page_name": rune_page_name,
-                            "role": effective.get("resolved_role", "GLOBAL"),
+                            "role": "GLOBAL",
                             "pick_slot": chosen_slot,
                         },
                         level="success",

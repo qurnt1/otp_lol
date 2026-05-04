@@ -270,29 +270,6 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertEqual(window.root.calls[0][0], 0)
         self.assertIs(window.root.calls[0][1], window.toggle_tray_auto_ban)
 
-    def test_toggle_tray_presets_automation_updates_selected_role(self):
-        params = {
-            "selected_profile_role": "MIDDLE",
-            "presets_enabled": False,
-            "role_profiles": {
-                "MIDDLE": {
-                    "presets_enabled": True,
-                }
-            },
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window.show_toast = mutable.show_toast
-        window.settings_win = mutable.settings_win
-
-        window.toggle_tray_presets_automation()
-
-        self.assertFalse(params["role_profiles"]["MIDDLE"]["presets_enabled"])
-        self.assertEqual(window.settings_win.sync_calls, 1)
-        self.assertEqual(mutable.toasts[0][0], "Presets automation disabled for Mid.")
-
     def test_toggle_tray_auto_ban_updates_global_setting(self):
         params = {"auto_ban_enabled": True}
         window = LoLAssistantUI.__new__(LoLAssistantUI)
@@ -325,29 +302,6 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertTrue(params["auto_pick_enabled"])
         self.assertTrue(params["auto_summoners_enabled"])
         self.assertTrue(params["presets_enabled"])
-
-    def test_set_main_preview_presets_enabled_updates_detected_role_profile(self):
-        params = {
-            "auto_pick_enabled": False,
-            "auto_summoners_enabled": False,
-            "presets_enabled": False,
-            "role_profiles": {
-                "MIDDLE": {
-                    "presets_enabled": False,
-                }
-            },
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window._get_main_preview_role = lambda: "MIDDLE"
-
-        window.set_main_preview_presets_enabled(True)
-
-        self.assertTrue(params["auto_pick_enabled"])
-        self.assertTrue(params["auto_summoners_enabled"])
-        self.assertTrue(params["role_profiles"]["MIDDLE"]["presets_enabled"])
 
     def test_toggle_main_preview_feature_cycles_skin_modes_in_global_slot(self):
         params = {
@@ -569,48 +523,6 @@ class MainWindowLogicTests(unittest.TestCase):
             {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
         )
         self.assertEqual(mutable.toasts[-1][0], "No skin configured in presets.")
-
-    def test_main_window_local_effective_profile_config_uses_global_skin_fallback(self):
-        params = {
-            "pick_slots": {
-                "pick_1": {
-                    "skin_mode": "fixed",
-                    "skin_id": 86000,
-                    "skin_name": "Default Garen",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                }
-            },
-            "role_profiles": {
-                "TOP": {
-                    "selected_pick_1": "Garen",
-                    "pick_slots": {
-                        "pick_1": {
-                            "skin_mode": "none",
-                            "skin_id": 0,
-                            "skin_name": "",
-                            "skin_num": 0,
-                            "random_skin_id": 0,
-                            "random_skin_name": "",
-                            "random_skin_num": 0,
-                            "random_skin_pool": [],
-                        }
-                    },
-                }
-            },
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.ws_manager = None
-        window.get_params = lambda: params
-
-        effective = window.get_effective_profile_config(role="TOP")
-
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "fixed")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_id"], 86000)
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_source_role"], "GLOBAL")
 
     def test_handle_core_event_schedules_close_for_real_disconnect(self):
         scheduled = []

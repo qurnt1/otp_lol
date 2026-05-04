@@ -14,7 +14,7 @@ Uses:
 
 from typing import Any, Dict, List, Optional
 
-from ..config import PICK_SLOT_ORDER, ROLE_PROFILE_ORDER
+from ..config import PICK_SLOT_ORDER
 
 
 class MainSkinOverridesMixin:
@@ -129,48 +129,22 @@ class MainSkinOverridesMixin:
         return overrides
 
 
-    def _get_pick_slot_config_for_role(self, role: str, slot_key: str) -> Dict[str, Any]:
-        params = self.get_params()
-        normalized_role = self._normalize_profile_role(role)
-        if normalized_role == "GLOBAL":
-            pick_slots = params.get("pick_slots", {})
-        else:
-            role_profiles = params.get("role_profiles", {})
-            role_data = role_profiles.get(normalized_role, {}) if isinstance(role_profiles, dict) else {}
-            pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data, dict) else {}
+    def _get_pick_slot_config_for_role(self, slot_key: str) -> Dict[str, Any]:
+        pick_slots = self.get_params().get("pick_slots", {})
         slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
         return dict(slot_data) if isinstance(slot_data, dict) else {}
 
 
     def _set_pick_slot_skin_mode(self, slot_key: str, mode: str) -> None:
-        role = self._get_main_preview_role()
         params = self.get_params()
-        if role == "GLOBAL":
-            pick_slots = params.get("pick_slots", {})
-            if not isinstance(pick_slots, dict):
-                pick_slots = {}
-            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data["skin_mode"] = mode
-            new_slots[slot_key] = slot_data
-            self.update_param("pick_slots", new_slots)
-            return
-
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {r: (d.copy() if isinstance(d, dict) else {}) for r, d in role_profiles.items()}
-        role_data = new_profiles.get(role, {})
-        pick_slots = role_data.get("pick_slots", {})
+        pick_slots = params.get("pick_slots", {})
         if not isinstance(pick_slots, dict):
             pick_slots = {}
         new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
         slot_data = new_slots.get(slot_key, {})
         slot_data["skin_mode"] = mode
         new_slots[slot_key] = slot_data
-        role_data["pick_slots"] = new_slots
-        new_profiles[role] = role_data
-        self.update_param("role_profiles", new_profiles)
+        self.update_param("pick_slots", new_slots)
 
 
 

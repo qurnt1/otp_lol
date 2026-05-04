@@ -381,34 +381,16 @@ class SettingsRunesMixin:
     def _save_rune_page_for_slot(self, slot_key: str, page_id: int, page_name: str, auto_apply: bool = True, keystone_path: str = "", sub_style_icon_path: str = "") -> None:
         page_name = self._strip_active_suffix(page_name)
         params = self.parent.get_params()
-        current_role = self.profile_role_var.get().upper()
-        if current_role in {"GLOBAL"}:
-            pick_slots = params.get("pick_slots", {})
-            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data["rune_page_id"] = page_id
-            slot_data["rune_page_name"] = page_name
-            slot_data["rune_auto_apply"] = auto_apply
-            slot_data["rune_keystone_path"] = keystone_path
-            slot_data["rune_sub_style_icon_path"] = sub_style_icon_path
-            new_slots[slot_key] = slot_data
-            self.parent.update_param("pick_slots", new_slots)
-        else:
-            role_profiles = params.get("role_profiles", {})
-            new_profiles = {r: (d.copy() if isinstance(d, dict) else {}) for r, d in role_profiles.items()}
-            role_data = new_profiles.get(current_role, {})
-            pick_slots = role_data.get("pick_slots", {})
-            new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data["rune_page_id"] = page_id
-            slot_data["rune_page_name"] = page_name
-            slot_data["rune_auto_apply"] = auto_apply
-            slot_data["rune_keystone_path"] = keystone_path
-            slot_data["rune_sub_style_icon_path"] = sub_style_icon_path
-            new_slots[slot_key] = slot_data
-            role_data["pick_slots"] = new_slots
-            new_profiles[current_role] = role_data
-            self.parent.update_param("role_profiles", new_profiles)
+        pick_slots = params.get("pick_slots", {})
+        new_slots = {s: (d.copy() if isinstance(d, dict) else {}) for s, d in pick_slots.items()}
+        slot_data = new_slots.get(slot_key, {})
+        slot_data["rune_page_id"] = page_id
+        slot_data["rune_page_name"] = page_name
+        slot_data["rune_auto_apply"] = auto_apply
+        slot_data["rune_keystone_path"] = keystone_path
+        slot_data["rune_sub_style_icon_path"] = sub_style_icon_path
+        new_slots[slot_key] = slot_data
+        self.parent.update_param("pick_slots", new_slots)
 
     def _refresh_rune_buttons(self) -> None:
         for slot_key, button in self.pick_rune_buttons.items():

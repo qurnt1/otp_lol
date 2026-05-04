@@ -96,6 +96,31 @@ class DataDragon:
                 self._image_cache.popitem(last=False)
 
     @staticmethod
+    def _cache_version_path(cache_dir: str) -> str:
+        return os.path.join(cache_dir, "dd_version.txt")
+
+    def _is_cache_fresh(self, cache_dir: str) -> bool:
+        if not self.version:
+            return False
+        version_file = self._cache_version_path(cache_dir)
+        if not os.path.exists(version_file):
+            return False
+        try:
+            with open(version_file, "r", encoding="utf-8") as f:
+                return f.read().strip() == self.version
+        except Exception:
+            return False
+
+    def _mark_cache_fresh(self, cache_dir: str) -> None:
+        if not self.version:
+            return
+        try:
+            with open(self._cache_version_path(cache_dir), "w", encoding="utf-8") as f:
+                f.write(self.version)
+        except Exception:
+            pass
+
+    @staticmethod
     def _normalize(s: str) -> str:
         """Normalize champion names so user-friendly aliases map to stable lookup keys."""
         s = s.strip().lower()
@@ -283,7 +308,7 @@ class DataDragon:
             return None
 
         local_path = os.path.join(ICONS_CACHE_DIR, image_filename)
-        if os.path.exists(local_path):
+        if self._is_cache_fresh(ICONS_CACHE_DIR) and os.path.exists(local_path):
             try:
                 img = Image.open(local_path)
                 self._cache_put(cache_key, img)
@@ -296,9 +321,11 @@ class DataDragon:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
+                os.makedirs(ICONS_CACHE_DIR, exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(response.content)
                 self._cache_put(cache_key, img)
+                self._mark_cache_fresh(ICONS_CACHE_DIR)
                 return img
         except Exception as e:
             logging.warning("DataDragon: Champion icon download error - %s", e)
@@ -339,7 +366,7 @@ class DataDragon:
             return None
 
         local_path = os.path.join(SPELLS_CACHE_DIR, image_filename)
-        if os.path.exists(local_path):
+        if self._is_cache_fresh(SPELLS_CACHE_DIR) and os.path.exists(local_path):
             try:
                 img = Image.open(local_path)
                 self._cache_put(cache_key, img)
@@ -352,9 +379,11 @@ class DataDragon:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
+                os.makedirs(SPELLS_CACHE_DIR, exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(response.content)
                 self._cache_put(cache_key, img)
+                self._mark_cache_fresh(SPELLS_CACHE_DIR)
                 return img
         except Exception as e:
             logging.warning("DataDragon: Summ icon download error - %s", e)
@@ -819,17 +848,19 @@ class DataDragon:
         try:
             cache_filename = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in cache_key)
             cache_path = os.path.join(SKINS_CACHE_DIR, f"{cache_filename}.img")
-            if os.path.exists(cache_path):
+            if self._is_cache_fresh(SKINS_CACHE_DIR) and os.path.exists(cache_path):
                 img = Image.open(cache_path)
                 self._cache_put(cache_key, img)
                 return img
 
+            os.makedirs(SKINS_CACHE_DIR, exist_ok=True)
             response = requests.get(url, stream=True, timeout=8)
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
                 with open(cache_path, "wb") as f:
                     f.write(response.content)
                 self._cache_put(cache_key, img)
+                self._mark_cache_fresh(SKINS_CACHE_DIR)
                 return img
         except Exception as e:
             logging.warning("DataDragon: Remote image error for %s - %s", url, e)

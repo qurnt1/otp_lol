@@ -56,7 +56,6 @@ from ..config import (
     PHASE_DISPLAY_MAP,
     PICK_SLOT_ORDER,
     PLATFORM_TO_REGION,
-    ROLE_PROFILE_LABELS,
 )
 from ..services.history import log_history_event
 from .champ_select import ChampSelectMixin
@@ -191,25 +190,14 @@ class WebSocketManager(ChampSelectMixin):
         role: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Resolve the effective profile by combining role overrides with global fallbacks."""
+        """Resolve the effective profile from global pick slots and champion picks."""
         params = params or self.get_params()
-        role = self._normalize_role(role or self.state.assigned_position)
-        resolved_role = role if role in ROLE_PROFILE_LABELS and role != "GLOBAL" else "GLOBAL"
-        role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
-        if not isinstance(role_data, dict):
-            role_data = {}
-        role_has_presets_override = "presets_enabled" in role_data
-        global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
-        role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
+        pick_slots = params.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
 
         def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
-            global_slot = (
-                global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
-            )
-            role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
-            # Slot-level data follows the same rule everywhere: explicit role
-            # overrides win, otherwise global values fill the gaps.
+            slot = pick_slots.get(slot_key, {}) if isinstance(pick_slots.get(slot_key, {}), dict) else {}
 
             def _to_int(value: Any) -> int:
                 try:
@@ -217,105 +205,39 @@ class WebSocketManager(ChampSelectMixin):
                 except (TypeError, ValueError):
                     return 0
 
-            def _pick_skin_mode() -> str:
-                role_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-                global_mode = str(global_slot.get("skin_mode") or "").strip().lower()
-                if role_mode in {"fixed", "random"}:
-                    return role_mode
-                if global_mode in {"fixed", "random"}:
-                    return global_mode
-                return "none"
-
-            def _pick_skin_text(field: str) -> str:
-                role_value = str(role_slot.get(field) or "").strip()
-                if role_value:
-                    return role_value
-                return str(global_slot.get(field) or "").strip()
-
-            def _pick_skin_int(field: str) -> int:
-                role_value = _to_int(role_slot.get(field))
-                if role_value > 0:
-                    return role_value
-                return _to_int(global_slot.get(field))
-
-            def _pick_skin_pool() -> List[Dict[str, Any]]:
-                role_pool = role_slot.get("random_skin_pool")
-                if isinstance(role_pool, list) and role_pool:
-                    return role_pool
-                global_pool = global_slot.get("random_skin_pool")
-                if isinstance(global_pool, list) and global_pool:
-                    return global_pool
-                return []
-
-            role_skin_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-            role_has_skin_override = (
-                role_skin_mode in {"fixed", "random"}
-                or _to_int(role_slot.get("skin_id")) > 0
-                or _to_int(role_slot.get("random_skin_id")) > 0
-                or bool(str(role_slot.get("skin_name") or "").strip())
-                or bool(str(role_slot.get("random_skin_name") or "").strip())
-                or bool(role_slot.get("random_skin_pool"))
-            )
-            skin_source_role = (
-                resolved_role if role_has_skin_override else "GLOBAL"
-            )
             return {
-                "champion": role_data.get(pick_key) or params.get(pick_key, ""),
-                "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
-                "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
-                "skin_mode": _pick_skin_mode(),
-                "skin_id": _pick_skin_int("skin_id"),
-                "skin_name": _pick_skin_text("skin_name"),
-                "skin_num": _pick_skin_int("skin_num"),
-                "random_skin_id": _pick_skin_int("random_skin_id"),
-                "random_skin_name": _pick_skin_text("random_skin_name"),
-                "random_skin_num": _pick_skin_int("random_skin_num"),
-                "random_skin_pool": _pick_skin_pool(),
-                "skin_source_role": skin_source_role,
-                "rune_page_id": int(role_slot.get("rune_page_id") or global_slot.get("rune_page_id") or 0),
-                "rune_page_name": str(role_slot.get("rune_page_name") or global_slot.get("rune_page_name") or ""),
+                "champion": params.get(pick_key, ""),
+                "spell_1": slot.get("spell_1", ""),
+                "spell_2": slot.get("spell_2", ""),
+                "skin_mode": str(slot.get("skin_mode") or "none").strip().lower(),
+                "skin_id": _to_int(slot.get("skin_id")),
+                "skin_name": str(slot.get("skin_name") or ""),
+                "skin_num": _to_int(slot.get("skin_num")),
+                "random_skin_id": _to_int(slot.get("random_skin_id")),
+                "random_skin_name": str(slot.get("random_skin_name") or ""),
+                "random_skin_num": _to_int(slot.get("random_skin_num")),
+                "random_skin_pool": (
+                    [dict(e) for e in slot["random_skin_pool"]]
+                    if isinstance(slot.get("random_skin_pool"), list) else []
+                ),
+                "rune_page_id": _to_int(slot.get("rune_page_id")),
+                "rune_page_name": str(slot.get("rune_page_name") or ""),
             }
 
-        pick_slots = {
+        slots = {
             slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
             for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
         }
-        first_slot = pick_slots["pick_1"]
-
+        first_slot = slots["pick_1"]
         return {
-            "detected_role": self._normalize_role(self.state.assigned_position) or "GLOBAL",
-            "resolved_role": resolved_role,
-            "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
-            "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
-            "presets_enabled": (
-                bool(role_data.get("presets_enabled"))
-                if role_has_presets_override
-                else bool(params.get("presets_enabled", True))
-            ),
-            "pick_slots": pick_slots,
-            "selected_pick_1": pick_slots["pick_1"]["champion"],
-            "selected_pick_2": pick_slots["pick_2"]["champion"],
-            "selected_pick_3": pick_slots["pick_3"]["champion"],
-            "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
+            "presets_enabled": bool(params.get("presets_enabled", True)),
+            "pick_slots": slots,
+            "selected_pick_1": slots["pick_1"]["champion"],
+            "selected_pick_2": slots["pick_2"]["champion"],
+            "selected_pick_3": slots["pick_3"]["champion"],
+            "selected_ban": params.get("selected_ban", ""),
             "spell_1": first_slot.get("spell_1", ""),
             "spell_2": first_slot.get("spell_2", ""),
-            "sources": {
-                "presets_enabled": resolved_role if role_has_presets_override else "GLOBAL",
-                "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
-                "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
-                "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
-                "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
-                "spell_1": (
-                    resolved_role
-                    if pick_slots["pick_1"].get("spell_1") and role_pick_slots.get("pick_1", {}).get("spell_1")
-                    else "GLOBAL"
-                ),
-                "spell_2": (
-                    resolved_role
-                    if pick_slots["pick_1"].get("spell_2") and role_pick_slots.get("pick_1", {}).get("spell_2")
-                    else "GLOBAL"
-                ),
-            },
         }
 
     def get_current_summoner_id(self) -> Optional[int]:

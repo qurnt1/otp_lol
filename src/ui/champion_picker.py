@@ -29,14 +29,26 @@ import ttkbootstrap as ttk
 from PIL import Image, ImageTk
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from ..config import ROLE_PROFILE_ICON_FILES, ROLE_PROFILE_LABELS, ROLE_PROFILE_ORDER, THEME_PALETTE, resource_path
+# Inline role definitions (filter bar, not profile system)
+_ROLE_ORDER = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
+_ROLE_LABELS = {"GLOBAL": "All", "TOP": "Top", "JUNGLE": "Jungle", "MIDDLE": "Mid", "BOTTOM": "ADC", "UTILITY": "Support"}
+_ROLE_ICONS = {
+    "GLOBAL": "config/images/roles/global.png",
+    "TOP": "config/images/roles/top.png",
+    "JUNGLE": "config/images/roles/jungle.png",
+    "MIDDLE": "config/images/roles/middle.png",
+    "BOTTOM": "config/images/roles/bottom.png",
+    "UTILITY": "config/images/roles/utility.png",
+}
+
+from ..config import THEME_PALETTE, resource_path
 from ..services.champion_roles import champion_matches_role, sort_champions_for_role
 
 if TYPE_CHECKING:
     from .settings_window import SettingsWindow
 
 
-ROLE_FILTER_ORDER = ["GLOBAL", *ROLE_PROFILE_ORDER]
+ROLE_FILTER_ORDER = ["GLOBAL", *_ROLE_ORDER]
 
 
 def _get_champion_picker_colors(theme_name: str) -> Dict[str, str]:
@@ -78,7 +90,7 @@ def _load_role_icon(role: str, cache: Dict[str, ImageTk.PhotoImage], *, size: in
     cache_key = f"{role}_{size}"
     if cache_key in cache:
         return cache[cache_key]
-    icon_path = ROLE_PROFILE_ICON_FILES.get(role)
+    icon_path = _ROLE_ICONS.get(role)
     if not icon_path:
         return None
     try:
@@ -212,7 +224,7 @@ def open_champion_picker(owner: "SettingsWindow", context: str, slot_num: int = 
         role_label.image = icon
         role_label.pack()
         role_widgets[role] = (role_frame, role_label)
-        label = ROLE_PROFILE_LABELS.get(role, "All")
+        label = _ROLE_LABELS.get(role, "All")
 
         for widget in (role_frame, role_label):
             widget.bind("<Button-1>", lambda _event, selected_role=role: set_role_filter(selected_role))

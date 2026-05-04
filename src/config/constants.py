@@ -94,30 +94,11 @@ PHASE_DISPLAY_MAP: Dict[str, str] = {
     "None": "Inactive"
 }
 
-ROLE_PROFILE_ORDER: list[str] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 PICK_SLOT_ORDER: list[str] = ["pick_1", "pick_2", "pick_3"]
 PICK_SLOT_LABELS: Dict[str, str] = {
     "pick_1": "Pick 1",
     "pick_2": "Pick 2",
     "pick_3": "Pick 3",
-}
-
-ROLE_PROFILE_LABELS: Dict[str, str] = {
-    "GLOBAL": "Global",
-    "TOP": "Top",
-    "JUNGLE": "Jungle",
-    "MIDDLE": "Mid",
-    "BOTTOM": "ADC",
-    "UTILITY": "Support",
-}
-
-ROLE_PROFILE_ICON_FILES: Dict[str, str] = {
-    "GLOBAL": "config/images/roles/global.png",
-    "TOP": "config/images/roles/top.png",
-    "JUNGLE": "config/images/roles/jungle.png",
-    "MIDDLE": "config/images/roles/middle.png",
-    "BOTTOM": "config/images/roles/bottom.png",
-    "UTILITY": "config/images/roles/utility.png",
 }
 
 APP_IMAGE_FILES: Dict[str, str] = {

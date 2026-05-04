@@ -45,9 +45,6 @@ from ..config import (
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
     REGION_LIST,
-    ROLE_PROFILE_ICON_FILES,
-    ROLE_PROFILE_LABELS,
-    ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
     SUMMONER_SPELL_LIST,
     URL_PHASE_RUSH_ICON,
@@ -59,7 +56,6 @@ from ..config import (
     resource_path,
 )
 from .champion_picker import open_champion_picker
-from .role_picker import open_role_picker
 from .settings_hotkeys import SettingsHotkeysMixin
 from .settings_runes import SettingsRunesMixin
 from .settings_skin import SettingsSkinMixin
@@ -91,7 +87,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
 
         self.main_frame: Optional[ttk.Frame] = None
         self.scroll_frame: Optional[ScrolledFrame] = None
-        self.role_icon_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.website_logo_cache: Dict[tuple[str, int], ImageTk.PhotoImage] = {}
         self.local_button_image_cache: Dict[Any, ImageTk.PhotoImage] = {}
         self.role_picker_window: Optional[ttk.Toplevel] = None
@@ -139,7 +134,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self.summoner_entry_var = tk.StringVar(value=params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
         self.saved_manual_region = params.get("manual_region", "euw")
-        self.profile_role_var = tk.StringVar(value=params.get("selected_profile_role", "GLOBAL"))
         self.preferred_stats_site_var = tk.StringVar(value=params.get("preferred_stats_site", "opgg"))
         self.preferred_hotkey_site_var = tk.StringVar(value=params.get("preferred_hotkey_site", "porofessor"))
         self.hotkey_toggle_var = tk.StringVar(value=params.get("hotkey_toggle_window", "alt+c"))
@@ -329,22 +323,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
     def _create_champ_select_section(self, start_row: int) -> int:
         row = self._create_section_title(self.main_frame, "CHAMPION SELECT", start_row)
 
-        # ── Role profile ──
-        role_frame = ttk.Frame(self.main_frame)
-        role_frame.grid(row=row, column=0, columnspan=4, sticky="ew", pady=(0, 6))
-        ttk.Label(role_frame, text="Role profile:").pack(side="left")
-        self.role_selector_btn = ttk.Button(
-            role_frame,
-            text=ROLE_PROFILE_LABELS.get(self.profile_role_var.get().upper(), ROLE_PROFILE_LABELS["GLOBAL"]),
-            bootstyle="secondary-outline",
-            command=self._open_role_picker,
-            width=18,
-            compound="left",
-            padding=(10, 8),
-        )
-        self.role_selector_btn.pack(side="left", padx=(10, 0))
-        self._refresh_role_selector_button()
-        row += 1
 
         # ── Presets toggle ──
         presets_frame = ttk.Frame(self.main_frame)
@@ -548,54 +526,15 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self._refresh_profile_buttons()
         self._refresh_spell_buttons()
 
-    def _normalize_role(self, role: str) -> str:
-        aliases = {
-            "MID": "MIDDLE",
-            "ADC": "BOTTOM",
-            "BOT": "BOTTOM",
-            "SUP": "UTILITY",
-            "SUPPORT": "UTILITY",
-            "JGL": "JUNGLE",
-        }
-        role = aliases.get((role or "GLOBAL").upper(), (role or "GLOBAL").upper())
-        return role if role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
 
-    def _get_selected_profile_role(self) -> str:
-        return self._normalize_role(self.profile_role_var.get())
 
-    def _get_profile_role_data(self, role: Optional[str] = None) -> Dict[str, object]:
-        """Return the editable data source for the selected role or the global profile."""
-        params = self.parent.get_params()
-        target_role = self._normalize_role(role or self._get_selected_profile_role())
-        if target_role == "GLOBAL":
-            return {
-                "presets_enabled": params.get("presets_enabled", True),
-                "selected_pick_1": params.get("selected_pick_1", ""),
-                "selected_pick_2": params.get("selected_pick_2", ""),
-                "selected_pick_3": params.get("selected_pick_3", ""),
-                "selected_ban": params.get("selected_ban", ""),
-                "pick_slots": params.get("pick_slots", {}),
-            }
-        role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(target_role, {}) if isinstance(role_profiles, dict) else {}
-        if not isinstance(role_data, dict):
-            role_data = {}
-        return {
-            "presets_enabled": role_data.get("presets_enabled", params.get("presets_enabled", True)),
-            "selected_pick_1": role_data.get("selected_pick_1", ""),
-            "selected_pick_2": role_data.get("selected_pick_2", ""),
-            "selected_pick_3": role_data.get("selected_pick_3", ""),
-            "selected_ban": role_data.get("selected_ban", ""),
-            "pick_slots": role_data.get("pick_slots", {}),
-        }
 
-    def _get_profile_value(self, key: str) -> str:
-        return self._get_profile_role_data().get(key, "")
 
-    def _get_profile_presets_enabled(self) -> bool:
-        return bool(self._get_profile_role_data().get("presets_enabled", True))
 
-    @staticmethod
+
+
+
+
     def _normalize_empty_choice(value: str) -> str:
         return "(None)" if value in {"", "..."} else value
 
@@ -618,162 +557,24 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
     def _open_pick_slot_champion_picker(self, slot_key: str) -> None:
         self._open_champion_picker("pick", self._slot_number_from_key(slot_key))
 
-    def _get_global_fallback_value(self, key: str) -> str:
-        params = self.parent.get_params()
-        global_map = {
-            "selected_pick_1": params.get("selected_pick_1", ""),
-            "selected_pick_2": params.get("selected_pick_2", ""),
-            "selected_pick_3": params.get("selected_pick_3", ""),
-            "selected_ban": params.get("selected_ban", ""),
-        }
-        return global_map.get(key, "")
 
-    def _get_display_value(self, key: str) -> str:
-        value = self._get_profile_value(key)
-        if value:
-            return self._format_visible_value(value)
-        if self._get_selected_profile_role() != "GLOBAL":
-            fallback = self._get_global_fallback_value(key)
-            if fallback:
-                return f"Fallback: {self._format_visible_value(fallback)}"
-        return "..."
 
-    def _set_profile_value(self, key: str, value: str) -> None:
-        role = self._get_selected_profile_role()
-        if role == "GLOBAL":
-            self.parent.update_param(key, value)
-            return
 
-        params = self.parent.get_params()
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(role, {})
-        role_data[key] = value
-        new_profiles[role] = role_data
-        self.parent.update_param("role_profiles", new_profiles)
 
-    def _set_profile_presets_enabled(self, enabled: bool) -> None:
-        role = self._get_selected_profile_role()
-        if role == "GLOBAL":
-            self.parent.update_param("presets_enabled", enabled)
-            return
 
-        params = self.parent.get_params()
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(role, {})
-        role_data["presets_enabled"] = enabled
-        new_profiles[role] = role_data
-        self.parent.update_param("role_profiles", new_profiles)
 
-    def _get_pick_slot_value(self, slot_key: str, field: str) -> str:
-        pick_slots = self._get_profile_role_data().get("pick_slots", {})
-        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
-        return str(slot_data.get(field, "")) if isinstance(slot_data, dict) else ""
 
-    def _get_global_pick_slot_value(self, slot_key: str, field: str) -> str:
-        params = self.parent.get_params()
-        pick_slots = params.get("pick_slots", {})
-        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
-        return str(slot_data.get(field, "")) if isinstance(slot_data, dict) else ""
 
-    def _get_pick_slot_display_value(self, slot_key: str, field: str) -> str:
-        value = self._get_pick_slot_value(slot_key, field)
-        if value:
-            return self._format_visible_value(value)
-        if self._get_selected_profile_role() != "GLOBAL":
-            fallback = self._get_global_pick_slot_value(slot_key, field)
-            if fallback:
-                return f"Fallback: {self._format_visible_value(fallback)}"
-        return "..."
 
-    def _get_effective_pick_slot_config(self, slot_key: str) -> Dict[str, Any]:
-        """Return the slot config that the UI should display after applying global fallbacks."""
-        slot_data = self._get_profile_role_data().get("pick_slots", {})
-        slot_data = slot_data.get(slot_key, {}) if isinstance(slot_data, dict) else {}
-        global_slot = self.parent.get_params().get("pick_slots", {})
-        global_slot = global_slot.get(slot_key, {}) if isinstance(global_slot, dict) else {}
 
-        def _pick(field: str, default: Any = "") -> Any:
-            # A role profile only overrides fields it explicitly defines; empty values
-            # intentionally fall back to the global configuration shown in the UI.
-            value = slot_data.get(field) if isinstance(slot_data, dict) else ""
-            if isinstance(value, bool):
-                return value
-            if isinstance(value, list):
-                if value:
-                    return value
-            elif value not in {"", 0, None}:
-                return value
-            fallback = global_slot.get(field) if isinstance(global_slot, dict) else ""
-            if isinstance(fallback, bool):
-                return fallback
-            if isinstance(fallback, list):
-                if fallback:
-                    return fallback
-            elif fallback not in {"", 0, None}:
-                return fallback
-            return default
 
-        return {
-            "spell_1": _pick("spell_1", ""),
-            "spell_2": _pick("spell_2", ""),
-            "skin_mode": _pick("skin_mode", "none"),
-            "skin_id": int(_pick("skin_id", 0) or 0),
-            "skin_name": str(_pick("skin_name", "") or ""),
-            "skin_num": int(_pick("skin_num", 0) or 0),
-            "random_skin_id": int(_pick("random_skin_id", 0) or 0),
-            "random_skin_name": str(_pick("random_skin_name", "") or ""),
-            "random_skin_num": int(_pick("random_skin_num", 0) or 0),
-            "random_skin_pool": [dict(entry) for entry in (_pick("random_skin_pool", []) or []) if isinstance(entry, dict)],
-            "rune_page_id": int(_pick("rune_page_id", 0) or 0),
-            "rune_page_name": str(_pick("rune_page_name", "") or ""),
-            "rune_auto_apply": bool(_pick("rune_auto_apply", True)),
-            "rune_keystone_path": str(_pick("rune_keystone_path", "") or ""),
-            "rune_sub_style_icon_path": str(_pick("rune_sub_style_icon_path", "") or ""),
-        }
 
-    def _set_pick_slot_value(self, slot_key: str, field: str, value: str) -> None:
-        role = self._get_selected_profile_role()
-        if role == "GLOBAL":
-            params = self.parent.get_params()
-            pick_slots = params.get("pick_slots", {})
-            if not isinstance(pick_slots, dict):
-                pick_slots = {}
-            new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data[field] = value
-            new_slots[slot_key] = slot_data
-            self.parent.update_param("pick_slots", new_slots)
-            return
 
-        params = self.parent.get_params()
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(role, {})
-        pick_slots = role_data.get("pick_slots", {})
-        if not isinstance(pick_slots, dict):
-            pick_slots = {}
-        new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
-        slot_data = new_slots.get(slot_key, {})
-        slot_data[field] = value
-        new_slots[slot_key] = slot_data
-        role_data["pick_slots"] = new_slots
-        new_profiles[role] = role_data
-        self.parent.update_param("role_profiles", new_profiles)
 
-    def _get_slot_champion_name(self, slot_key: str) -> str:
-        slot_number = self._slot_number_from_key(slot_key)
-        value = self._get_profile_value(f"selected_pick_{slot_number}")
-        if value:
-            return value
-        return self._get_global_fallback_value(f"selected_pick_{slot_number}")
+
+
+
+
 
     @staticmethod
     def _truncate_button_label(label: str, max_chars: int = 16) -> str:
@@ -797,37 +598,9 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self._refresh_profile_buttons()
         self._refresh_skin_buttons()
 
-    def _load_role_icon(self, role: str, size: int = 24) -> Optional[ImageTk.PhotoImage]:
-        cache_key = (role, size)
-        if cache_key in self.role_icon_cache:
-            return self.role_icon_cache[cache_key]
 
-        icon_rel_path = ROLE_PROFILE_ICON_FILES.get(role)
-        if not icon_rel_path:
-            return None
 
-        icon_path = resource_path(icon_rel_path)
-        if not os.path.exists(icon_path):
-            return None
 
-        try:
-            image = Image.open(icon_path).convert("RGBA").resize((size, size), Image.LANCZOS)
-            photo = ImageTk.PhotoImage(image)
-            self.role_icon_cache[cache_key] = photo
-            return photo
-        except Exception as e:
-            logging.debug("Unable to load role icon %s: %s", role, e)
-            return None
-
-    def _refresh_role_selector_button(self) -> None:
-        role = self._get_selected_profile_role()
-        label = ROLE_PROFILE_LABELS.get(role, ROLE_PROFILE_LABELS["GLOBAL"])
-        icon = self._load_role_icon(role, size=22)
-        if icon:
-            self.role_selector_btn.configure(text=f"  {label}", image=icon, compound="left")
-            self.role_selector_btn.image = icon
-        else:
-            self.role_selector_btn.configure(text=label, image="")
 
     def _load_website_logo(self, site: str, *, size: int = 30):
         return _load_site_logo(self, site, size=size)
@@ -865,6 +638,21 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self.toggle_spells()
         self.toggle_runes()
 
+    def _set_profile_presets_enabled(self, enabled: bool) -> None:
+        self.parent.update_param("presets_enabled", enabled)
+
+    def _get_profile_presets_enabled(self) -> bool:
+        return bool(self.parent.get_params().get("presets_enabled", True))
+
+    def _get_effective_pick_slot_config(self, slot_key: str) -> Dict[str, Any]:
+        pick_slots = self.parent.get_params().get("pick_slots", {})
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        return dict(slot_data) if isinstance(slot_data, dict) else {}
+
+    def _get_slot_champion_name(self, slot_key: str) -> str:
+        slot_number = PICK_SLOT_ORDER.index(slot_key) + 1
+        return self.parent.get_params().get(f"selected_pick_{slot_number}", "") or ""
+
     def _get_theme_button_text(self) -> str:
         return f"Theme: {THEME_LABELS.get(self.theme_var.get(), THEME_LABELS['darkly'])}"
 
@@ -882,23 +670,11 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         if hasattr(self, "pick_skin_buttons"):
             self._refresh_skin_buttons()
 
-    def _select_profile_role(self, selected_role: str) -> None:
-        self.profile_role_var.set(selected_role)
-        self.parent.update_param("selected_profile_role", selected_role)
-        self.presets_enabled_var.set(self._get_profile_presets_enabled())
-        self._refresh_profile_buttons()
-        self._refresh_spell_buttons()
-        self.toggle_pick()
-        self.toggle_spells()
-        self._close_role_picker()
 
-    def _open_role_picker(self) -> None:
-        open_role_picker(self)
 
-    def _close_role_picker(self) -> None:
-        if getattr(self, "role_picker_window", None) and self.role_picker_window.winfo_exists():
-            self.role_picker_window.destroy()
-        self.role_picker_window = None
+
+
+
 
     def _open_site_picker(self, picker_type: str) -> None:
         open_site_picker(self, picker_type)
@@ -1117,21 +893,24 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
             btn_widget.image = cached
 
     def _refresh_profile_buttons(self) -> None:
-        self._update_btn_content(self.btn_ban, self._get_display_value("selected_ban"), True)
+        params = self.parent.get_params()
+        self._update_btn_content(self.btn_ban, self._format_visible_value(params.get("selected_ban", "")), True)
         for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
             button = self.pick_buttons.get(slot_key)
             if button and button.winfo_exists():
-                self._update_btn_content(button, self._get_display_value(f"selected_pick_{index}"), True)
-        self._refresh_role_selector_button()
+                self._update_btn_content(button, self._format_visible_value(params.get(f"selected_pick_{index}", "")), True)
 
     def _refresh_spell_buttons(self) -> None:
+        params = self.parent.get_params()
+        pick_slots = params.get("pick_slots", {})
         for slot_key in PICK_SLOT_ORDER:
+            slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
             for spell_slot_num in (1, 2):
                 button = self.pick_spell_buttons.get((slot_key, spell_slot_num))
                 if button and button.winfo_exists():
                     self._update_btn_content(
                         button,
-                        self._get_pick_slot_display_value(slot_key, f"spell_{spell_slot_num}"),
+                        self._format_visible_value(str(slot_data.get(f"spell_{spell_slot_num}", ""))),
                         False,
                     )
         self._refresh_rune_buttons()
@@ -1194,7 +973,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self.summoner_entry_var.set(params.get("manual_summoner_name", ""))
         self.saved_manual_name = params.get("manual_summoner_name", "")
         self.saved_manual_region = params.get("manual_region", "euw")
-        self.profile_role_var.set(params.get("selected_profile_role", "GLOBAL"))
         self.preferred_stats_site_var.set(params.get("preferred_stats_site", "opgg"))
         self.preferred_hotkey_site_var.set(params.get("preferred_hotkey_site", "porofessor"))
         self.hotkey_toggle_var.set(params.get("hotkey_toggle_window", "alt+c"))

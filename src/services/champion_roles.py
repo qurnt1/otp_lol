@@ -13,7 +13,7 @@ import unicodedata
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List
 
-from ..config import ROLE_PROFILE_ORDER, resource_path
+from ..config import resource_path
 
 ROLE_THRESHOLD = 0.10
 ROLE_DATA_PATH = "config/champion_roles.json"
@@ -78,7 +78,7 @@ def _normalize_positions(raw_positions: Any) -> Dict[str, float]:
     if not isinstance(raw_positions, dict):
         return {}
     positions: Dict[str, float] = {}
-    allowed_roles = set(ROLE_PROFILE_ORDER)
+    allowed_roles = {"TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}
     for role, raw_score in raw_positions.items():
         normalized_role = str(role or "").upper()
         if normalized_role not in allowed_roles:
