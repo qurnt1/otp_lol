@@ -82,7 +82,7 @@ class GameState:
     rune_applied_for_session: bool = field(default=False, metadata={"transient": True})
     rune_task_scheduled: int = field(default=0, metadata={"transient": True})
     last_flow_note: str = field(default="", metadata={"transient": True})
-    bench_enabled_notified: bool = field(default=False, metadata={"transient": True})
+    non_preset_mode_notified: bool = field(default=False, metadata={"transient": True})
 
     def reset_between_games(self) -> None:
         """Clear all match-specific transient state before a new champion-select flow starts."""

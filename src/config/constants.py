@@ -101,6 +101,22 @@ PICK_SLOT_LABELS: Dict[str, str] = {
     "pick_3": "Pick 3",
 }
 
+PRESET_ENABLED_QUEUE_IDS: set[int] = {
+    400,  # Normal Draft
+    430,  # Normal Blind
+    420,  # Ranked Solo/Duo
+    440,  # Ranked Flex
+    490,  # Quickplay
+}
+
+QUEUE_ID_LABELS: Dict[int, str] = {
+    0: "Practice Tool",
+    450: "ARAM",
+    900: "URF",
+    1700: "Arena",
+    1710: "Arena (Hextech)",
+}
+
 APP_IMAGE_FILES: Dict[str, str] = {
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",

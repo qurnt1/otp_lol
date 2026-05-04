@@ -1,9 +1,12 @@
 import copy
 import json
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+import tomli_w
 
 from src import config
 
@@ -11,9 +14,12 @@ from src import config
 class ConfigTests(unittest.TestCase):
     def test_load_parameters_first_launch_creates_default_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.json"
+            params_path = Path(tmpdir) / "parameters.toml"
+            json_path = Path(tmpdir) / "parameters.json"
 
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
+            ):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
@@ -108,11 +114,11 @@ class ConfigTests(unittest.TestCase):
 
     def test_load_parameters_accepts_current_exact_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.json"
+            params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
             payload["preferred_stats_site"] = "dpm"
             payload["preferred_hotkey_site"] = "dpm"
-            params_path.write_text(json.dumps(payload), encoding="utf-8")
+            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
@@ -121,7 +127,7 @@ class ConfigTests(unittest.TestCase):
 
     def test_save_parameters_filters_unknown_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.json"
+            params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.DEFAULT_PARAMS)
             payload["manual_region"] = "kr"
             payload["pick_slots"]["pick_2"]["spell_1"] = "Ignite"
@@ -132,7 +138,7 @@ class ConfigTests(unittest.TestCase):
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 saved = config.save_parameters(payload)
                 self.assertTrue(saved)
-                written = json.loads(params_path.read_text(encoding="utf-8"))
+                written = tomllib.loads(params_path.read_text(encoding="utf-8"))
 
         self.assertEqual(written["manual_region"], "kr")
         self.assertEqual(written["pick_slots"]["pick_2"]["spell_1"], "Ignite")

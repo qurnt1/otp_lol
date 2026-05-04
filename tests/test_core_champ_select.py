@@ -309,6 +309,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "MID"}],
                         "actions": [[{
@@ -347,6 +348,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP"}],
                         "actions": [[
@@ -396,6 +398,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP", "championId": 0}],
                         "actions": [[
@@ -437,11 +440,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_not_awaited()
 
-    async def test_champ_select_tick_ignores_bench_enabled_modes(self):
+    async def test_champ_select_tick_ignores_non_preset_queue_ids(self):
         async def request(method, url, **kwargs):
             self.assertEqual(method, "get")
             self.assertEqual(url, "/lol-champ-select/v1/session")
-            return FakeResponse(200, {"benchEnabled": True})
+            return FakeResponse(200, {"benchEnabled": True, "gameConfig": {"queueId": 0}})
 
         self.manager.connection = type("Connection", (), {})()
         self.manager.connection.request = AsyncMock(side_effect=request)
@@ -579,6 +582,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "MID", "spell1Id": 4, "spell2Id": 4}],
                         "actions": [],
@@ -614,6 +618,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP", "championId": 86, "spell1Id": 4, "spell2Id": 12}],
                         "actions": [[

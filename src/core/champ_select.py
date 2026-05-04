@@ -33,7 +33,7 @@ import random
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from ..config import EP_PICKABLE, SUMMONER_SPELL_MAP
+from ..config import EP_PICKABLE, PRESET_ENABLED_QUEUE_IDS, QUEUE_ID_LABELS, SUMMONER_SPELL_MAP
 
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
@@ -209,10 +209,14 @@ class ChampSelectMixin:
             logging.debug("Error fetching champ select session: %s", e)
             return
 
-        if session.get("benchEnabled") is True:
-            if not self.state.bench_enabled_notified:
-                self.state.bench_enabled_notified = True
-                self._notify_ui(self.EVENT_STATUS, ("Practice Tool / ARAM — automation disabled", "GAMEMODE"))
+        queue_id = int((session.get("gameConfig") or {}).get("queueId") or 0)
+
+        if queue_id not in PRESET_ENABLED_QUEUE_IDS:
+            if not self.state.non_preset_mode_notified:
+                self.state.non_preset_mode_notified = True
+                mode_label = QUEUE_ID_LABELS.get(queue_id, f"Queue {queue_id}")
+                logging.info("Queue %s (%s) — presets and ban disabled for this session.", mode_label, queue_id)
+                self._notify_ui(self.EVENT_STATUS, (f"{mode_label} — presets disabled", "GAMEMODE"))
             return
 
         local_id = session.get("localPlayerCellId")

@@ -51,9 +51,11 @@ from .constants import (
     HOTKEY_SITE_LABELS,
     HOTKEY_SITE_ORDER,
     PHASE_DISPLAY_MAP,
-    PLATFORM_TO_REGION,
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
+    PLATFORM_TO_REGION,
+    PRESET_ENABLED_QUEUE_IDS,
+    QUEUE_ID_LABELS,
     REGION_LIST,
     STATS_SITE_LABELS,
     STATS_SITE_ORDER,
@@ -93,22 +95,22 @@ from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
 
 
 def load_parameters():
-    """Load application parameters from the JSON settings file."""
+    """Load application parameters from the TOML settings file."""
     return _settings.load_parameters()
 
 
 def save_parameters(params):
-    """Persist application parameters to the JSON settings file."""
+    """Persist application parameters to the TOML settings file."""
     return _settings.save_parameters(params)
 
 
 def export_parameters_to_file(path, params):
-    """Export parameters to a chosen JSON file."""
+    """Export parameters to a chosen TOML or JSON file."""
     return _settings.export_parameters_to_file(path, params)
 
 
 def import_parameters_from_file(path):
-    """Import parameters from a chosen JSON file."""
+    """Import parameters from a chosen TOML or JSON file."""
     return _settings.import_parameters_from_file(path)
 
 
@@ -158,6 +160,8 @@ __all__ = [
     "PLATFORM_TO_REGION",
     "PICK_SLOT_ORDER",
     "PICK_SLOT_LABELS",
+    "PRESET_ENABLED_QUEUE_IDS",
+    "QUEUE_ID_LABELS",
     "PHASE_DISPLAY_MAP",
     "WEBSITE_LOGO_FILES",
     "STATS_SITE_LABELS",

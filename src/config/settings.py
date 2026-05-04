@@ -31,10 +31,20 @@ import json
 import logging
 import os
 import shutil
+import tomllib
 from typing import Any, Dict
 
+import tomli_w
+
 from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
-from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, RUNES_CACHE_DIR, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
+from .paths import (
+    ICONS_CACHE_DIR,
+    PARAMETERS_PATH,
+    PARAMETERS_JSON_PATH,
+    RUNES_CACHE_DIR,
+    SKINS_CACHE_DIR,
+    SPELLS_CACHE_DIR,
+)
 
 
 def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
@@ -157,12 +167,31 @@ def _build_first_launch_payload() -> Dict[str, Any]:
     return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
 
 
+def _migrate_json_to_toml() -> bool:
+    """One-time migration: read parameters.json, write parameters.toml, rename old file to .bak."""
+    if not os.path.exists(PARAMETERS_JSON_PATH):
+        return False
+    if os.path.exists(PARAMETERS_PATH):
+        return False
+    try:
+        with open(PARAMETERS_JSON_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        _write_parameters_file(config)
+        backup = PARAMETERS_JSON_PATH + ".bak"
+        os.rename(PARAMETERS_JSON_PATH, backup)
+        logging.info("Migrated settings from %s to %s (backup: %s)", PARAMETERS_JSON_PATH, PARAMETERS_PATH, backup)
+        return True
+    except Exception as e:
+        logging.warning("Failed to migrate JSON settings to TOML: %s", e)
+        return False
+
+
 def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize and write the settings payload to the main parameters file."""
     os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
     sanitized = _normalize_parameters(payload)
-    with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
-        json.dump(sanitized, f, indent=4, ensure_ascii=False)
+    with open(PARAMETERS_PATH, "wb") as f:
+        tomli_w.dump(sanitized, f)
     return sanitized
 
 
@@ -184,22 +213,24 @@ def _clear_skin_cache() -> None:
 
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     """Reset the settings file to first-launch defaults after a validation failure."""
-    logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
+    logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
     _clear_skin_cache()
     return _write_parameters_file(_build_first_launch_payload())
 
 
 def load_parameters() -> Dict[str, Any]:
-    """Load, validate, and normalize parameters from the JSON settings file."""
+    """Load, validate, and normalize parameters from the TOML settings file."""
+    _migrate_json_to_toml()
+
     if not os.path.exists(PARAMETERS_PATH):
         return _reset_parameters_file("missing file")
 
     try:
-        with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError, OSError) as e:
+        with open(PARAMETERS_PATH, "rb") as f:
+            config = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, IOError, OSError) as e:
         logging.warning("Error loading settings: %s", e)
-        return _reset_parameters_file("invalid json")
+        return _reset_parameters_file("invalid toml")
 
     if not isinstance(config, dict):
         return _reset_parameters_file("root payload is not an object")
@@ -226,11 +257,15 @@ def save_parameters(params: Dict[str, Any]) -> bool:
 
 
 def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
-    """Export sanitized parameters to a chosen JSON file."""
+    """Export sanitized parameters to a chosen TOML or JSON file (detected from extension)."""
     try:
         sanitized = _normalize_parameters(params)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        if path.lower().endswith(".json"):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        else:
+            with open(path, "wb") as f:
+                tomli_w.dump(sanitized, f)
         return True
     except (IOError, OSError) as e:
         logging.error("Error exporting settings: %s", e)
@@ -238,9 +273,13 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
 
 
 def import_parameters_from_file(path: str) -> Dict[str, Any]:
-    """Import parameters from a JSON file and normalize them to the current schema."""
-    with open(path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
+    """Import parameters from a TOML or JSON file and normalize them to the current schema."""
+    if path.lower().endswith(".json"):
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        with open(path, "rb") as f:
+            payload = tomllib.load(f)
     if not isinstance(payload, dict):
         raise ValueError("The configuration file is invalid.")
     return _normalize_parameters(payload)
