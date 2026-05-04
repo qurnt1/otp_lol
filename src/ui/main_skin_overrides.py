@@ -9,12 +9,18 @@ Used by:
 - src/ui/main_window.py via LoLAssistantUI inheritance.
 Uses:
 - Standard library: typing
-- Local modules: src.config
+- Local modules: src.config, src.services.skin_modes
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from ..config import PICK_SLOT_ORDER
+from ..services.skin_modes import (
+    build_main_skin_overrides,
+    get_effective_skin_mode,
+    get_effective_skin_mode_for_slot,
+    get_skin_cycle_modes,
+)
 
 
 class MainSkinOverridesMixin:
@@ -57,16 +63,7 @@ class MainSkinOverridesMixin:
 
     def _get_effective_main_preview_skin_mode(self, effective: Optional[Dict[str, Any]] = None) -> str:
         effective = effective or self.get_effective_profile_config()
-        slot_modes = [
-            self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
-            for slot_key in PICK_SLOT_ORDER
-        ]
-        if not any(mode in {"fixed", "random"} for mode in slot_modes):
-            return "none"
-        unique_modes = {mode for mode in slot_modes}
-        if len(unique_modes) == 1:
-            return unique_modes.pop()
-        return "mixed"
+        return get_effective_skin_mode(effective, self._get_main_skin_overrides())
 
 
     def _get_effective_main_preview_skin_mode_for_slot(
@@ -76,30 +73,12 @@ class MainSkinOverridesMixin:
         effective: Optional[Dict[str, Any]] = None,
     ) -> str:
         effective = effective or self.get_effective_profile_config()
-        overrides = self._get_main_skin_overrides()
-        override_mode = overrides.get(slot_key, "inherit")
-        if override_mode in {"none", "fixed", "random"}:
-            return override_mode
-        pick_slots = effective.get("pick_slots", {})
-        slot_mode = str(pick_slots.get(slot_key, {}).get("skin_mode") or "none").strip().lower()
-        return slot_mode if slot_mode in {"fixed", "random"} else "none"
+        return get_effective_skin_mode_for_slot(slot_key, effective, self._get_main_skin_overrides())
 
-    def _get_main_preview_skin_cycle_modes(self, slot_data: Optional[Dict[str, Any]] = None, *, effective: Optional[Dict[str, Any]] = None) -> List[str]:
-        if slot_data is None:
-            effective = effective or self.get_effective_profile_config()
-            pick_slots = effective.get("pick_slots", {})
-            modes = ["none"]
-            if any(self._has_fixed_skin(pick_slots.get(slot_key, {})) for slot_key in PICK_SLOT_ORDER):
-                modes.append("fixed")
-            if any(self._has_random_skin(pick_slots.get(slot_key, {})) for slot_key in PICK_SLOT_ORDER):
-                modes.append("random")
-            return modes
-        modes = ["none"]
-        if self._has_fixed_skin(slot_data):
-            modes.append("fixed")
-        if self._has_random_skin(slot_data):
-            modes.append("random")
-        return modes
+    def _get_main_preview_skin_cycle_modes(self, slot_data: Optional[Dict[str, Any]] = None, *, effective: Optional[Dict[str, Any]] = None) -> list[str]:
+        if slot_data is not None:
+            return get_skin_cycle_modes(slot_data=slot_data)
+        return get_skin_cycle_modes(effective=effective or self.get_effective_profile_config())
 
 
     def _get_main_skin_overrides(self) -> Dict[str, str]:
@@ -107,19 +86,7 @@ class MainSkinOverridesMixin:
             params = self.get_params()
         except Exception:
             params = {}
-        raw_overrides = params.get("main_skin_mode_overrides", {})
-        legacy_mode = str(params.get("main_skin_mode_override", "inherit") or "inherit").strip().lower()
-        if legacy_mode not in {"inherit", "none", "fixed", "random"}:
-            legacy_mode = "inherit"
-        overrides = {slot: "inherit" for slot in PICK_SLOT_ORDER}
-        if legacy_mode != "inherit":
-            for slot in overrides:
-                overrides[slot] = legacy_mode
-        if isinstance(raw_overrides, dict):
-            for slot in PICK_SLOT_ORDER:
-                mode = str(raw_overrides.get(slot, overrides[slot]) or overrides[slot]).strip().lower()
-                overrides[slot] = mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
-        return overrides
+        return build_main_skin_overrides(params)
 
 
     def _set_pick_slot_skin_mode(self, slot_key: str, mode: str) -> None:

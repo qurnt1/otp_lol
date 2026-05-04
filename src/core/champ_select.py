@@ -23,7 +23,7 @@ Used by:
 - src/core/websocket.py via WebSocketManager inheritance.
 Uses:
 - Standard library: asyncio, json, logging, random, time, typing
-- Local config exports from src.config
+- Local modules: src.config, src.services.skin_modes
 """
 
 import asyncio
@@ -34,6 +34,7 @@ from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from ..config import EP_PICKABLE, PRESET_ENABLED_QUEUE_IDS, QUEUE_ID_LABELS, SUMMONER_SPELL_MAP
+from ..services.skin_modes import build_main_skin_overrides, get_effective_skin_mode_for_slot
 
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
@@ -491,23 +492,12 @@ class ChampSelectMixin:
         if not champion_name:
             return None, chosen_slot
 
-        # Main-window overrides can temporarily force a slot away from the saved
-        # profile mode without rewriting the underlying configuration.
-        skin_mode_overrides = params.get("main_skin_mode_overrides", {})
-        if isinstance(skin_mode_overrides, dict):
-            raw_override = skin_mode_overrides.get(chosen_slot, "inherit")
-        else:
-            raw_override = "inherit"
-        if raw_override in {None, "", "inherit"}:
-            raw_override = params.get("main_skin_mode_override", "inherit")
-        skin_mode_override = str(raw_override or "inherit").strip().lower()
-        if skin_mode_override not in {"inherit", "none", "fixed", "random"}:
-            skin_mode_override = "inherit"
-        if skin_mode_override == "none":
-            return None, chosen_slot
-
-        slot_skin_mode = str(slot_data.get("skin_mode") or fallback_slot.get("skin_mode") or "none").strip().lower()
-        skin_mode = skin_mode_override if skin_mode_override in {"fixed", "random"} else slot_skin_mode
+        skin_mode = get_effective_skin_mode_for_slot(
+            chosen_slot,
+            effective,
+            build_main_skin_overrides(params),
+            fallback_slot_key="pick_1",
+        )
         if skin_mode not in {"fixed", "random"}:
             return None, chosen_slot
 

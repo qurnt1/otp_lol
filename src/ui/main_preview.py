@@ -10,7 +10,7 @@ Used by:
 Uses:
 - Standard library: logging, os, tkinter, typing
 - Third-party libraries: Pillow, ttkbootstrap
-- Local modules: src.config
+- Local modules: src.config, src.services
 """
 
 import logging
@@ -28,6 +28,7 @@ from ..config import (
     resource_path,
 )
 from ..services.profile_config import build_effective_profile_config
+from ..services.skin_modes import has_fixed_skin, has_random_skin
 
 
 class MainPreviewMixin:
@@ -128,7 +129,7 @@ class MainPreviewMixin:
 
     def _build_slot_skin_preview_value(self, slot_data: Dict[str, Any], *, mode: str) -> Dict[str, Any]:
         champion_name = str(slot_data.get("champion") or "").strip()
-        if mode == "fixed" and self._has_fixed_skin(slot_data):
+        if mode == "fixed" and has_fixed_skin(slot_data):
             return {
                 "mode": "fixed",
                 "champion_name": champion_name,
@@ -136,7 +137,7 @@ class MainPreviewMixin:
                 "skin_name": str(slot_data.get("skin_name") or ""),
                 "skin_num": int(slot_data.get("skin_num") or 0),
             }
-        if mode == "random" and self._has_random_skin(slot_data):
+        if mode == "random" and has_random_skin(slot_data):
             return {"mode": "random"}
         return {"mode": "none"}
 
@@ -214,21 +215,6 @@ class MainPreviewMixin:
 
     def _get_random_skin_placeholder_asset(self) -> str:
         return APP_IMAGE_FILES["question_mark_black_mode"] if self.theme == "flatly" else APP_IMAGE_FILES["question_mark_white_mode"]
-
-
-    @staticmethod
-    def _has_fixed_skin(slot_data: Dict[str, Any]) -> bool:
-        return int(slot_data.get("skin_id") or 0) > 0 or bool(str(slot_data.get("skin_name") or "").strip())
-
-
-    @staticmethod
-    def _has_random_skin(slot_data: Dict[str, Any]) -> bool:
-        return (
-            int(slot_data.get("random_skin_id") or 0) > 0
-            or bool(str(slot_data.get("random_skin_name") or "").strip())
-            or bool(slot_data.get("random_skin_pool"))
-        )
-
 
     def _load_local_preview_asset(self, asset_rel_path: str, cache_key: tuple[Any, ...]) -> Optional[ImageTk.PhotoImage]:
         if cache_key in self.preview_icon_cache:

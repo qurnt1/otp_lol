@@ -284,8 +284,8 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         option_label.pack(fill="x")
         mode_option_widgets[mode] = (option_frame, option_label)
 
-    create_mode_option("fixed", "One skin", column=0, padx=(0, 4))
-    create_mode_option("random", "Random skin list", column=1, padx=(4, 0))
+    create_mode_option("fixed", "Select a skin", column=0, padx=(0, 4))
+    create_mode_option("random", "Random from list", column=1, padx=(4, 0))
 
     # ---- Status label ----
     status_var = tk.StringVar(value="")
