@@ -268,7 +268,10 @@ class ChampSelectMixin:
         presets_enabled = bool(effective.get("presets_enabled", True))
         pickable_set = await self._fetch_pickable_ids()
         banned_ids = self._extract_banned_champion_ids(session)
+
+        had_prepicked = self.state.has_prepicked
         self._sync_prepick_state_from_session(session, params)
+        prepick_just_confirmed = self.state.has_prepicked and not had_prepicked
 
         prepick_action = next(
             (a for a in my_actions if a.get("type") == "pick" and not a.get("isInProgress")),
@@ -282,6 +285,17 @@ class ChampSelectMixin:
             (a for a in my_actions if a.get("type") == "pick" and a.get("isInProgress") is True),
             None,
         )
+
+        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
+
+        # As soon as the prepick is confirmed in the session, fire spells,
+        # runes, and skin all at once so everything is in place before the
+        # pick lock-in even begins.
+        if prepick_just_confirmed and not self.state.has_picked and presets_enabled:
+            if params.get("auto_summoners_enabled"):
+                asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
+            asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
+            asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
 
         # Pre-pick comes first because the client can expose a hover-only action
         # before the final ban or pick phase begins.
@@ -298,7 +312,19 @@ class ChampSelectMixin:
                             prepick_action.get("id"),
                         )
                         hover_success = await self._hover_champion(prepick_action["id"], target_champion_id)
-                        if not hover_success:
+                        if hover_success:
+                            # Re-sync immediately — the session may already reflect the
+                            # hover so we can fire spells/runes/skin without waiting for
+                            # the next tick.
+                            had_prepicked_after = self.state.has_prepicked
+                            self._sync_prepick_state_from_session(session, params)
+                            if self.state.has_prepicked and not had_prepicked_after and not self.state.has_picked:
+                                prepick_slot = self.state.last_prepick_slot or "pick_1"
+                                if params.get("auto_summoners_enabled"):
+                                    asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
+                                asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
+                                asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
+                        else:
                             self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
         prepick_required = (
@@ -307,20 +333,6 @@ class ChampSelectMixin:
             and effective.get("selected_pick_1")
             and prepick_action is not None
         )
-
-        # Start applying runes as soon as champ select starts, before the prepick wait
-        # blocks on ban/pick resolution. This fires on the very first tick.
-        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
-        if presets_enabled and not self.state.rune_applied_for_session and not self.state.rune_apply_in_progress:
-            if self.state.rune_task_scheduled < 3:
-                self.state.rune_task_scheduled += 1
-                logging.debug(
-                    "[RUNES] Early application attempt %s/3 for %s (prepick=%s picked=%s, phase=%s).",
-                    self.state.rune_task_scheduled, prepick_slot,
-                    self.state.has_prepicked, self.state.has_picked,
-                    self.state.current_phase,
-                )
-                asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
 
         if prepick_required and not self.state.has_prepicked:
             if self.state.prepick_wait_started_ts <= 0:
@@ -331,25 +343,22 @@ class ChampSelectMixin:
                 return
             self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
 
-        # Summoner spells can be prepared during the hover phase without blocking the
-        # rest of champion-select automation.
-        prepick_sequence_active = params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and (
-            prepick_required or (self.state.has_prepicked and not self.state.has_picked)
-        )
-        if params.get("auto_summoners_enabled") and presets_enabled and prepick_sequence_active:
-            if not self._selection_has_expected_spells(session, params, slot_key=prepick_slot):
-                self._log_flow_once(
-                    f"Pre-pick summs are not confirmed on {prepick_slot}; retries continue without blocking ban/pick."
-                )
+        # Reconcile spells, runes, and skin before the ban action so patches
+        # that failed on the first attempt get a second chance early.
+        if self.state.has_prepicked and not self.state.has_picked and presets_enabled:
+            if params.get("auto_summoners_enabled"):
                 self._ensure_spells_are_applied(session, params, slot_key=prepick_slot)
+            self._ensure_rune_is_applied(session, params)
+            self._ensure_skin_is_applied(session, params)
 
         if active_ban_action and params.get("auto_ban_enabled"):
             await self._logic_do_ban(active_ban_action, effective)
         elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
             await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
 
-        # After a successful lock-in, keep reconciling spells and skins because the
-        # Riot client can overwrite selections after an apparently successful patch.
+        # After a successful lock-in, keep reconciling spells, runes, and skins
+        # because the Riot client can overwrite selections after an apparently
+        # successful patch.
         if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
         if self.state.has_picked and presets_enabled:
@@ -667,9 +676,25 @@ class ChampSelectMixin:
         params: Dict[str, Any],
     ) -> bool:
         local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            return False
-        champion_id = int(local_selection.get("championId") or 0)
+        champion_id = int(local_selection.get("championId") or 0) if local_selection else 0
+
+        # When myTeam does not yet reflect a hover (common in Practice Tool) fall
+        # back to scanning the actions block — a successful hover sets championId
+        # on the pick action even before myTeam is updated.
+        if champion_id <= 0:
+            local_id = session.get("localPlayerCellId") if isinstance(session, dict) else None
+            if local_id is not None:
+                for action in self._iter_session_actions(session):
+                    if (
+                        action.get("type") == "pick"
+                        and action.get("actorCellId") == local_id
+                        and not action.get("completed")
+                    ):
+                        hovered_id = int(action.get("championId") or 0)
+                        if hovered_id > 0:
+                            champion_id = hovered_id
+                            break
+
         if champion_id <= 0:
             return False
 

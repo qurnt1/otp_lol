@@ -826,7 +826,7 @@ class WebSocketManager(ChampSelectMixin):
                     self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
                     self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
 
-                    if phase in ("Lobby", "Matchmaking"):
+                    if phase in ("Lobby", "Matchmaking", "ChampSelect"):
                         await self._refresh_current_queue_id()
                     if phase == "ChampSelect":
                         self.state.reset_between_games()
