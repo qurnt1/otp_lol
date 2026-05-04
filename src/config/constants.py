@@ -65,6 +65,7 @@ EP_PERKS_STYLES: str = "/lol-perks/v1/styles"
 EP_PERKS_INVENTORY: str = "/lol-perks/v1/inventory"
 EP_CS_RUNE_PAGE: str = "/lol-champ-select/v1/session/rune-page"
 EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
+EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
 REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
 
@@ -101,12 +102,15 @@ PICK_SLOT_LABELS: Dict[str, str] = {
 }
 
 PRESET_ENABLED_QUEUE_IDS: set[int] = {
-    400,  # Normal Draft
-    430,  # Normal Blind
+    400,  # 5v5 Draft Pick
     420,  # Ranked Solo/Duo
+    430,  # 5v5 Blind Pick
     440,  # Ranked Flex
-    490,  # Quickplay
+    490,  # Normal Quickplay
+    700,  # Clash
 }
+
+PRACTICE_TOOL_GAME_MODE: str = "PRACTICETOOL"
 
 QUEUE_ID_LABELS: Dict[int, str] = {
     0: "Practice Tool",

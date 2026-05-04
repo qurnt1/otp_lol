@@ -46,6 +46,7 @@ from ..config import (
     EP_CHAT_ME,
     EP_CURRENT_SUMMONER,
     EP_GAMEFLOW,
+    EP_LOBBY,
     EP_LOGIN,
     EP_PERKS_CURRENT_PAGE,
     EP_PERKS_PAGES,
@@ -55,6 +56,8 @@ from ..config import (
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
     PLATFORM_TO_REGION,
+    PRACTICE_TOOL_GAME_MODE,
+    PRESET_ENABLED_QUEUE_IDS,
 )
 from ..services.history import log_history_event
 from ..services.profile_config import build_effective_profile_config
@@ -714,6 +717,7 @@ class WebSocketManager(ChampSelectMixin):
         self.ws_active = False
         self.state.current_phase = "None"
         self.state.last_reported_summoner = None
+        self.state.current_queue_id = 0
         self.state.reset_between_games()
 
     def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_message: Optional[str] = None) -> None:
@@ -822,6 +826,8 @@ class WebSocketManager(ChampSelectMixin):
                     self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
                     self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
 
+                    if phase in ("Lobby", "Matchmaking"):
+                        await self._refresh_current_queue_id()
                     if phase == "ChampSelect":
                         self.state.reset_between_games()
                         await self._champ_select_tick()
@@ -965,6 +971,28 @@ class WebSocketManager(ChampSelectMixin):
                     platform,
                     PLATFORM_TO_REGION.get(platform, "euw"),
                 )
+
+    async def _refresh_current_queue_id(self) -> None:
+        """Poll the lobby endpoint to detect the queue id before champ select starts."""
+        if not self.connection:
+            return
+        try:
+            response = await self.connection.request("get", EP_LOBBY)
+            if response.status != 200:
+                return
+            lobby = await response.json()
+            queue_id = int((lobby.get("gameConfig") or {}).get("queueId") or 0)
+            if queue_id == self.state.current_queue_id:
+                return
+            self.state.current_queue_id = queue_id
+            if queue_id not in PRESET_ENABLED_QUEUE_IDS:
+                self._notify_ui(
+                    self.EVENT_STATUS,
+                    ("Presets disabled — unsupported lobby type", "GAMEMODE"),
+                )
+                logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
+        except Exception as e:
+            logging.debug("Error polling lobby for queue id: %s", e)
 
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:

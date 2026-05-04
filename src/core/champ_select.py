@@ -33,7 +33,7 @@ import random
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from ..config import EP_PICKABLE, PRESET_ENABLED_QUEUE_IDS, QUEUE_ID_LABELS, SUMMONER_SPELL_MAP
+from ..config import EP_PICKABLE, PRACTICE_TOOL_GAME_MODE, PRESET_ENABLED_QUEUE_IDS, SUMMONER_SPELL_MAP
 from ..services.skin_modes import build_main_skin_overrides, get_effective_skin_mode_for_slot
 
 if TYPE_CHECKING:
@@ -211,13 +211,14 @@ class ChampSelectMixin:
             return
 
         queue_id = int((session.get("gameConfig") or {}).get("queueId") or 0)
+        game_mode = str((session.get("gameConfig") or {}).get("gameMode") or "")
 
-        if queue_id not in PRESET_ENABLED_QUEUE_IDS:
+        presets_allowed = queue_id in PRESET_ENABLED_QUEUE_IDS or game_mode == PRACTICE_TOOL_GAME_MODE
+        if not presets_allowed:
             if not self.state.non_preset_mode_notified:
                 self.state.non_preset_mode_notified = True
-                mode_label = QUEUE_ID_LABELS.get(queue_id, f"Queue {queue_id}")
-                logging.info("Queue %s (%s) — presets and ban disabled for this session.", mode_label, queue_id)
-                self._notify_ui(self.EVENT_STATUS, (f"{mode_label} — presets disabled", "GAMEMODE"))
+                logging.info("Queue %s — presets disabled for this session.", queue_id)
+                self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
             return
 
         local_id = session.get("localPlayerCellId")

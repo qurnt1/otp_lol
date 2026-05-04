@@ -66,6 +66,7 @@ def test_reset_between_games_covers_all_fields():
     transient_fields = {f.name for f in fields(GameState) if f.metadata.get("transient")}
     persistent_fields = {
         "current_phase",
+        "current_queue_id",
         "summoner",
         "summoner_id",
         "puuid",
