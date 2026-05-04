@@ -18,7 +18,7 @@ Developers maintaining startup guards and shutdown cleanup.
 
 DEPENDENCIES:
 Used by:
-- launcher.py through src.utils.
+- launcher.py.
 Uses:
 - Standard library: logging, msvcrt, os
 - Third-party libraries: psutil

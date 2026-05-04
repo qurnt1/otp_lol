@@ -19,7 +19,7 @@ Developers maintaining release detection, semantic version comparison, and updat
 
 DEPENDENCIES:
 Used by:
-- launcher.py through src.utils and src.ui.main_window.
+- launcher.py and tests.
 Uses:
 - Standard library: base64, logging, re, typing
 - Third-party libraries: packaging, requests

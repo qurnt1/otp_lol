@@ -24,7 +24,7 @@ Used by:
 Uses:
 - Standard library: concurrent.futures, logging, os, re, tkinter, typing, webbrowser
 - Third-party libraries: Pillow, ttkbootstrap
-- Local modules: src.config, src.services.history, src.utils, src.ui.hotkeys, src.ui.media, src.ui.settings_window, src.ui.tray
+- Local modules: src.config, src.services, src.ui.hotkeys, src.ui.media, src.ui.settings_window, src.ui.tray
 """
 
 import logging
@@ -50,7 +50,7 @@ from ..config import (
     resource_path,
 )
 from ..services.history import clear_history_entries, format_history_entry, get_history_entries
-from ..utils import build_hotkey_site_url, build_stats_site_url, is_valid_riot_id
+from ..services.urls import build_hotkey_site_url, build_stats_site_url, is_valid_riot_id
 from .hotkeys import HotkeyManager
 from .main_preview import MainPreviewMixin
 from .main_skin_overrides import MainSkinOverridesMixin

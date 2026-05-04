@@ -131,7 +131,6 @@ def main():
         '--hidden-import=src.config',
         '--hidden-import=src.core',
         '--hidden-import=src.ui',
-        '--hidden-import=src.utils',
         
         # Third-party modules referenced through dynamic code paths.
         '--hidden-import=keyboard',

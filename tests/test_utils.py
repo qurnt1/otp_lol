@@ -2,8 +2,15 @@ import unittest
 import base64
 from unittest.mock import Mock, patch
 
-from src.services.updates import extract_highlights_section, extract_version_from_readme, format_highlights_for_popup
-from src.utils import (
+from src.services.updates import (
+    check_for_updates,
+    extract_highlights_section,
+    extract_version_from_readme,
+    format_highlights_for_popup,
+    is_newer_version,
+    normalize_version,
+)
+from src.services.urls import (
     build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
@@ -11,10 +18,7 @@ from src.utils import (
     build_opgg_url,
     build_porofessor_url,
     build_stats_site_url,
-    check_for_updates,
     is_valid_riot_id,
-    is_newer_version,
-    normalize_version,
 )
 
 
@@ -148,7 +152,7 @@ class UtilsTests(unittest.TestCase):
             "encoding": "base64",
         }
 
-        with patch("src.utils.requests.get", return_value=response):
+        with patch("src.services.updates.requests.get", return_value=response):
             update_info = check_for_updates()
 
         self.assertIsNotNone(update_info)

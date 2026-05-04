@@ -22,7 +22,7 @@ Used by:
 - Executed directly for local runs and by create_exe.py during packaging.
 Uses:
 - Standard library: logging, sys, threading, typing
-- Local modules: src.config, src.core, src.ui, src.utils
+- Local modules: src.config, src.core, src.services, src.ui
 """
 
 import sys
@@ -34,8 +34,9 @@ from src.config import (
     load_parameters, save_parameters,
     get_cache_dirs, CURRENT_VERSION
 )
-from src.utils import check_single_instance, remove_lockfile, check_for_updates
 from src.core import DataDragon, WebSocketManager
+from src.services.single_instance import check_single_instance, remove_lockfile
+from src.services.updates import check_for_updates
 from src.ui import LoLAssistantUI
 
 
