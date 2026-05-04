@@ -2,21 +2,19 @@
 FILE NAME: src/ui/settings_window.py
 GLOBAL PURPOSE:
 - Render and manage the editable application settings window.
-- Resolve profile-specific overrides versus global defaults for picks, spells, skins, and preferences.
 - Persist user edits back to the main window state while keeping previews and shortcuts synchronized.
 
 KEY FUNCTIONS:
 - SettingsWindow: Own the settings dialog and its editing state.
-- _get_profile_role_data: Return the editable data source for the selected role profile.
 - _get_effective_pick_slot_config: Compute the effective slot configuration with global fallbacks.
 - _start_hotkey_capture: Temporarily enter shortcut capture mode without triggering existing hotkeys.
 - on_close: Persist edited values back into the parent UI state before destroying the window.
 
 AUDIENCE & LOGIC:
 Why:
-This module isolates settings editing complexity so profile overrides, picker dialogs, and shortcut capture rules do not leak into the main window.
+This module isolates settings editing complexity so picker dialogs and shortcut capture rules do not leak into the main window.
 For whom:
-Developers maintaining configuration UX, profile fallback behavior, and settings persistence.
+Developers maintaining configuration UX and settings persistence.
 
 DEPENDENCIES:
 Used by:
@@ -339,7 +337,7 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         presets_frame.grid(row=row, column=0, columnspan=4, sticky="w", pady=(0, 8))
         self.presets_toggle = ttk.Checkbutton(
             presets_frame,
-            text="Enable presets for this profile",
+            text="Enable presets",
             variable=self.presets_enabled_var,
             command=self._toggle_profile_presets,
             bootstyle="info-round-toggle",
@@ -595,15 +593,15 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
 
     def _select_champion(self, context: str, champ_name: str, slot_num: int = 1) -> None:
         if context == "ban":
-            self._set_profile_value("selected_ban", champ_name)
+            self.parent.update_param("selected_ban", champ_name)
         elif slot_num == 1:
-            self._set_profile_value("selected_pick_1", champ_name)
+            self.parent.update_param("selected_pick_1", champ_name)
             self._clear_pick_slot_skin("pick_1")
         elif slot_num == 2:
-            self._set_profile_value("selected_pick_2", champ_name)
+            self.parent.update_param("selected_pick_2", champ_name)
             self._clear_pick_slot_skin("pick_2")
         elif slot_num == 3:
-            self._set_profile_value("selected_pick_3", champ_name)
+            self.parent.update_param("selected_pick_3", champ_name)
             self._clear_pick_slot_skin("pick_3")
         self._refresh_profile_buttons()
         self._refresh_skin_buttons()
@@ -707,12 +705,12 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self._close_site_picker()
 
     def _get_excluded_champions(self, context: str, slot_num: int = 1) -> set[str]:
-        profile_data = self._get_profile_role_data()
+        params = self.parent.get_params()
         excluded = set()
-        pick_1 = profile_data.get("selected_pick_1")
-        pick_2 = profile_data.get("selected_pick_2")
-        pick_3 = profile_data.get("selected_pick_3")
-        banned = profile_data.get("selected_ban")
+        pick_1 = params.get("selected_pick_1")
+        pick_2 = params.get("selected_pick_2")
+        pick_3 = params.get("selected_pick_3")
+        banned = params.get("selected_ban")
         if context == "pick":
             if banned:
                 excluded.add(banned)
