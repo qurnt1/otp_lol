@@ -13,3 +13,7 @@
 - feat: add Fetch skins button to skin picker with concurrent-call guard
 - feat: replace hardcoded rune empty message with picker_empty_message
 - chore: add debug logging for session gameConfig and lobby queue detection
+- fix: add Practice Tool queue IDs (3100 blind, 3110 draft) and fallback to lobby queue in champ select
+- feat: fire spells and runes as soon as prepick hover is confirmed, before ban/pick
+- feat: scan session actions for prepick detection when myTeam does not yet reflect the hover
+- feat: poll lobby during ChampSelect phase so queue ID is available on the first tick
