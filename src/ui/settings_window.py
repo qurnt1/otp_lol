@@ -29,6 +29,7 @@ Uses:
 
 import logging
 import os
+import webbrowser
 from datetime import datetime
 from tkinter import filedialog
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -41,6 +42,7 @@ from ttkbootstrap.scrolled import ScrolledFrame
 from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
+    GITHUB_REPO_URL,
     HOTKEY_SITE_LABELS,
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
@@ -159,6 +161,14 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         row = self._create_websites_section(row)
         row = self._create_shortcuts_section(row)
         self._create_other_section(row)
+
+        report_btn = ttk.Button(
+            self.main_frame,
+            text="Report Issues",
+            bootstyle="link",
+            command=lambda: webbrowser.open(f"{GITHUB_REPO_URL}/issues/new"),
+        )
+        report_btn.grid(row=row + 5, column=0, columnspan=4, pady=(16, 4))
 
         self.toggle_pick()
         self.toggle_ban()
