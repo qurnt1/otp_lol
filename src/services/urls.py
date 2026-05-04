@@ -7,8 +7,8 @@ GLOBAL PURPOSE:
 
 KEY FUNCTIONS:
 - is_valid_riot_id: Validate the basic `GameName#Tag` structure.
-- build_player_stats_url: Build a profile page URL for the chosen provider.
-- build_ingame_stats_url: Build a live-game URL for the chosen provider.
+- build_stats_site_url: Build a profile page URL for the chosen provider.
+- build_hotkey_site_url: Build a live-game URL for the chosen provider.
 - _normalize_riot_id_for_url: Convert Riot IDs into the provider-friendly URL format.
 
 AUDIENCE & LOGIC:
@@ -71,8 +71,8 @@ def build_dpm_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
     return f"{base}/live" if ingame else f"{base}/"
 
 
-def build_player_stats_url(site: str, region: str, riot_id: str) -> str:
-    """Build a non in-game stats URL based on the chosen provider."""
+def build_stats_site_url(site: str, region: str, riot_id: str) -> str:
+    """Build the configured profile stats URL."""
     normalized_site = (site or "opgg").lower().strip()
     builders = {
         "opgg": lambda reg, rid: build_opgg_url(reg, rid, ingame=False),
@@ -84,8 +84,8 @@ def build_player_stats_url(site: str, region: str, riot_id: str) -> str:
     return builder(region, riot_id)
 
 
-def build_ingame_stats_url(site: str, region: str, riot_id: str) -> str:
-    """Build an in-game stats URL based on the chosen provider."""
+def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str:
+    """Build the configured in-game stats URL opened by the hotkey."""
     normalized_site = (site or "porofessor").lower().strip()
     builders = {
         "porofessor": build_porofessor_url,
@@ -95,16 +95,6 @@ def build_ingame_stats_url(site: str, region: str, riot_id: str) -> str:
     }
     builder = builders.get(normalized_site, builders["porofessor"])
     return builder(region, riot_id)
-
-
-def build_stats_site_url(site: str, region: str, riot_id: str) -> str:
-    """Backward-compatible alias for player stats URLs."""
-    return build_player_stats_url(site, region, riot_id)
-
-
-def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str:
-    """Backward-compatible alias for in-game stats URLs."""
-    return build_ingame_stats_url(site, region, riot_id)
 
 
 def _normalize_riot_id_for_url(riot_id: str) -> str:

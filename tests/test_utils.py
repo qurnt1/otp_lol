@@ -7,10 +7,8 @@ from src.utils import (
     build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
-    build_ingame_stats_url,
     build_leagueofgraphs_url,
     build_opgg_url,
-    build_player_stats_url,
     build_porofessor_url,
     build_stats_site_url,
     check_for_updates,
@@ -102,24 +100,6 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(
             build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
             "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
-        )
-
-    def test_build_player_and_ingame_aliases(self):
-        self.assertEqual(
-            build_player_stats_url("deeplol", "euw", "MonCompte#EUW"),
-            "https://www.deeplol.gg/summoner/euw/MonCompte-EUW",
-        )
-        self.assertEqual(
-            build_player_stats_url("dpm", "euw", "MonCompte#EUW"),
-            "https://dpm.lol/MonCompte-EUW/",
-        )
-        self.assertEqual(
-            build_ingame_stats_url("opgg", "euw", "MonCompte#EUW"),
-            "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW/ingame",
-        )
-        self.assertEqual(
-            build_ingame_stats_url("dpm", "euw", "MonCompte#EUW"),
-            "https://dpm.lol/MonCompte-EUW/live",
         )
 
     def test_riot_id_validation(self):
