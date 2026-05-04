@@ -981,7 +981,10 @@ class WebSocketManager(ChampSelectMixin):
             if response.status != 200:
                 return
             lobby = await response.json()
-            queue_id = int((lobby.get("gameConfig") or {}).get("queueId") or 0)
+            game_config = lobby.get("gameConfig") or {}
+            queue_id = int(game_config.get("queueId") or 0)
+            game_mode = str(game_config.get("gameMode") or "")
+            logging.info("[LOBBY] queueId=%s gameMode=%r", queue_id, game_mode)
             if queue_id == self.state.current_queue_id:
                 return
             self.state.current_queue_id = queue_id

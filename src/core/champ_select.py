@@ -210,8 +210,17 @@ class ChampSelectMixin:
             logging.debug("Error fetching champ select session: %s", e)
             return
 
-        queue_id = int((session.get("gameConfig") or {}).get("queueId") or 0)
-        game_mode = str((session.get("gameConfig") or {}).get("gameMode") or "")
+        game_config = session.get("gameConfig") or {}
+        queue_id = int(game_config.get("queueId") or 0)
+        game_mode = str(game_config.get("gameMode") or "")
+
+        if not self.state.non_preset_mode_notified:
+            logging.info(
+                "[SESSION] queueId=%s gameMode=%r gameConfig=%s",
+                queue_id,
+                game_mode,
+                self._format_debug_value(game_config),
+            )
 
         presets_allowed = queue_id in PRESET_ENABLED_QUEUE_IDS or game_mode == PRACTICE_TOOL_GAME_MODE
         if not presets_allowed:

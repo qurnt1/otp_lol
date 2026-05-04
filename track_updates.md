@@ -9,3 +9,7 @@
 - fix: align rune and skin picker layout structure and status-label position
 - refactor: extract picker colors and status messages into shared _picker_common module
 - refactor: extract skin mode helpers into src/services/skin_modes
+- chore: add track_updates.md and CLAUDE.md rules for append-only changelog
+- feat: add Fetch skins button to skin picker with concurrent-call guard
+- feat: replace hardcoded rune empty message with picker_empty_message
+- chore: add debug logging for session gameConfig and lobby queue detection
