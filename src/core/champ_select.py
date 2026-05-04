@@ -1305,7 +1305,10 @@ class ChampSelectMixin:
         fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
         rune_page_id = int(slot_data.get("rune_page_id") or fallback_slot.get("rune_page_id") or 0)
         rune_page_name = str(slot_data.get("rune_page_name") or fallback_slot.get("rune_page_name") or "")
-        rune_auto_apply = bool(slot_data.get("rune_auto_apply", fallback_slot.get("rune_auto_apply", True)))
+        if "rune_auto_apply" in slot_data:
+            rune_auto_apply = bool(slot_data.get("rune_auto_apply"))
+        else:
+            rune_auto_apply = bool(fallback_slot.get("rune_auto_apply", True))
         return rune_page_id, rune_page_name, chosen_slot, rune_auto_apply
 
     def _ensure_rune_is_applied(

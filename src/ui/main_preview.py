@@ -27,6 +27,7 @@ from ..config import (
     THEME_PALETTE,
     resource_path,
 )
+from ..services.profile_config import build_effective_profile_config
 
 
 class MainPreviewMixin:
@@ -473,51 +474,7 @@ class MainPreviewMixin:
         """Return the effective preview profile, even before the websocket is ready."""
         if self.ws_manager:
             return self.ws_manager.get_effective_profile_config()
-
-        params = self.get_params()
-        pick_slots = params.get("pick_slots", {})
-        if not isinstance(pick_slots, dict):
-            pick_slots = {}
-
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
-            slot = pick_slots.get(slot_key, {}) if isinstance(pick_slots.get(slot_key, {}), dict) else {}
-            def _to_int(value: Any) -> int:
-                try:
-                    return int(value or 0)
-                except (TypeError, ValueError):
-                    return 0
-            return {
-                "champion": params.get(pick_key, ""),
-                "spell_1": slot.get("spell_1", ""),
-                "spell_2": slot.get("spell_2", ""),
-                "skin_mode": str(slot.get("skin_mode") or "none").strip().lower(),
-                "skin_id": _to_int(slot.get("skin_id")),
-                "skin_name": str(slot.get("skin_name") or ""),
-                "skin_num": _to_int(slot.get("skin_num")),
-                "random_skin_id": _to_int(slot.get("random_skin_id")),
-                "random_skin_name": str(slot.get("random_skin_name") or ""),
-                "random_skin_num": _to_int(slot.get("random_skin_num")),
-                "random_skin_pool": (
-                    [dict(e) for e in slot["random_skin_pool"]]
-                    if isinstance(slot.get("random_skin_pool"), list) else []
-                ),
-            }
-
-        slots = {
-            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
-            for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
-        }
-        first_slot = slots["pick_1"]
-        return {
-            "presets_enabled": bool(params.get("presets_enabled", True)),
-            "pick_slots": slots,
-            "selected_pick_1": slots["pick_1"]["champion"],
-            "selected_pick_2": slots["pick_2"]["champion"],
-            "selected_pick_3": slots["pick_3"]["champion"],
-            "selected_ban": params.get("selected_ban", ""),
-            "spell_1": first_slot.get("spell_1", ""),
-            "spell_2": first_slot.get("spell_2", ""),
-        }
+        return build_effective_profile_config(self.get_params())
 
     def is_main_preview_presets_enabled(self) -> bool:
         params = self.get_params()

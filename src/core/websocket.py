@@ -8,7 +8,7 @@ GLOBAL PURPOSE:
 KEY FUNCTIONS:
 - WebSocketManager: Own the LCU connector lifecycle and runtime state.
 - _ws_loop: Run the connector inside a dedicated asyncio loop and register event handlers.
-- get_effective_profile_config: Resolve global and role-specific settings into one effective profile.
+- get_effective_profile_config: Resolve global settings into one effective profile.
 - _refresh_player_and_region: Keep detected account and region data synchronized with the client.
 
 AUDIENCE & LOGIC:
@@ -54,10 +54,10 @@ from ..config import (
     EP_SESSION,
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
-    PICK_SLOT_ORDER,
     PLATFORM_TO_REGION,
 )
 from ..services.history import log_history_event
+from ..services.profile_config import build_effective_profile_config
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
 
@@ -172,54 +172,7 @@ class WebSocketManager(ChampSelectMixin):
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Resolve the effective profile from global pick slots and champion picks."""
-        params = params or self.get_params()
-        pick_slots = params.get("pick_slots", {})
-        if not isinstance(pick_slots, dict):
-            pick_slots = {}
-
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
-            slot = pick_slots.get(slot_key, {}) if isinstance(pick_slots.get(slot_key, {}), dict) else {}
-
-            def _to_int(value: Any) -> int:
-                try:
-                    return int(value or 0)
-                except (TypeError, ValueError):
-                    return 0
-
-            return {
-                "champion": params.get(pick_key, ""),
-                "spell_1": slot.get("spell_1", ""),
-                "spell_2": slot.get("spell_2", ""),
-                "skin_mode": str(slot.get("skin_mode") or "none").strip().lower(),
-                "skin_id": _to_int(slot.get("skin_id")),
-                "skin_name": str(slot.get("skin_name") or ""),
-                "skin_num": _to_int(slot.get("skin_num")),
-                "random_skin_id": _to_int(slot.get("random_skin_id")),
-                "random_skin_name": str(slot.get("random_skin_name") or ""),
-                "random_skin_num": _to_int(slot.get("random_skin_num")),
-                "random_skin_pool": (
-                    [dict(e) for e in slot["random_skin_pool"]]
-                    if isinstance(slot.get("random_skin_pool"), list) else []
-                ),
-                "rune_page_id": _to_int(slot.get("rune_page_id")),
-                "rune_page_name": str(slot.get("rune_page_name") or ""),
-            }
-
-        slots = {
-            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
-            for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
-        }
-        first_slot = slots["pick_1"]
-        return {
-            "presets_enabled": bool(params.get("presets_enabled", True)),
-            "pick_slots": slots,
-            "selected_pick_1": slots["pick_1"]["champion"],
-            "selected_pick_2": slots["pick_2"]["champion"],
-            "selected_pick_3": slots["pick_3"]["champion"],
-            "selected_ban": params.get("selected_ban", ""),
-            "spell_1": first_slot.get("spell_1", ""),
-            "spell_2": first_slot.get("spell_2", ""),
-        }
+        return build_effective_profile_config(params or self.get_params())
 
     def get_current_summoner_id(self) -> Optional[int]:
         try:

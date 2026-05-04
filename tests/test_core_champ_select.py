@@ -100,6 +100,24 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.manager._inventory_skin_is_owned({"owned": True}))
         self.assertFalse(self.manager._inventory_skin_is_owned({"owned": False}))
 
+    async def test_resolve_rune_selection_preserves_disabled_auto_apply(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Fallback", "rune_auto_apply": True}
+        )
+        self.params["pick_slots"]["pick_2"].update(
+            {"rune_page_id": 200, "rune_page_name": "Mid", "rune_auto_apply": False}
+        )
+
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self.manager._resolve_rune_selection(
+            self.params,
+            slot_key="pick_2",
+        )
+
+        self.assertEqual(rune_page_id, 200)
+        self.assertEqual(rune_page_name, "Mid")
+        self.assertEqual(chosen_slot, "pick_2")
+        self.assertFalse(rune_auto_apply)
+
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
 
