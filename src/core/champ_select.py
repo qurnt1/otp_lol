@@ -214,19 +214,27 @@ class ChampSelectMixin:
         queue_id = int(game_config.get("queueId") or 0)
         game_mode = str(game_config.get("gameMode") or "")
 
+        # Practice Tool and some custom games expose queueId=0 in the session
+        # even though the lobby previously reported a real queue id.  Fall back
+        # to the value captured during the Lobby/Matchmaking phase.
+        effective_queue_id = queue_id or self.state.current_queue_id
+
         if not self.state.non_preset_mode_notified:
             logging.info(
-                "[SESSION] queueId=%s gameMode=%r gameConfig=%s",
+                "[SESSION] queueId=%s gameMode=%r effectiveQueueId=%s",
                 queue_id,
                 game_mode,
-                self._format_debug_value(game_config),
+                effective_queue_id,
             )
 
-        presets_allowed = queue_id in PRESET_ENABLED_QUEUE_IDS or game_mode == PRACTICE_TOOL_GAME_MODE
+        presets_allowed = (
+            effective_queue_id in PRESET_ENABLED_QUEUE_IDS
+            or game_mode == PRACTICE_TOOL_GAME_MODE
+        )
         if not presets_allowed:
             if not self.state.non_preset_mode_notified:
                 self.state.non_preset_mode_notified = True
-                logging.info("Queue %s — presets disabled for this session.", queue_id)
+                logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
                 self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
             return
 

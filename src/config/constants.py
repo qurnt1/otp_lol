@@ -108,6 +108,8 @@ PRESET_ENABLED_QUEUE_IDS: set[int] = {
     440,  # Ranked Flex
     490,  # Normal Quickplay
     700,  # Clash
+    3100,  # Practice Tool — Blind
+    3110,  # Practice Tool — Draft
 }
 
 PRACTICE_TOOL_GAME_MODE: str = "PRACTICETOOL"
