@@ -18,7 +18,7 @@ import unittest
 
 from src.core.websocket import WebSocketManager
 
-from .fake_lcu_server import FakeLCUServer
+from tests.fake_lcu_server import FakeLCUServer
 
 
 # Shared event collector
