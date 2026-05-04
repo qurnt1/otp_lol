@@ -157,24 +157,6 @@ class WebSocketManager(ChampSelectMixin):
             or PLATFORM_TO_REGION.get((self.state.platform_routing or "").lower(), "euw")
         ).lower()
 
-    @staticmethod
-    def _normalize_role(role: str) -> str:
-        role = (role or "").upper()
-        aliases = {
-            "MID": "MIDDLE",
-            "MIDDLE": "MIDDLE",
-            "JGL": "JUNGLE",
-            "JUNGLE": "JUNGLE",
-            "ADC": "BOTTOM",
-            "BOT": "BOTTOM",
-            "BOTTOM": "BOTTOM",
-            "SUP": "UTILITY",
-            "SUPPORT": "UTILITY",
-            "UTILITY": "UTILITY",
-            "TOP": "TOP",
-        }
-        return aliases.get(role, role)
-
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
         effective = self.get_effective_profile_config(params=params)
         return {
@@ -187,7 +169,6 @@ class WebSocketManager(ChampSelectMixin):
 
     def get_effective_profile_config(
         self,
-        role: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Resolve the effective profile from global pick slots and champion picks."""

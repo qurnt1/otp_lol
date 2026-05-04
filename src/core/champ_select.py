@@ -963,21 +963,6 @@ class ChampSelectMixin:
                 await asyncio.sleep(self.SKIN_CONFIRM_DELAY_S)
         return False
 
-    def _selection_has_expected_skin(
-        self: "WebSocketManager",
-        session: Optional[Dict[str, Any]],
-        params: Dict[str, Any],
-        *,
-        slot_key: Optional[str] = None,
-    ) -> bool:
-        local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            return False
-        skin_selection, _ = self._resolve_skin_selection(params, slot_key=slot_key)
-        if not skin_selection or int(skin_selection.get("skin_id") or 0) <= 0:
-            return True
-        return int(local_selection.get("selectedSkinId") or 0) == int(skin_selection.get("skin_id") or 0)
-
     def _ensure_skin_is_applied(
         self: "WebSocketManager",
         session: Dict[str, Any],
@@ -1109,7 +1094,6 @@ class ChampSelectMixin:
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
         self.state.desired_spell_ids = (spell1_id, spell2_id)
         self.state.last_spell_try_ts = time()
-        effective = self.get_effective_profile_config(params=params)
         logging.info(
             "[SPELLS] Applying %s for %s: %s(%s) + %s(%s).",
             chosen_slot,
@@ -1198,7 +1182,6 @@ class ChampSelectMixin:
             return
 
         self.state.skin_apply_in_progress = True
-        effective = self.get_effective_profile_config(params=params)
         selected_skin = dict(skin_selection)
         try:
             pickable_skins = await self._fetch_pickable_skins(champion_id)
@@ -1403,7 +1386,6 @@ class ChampSelectMixin:
 
         self.state.desired_rune_page_id = rune_page_id
         self.state.last_rune_try_ts = time()
-        effective = self.get_effective_profile_config(params=params)
         logging.info(
             "[RUNES] Applying for %s: page \"%s\" (id=%s) via role=%s.",
             chosen_slot,

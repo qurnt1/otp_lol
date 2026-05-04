@@ -26,7 +26,6 @@ Uses:
 """
 
 import logging
-import os
 import webbrowser
 from datetime import datetime
 from tkinter import filedialog
@@ -47,10 +46,8 @@ from ..config import (
     REGION_LIST,
     STATS_SITE_LABELS,
     SUMMONER_SPELL_LIST,
-    URL_PHASE_RUSH_ICON,
     THEME_LABELS,
     THEME_ORDER,
-    THEME_PALETTE,
     export_parameters_to_file,
     import_parameters_from_file,
     resource_path,
@@ -543,9 +540,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
 
 
 
-    def _normalize_empty_choice(value: str) -> str:
-        return "(None)" if value in {"", "..."} else value
-
     @staticmethod
     def _format_visible_value(value: str) -> str:
         if value == "(None)":
@@ -656,6 +650,27 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         pick_slots = self.parent.get_params().get("pick_slots", {})
         slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
         return dict(slot_data) if isinstance(slot_data, dict) else {}
+
+    def _get_pick_slot_value(self, slot_key: str, field: str) -> str:
+        pick_slots = self.parent.get_params().get("pick_slots", {})
+        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
+        return str(slot_data.get(field, "")) if isinstance(slot_data, dict) else ""
+
+    def _get_global_pick_slot_value(self, slot_key: str, field: str) -> str:
+        return self._get_pick_slot_value(slot_key, field)
+
+    def _set_pick_slot_value(self, slot_key: str, field: str, value: Any) -> None:
+        params = self.parent.get_params()
+        pick_slots = params.get("pick_slots", {})
+        if not isinstance(pick_slots, dict):
+            pick_slots = {}
+        new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
+        slot_data = new_slots.get(slot_key, {})
+        if not isinstance(slot_data, dict):
+            slot_data = {}
+        slot_data[field] = value
+        new_slots[slot_key] = slot_data
+        self.parent.update_param("pick_slots", new_slots)
 
     def _get_slot_champion_name(self, slot_key: str) -> str:
         slot_number = PICK_SLOT_ORDER.index(slot_key) + 1
@@ -1002,16 +1017,6 @@ class SettingsWindow(SettingsSkinMixin, SettingsRunesMixin, SettingsHotkeysMixin
         self.toggle_summoner_entry()
         if self.window.winfo_exists():
             self.window.update_idletasks()
-
-    def _on_stats_site_selected(self, event=None) -> None:
-        selected_label = self.stats_site_cb.get().strip()
-        selected_site = next((site for site, label in STATS_SITE_LABELS.items() if label == selected_label), "opgg")
-        self._select_stats_site(selected_site)
-
-    def _on_hotkey_site_selected(self, event=None) -> None:
-        selected_label = self.hotkey_site_cb.get().strip()
-        selected_site = next((site for site, label in HOTKEY_SITE_LABELS.items() if label == selected_label), "porofessor")
-        self._select_hotkey_site(selected_site)
 
     def _on_manual_region_selected(self, event=None) -> None:
         selected = self.region_var.get().strip().lower()

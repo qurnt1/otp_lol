@@ -33,7 +33,7 @@ import re
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import scrolledtext
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -45,8 +45,6 @@ from ..config import (
     CURRENT_VERSION,
     GITHUB_DOWNLOAD_ZIP_URL,
     GITHUB_REPO_URL,
-    PICK_SLOT_ORDER,
-    STATS_SITE_LABELS,
     THEME_PALETTE,
     WEBSITE_LOGO_FILES,
     resource_path,
@@ -152,10 +150,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
     @property
     def tray_available(self) -> bool:
         return self.tray_controller.available
-
-    @property
-    def hotkeys_available(self) -> bool:
-        return self.hotkey_manager.available
 
     def set_ws_manager(self, ws_manager) -> None:
         """Attach the live websocket manager once launcher wiring is complete."""
@@ -535,31 +529,9 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         except Exception as e:
             logging.debug("Unable to schedule tray quit on UI thread: %s", e)
 
-    @staticmethod
-    def _normalize_profile_role(role: str) -> str:
-        normalized_role = (role or "GLOBAL").upper()
-        aliases = {
-            "MID": "MIDDLE",
-            "ADC": "BOTTOM",
-            "BOT": "BOTTOM",
-            "SUP": "UTILITY",
-            "SUPPORT": "UTILITY",
-            "JGL": "JUNGLE",
-        }
-        normalized_role = aliases.get(normalized_role, normalized_role)
-        return normalized_role if normalized_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
-
-    def _get_selected_profile_role(self) -> str:
-        return self._normalize_profile_role(self.get_params().get("selected_profile_role", "GLOBAL"))
-
     def _sync_settings_window_if_open(self) -> None:
         if self.settings_win and self.settings_win.window.winfo_exists():
             self.settings_win._sync_from_params()
-
-    def _get_main_preview_role(self) -> str:
-        if self.ws_manager and self.ws_manager.state.assigned_position:
-            return self._normalize_profile_role(self.ws_manager.state.assigned_position)
-        return "GLOBAL"
 
     def is_tray_presets_automation_enabled(self) -> bool:
         return bool(self.get_params().get("presets_enabled", True))

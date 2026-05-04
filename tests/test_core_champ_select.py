@@ -80,20 +80,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                 "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
                 "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
             },
-            "role_profiles": {
-                "MIDDLE": {
-                    "presets_enabled": False,
-                    "selected_pick_1": "Lux",
-                    "selected_pick_2": "Ashe",
-                    "selected_pick_3": "",
-                    "selected_ban": "Teemo",
-                    "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 99007, "random_skin_name": "Star Guardian Lux", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7}, {"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}]},
-                        "pick_2": {"spell_1": "Heal", "spell_2": "Ghost", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                    },
-                }
-            },
         }
         self.manager = WebSocketManager(
             ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
@@ -299,7 +285,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_prepick_uses_first_pickable_champion_in_priority(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager.state.time_left_ms = 5000
         self.manager._hover_champion = AsyncMock(return_value=True)
 
@@ -506,10 +491,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_skin_fixed_validates_pickable_before_applying(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_2"].update(
-            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
-        )
         self.manager.state.last_locked_pick_slot = "pick_2"
 
         async def request(method, url, **kwargs):
@@ -537,10 +518,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_skin_fixed_skips_non_pickable_skin(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_2"].update(
-            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
-        )
         self.manager.state.last_locked_pick_slot = "pick_2"
 
         async def request(method, url, **kwargs):
@@ -573,7 +550,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.manager.state.last_locked_pick_slot = "pick_2"
         self.manager.state.last_spell_try_ts = 0
         self.params["auto_summoners_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._set_spells = AsyncMock()
 
         async def request(method, url, **kwargs):
@@ -607,7 +583,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.manager.state.has_prepicked = True
         self.manager.state.last_prepick_slot = "pick_1"
         self.params["auto_summoners_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._logic_do_ban = AsyncMock()
         self.manager._logic_do_pick = AsyncMock()
         self.manager._set_spells = AsyncMock()

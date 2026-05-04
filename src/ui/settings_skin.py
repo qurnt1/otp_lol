@@ -13,15 +13,10 @@ Uses:
 - Local modules: src.config, src.ui.skin_picker
 """
 
-import logging
-import os
 import random
 from typing import Any, Dict, Optional
 
-from PIL import Image, ImageTk
-import ttkbootstrap as ttk
-
-from ..config import APP_IMAGE_FILES, resource_path
+from ..config import APP_IMAGE_FILES
 from .skin_picker import open_skin_picker
 
 

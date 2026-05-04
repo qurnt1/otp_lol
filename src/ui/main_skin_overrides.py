@@ -21,7 +21,7 @@ class MainSkinOverridesMixin:
     """Skin override and mode cycling helpers for the main window."""
 
     def _cycle_main_preview_skin_mode(self) -> Optional[str]:
-        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        effective = self.get_effective_profile_config()
         cycle_modes = self._get_main_preview_skin_cycle_modes(effective=effective)
         if len(cycle_modes) == 1:
             return None
@@ -38,7 +38,7 @@ class MainSkinOverridesMixin:
 
 
     def _cycle_main_preview_skin_mode_for_slot(self, slot_key: str) -> Optional[str]:
-        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        effective = self.get_effective_profile_config()
         pick_slots = effective.get("pick_slots", {})
         slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
         cycle_modes = self._get_main_preview_skin_cycle_modes(slot_data)
@@ -56,7 +56,7 @@ class MainSkinOverridesMixin:
 
 
     def _get_effective_main_preview_skin_mode(self, effective: Optional[Dict[str, Any]] = None) -> str:
-        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+        effective = effective or self.get_effective_profile_config()
         slot_modes = [
             self._get_effective_main_preview_skin_mode_for_slot(slot_key, effective=effective)
             for slot_key in PICK_SLOT_ORDER
@@ -75,7 +75,7 @@ class MainSkinOverridesMixin:
         *,
         effective: Optional[Dict[str, Any]] = None,
     ) -> str:
-        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+        effective = effective or self.get_effective_profile_config()
         overrides = self._get_main_skin_overrides()
         override_mode = overrides.get(slot_key, "inherit")
         if override_mode in {"none", "fixed", "random"}:
@@ -86,7 +86,7 @@ class MainSkinOverridesMixin:
 
     def _get_main_preview_skin_cycle_modes(self, slot_data: Optional[Dict[str, Any]] = None, *, effective: Optional[Dict[str, Any]] = None) -> List[str]:
         if slot_data is None:
-            effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
+            effective = effective or self.get_effective_profile_config()
             pick_slots = effective.get("pick_slots", {})
             modes = ["none"]
             if any(self._has_fixed_skin(pick_slots.get(slot_key, {})) for slot_key in PICK_SLOT_ORDER):
@@ -100,13 +100,6 @@ class MainSkinOverridesMixin:
         if self._has_random_skin(slot_data):
             modes.append("random")
         return modes
-
-
-    def _get_main_preview_skin_target_role(self, effective: Optional[Dict[str, Any]] = None) -> str:
-        effective = effective or self.get_effective_profile_config(role=self._get_main_preview_role())
-        slot_data = effective.get("pick_slots", {}).get("pick_1", {})
-        source_role = str(slot_data.get("skin_source_role") or "GLOBAL").upper()
-        return source_role if source_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
 
 
     def _get_main_skin_overrides(self) -> Dict[str, str]:
@@ -127,12 +120,6 @@ class MainSkinOverridesMixin:
                 mode = str(raw_overrides.get(slot, overrides[slot]) or overrides[slot]).strip().lower()
                 overrides[slot] = mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
         return overrides
-
-
-    def _get_pick_slot_config_for_role(self, slot_key: str) -> Dict[str, Any]:
-        pick_slots = self.get_params().get("pick_slots", {})
-        slot_data = pick_slots.get(slot_key, {}) if isinstance(pick_slots, dict) else {}
-        return dict(slot_data) if isinstance(slot_data, dict) else {}
 
 
     def _set_pick_slot_skin_mode(self, slot_key: str, mode: str) -> None:

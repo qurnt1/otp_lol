@@ -65,6 +65,31 @@ class DummyRoot:
 
 
 class MainWindowLogicTests(unittest.TestCase):
+    def test_effective_profile_config_without_ws_uses_selected_pick_keys(self):
+        window = LoLAssistantUI.__new__(LoLAssistantUI)
+        window.ws_manager = None
+        window.get_params = lambda: {
+            "presets_enabled": True,
+            "selected_pick_1": "Garen",
+            "selected_pick_2": "Lux",
+            "selected_pick_3": "Ashe",
+            "selected_ban": "Teemo",
+            "pick_slots": {
+                "pick_1": {"spell_1": "Ghost", "spell_2": "Flash"},
+                "pick_2": {"spell_1": "Heal", "spell_2": "Flash"},
+                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite"},
+            },
+        }
+
+        effective = window.get_effective_profile_config()
+
+        self.assertEqual(effective["selected_pick_1"], "Garen")
+        self.assertEqual(effective["selected_pick_2"], "Lux")
+        self.assertEqual(effective["selected_pick_3"], "Ashe")
+        self.assertEqual(effective["pick_slots"]["pick_1"]["champion"], "Garen")
+        self.assertEqual(effective["pick_slots"]["pick_2"]["champion"], "Lux")
+        self.assertEqual(effective["pick_slots"]["pick_3"]["champion"], "Ashe")
+
     def test_build_feature_preview_payload_uses_global_flags_and_effective_values(self):
         window = LoLAssistantUI.__new__(LoLAssistantUI)
         params = {
@@ -285,7 +310,7 @@ class MainWindowLogicTests(unittest.TestCase):
         self.assertEqual(window.settings_win.sync_calls, 1)
         self.assertEqual(mutable.toasts[0][0], "Auto-ban disabled.")
 
-    def test_set_main_preview_presets_enabled_updates_global_flags_and_global_role(self):
+    def test_set_main_preview_presets_enabled_updates_global_flags(self):
         params = {
             "auto_pick_enabled": False,
             "auto_summoners_enabled": False,
@@ -295,7 +320,6 @@ class MainWindowLogicTests(unittest.TestCase):
         mutable = MutableParamsWindow(params)
         window.get_params = mutable.get_params
         window.update_param = mutable.update_param
-        window._get_main_preview_role = lambda: "GLOBAL"
 
         window.set_main_preview_presets_enabled(True)
 
@@ -327,8 +351,7 @@ class MainWindowLogicTests(unittest.TestCase):
         window.show_toast = mutable.show_toast
         window.settings_win = mutable.settings_win
         window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
-        window._get_main_preview_role = lambda: "TOP"
-        window.get_effective_profile_config = lambda role=None: {
+        window.get_effective_profile_config = lambda: {
             "pick_slots": {
                 "pick_1": {
                     "champion": "Garen",
@@ -402,8 +425,7 @@ class MainWindowLogicTests(unittest.TestCase):
         window.show_toast = mutable.show_toast
         window.settings_win = mutable.settings_win
         window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
-        window._get_main_preview_role = lambda: "GLOBAL"
-        window.get_effective_profile_config = lambda role=None: {
+        window.get_effective_profile_config = lambda: {
             "pick_slots": {
                 "pick_1": {
                     "champion": "Garen",
@@ -473,8 +495,7 @@ class MainWindowLogicTests(unittest.TestCase):
         window.update_param = mutable.update_param
         window.show_toast = mutable.show_toast
         window.settings_win = mutable.settings_win
-        window._get_main_preview_role = lambda: "GLOBAL"
-        window.get_effective_profile_config = lambda role=None: {
+        window.get_effective_profile_config = lambda: {
             "pick_slots": {
                 "pick_1": {
                     "champion": "Garen",

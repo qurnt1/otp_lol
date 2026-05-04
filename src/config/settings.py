@@ -3,11 +3,10 @@ FILE NAME: src/config/settings.py
 GLOBAL PURPOSE:
 - Define default configuration payloads for the application.
 - Load, normalize, reset, import, and export persisted settings.
-- Keep schema migration rules explicit for profile data, pick slots, and skin settings.
+- Keep schema migration rules explicit for pick slots and skin settings.
 
 KEY FUNCTIONS:
 - build_pick_slot_defaults: Build a normalized pick-slot structure.
-- build_role_profile_defaults: Build default role-profile payloads.
 - load_parameters: Load and validate the persisted settings file.
 - save_parameters: Persist normalized settings to disk.
 - _normalize_parameters: Enforce the current configuration schema.
@@ -400,7 +399,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize loaded parameters and migrate old keys."""
     merged = copy.deepcopy(DEFAULT_PARAMS)
     for key, value in config.items():
-        if key == "pick_slots":
+        if key == "pick_slots" or key not in DEFAULT_PARAMS:
             continue
         merged[key] = value
 

@@ -29,7 +29,7 @@ Uses:
 import base64
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import requests
 from packaging.version import InvalidVersion, Version

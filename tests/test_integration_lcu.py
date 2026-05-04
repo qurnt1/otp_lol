@@ -73,8 +73,6 @@ def _fake_get_params():
                 "rune_keystone_path": "", "rune_sub_style_icon_path": "",
             },
         },
-        "role_profiles": {},
-        "selected_profile_role": "GLOBAL",
         "auto_detected_region": "",
         "auto_detected_platform": "",
         "auto_detected_riot_id": "",

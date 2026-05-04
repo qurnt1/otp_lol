@@ -17,7 +17,6 @@ class DummyVar:
 class FakeParent:
     def __init__(self):
         self.params = {
-            "selected_profile_role": "MIDDLE",
             "presets_enabled": False,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
@@ -33,20 +32,6 @@ class FakeParent:
             "hotkey_toggle_window": "alt+c",
             "hotkey_open_site": "alt+p",
             "theme": "darkly",
-            "role_profiles": {
-                "MIDDLE": {
-                    "presets_enabled": True,
-                    "selected_pick_1": "Ahri",
-                    "selected_pick_2": "",
-                    "selected_pick_3": "",
-                    "selected_ban": "Zed",
-                    "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 9999, "random_skin_name": "Star Guardian Ahri", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 9999, "skin_name": "Star Guardian Ahri", "skin_num": 7}], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
-                        "pick_2": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
-                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": [], "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True},
-                    },
-                }
-            },
         }
         self.suspend_calls = 0
         self.resume_calls = 0
@@ -85,7 +70,6 @@ class SettingsWindowLogicTests(unittest.TestCase):
     def make_window(self):
         window = SettingsWindow.__new__(SettingsWindow)
         window.parent = FakeParent()
-        window.profile_role_var = DummyVar("MIDDLE")
         window.pick_buttons = {}
         window.pick_spell_buttons = {}
         window.pick_skin_buttons = {}
@@ -192,36 +176,6 @@ class SettingsWindowLogicTests(unittest.TestCase):
             calls,
             [("pick", 1), ("pick", 2), ("pick", 3)],
         )
-
-    def test_stats_site_selection_updates_parent_config(self):
-        window = self.make_window()
-
-        class DummyCombo:
-            def get(self):
-                return "DeepLOL"
-
-        window.stats_site_cb = DummyCombo()
-        window.preferred_stats_site_var = DummyVar("opgg")
-
-        window._on_stats_site_selected()
-
-        self.assertEqual(window.parent.params["preferred_stats_site"], "deeplol")
-        self.assertEqual(window.preferred_stats_site_var.get(), "deeplol")
-
-    def test_hotkey_site_selection_updates_parent_config(self):
-        window = self.make_window()
-
-        class DummyCombo:
-            def get(self):
-                return "OP.GG"
-
-        window.hotkey_site_cb = DummyCombo()
-        window.preferred_hotkey_site_var = DummyVar("porofessor")
-
-        window._on_hotkey_site_selected()
-
-        self.assertEqual(window.parent.params["preferred_hotkey_site"], "opgg")
-        self.assertEqual(window.preferred_hotkey_site_var.get(), "opgg")
 
     def test_format_hotkey_display_is_human_readable(self):
         self.assertEqual(SettingsWindow._format_hotkey_display("ctrl+alt+p"), "CTRL + ALT + P")

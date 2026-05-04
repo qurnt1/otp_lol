@@ -51,7 +51,6 @@ from ..config import (
     URL_DD_IMG_CHAMP,
     URL_DD_IMG_SPELL,
     URL_DD_SKIN_SPLASH,
-    URL_DD_SPLASH,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
     URL_PERK_ICON_PREFIX,
@@ -389,15 +388,6 @@ class DataDragon:
             logging.warning("DataDragon: Summ icon download error - %s", e)
         return None
 
-    def get_splash_art(self, champion_name: str) -> Optional[Image.Image]:
-        champion_id = self.resolve_champion(champion_name)
-        if not champion_id:
-            return None
-
-        real_name = self.by_id[champion_id].get("id", champion_name)
-        url = URL_DD_SPLASH.format(champion=real_name)
-        return self.get_remote_image(url, cache_key=f"splash_{real_name}_0")
-
     def get_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
@@ -583,38 +573,6 @@ class DataDragon:
                     return dict(entry)
         return None
 
-    def get_skin_splash_url(
-        self,
-        champion_name_or_id: Any,
-        *,
-        skin_name: Optional[str] = None,
-        skin_id: Optional[Any] = None,
-        skin_num: Optional[Any] = None,
-    ) -> Optional[str]:
-        skin_data = self.resolve_skin_data(
-            champion_name_or_id,
-            skin_name=skin_name,
-            skin_id=skin_id,
-            skin_num=skin_num,
-        )
-        return skin_data.get("splash_url") if skin_data else None
-
-    def get_skin_tile_url(
-        self,
-        champion_name_or_id: Any,
-        *,
-        skin_name: Optional[str] = None,
-        skin_id: Optional[Any] = None,
-        skin_num: Optional[Any] = None,
-    ) -> Optional[str]:
-        skin_data = self.resolve_skin_data(
-            champion_name_or_id,
-            skin_name=skin_name,
-            skin_id=skin_id,
-            skin_num=skin_num,
-        )
-        return skin_data.get("tile_url") if skin_data else None
-
     def get_skin_preview_url(
         self,
         champion_name_or_id: Any,
@@ -637,47 +595,6 @@ class DataDragon:
             or skin_data.get("uncentered_splash_url")
             or skin_data.get("splash_url")
         )
-
-    def get_skin_picker_url(
-        self,
-        champion_name_or_id: Any,
-        *,
-        skin_name: Optional[str] = None,
-        skin_id: Optional[Any] = None,
-        skin_num: Optional[Any] = None,
-    ) -> Optional[str]:
-        skin_data = self.resolve_skin_data(
-            champion_name_or_id,
-            skin_name=skin_name,
-            skin_id=skin_id,
-            skin_num=skin_num,
-        )
-        if not skin_data:
-            return None
-        return (
-            skin_data.get("centered_splash_url")
-            or skin_data.get("splash_url")
-            or skin_data.get("tile_url")
-        )
-
-    def get_skin_splash_art(
-        self,
-        champion_name_or_id: Any,
-        *,
-        skin_name: Optional[str] = None,
-        skin_id: Optional[Any] = None,
-        skin_num: Optional[Any] = None,
-    ) -> Optional[Image.Image]:
-        skin_data = self.resolve_skin_data(
-            champion_name_or_id,
-            skin_name=skin_name,
-            skin_id=skin_id,
-            skin_num=skin_num,
-        )
-        if not skin_data:
-            return None
-        cache_key = f"skin_{skin_data['champion_slug']}_{skin_data['skin_num']}"
-        return self.get_remote_image(skin_data["splash_url"], cache_key=cache_key)
 
     @staticmethod
     def _communitydragon_asset_url(asset_path: str) -> Optional[str]:

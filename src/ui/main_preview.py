@@ -15,7 +15,7 @@ Uses:
 
 import logging
 import os
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import tkinter as tk
 import ttkbootstrap as ttk
@@ -270,10 +270,7 @@ class MainPreviewMixin:
         if not self.feature_preview_frame or not self.feature_preview_frame.winfo_exists():
             return
 
-        detected_role = "GLOBAL"
-        if self.ws_manager and self.ws_manager.state.assigned_position:
-            detected_role = self.ws_manager.state.assigned_position
-        effective = self.get_effective_profile_config(role=detected_role)
+        effective = self.get_effective_profile_config()
         params = self.get_params()
         preview_data = self._build_feature_preview_payload(params, effective)
         signature = self._build_preview_signature(preview_data)
@@ -472,10 +469,10 @@ class MainPreviewMixin:
         self.show_toast(label_map.get(next_mode, f"{slot_label} skin updated."), duration=1100)
 
 
-    def get_effective_profile_config(self, role: Optional[str] = None) -> Dict[str, Any]:
+    def get_effective_profile_config(self) -> Dict[str, Any]:
         """Return the effective preview profile, even before the websocket is ready."""
         if self.ws_manager:
-            return self.ws_manager.get_effective_profile_config(role=role)
+            return self.ws_manager.get_effective_profile_config()
 
         params = self.get_params()
         pick_slots = params.get("pick_slots", {})
@@ -507,7 +504,7 @@ class MainPreviewMixin:
             }
 
         slots = {
-            slot_key: _resolve_slot(slot_key, f"selected_pick_{{index}}")
+            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
             for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
         }
         first_slot = slots["pick_1"]
@@ -524,7 +521,7 @@ class MainPreviewMixin:
 
     def is_main_preview_presets_enabled(self) -> bool:
         params = self.get_params()
-        effective = self.get_effective_profile_config(role=self._get_main_preview_role())
+        effective = self.get_effective_profile_config()
         return (
             bool(params.get("auto_pick_enabled", True))
             and bool(params.get("auto_summoners_enabled", True))

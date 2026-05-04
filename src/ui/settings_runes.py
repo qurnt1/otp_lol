@@ -20,7 +20,7 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from PIL import Image, ImageTk
 
-from ..config import PICK_SLOT_ORDER, PICK_SLOT_LABELS, URL_PHASE_RUSH_ICON
+from ..config import URL_PHASE_RUSH_ICON
 
 
 class SettingsRunesMixin:
