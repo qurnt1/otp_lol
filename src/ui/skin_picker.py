@@ -299,7 +299,9 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         anchor="w",
         wraplength=420,
     )
-    status_label.pack(fill="x", pady=(8, 0))
+    status_label.pack(fill="x", pady=(6, 2))
+
+    ttk.Separator(container).pack(fill="x", pady=(6, 4))
 
     # ---- Scrollable skin list ----
     scroll_container = ScrolledFrame(container, autohide=False)

@@ -158,6 +158,20 @@ class SettingsRunesMixin:
         container = ttk.Frame(popup, padding=12)
         container.pack(fill="both", expand=True)
 
+        if self.parent and hasattr(self.parent, "ws_manager"):
+            ws = self.parent.ws_manager
+        else:
+            ws = None
+
+        header = ttk.Frame(container)
+        header.pack(fill="x", pady=(0, 6))
+        ttk.Label(header, text="Select a rune page", font=("Segoe UI", 13, "bold")).pack(side="left")
+
+        btn_frame = ttk.Frame(header)
+        btn_frame.pack(side="right")
+        ttk.Button(btn_frame, text="Fetch runes", bootstyle="info-outline", command=lambda: _refresh_pages(), width=12
+                   ).pack(side="left", padx=(0, 6))
+
         status_var = tk.StringVar(value="")
         status_label = tk.Label(
             container,
@@ -169,26 +183,12 @@ class SettingsRunesMixin:
             anchor="w",
             wraplength=420,
         )
-        status_label.pack(fill="x", pady=(0, 6))
-
-        if self.parent and hasattr(self.parent, "ws_manager"):
-            ws = self.parent.ws_manager
-        else:
-            ws = None
+        status_label.pack(fill="x", pady=(6, 2))
 
         if not ws or not getattr(ws, "is_active", False):
             status_var.set(picker_lcu_status_message("runes"))
         else:
             status_var.set("")
-
-        header = ttk.Frame(container)
-        header.pack(fill="x", pady=(0, 6))
-        ttk.Label(header, text="Select a rune page", font=("Segoe UI", 13, "bold")).pack(side="left")
-
-        btn_frame = ttk.Frame(header)
-        btn_frame.pack(side="right")
-        ttk.Button(btn_frame, text="Fetch runes", bootstyle="info-outline", command=lambda: _refresh_pages(), width=12
-                   ).pack(side="left", padx=(0, 6))
 
         def _build_auto_apply_row():
             """Add the auto-apply toggle as the first row in the pages list."""
