@@ -2,21 +2,23 @@ import unittest
 import base64
 from unittest.mock import Mock, patch
 
-from src.services.updates import extract_highlights_section, extract_version_from_readme, format_highlights_for_popup
-from src.utils import (
+from src.services.updates import (
+    check_for_updates,
+    extract_highlights_section,
+    extract_version_from_readme,
+    format_highlights_for_popup,
+    is_newer_version,
+    normalize_version,
+)
+from src.services.urls import (
     build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
-    build_ingame_stats_url,
     build_leagueofgraphs_url,
     build_opgg_url,
-    build_player_stats_url,
     build_porofessor_url,
     build_stats_site_url,
-    check_for_updates,
     is_valid_riot_id,
-    is_newer_version,
-    normalize_version,
 )
 
 
@@ -104,24 +106,6 @@ class UtilsTests(unittest.TestCase):
             "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
         )
 
-    def test_build_player_and_ingame_aliases(self):
-        self.assertEqual(
-            build_player_stats_url("deeplol", "euw", "MonCompte#EUW"),
-            "https://www.deeplol.gg/summoner/euw/MonCompte-EUW",
-        )
-        self.assertEqual(
-            build_player_stats_url("dpm", "euw", "MonCompte#EUW"),
-            "https://dpm.lol/MonCompte-EUW/",
-        )
-        self.assertEqual(
-            build_ingame_stats_url("opgg", "euw", "MonCompte#EUW"),
-            "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW/ingame",
-        )
-        self.assertEqual(
-            build_ingame_stats_url("dpm", "euw", "MonCompte#EUW"),
-            "https://dpm.lol/MonCompte-EUW/live",
-        )
-
     def test_riot_id_validation(self):
         self.assertTrue(is_valid_riot_id("MonCompte#EUW"))
         self.assertFalse(is_valid_riot_id("MonCompte-EUW"))
@@ -158,8 +142,8 @@ class UtilsTests(unittest.TestCase):
         response = Mock()
         response.status_code = 200
         readme_text = (
-            "## Version 11.0 Highlights\n\n"
-            "Version `11.0` focuses on updates.\n\n"
+            "## Version 12.0 Highlights\n\n"
+            "Version `12.0` focuses on updates.\n\n"
             "- `Feature A`\n"
             "  Description A.\n"
         )
@@ -168,11 +152,11 @@ class UtilsTests(unittest.TestCase):
             "encoding": "base64",
         }
 
-        with patch("src.utils.requests.get", return_value=response):
+        with patch("src.services.updates.requests.get", return_value=response):
             update_info = check_for_updates()
 
         self.assertIsNotNone(update_info)
-        self.assertEqual(update_info["version"], normalize_version("11.0"))
+        self.assertEqual(update_info["version"], normalize_version("12.0"))
         self.assertIn("`Feature A`", update_info["highlights"])
         self.assertIn("Description A.", update_info["highlights"])
 

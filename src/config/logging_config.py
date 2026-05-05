@@ -1,18 +1,41 @@
-"""Logging configuration for OTP LOL."""
+"""
+FILE NAME: src/config/logging_config.py
+GLOBAL PURPOSE:
+- Configure application-wide logging once during import.
+- Route logs to both a file and the current console stream.
+- Expose the resolved log-file path to the rest of the application.
+
+KEY FUNCTIONS:
+- _setup_logging: Configure root logger handlers and return the final log path.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so all runtime modules share the same logging format, output paths, and encoding behavior.
+For whom:
+Developers debugging runtime behavior or maintaining the logging setup.
+
+DEPENDENCIES:
+Used by:
+- src.config.__init__ and any module importing `LOG_FILE_PATH`.
+Uses:
+- Standard library: logging, os, sys, tempfile
+"""
 
 import logging
 import os
 import sys
 import tempfile
 
+APP_LOG_FOLDER = "OTP LOL"
+
 
 def _setup_logging() -> str:
-    """Configure logging in AppData/MainLoL/app_debug.log."""
+    """Configure root logging handlers and return the resolved log-file path."""
     app_data_dir = os.getenv("APPDATA")
     if not app_data_dir:
         app_data_dir = os.path.expanduser("~")
 
-    log_folder = os.path.join(app_data_dir, "MainLoL")
+    log_folder = os.path.join(app_data_dir, APP_LOG_FOLDER)
 
     if not os.path.exists(log_folder):
         try:
@@ -22,6 +45,7 @@ def _setup_logging() -> str:
 
     log_path = os.path.join(log_folder, "app_debug.log")
 
+    # Reconfigure stdout when possible so console logs do not break on Unicode output.
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8", errors="replace")

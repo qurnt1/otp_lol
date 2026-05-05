@@ -1,4 +1,28 @@
-"""Website picker helpers for settings."""
+"""
+FILE NAME: src/ui/site_picker.py
+GLOBAL PURPOSE:
+- Build the website-selection dialog used by the settings window.
+- Load and cache provider logos for the site-picker buttons.
+- Keep provider-picking UI separate from the larger settings module.
+
+KEY FUNCTIONS:
+- _load_site_logo: Load and cache a provider logo for picker buttons.
+- open_site_picker: Open the main-button or shortcut website picker dialog.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so provider-picker layout and logo loading stay isolated from the general settings logic.
+For whom:
+Developers maintaining site selection UI and provider branding assets.
+
+DEPENDENCIES:
+Used by:
+- src.ui.settings_window
+Uses:
+- Standard library: os, typing
+- Third-party libraries: Pillow, ttkbootstrap
+- Local modules: src.config
+"""
 
 import os
 from typing import TYPE_CHECKING
@@ -14,6 +38,7 @@ if TYPE_CHECKING:
 
 
 def _load_site_logo(owner: "SettingsWindow", site: str, size: int = 28):
+    """Load and cache a normalized provider logo image for the picker UI."""
     if not hasattr(owner, "website_logo_cache"):
         owner.website_logo_cache = {}
     cache_key = (site, size)
@@ -25,6 +50,8 @@ def _load_site_logo(owner: "SettingsWindow", site: str, size: int = 28):
         return None
 
     icon_path = resource_path(icon_rel_path)
+    # Allow a silent fallback to `.webp` when the configured file extension does
+    # not match the packaged asset.
     if not os.path.exists(icon_path):
         alt_path = os.path.splitext(icon_path)[0] + ".webp"
         if os.path.exists(alt_path):
@@ -60,6 +87,8 @@ def open_site_picker(owner: "SettingsWindow", picker_type: str) -> None:
     picker.protocol("WM_DELETE_WINDOW", owner._close_site_picker)
     picker.bind("<Escape>", lambda e: owner._close_site_picker())
 
+    # The same dialog supports two configuration targets: the main button and
+    # the keyboard-shortcut website.
     if picker_type == "stats":
         picker.title("Choose the main button website")
         allowed_sites = STATS_SITE_ORDER

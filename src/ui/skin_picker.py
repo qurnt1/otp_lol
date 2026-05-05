@@ -1,4 +1,30 @@
-"""Skin picker helpers for preset settings."""
+"""
+FILE NAME: src/ui/skin_picker.py
+GLOBAL PURPOSE:
+- Build the skin-selection dialog used by the settings window.
+- Merge catalog metadata with detected ownership and random-pool selections.
+- Keep skin-picker-specific sorting, confirmation, and preview behavior isolated from the main settings module.
+
+KEY FUNCTIONS:
+- open_skin_picker: Open the skin picker for one preset slot.
+- _merge_catalog_and_owned_skins: Merge catalog entries with owned-skin metadata.
+- _sort_skins_for_display: Prioritize selected skins at the top of the picker.
+- _confirm_unowned_skin_selection: Confirm selection when a skin is not detected on the account.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so skin-picking rules, ownership prompts, and preview ordering remain maintainable outside the already large settings module.
+For whom:
+Developers maintaining skin selection UX and random skin pool behavior.
+
+DEPENDENCIES:
+Used by:
+- src.ui.settings_window
+Uses:
+- Standard library: tkinter, typing
+- Third-party library: ttkbootstrap
+- Local modules: src.config, src.ui._picker_common
+"""
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -6,7 +32,11 @@ import tkinter as tk
 import ttkbootstrap as ttk
 from ttkbootstrap.scrolled import ScrolledFrame
 
-from ..config import THEME_PALETTE
+from ._picker_common import (
+    get_picker_colors,
+    picker_empty_message,
+    picker_lcu_status_message,
+)
 
 if TYPE_CHECKING:
     from .settings_window import SettingsWindow
@@ -16,6 +46,7 @@ def _merge_catalog_and_owned_skins(
     catalog_skins: List[Dict[str, Any]],
     owned_skins: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
+    """Merge catalog skin entries with owned-skin metadata while preserving one row per skin."""
     owned_by_id: dict[int, Dict[str, Any]] = {}
     for entry in owned_skins:
         if not isinstance(entry, dict):
@@ -39,7 +70,8 @@ def _merge_catalog_and_owned_skins(
         for key, value in owned_entry.items():
             if value not in {"", None}:
                 merged_entry[key] = value
-        merged_entry["owned"] = skin_id in owned_by_id
+        is_default_skin = int(merged_entry.get("skin_num") or 0) == 0
+        merged_entry["owned"] = skin_id in owned_by_id or is_default_skin
         merged_entry["preview_url"] = (
             merged_entry.get("preview_url")
             or merged_entry.get("tile_url")
@@ -66,6 +98,7 @@ def _merge_catalog_and_owned_skins(
 
 
 def _get_picker_image_url(skin: Dict[str, Any]) -> str:
+    """Return the best available preview image URL for the picker card."""
     return str(
         skin.get("centered_splash_url")
         or skin.get("splash_url")
@@ -82,6 +115,7 @@ def _sort_skins_for_display(
     fixed_skin_id: int = 0,
     pool_ids: Optional[set[int]] = None,
 ) -> List[Dict[str, Any]]:
+    """Move selected skins to the top while keeping the remaining list order stable."""
     normalized_mode = str(mode or "fixed").strip().lower()
     selected_ids = set(pool_ids or set()) if normalized_mode == "random" else set()
     prioritized: List[Dict[str, Any]] = []
@@ -98,92 +132,72 @@ def _confirm_unowned_skin_selection(
     *,
     owner: Optional["SettingsWindow"] = None,
     ask_fn: Optional[Any] = None,
+    lcu_available: bool = True,
 ) -> bool:
+    """Ask for confirmation before selecting a skin whose ownership is uncertain.
+
+    When the LCU is unavailable the message explains that ownership cannot be
+    verified at all, rather than claiming the skin is missing from the account.
+    """
     if bool(skin.get("owned")):
         return True
-    if ask_fn is not None:
-        return bool(
-            ask_fn(
-                "Skin not detected",
-                "Warning: this skin is not detected on this account.\n"
-                "Are you sure you want to select it?",
-            )
+
+    if not lcu_available:
+        title = "LoL client not detected"
+        message = (
+            "Unable to verify if you own this skin because the LoL client "
+            "is not detected.\nLaunch League of Legends to check ownership."
+            "\n\nSelect this skin anyway?"
         )
+    else:
+        title = "Skin not detected"
+        message = (
+            "Warning: this skin is not detected on this account.\n"
+            "Are you sure you want to select it?"
+        )
+
+    if ask_fn is not None:
+        return bool(ask_fn(title, message))
+
     if owner is None:
         return False
 
-    theme_name = getattr(owner.parent, "theme", "darkly")
-    palette = THEME_PALETTE.get(theme_name, THEME_PALETTE["darkly"])
     prompt = ttk.Toplevel(owner.window)
     if getattr(owner.window, "_icon_img", None):
         prompt.iconphoto(False, owner.window._icon_img)
-    prompt.title("Skin not detected")
+    prompt.title(title)
     prompt.resizable(False, False)
     prompt.transient(owner.window)
-    prompt.geometry(f"400x160+{owner.window.winfo_x()+110}+{owner.window.winfo_y()+120}")
-    prompt.configure(bg=palette["window_bg"])
+    prompt.geometry(f"410x210+{owner.window.winfo_x()+110}+{owner.window.winfo_y()+120}")
 
-    result = {"value": False}
+    result = False
 
-    def _close(value: bool) -> None:
-        result["value"] = value
-        try:
-            prompt.grab_release()
-        except Exception:
-            pass
+    def _on_yes():
+        nonlocal result
+        result = True
         prompt.destroy()
 
-    prompt.protocol("WM_DELETE_WINDOW", lambda: _close(False))
+    prompt.protocol("WM_DELETE_WINDOW", prompt.destroy)
 
-    container = tk.Frame(prompt, bg=palette["window_bg"], padx=18, pady=18)
-    container.pack(fill="both", expand=True)
+    frame = ttk.Frame(prompt, padding=20)
+    frame.pack(fill="both", expand=True)
 
-    title_label = tk.Label(
-        container,
-        text="Skin not detected",
-        bg=palette["window_bg"],
-        fg=palette["text"],
-        font=("Segoe UI", 12, "bold"),
-        anchor="w",
-    )
-    title_label.pack(fill="x", pady=(0, 8))
-
-    message_label = tk.Label(
-        container,
-        text="Warning: this skin is not detected on this account.\nAre you sure you want to select it?",
-        bg=palette["window_bg"],
-        fg=palette["text"],
-        justify="left",
-        anchor="w",
+    ttk.Label(
+        frame,
+        text=message,
+        wraplength=370,
         font=("Segoe UI", 10),
-    )
-    message_label.pack(fill="x")
+    ).pack(pady=(0, 16))
 
-    buttons = tk.Frame(container, bg=palette["window_bg"])
-    buttons.pack(anchor="e", pady=(16, 0))
-    ttk.Button(buttons, text="Yes", bootstyle="primary", width=10, command=lambda: _close(True)).pack(
-        side="left", padx=(0, 8)
-    )
-    ttk.Button(buttons, text="No", bootstyle="secondary-outline", width=10, command=lambda: _close(False)).pack(
-        side="left"
-    )
+    buttons = ttk.Frame(frame)
+    buttons.pack(anchor="e")
+    ttk.Button(buttons, text="Yes", bootstyle="primary", width=10, command=_on_yes).pack(side="left", padx=(0, 8))
+    ttk.Button(buttons, text="No", bootstyle="secondary-outline", width=10, command=prompt.destroy).pack(side="left")
 
     prompt.grab_set()
     prompt.focus_force()
     prompt.wait_window()
-    return bool(result["value"])
-
-
-def _get_skin_fetch_status_text(result: Dict[str, Any]) -> str:
-    if result.get("ok"):
-        return ""
-    message = str(result.get("message") or "").strip()
-    if not message:
-        return "Unable to fetch owned skins: LoL client is not detected."
-    lowered = message.lower()
-    if "connection" in lowered or "league of legends" in lowered or "lcu" in lowered:
-        return "Unable to fetch owned skins: LoL client is not detected."
-    return f"Unable to fetch owned skins: {message}"
+    return result
 
 
 def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
@@ -198,7 +212,10 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     picker.title(f"{owner._get_preset_label(slot_key)} - Skin")
     picker.resizable(False, False)
     picker.transient(owner.window)
-    picker.geometry(f"380x620+{owner.window.winfo_x()+60}+{owner.window.winfo_y()+80}")
+    picker.geometry(f"460x620+{owner.window.winfo_x()+60}+{owner.window.winfo_y()+80}")
+    theme_name = getattr(owner.parent, "theme", "darkly")
+    colors = get_picker_colors(theme_name)
+    picker.configure(bg=colors["window_bg"])
 
     def on_close() -> None:
         if picker.winfo_exists():
@@ -210,33 +227,92 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     champion_name = owner._get_slot_champion_name(slot_key)
     champion_id = owner.parent.dd.resolve_champion(champion_name) if champion_name not in {"", "(None)"} else None
     ws_manager = getattr(owner.parent, "ws_manager", None)
+    lcu_available = bool(ws_manager and getattr(ws_manager, "is_active", False))
+
     picker_mode_var = tk.StringVar(
         value="random" if owner._get_effective_pick_slot_config(slot_key).get("skin_mode") == "random" else "fixed"
     )
     available_skins: list[Dict[str, Any]] = []
     catalog_skins: list[Dict[str, Any]] = []
+    _fetch_in_progress = False
 
-    container = ttk.Frame(picker, padding=12)
+    container = tk.Frame(picker, bg=colors["window_bg"], padx=12, pady=12)
     container.pack(fill="both", expand=True)
 
-    status_var = tk.StringVar(value="")
-    status_label = ttk.Label(container, textvariable=status_var, bootstyle="warning")
-    status_label.pack(fill="x", pady=(0, 8))
-    status_label.configure(wraplength=340, justify="left")
-    if not ws_manager or not getattr(ws_manager, "is_active", False):
-        status_var.set("Unable to fetch owned skins: LoL client is not detected.")
+    # ---- Header: title + Fetch button (same structure as the rune picker) ----
+    header = ttk.Frame(container)
+    header.pack(fill="x", pady=(0, 6))
+    ttk.Label(header, text="Select a skin", font=("Segoe UI", 13, "bold")).pack(side="left")
 
-    mode_bar = ttk.Frame(container)
+    btn_frame = ttk.Frame(header)
+    btn_frame.pack(side="right")
+    ttk.Button(
+        btn_frame,
+        text="Fetch skins",
+        bootstyle="info-outline",
+        command=lambda: owner.parent.executor.submit(_fetch_and_populate),
+        width=12,
+    ).pack(side="left", padx=(0, 6))
+
+    # ---- Mode toggle bar ----
+    mode_bar = tk.Frame(container, bg=colors["window_bg"])
     mode_bar.pack(fill="x")
-    fixed_mode_btn = ttk.Button(mode_bar, text="Choose a skin")
-    random_mode_btn = ttk.Button(mode_bar, text="Choose from a list")
-    fixed_mode_btn.pack(side="left", fill="x", expand=True, padx=(0, 4))
-    random_mode_btn.pack(side="left", fill="x", expand=True, padx=(4, 0))
+    mode_bar.columnconfigure(0, weight=1, uniform="skin_mode")
+    mode_bar.columnconfigure(1, weight=1, uniform="skin_mode")
+    mode_option_widgets: dict[str, tuple[tk.Frame, tk.Label]] = {}
 
+    def create_mode_option(mode: str, text: str, *, column: int, padx: tuple[int, int]) -> None:
+        option_frame = tk.Frame(
+            mode_bar,
+            bd=0,
+            bg=colors["button_bg"],
+            highlightthickness=1,
+            highlightbackground=colors["border"],
+            cursor="hand2",
+        )
+        option_frame.grid(row=0, column=column, sticky="ew", padx=padx)
+        option_label = tk.Label(
+            option_frame,
+            text=text,
+            bg=colors["button_bg"],
+            fg=colors["inactive_button_text"],
+            font=("Segoe UI", 10, "bold"),
+            cursor="hand2",
+            padx=10,
+            pady=8,
+        )
+        option_label.pack(fill="x")
+        mode_option_widgets[mode] = (option_frame, option_label)
+
+    create_mode_option("fixed", "Select a skin", column=0, padx=(0, 4))
+    create_mode_option("random", "Random from list", column=1, padx=(4, 0))
+
+    # ---- Status label ----
+    status_var = tk.StringVar(value="")
+    status_label = tk.Label(
+        container,
+        textvariable=status_var,
+        bg=colors["window_bg"],
+        fg=colors["warning"],
+        font=("Segoe UI", 9, "bold"),
+        justify="left",
+        anchor="w",
+        wraplength=420,
+    )
+    status_label.pack(fill="x", pady=(6, 2))
+
+    ttk.Separator(container).pack(fill="x", pady=(6, 4))
+
+    # ---- Scrollable skin list ----
     scroll_container = ScrolledFrame(container, autohide=False)
     scroll_container.pack(fill="both", expand=True, pady=(10, 0))
-    list_frame = ttk.Frame(scroll_container)
+    list_frame = tk.Frame(scroll_container, bg=colors["window_bg"])
     list_frame.pack(fill="both", expand=True)
+
+    if not lcu_available:
+        status_var.set(picker_lcu_status_message("skins"))
+
+    # -- Closure helpers -------------------------------------------------------
 
     def get_current_config() -> Dict[str, Any]:
         return owner._get_effective_pick_slot_config(slot_key)
@@ -253,14 +329,25 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
     def refresh_parent_buttons() -> None:
         owner._refresh_skin_buttons()
 
-    def refresh_mode_buttons() -> None:
+    def apply_mode_option_colors(mode: str, *, hover: bool = False) -> None:
+        option_frame, option_label = mode_option_widgets[mode]
         active_mode = picker_mode_var.get()
-        fixed_mode_btn.configure(bootstyle="primary" if active_mode == "fixed" else "secondary-outline")
-        random_mode_btn.configure(bootstyle="primary" if active_mode == "random" else "secondary-outline")
+        is_active = active_mode == mode
+        bg = colors["selected_bg"] if is_active else colors["surface_hover" if hover else "button_bg"]
+        if is_active and hover:
+            bg = colors["selected_hover"]
+        fg = colors["selected_text"] if is_active else colors["inactive_button_text"]
+        border = colors["active_border"] if is_active else colors["border"]
+        option_frame.configure(bg=bg, highlightbackground=border)
+        option_label.configure(bg=bg, fg=fg)
+
+    def refresh_mode_options() -> None:
+        for mode in mode_option_widgets:
+            apply_mode_option_colors(mode)
 
     def set_picker_mode(mode: str) -> None:
         picker_mode_var.set("random" if mode == "random" else "fixed")
-        refresh_mode_buttons()
+        refresh_mode_options()
         populate_list()
 
     def choose_random_preview(selected_skins: list[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -282,7 +369,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             if int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed":
                 owner._clear_pick_slot_skin(slot_key)
             else:
-                if not _confirm_unowned_skin_selection(skin, owner=owner):
+                if not _confirm_unowned_skin_selection(skin, owner=owner, lcu_available=lcu_available):
                     return
                 owner._set_pick_slot_skin_selection(slot_key, mode="fixed", fixed_skin=skin)
             refresh_parent_buttons()
@@ -293,7 +380,7 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         if skin_id in pool_ids:
             pool_ids.discard(skin_id)
         else:
-            if not _confirm_unowned_skin_selection(skin, owner=owner):
+            if not _confirm_unowned_skin_selection(skin, owner=owner, lcu_available=lcu_available):
                 return
             pool_ids.add(skin_id)
         selected_skins = [entry for entry in available_skins if int(entry.get("skin_id") or 0) in pool_ids]
@@ -307,6 +394,8 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
         refresh_parent_buttons()
         populate_list()
 
+    # -- Rendering ------------------------------------------------------------
+
     def render_skin_row(parent: ttk.Frame, skin: Dict[str, Any]) -> None:
         current_config = get_current_config()
         active_mode = picker_mode_var.get()
@@ -316,35 +405,88 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             if active_mode == "random"
             else int(current_config.get("skin_id") or 0) == skin_id and current_config.get("skin_mode") == "fixed"
         )
-        row_btn = ttk.Button(
+        row = tk.Frame(
             parent,
-            text=f"  {skin['skin_name']}",
-            bootstyle="primary" if selected else "secondary-outline",
-            compound="left",
-            width=26,
-            padding=(8, 8),
-            command=lambda s=skin: toggle_skin_selection(s),
+            bd=0,
+            highlightthickness=1,
+            highlightbackground=colors["border"],
+            cursor="hand2",
+            padx=8,
+            pady=8,
         )
-        row_btn.pack(fill="x", pady=4)
+        row.pack(fill="x", pady=4)
+        image_label = tk.Label(row, bg=colors["surface_bg"], cursor="hand2")
+        image_label.pack(side="left", padx=(0, 12))
+        name_label = tk.Label(
+            row,
+            text=str(skin.get("skin_name") or ""),
+            anchor="w",
+            justify="left",
+            font=("Segoe UI", 10),
+            cursor="hand2",
+        )
+        name_label.pack(side="left", fill="x", expand=True)
+
+        def apply_row_colors(*, hover: bool = False) -> None:
+            row_bg = colors["selected_bg"] if selected else colors["surface_hover" if hover else "surface_bg"]
+            if selected and hover:
+                row_bg = colors["selected_hover"]
+            row_fg = colors["selected_text"] if selected else colors["text"]
+            if not selected and not bool(skin.get("owned")):
+                row_fg = colors["muted"]
+            row_border = colors["warning"] if selected else colors["border"]
+            row.configure(bg=row_bg, highlightbackground=row_border)
+            image_label.configure(bg=row_bg)
+            name_label.configure(bg=row_bg, fg=row_fg)
+
+        def on_row_click(_event: object) -> None:
+            toggle_skin_selection(skin)
+
+        def on_row_enter(_event: object) -> None:
+            apply_row_colors(hover=True)
+
+        def on_row_leave(_event: object) -> None:
+            apply_row_colors(hover=False)
+
+        for widget in (row, image_label, name_label):
+            widget.bind("<Button-1>", on_row_click)
+            widget.bind("<Enter>", on_row_enter)
+            widget.bind("<Leave>", on_row_leave)
+
+        apply_row_colors()
         preview_url = _get_picker_image_url(skin)
         if preview_url:
             owner._load_remote_img_into_btn(
-                row_btn,
+                image_label,
                 preview_url,
                 cache_key=(
-                    f"skin_picker_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
+                    f"skin_picker_{champion_name}_{slot_key}_{skin['skin_num'] or skin['skin_id']}_"
                     f"{'owned' if skin.get('owned') else 'other'}"
                 ),
                 size=(88, 50),
                 cover=True,
             )
 
-    def render_section(parent: ttk.Frame, title: str, skins: list[Dict[str, Any]], empty_message: str) -> None:
-        section = ttk.Frame(parent)
+    def render_section(parent: tk.Frame, title: str, skins: list[Dict[str, Any]], empty_message: str) -> None:
+        section = tk.Frame(parent, bg=colors["window_bg"])
         section.pack(fill="x", pady=(0, 12))
-        ttk.Label(section, text=title, font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 6))
+        tk.Label(
+            section,
+            text=title,
+            bg=colors["window_bg"],
+            fg=colors["text"],
+            font=("Segoe UI", 10, "bold"),
+            anchor="w",
+        ).pack(fill="x", pady=(0, 6))
         if not skins:
-            ttk.Label(section, text=empty_message, bootstyle="secondary").pack(anchor="w")
+            tk.Label(
+                section,
+                text=empty_message,
+                bg=colors["window_bg"],
+                fg=colors["muted"],
+                font=("Segoe UI", 9),
+                anchor="w",
+            ).pack(fill="x")
             return
         for skin in skins:
             render_skin_row(section, skin)
@@ -370,23 +512,38 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             pool_ids=pool_ids,
         )
 
-        render_section(list_frame, "Owned skins", owned_skins, "No owned skins detected.")
+        render_section(list_frame, "Owned skins", owned_skins, picker_empty_message("skins"))
         other_empty_message = "No skins found for this champion." if not available_skins else "No other skins found."
         render_section(list_frame, "Other skins", other_skins, other_empty_message)
 
-    fixed_mode_btn.configure(command=lambda: set_picker_mode("fixed"))
-    random_mode_btn.configure(command=lambda: set_picker_mode("random"))
+    # -- Mode-option bindings -------------------------------------------------
+
+    for mode, widgets in mode_option_widgets.items():
+        option_frame, option_label = widgets
+        for widget in widgets:
+            widget.bind("<Button-1>", lambda _event, selected_mode=mode: set_picker_mode(selected_mode))
+            widget.bind("<Enter>", lambda _event, hovered_mode=mode: apply_mode_option_colors(hovered_mode, hover=True))
+            widget.bind("<Leave>", lambda _event, hovered_mode=mode: apply_mode_option_colors(hovered_mode))
+
+    # -- Data loading ---------------------------------------------------------
 
     if not champion_id:
-        refresh_mode_buttons()
+        refresh_mode_options()
         populate_list()
         return
 
     catalog_skins.extend(owner.parent.dd.get_skin_catalog(champion_name))
 
-    def load_skins() -> None:
-        if not ws_manager or not getattr(ws_manager, "is_active", False):
-            result = {
+    def _fetch_and_populate() -> None:
+        """Re-fetch owned skins from the LCU and rebuild the skin list."""
+        nonlocal lcu_available, _fetch_in_progress
+        if _fetch_in_progress:
+            return
+        _fetch_in_progress = True
+        lcu_available = bool(ws_manager and getattr(ws_manager, "is_active", False))
+
+        if not lcu_available:
+            result: Dict[str, Any] = {
                 "ok": False,
                 "message": "LoL client is not detected.",
                 "owned_skins": [],
@@ -395,16 +552,24 @@ def open_skin_picker(owner: "SettingsWindow", slot_key: str) -> None:
             result = ws_manager.fetch_owned_skins_for_champion(champion_id)
 
         def update_ui() -> None:
+            nonlocal _fetch_in_progress
+            _fetch_in_progress = False
             if not picker.winfo_exists():
                 return
             available_skins.clear()
             available_skins.extend(_merge_catalog_and_owned_skins(catalog_skins, result.get("owned_skins", [])))
-            status_var.set(_get_skin_fetch_status_text(result))
-            refresh_mode_buttons()
+            if not lcu_available:
+                status_var.set(picker_lcu_status_message("skins"))
+            elif not result.get("ok"):
+                status_var.set(str(result.get("message") or ""))
+            else:
+                status_var.set("")
+            refresh_mode_options()
             populate_list()
 
         picker.after(0, update_ui)
 
-    refresh_mode_buttons()
+    # Initial fetch runs in the background, same as the rune picker.
+    refresh_mode_options()
     populate_list()
-    owner.parent.executor.submit(load_skins)
+    owner.parent.executor.submit(_fetch_and_populate)

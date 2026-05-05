@@ -1,8 +1,8 @@
 import unittest
 
+from src.ui._picker_common import picker_lcu_status_message
 from src.ui.skin_picker import (
     _confirm_unowned_skin_selection,
-    _get_skin_fetch_status_text,
     _get_picker_image_url,
     _merge_catalog_and_owned_skins,
     _sort_skins_for_display,
@@ -16,7 +16,7 @@ class SkinPickerMergeTests(unittest.TestCase):
                 {
                     "skin_id": 1,
                     "skin_name": "Base",
-                    "skin_num": 0,
+                    "skin_num": 1,
                     "tile_url": "tile-1",
                     "splash_url": "splash-1",
                 },
@@ -43,6 +43,30 @@ class SkinPickerMergeTests(unittest.TestCase):
         self.assertEqual(merged[0]["preview_url"], "tile-1")
         self.assertTrue(merged[1]["owned"])
         self.assertEqual(merged[1]["preview_url"], "owned-preview-2")
+
+    def test_merge_catalog_marks_default_skin_as_owned_without_lcu_inventory(self):
+        merged = _merge_catalog_and_owned_skins(
+            [
+                {
+                    "skin_id": 86000,
+                    "skin_name": "default",
+                    "skin_num": 0,
+                    "tile_url": "tile-default",
+                    "splash_url": "splash-default",
+                },
+                {
+                    "skin_id": 86001,
+                    "skin_name": "Sanguine Garen",
+                    "skin_num": 1,
+                    "tile_url": "tile-1",
+                    "splash_url": "splash-1",
+                },
+            ],
+            [],
+        )
+
+        self.assertTrue(merged[0]["owned"])
+        self.assertFalse(merged[1]["owned"])
 
     def test_picker_image_url_prefers_splash_over_tile(self):
         self.assertEqual(
@@ -116,26 +140,34 @@ class SkinPickerMergeTests(unittest.TestCase):
             )
         )
 
-    def test_get_skin_fetch_status_text_uses_lcu_message_for_missing_client(self):
-        self.assertEqual(
-            _get_skin_fetch_status_text(
-                {
-                    "ok": False,
-                    "message": "Unable to fetch skins. Check your League of Legends connection.",
-                }
-            ),
-            "Unable to fetch owned skins: LoL client is not detected.",
+    def test_confirm_unowned_skin_lcu_unavailable_shows_different_message(self):
+        """When LCU is not available the prompt uses the client-not-detected wording."""
+        captured_title = []
+        captured_message = []
+
+        def capture(title, message):
+            captured_title.append(title)
+            captured_message.append(message)
+            return True
+
+        result = _confirm_unowned_skin_selection(
+            {"skin_id": 2, "skin_name": "Unknown", "owned": False},
+            ask_fn=capture,
+            lcu_available=False,
         )
 
-    def test_get_skin_fetch_status_text_uses_explicit_missing_client_message(self):
+        self.assertTrue(result)
+        self.assertIn("LoL client not detected", captured_title[0])
+        self.assertIn("Unable to verify", captured_message[0])
+
+    def test_picker_lcu_status_message_uses_standard_wording(self):
         self.assertEqual(
-            _get_skin_fetch_status_text(
-                {
-                    "ok": False,
-                    "message": "LoL client is not detected.",
-                }
-            ),
-            "Unable to fetch owned skins: LoL client is not detected.",
+            picker_lcu_status_message("skins"),
+            "Unable to fetch skins: LoL client is not detected. Launch League of Legends to refresh.",
+        )
+        self.assertEqual(
+            picker_lcu_status_message("runes"),
+            "Unable to fetch runes: LoL client is not detected. Launch League of Legends to refresh.",
         )
 
 

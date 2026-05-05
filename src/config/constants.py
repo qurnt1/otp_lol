@@ -1,11 +1,32 @@
-"""Static constants for OTP LOL."""
+"""
+FILE NAME: src/config/constants.py
+GLOBAL PURPOSE:
+- Store static application constants and labels in one place.
+- Centralize endpoint strings, UI labels, asset paths, and routing maps.
+- Provide immutable reference data shared across runtime modules.
 
-from typing import Any, Dict
+KEY FUNCTIONS:
+- None.
+
+AUDIENCE & LOGIC:
+Why:
+This module keeps repeated literals out of business logic so configuration drift and label mismatches are easier to avoid.
+For whom:
+Developers maintaining shared constants for networking, UI labels, assets, and settings defaults.
+
+DEPENDENCIES:
+Used by:
+- Most modules under `src.config`, `src.core`, `src.services`, and `src.ui`.
+Uses:
+- Standard library typing helpers.
+"""
+
+from typing import Dict
 
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-CURRENT_VERSION: str = "10.0"
+CURRENT_VERSION: str = "11.0"
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_DOWNLOAD_ZIP_URL: str = f"{GITHUB_REPO_URL}/archive/refs/heads/main.zip"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
@@ -16,7 +37,6 @@ URL_DD_CHAMPIONS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/
 URL_DD_SUMMONERS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
 URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
-URL_DD_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_0.jpg"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
 URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
 URL_CDRAGON_CHAMPION_DETAIL: str = (
@@ -26,8 +46,10 @@ URL_CDRAGON_ASSET_PREFIX: str = (
     "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
 )
 URL_PHASE_RUSH_ICON: str = (
-    "https://ddragon.canisback.com/img/perk-images/Styles/Sorcery/PhaseRush/PhaseRush.png"
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+    "v1/perk-images/styles/runesicon.png"
 )
+URL_PERK_ICON_PREFIX: str = "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default"
 
 EP_SESSION: str = "/lol-champ-select/v1/session"
 EP_SESSION_TIMER: str = "/lol-champ-select/v1/session/timer"
@@ -38,6 +60,12 @@ EP_PICKABLE: str = "/lol-champ-select/v1/pickable-champion-ids"
 EP_CURRENT_SUMMONER: str = "/lol-summoner/v1/current-summoner"
 EP_CHAT_ME: str = "/lol-chat/v1/me"
 EP_LOGIN: str = "/lol-login/v1/session"
+EP_PERKS_PAGES: str = "/lol-perks/v1/pages"
+EP_PERKS_STYLES: str = "/lol-perks/v1/styles"
+EP_PERKS_INVENTORY: str = "/lol-perks/v1/inventory"
+EP_CS_RUNE_PAGE: str = "/lol-champ-select/v1/session/rune-page"
+EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
+EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
 REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
 
@@ -66,7 +94,6 @@ PHASE_DISPLAY_MAP: Dict[str, str] = {
     "None": "Inactive"
 }
 
-ROLE_PROFILE_ORDER: list[str] = ["TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"]
 PICK_SLOT_ORDER: list[str] = ["pick_1", "pick_2", "pick_3"]
 PICK_SLOT_LABELS: Dict[str, str] = {
     "pick_1": "Pick 1",
@@ -74,22 +101,25 @@ PICK_SLOT_LABELS: Dict[str, str] = {
     "pick_3": "Pick 3",
 }
 
-ROLE_PROFILE_LABELS: Dict[str, str] = {
-    "GLOBAL": "Global",
-    "TOP": "Top",
-    "JUNGLE": "Jungle",
-    "MIDDLE": "Mid",
-    "BOTTOM": "ADC",
-    "UTILITY": "Support",
+PRESET_ENABLED_QUEUE_IDS: set[int] = {
+    400,  # 5v5 Draft Pick
+    420,  # Ranked Solo/Duo
+    430,  # 5v5 Blind Pick
+    440,  # Ranked Flex
+    490,  # Normal Quickplay
+    700,  # Clash
+    3100,  # Practice Tool — Blind
+    3110,  # Practice Tool — Draft
 }
 
-ROLE_PROFILE_ICON_FILES: Dict[str, str] = {
-    "GLOBAL": "config/images/roles/global.png",
-    "TOP": "config/images/roles/top.png",
-    "JUNGLE": "config/images/roles/jungle.png",
-    "MIDDLE": "config/images/roles/middle.png",
-    "BOTTOM": "config/images/roles/bottom.png",
-    "UTILITY": "config/images/roles/utility.png",
+PRACTICE_TOOL_GAME_MODE: str = "PRACTICETOOL"
+
+QUEUE_ID_LABELS: Dict[int, str] = {
+    0: "Practice Tool",
+    450: "ARAM",
+    900: "URF",
+    1700: "Arena",
+    1710: "Arena (Hextech)",
 }
 
 APP_IMAGE_FILES: Dict[str, str] = {

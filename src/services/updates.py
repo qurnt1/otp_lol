@@ -1,9 +1,35 @@
-"""Update checking helpers."""
+"""
+FILE NAME: src/services/updates.py
+GLOBAL PURPOSE:
+- Check whether the repository README advertises a newer application version.
+- Extract release highlights from the README and format them for the update popup.
+- Keep remote version parsing and comparison logic in one service module.
+
+KEY FUNCTIONS:
+- fetch_remote_readme: Download the repository README through the GitHub API.
+- check_for_updates: Return update metadata when the remote version is newer.
+- extract_version_from_readme: Find the advertised version inside README content.
+- format_highlights_for_popup: Convert markdown highlights into readable plain text.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so update detection stays consistent and independent from UI presentation code.
+For whom:
+Developers maintaining release detection, semantic version comparison, and update notes formatting.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and tests.
+Uses:
+- Standard library: base64, logging, re, typing
+- Third-party libraries: packaging, requests
+- Local modules: src.config
+"""
 
 import base64
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Dict, Optional
 
 import requests
 from packaging.version import InvalidVersion, Version
@@ -15,7 +41,7 @@ def fetch_remote_readme() -> Optional[str]:
     """Return the remote README text from GitHub, or None on failure."""
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "MainLoL-UpdateChecker",
+        "User-Agent": "OTP-LOL-UpdateChecker",
         "X-GitHub-Api-Version": "2022-11-28",
     }
 
@@ -33,7 +59,7 @@ def fetch_remote_readme() -> Optional[str]:
     if resp.status_code == 404:
         logging.warning("[Update] README not found in the repository")
     else:
-        logging.warning(f"[Update] API response: {resp.status_code}")
+        logging.warning("[Update] API response: %s", resp.status_code)
     return None
 
 
@@ -46,7 +72,7 @@ def check_for_updates() -> Optional[Dict[str, str]]:
             return None
 
         remote_version = extract_version_from_readme(readme_text)
-        logging.info(f"[Update] Remote version: {remote_version}, local: {CURRENT_VERSION}")
+        logging.info("[Update] Remote version: %s, local: %s", remote_version, CURRENT_VERSION)
 
         if remote_version and is_newer_version(remote_version, CURRENT_VERSION):
             return {
@@ -55,9 +81,9 @@ def check_for_updates() -> Optional[Dict[str, str]]:
             }
 
     except requests.RequestException as e:
-        logging.warning(f"[Update] Network error: {e}")
+        logging.warning("[Update] Network error: %s", e)
     except Exception as e:
-        logging.error(f"[Update] Unexpected error: {e}")
+        logging.error("[Update] Unexpected error: %s", e)
 
     return None
 
@@ -140,5 +166,5 @@ def is_newer_version(remote_version: str, current_version: str) -> bool:
     try:
         return parse_version(remote_version) > parse_version(current_version)
     except InvalidVersion as e:
-        logging.warning(f"[Update] Invalid version ignored: {e}")
+        logging.warning("[Update] Invalid version ignored: %s", e)
         return False

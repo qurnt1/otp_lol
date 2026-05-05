@@ -1,4 +1,30 @@
-"""LCU connection lifecycle and event dispatch."""
+"""
+FILE NAME: src/core/websocket.py
+GLOBAL PURPOSE:
+- Maintain the live connection to the League Client Update API.
+- Translate raw LCU events into application-level callbacks, state updates, and automation triggers.
+- Bridge websocket transport, game-state tracking, and champion-select orchestration.
+
+KEY FUNCTIONS:
+- WebSocketManager: Own the LCU connector lifecycle and runtime state.
+- _ws_loop: Run the connector inside a dedicated asyncio loop and register event handlers.
+- get_effective_profile_config: Resolve global settings into one effective profile.
+- _refresh_player_and_region: Keep detected account and region data synchronized with the client.
+
+AUDIENCE & LOGIC:
+Why:
+This module isolates transport concerns from UI code so client reconnects, event dispatch, and automation triggers remain explicit and testable.
+For whom:
+Developers maintaining the live client integration, reconnect behavior, and runtime profile resolution.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and src/ui/main_window.py through OtpLolApplication wiring.
+Uses:
+- Standard library: asyncio, logging, threading, time, typing
+- Optional third-party libraries: lcu_driver, psutil
+- Local modules: src.config, src.services.history, src.core.champ_select, src.core.game_state
+"""
 
 import asyncio
 import logging
@@ -20,22 +46,27 @@ from ..config import (
     EP_CHAT_ME,
     EP_CURRENT_SUMMONER,
     EP_GAMEFLOW,
+    EP_LOBBY,
     EP_LOGIN,
+    EP_PERKS_CURRENT_PAGE,
+    EP_PERKS_PAGES,
+    EP_PERKS_STYLES,
     EP_READY_CHECK,
     EP_SESSION,
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
-    PICK_SLOT_ORDER,
     PLATFORM_TO_REGION,
-    ROLE_PROFILE_LABELS,
+    PRACTICE_TOOL_GAME_MODE,
+    PRESET_ENABLED_QUEUE_IDS,
 )
 from ..services.history import log_history_event
+from ..services.profile_config import build_effective_profile_config
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
 
 
 class WebSocketManager(ChampSelectMixin):
-    """WebSocket manager for communication with the LoL client."""
+    """Manage the LCU connector lifecycle and dispatch live client events."""
 
     EVENT_CONNECTED = "connected"
     EVENT_DISCONNECTED = "disconnected"
@@ -57,6 +88,7 @@ class WebSocketManager(ChampSelectMixin):
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
     ):
+        """Store shared collaborators and initialize per-run websocket state."""
         self.ui_callback = ui_callback
         self.dd = dd
         self.get_params = get_params
@@ -87,16 +119,18 @@ class WebSocketManager(ChampSelectMixin):
         log_history_event(event_type, message, details, level=level, category=category, action=action)
 
     def start(self) -> None:
+        """Start the background LCU loop if the connector is available."""
         if Connector is None:
             self._notify_ui(self.EVENT_STATUS, ("Error: 'lcu_driver' is missing.", "ERROR"))
             return
         if self.thread and self.thread.is_alive():
             return
         self._stop_event.clear()
-        self.thread = Thread(target=self._ws_loop, daemon=True, name="mainlol-lcu")
+        self.thread = Thread(target=self._ws_loop, daemon=True, name="otp-lol-lcu")
         self.thread.start()
 
     def stop(self) -> None:
+        """Request connector shutdown and wait briefly for the worker thread to exit."""
         self._stop_event.set()
         if self.connector and self.connection and self.loop and not self.loop.is_closed():
             try:
@@ -126,24 +160,6 @@ class WebSocketManager(ChampSelectMixin):
             or PLATFORM_TO_REGION.get((self.state.platform_routing or "").lower(), "euw")
         ).lower()
 
-    @staticmethod
-    def _normalize_role(role: str) -> str:
-        role = (role or "").upper()
-        aliases = {
-            "MID": "MIDDLE",
-            "MIDDLE": "MIDDLE",
-            "JGL": "JUNGLE",
-            "JUNGLE": "JUNGLE",
-            "ADC": "BOTTOM",
-            "BOT": "BOTTOM",
-            "BOTTOM": "BOTTOM",
-            "SUP": "UTILITY",
-            "SUPPORT": "UTILITY",
-            "UTILITY": "UTILITY",
-            "TOP": "TOP",
-        }
-        return aliases.get(role, role)
-
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
         effective = self.get_effective_profile_config(params=params)
         return {
@@ -156,136 +172,252 @@ class WebSocketManager(ChampSelectMixin):
 
     def get_effective_profile_config(
         self,
-        role: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        params = params or self.get_params()
-        role = self._normalize_role(role or self.state.assigned_position)
-        resolved_role = role if role in ROLE_PROFILE_LABELS and role != "GLOBAL" else "GLOBAL"
-        role_profiles = params.get("role_profiles", {})
-        role_data = role_profiles.get(resolved_role, {}) if isinstance(role_profiles, dict) else {}
-        if not isinstance(role_data, dict):
-            role_data = {}
-        role_has_presets_override = "presets_enabled" in role_data
-        global_pick_slots = params.get("pick_slots", {}) if isinstance(params.get("pick_slots", {}), dict) else {}
-        role_pick_slots = role_data.get("pick_slots", {}) if isinstance(role_data.get("pick_slots", {}), dict) else {}
-
-        def _resolve_slot(slot_key: str, pick_key: str) -> Dict[str, Any]:
-            global_slot = (
-                global_pick_slots.get(slot_key, {}) if isinstance(global_pick_slots.get(slot_key, {}), dict) else {}
-            )
-            role_slot = role_pick_slots.get(slot_key, {}) if isinstance(role_pick_slots.get(slot_key, {}), dict) else {}
-
-            def _to_int(value: Any) -> int:
-                try:
-                    return int(value or 0)
-                except (TypeError, ValueError):
-                    return 0
-
-            def _pick_skin_mode() -> str:
-                role_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-                global_mode = str(global_slot.get("skin_mode") or "").strip().lower()
-                if role_mode in {"fixed", "random"}:
-                    return role_mode
-                if global_mode in {"fixed", "random"}:
-                    return global_mode
-                return "none"
-
-            def _pick_skin_text(field: str) -> str:
-                role_value = str(role_slot.get(field) or "").strip()
-                if role_value:
-                    return role_value
-                return str(global_slot.get(field) or "").strip()
-
-            def _pick_skin_int(field: str) -> int:
-                role_value = _to_int(role_slot.get(field))
-                if role_value > 0:
-                    return role_value
-                return _to_int(global_slot.get(field))
-
-            def _pick_skin_pool() -> List[Dict[str, Any]]:
-                role_pool = role_slot.get("random_skin_pool")
-                if isinstance(role_pool, list) and role_pool:
-                    return role_pool
-                global_pool = global_slot.get("random_skin_pool")
-                if isinstance(global_pool, list) and global_pool:
-                    return global_pool
-                return []
-
-            role_skin_mode = str(role_slot.get("skin_mode") or "").strip().lower()
-            role_has_skin_override = (
-                role_skin_mode in {"fixed", "random"}
-                or _to_int(role_slot.get("skin_id")) > 0
-                or _to_int(role_slot.get("random_skin_id")) > 0
-                or bool(str(role_slot.get("skin_name") or "").strip())
-                or bool(str(role_slot.get("random_skin_name") or "").strip())
-                or bool(role_slot.get("random_skin_pool"))
-            )
-            skin_source_role = (
-                resolved_role if role_has_skin_override else "GLOBAL"
-            )
-            return {
-                "champion": role_data.get(pick_key) or params.get(pick_key, ""),
-                "spell_1": role_slot.get("spell_1") or global_slot.get("spell_1", ""),
-                "spell_2": role_slot.get("spell_2") or global_slot.get("spell_2", ""),
-                "skin_mode": _pick_skin_mode(),
-                "skin_id": _pick_skin_int("skin_id"),
-                "skin_name": _pick_skin_text("skin_name"),
-                "skin_num": _pick_skin_int("skin_num"),
-                "random_skin_id": _pick_skin_int("random_skin_id"),
-                "random_skin_name": _pick_skin_text("random_skin_name"),
-                "random_skin_num": _pick_skin_int("random_skin_num"),
-                "random_skin_pool": _pick_skin_pool(),
-                "skin_source_role": skin_source_role,
-            }
-
-        pick_slots = {
-            slot_key: _resolve_slot(slot_key, f"selected_pick_{index}")
-            for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
-        }
-        first_slot = pick_slots["pick_1"]
-
-        return {
-            "detected_role": self._normalize_role(self.state.assigned_position) or "GLOBAL",
-            "resolved_role": resolved_role,
-            "resolved_role_label": ROLE_PROFILE_LABELS.get(resolved_role, "Global"),
-            "fallback_policy": "The detected role profile has priority, then the global config fills empty fields.",
-            "presets_enabled": (
-                bool(role_data.get("presets_enabled"))
-                if role_has_presets_override
-                else bool(params.get("presets_enabled", True))
-            ),
-            "pick_slots": pick_slots,
-            "selected_pick_1": pick_slots["pick_1"]["champion"],
-            "selected_pick_2": pick_slots["pick_2"]["champion"],
-            "selected_pick_3": pick_slots["pick_3"]["champion"],
-            "selected_ban": role_data.get("selected_ban") or params.get("selected_ban", ""),
-            "spell_1": first_slot.get("spell_1", ""),
-            "spell_2": first_slot.get("spell_2", ""),
-            "sources": {
-                "presets_enabled": resolved_role if role_has_presets_override else "GLOBAL",
-                "selected_pick_1": resolved_role if role_data.get("selected_pick_1") else "GLOBAL",
-                "selected_pick_2": resolved_role if role_data.get("selected_pick_2") else "GLOBAL",
-                "selected_pick_3": resolved_role if role_data.get("selected_pick_3") else "GLOBAL",
-                "selected_ban": resolved_role if role_data.get("selected_ban") else "GLOBAL",
-                "spell_1": (
-                    resolved_role
-                    if pick_slots["pick_1"].get("spell_1") and role_pick_slots.get("pick_1", {}).get("spell_1")
-                    else "GLOBAL"
-                ),
-                "spell_2": (
-                    resolved_role
-                    if pick_slots["pick_1"].get("spell_2") and role_pick_slots.get("pick_1", {}).get("spell_2")
-                    else "GLOBAL"
-                ),
-            },
-        }
+        """Resolve the effective profile from global pick slots and champion picks."""
+        return build_effective_profile_config(params or self.get_params())
 
     def get_current_summoner_id(self) -> Optional[int]:
         try:
             return int(self.state.summoner_id or 0) or None
         except (TypeError, ValueError):
             return None
+
+    async def _fetch_rune_pages_async(self) -> List[Dict[str, Any]]:
+        """Fetch all valid rune pages from the LCU."""
+        if not self.connection:
+            return []
+        try:
+            response = await self.connection.request("get", EP_PERKS_PAGES)
+            if not response or response.status != 200:
+                return []
+            payload = await response.json()
+            if not isinstance(payload, list):
+                return []
+            pages: List[Dict[str, Any]] = []
+            for page in payload:
+                if not isinstance(page, dict):
+                    continue
+                if not page.get("isValid", True):
+                    continue
+                pages.append({
+                    "id": page.get("id", 0),
+                    "name": str(page.get("name") or ""),
+                    "primaryStyleId": page.get("primaryStyleId", 0),
+                    "subStyleId": page.get("subStyleId", 0),
+                    "selectedPerkIds": page.get("selectedPerkIds", []),
+                    "current": page.get("current", False),
+                })
+            return pages
+        except Exception as e:
+            logging.debug("Error fetching rune pages: %s", e)
+            return []
+
+    async def _fetch_rune_styles_async(self) -> Dict[int, Dict[str, Any]]:
+        """Fetch rune style metadata from the LCU keyed by style id."""
+        if not self.connection:
+            return {}
+        try:
+            response = await self.connection.request("get", EP_PERKS_STYLES)
+            if not response or response.status != 200:
+                return {}
+            payload = await response.json()
+            if not isinstance(payload, list):
+                return {}
+            styles: Dict[int, Dict[str, Any]] = {}
+            for style in payload:
+                if not isinstance(style, dict):
+                    continue
+                style_id = self._to_int(style.get("id"))
+                if style_id <= 0:
+                    continue
+                parsed_perks = self._extract_rune_style_perks(style)
+                styles[style_id] = {
+                    "name": str(style.get("name") or ""),
+                    "iconPath": str(style.get("iconPath") or ""),
+                    "perks": parsed_perks,
+                }
+            return styles
+        except Exception as e:
+            logging.debug("Error fetching rune styles: %s", e)
+            return {}
+
+    @staticmethod
+    def _to_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _extract_rune_style_perks(cls, style: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Return rune perks from either the flattened or slot-based LCU style shape."""
+        if not isinstance(style, dict):
+            return []
+
+        raw_perks = style.get("perks")
+        if isinstance(raw_perks, list) and raw_perks:
+            return [
+                {
+                    "id": cls._to_int(perk.get("id")),
+                    "name": str(perk.get("name") or ""),
+                    "iconPath": str(perk.get("iconPath") or ""),
+                }
+                for perk in raw_perks
+                if isinstance(perk, dict)
+            ]
+
+        perks: List[Dict[str, Any]] = []
+        slots = style.get("slots", [])
+        for slot in slots if isinstance(slots, list) else []:
+            if not isinstance(slot, dict):
+                continue
+            slot_perks = slot.get("perks", [])
+            for perk in slot_perks if isinstance(slot_perks, list) else []:
+                if not isinstance(perk, dict):
+                    continue
+                perks.append(
+                    {
+                        "id": cls._to_int(perk.get("id")),
+                        "name": str(perk.get("name") or ""),
+                        "iconPath": str(perk.get("iconPath") or ""),
+                    }
+                )
+        return perks
+
+    def fetch_rune_pages(self) -> List[Dict[str, Any]]:
+        """Synchronous wrapper to fetch rune pages from the LCU."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return []
+        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_pages_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: rune pages fetch failed - %s", e)
+            return []
+
+    def fetch_rune_styles(self) -> Dict[int, Dict[str, Any]]:
+        """Synchronous wrapper to fetch rune style metadata from the LCU."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return {}
+        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_styles_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: rune styles fetch failed - %s", e)
+            return {}
+
+    async def _fetch_current_rune_page_async(self) -> Optional[Dict[str, Any]]:
+        """GET /lol-perks/v1/currentpage — return the currently active rune page or None."""
+        if not self.connection:
+            return None
+        try:
+            response = await self.connection.request("get", EP_PERKS_CURRENT_PAGE)
+            if not response or response.status != 200:
+                return None
+            payload = await response.json()
+            if not isinstance(payload, dict):
+                return None
+            return payload
+        except Exception as e:
+            logging.debug("Error fetching current rune page: %s", e)
+            return None
+
+    async def _set_rune_page_via_perks_async(self, page_data: Dict[str, Any]) -> bool:
+        """PUT /lol-perks/v1/pages/{id} with full page data + current: true."""
+        if not self.connection:
+            return False
+        page_id = page_data.get("id")
+        if not page_id:
+            return False
+        try:
+            payload = dict(page_data)
+            payload["current"] = True
+            endpoint = f"{EP_PERKS_PAGES}/{page_id}"
+            self._log_lcu_request("RUNES", "put", endpoint, payload)
+            response = await self.connection.request("put", endpoint, json=payload)
+            self._log_lcu_response("RUNES", "put", endpoint, response)
+            return bool(response and response.status < 400)
+        except Exception as e:
+            logging.warning("[RUNES] PUT /lol-perks/v1/pages/%s failed: %s", page_id, e)
+            return False
+
+    async def _create_rune_page_async(self, page_data: Dict[str, Any]) -> Optional[int]:
+        """POST /lol-perks/v1/pages with current: true, return the new page id or None."""
+        if not self.connection:
+            return None
+        try:
+            payload = dict(page_data)
+            payload.pop("id", None)
+            payload["current"] = True
+            self._log_lcu_request("RUNES", "post", EP_PERKS_PAGES, payload)
+            response = await self.connection.request("post", EP_PERKS_PAGES, json=payload)
+            self._log_lcu_response("RUNES", "post", EP_PERKS_PAGES, response)
+            if response and response.status < 400:
+                created = await response.json()
+                return int(created.get("id") or 0) if isinstance(created, dict) else None
+            return None
+        except Exception as e:
+            logging.warning("[RUNES] POST /lol-perks/v1/pages failed: %s", e)
+            return None
+
+    async def _delete_rune_page_async(self, page_id: int) -> bool:
+        """DELETE /lol-perks/v1/pages/{id}."""
+        if not self.connection or page_id <= 0:
+            return False
+        try:
+            endpoint = f"{EP_PERKS_PAGES}/{page_id}"
+            self._log_lcu_request("RUNES", "delete", endpoint)
+            response = await self.connection.request("delete", endpoint)
+            self._log_lcu_response("RUNES", "delete", endpoint, response)
+            return bool(response and response.status < 400)
+        except Exception as e:
+            logging.warning("[RUNES] DELETE /lol-perks/v1/pages/%s failed: %s", page_id, e)
+            return False
+
+    def fetch_current_rune_page(self) -> Optional[Dict[str, Any]]:
+        """Sync wrapper: get the current active rune page."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return None
+        future = asyncio.run_coroutine_threadsafe(self._fetch_current_rune_page_async(), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: current rune page fetch failed - %s", e)
+            return None
+
+    def set_rune_page_via_perks(self, page_data: Dict[str, Any]) -> bool:
+        """Sync wrapper: set a rune page as current via PUT."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return False
+        future = asyncio.run_coroutine_threadsafe(self._set_rune_page_via_perks_async(page_data), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: set rune page via perks failed - %s", e)
+            return False
+
+    def create_rune_page(self, page_data: Dict[str, Any]) -> Optional[int]:
+        """Sync wrapper: create a new rune page with current: true, return its id."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return None
+        future = asyncio.run_coroutine_threadsafe(self._create_rune_page_async(page_data), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: create rune page failed - %s", e)
+            return None
+
+    def delete_rune_page(self, page_id: int) -> bool:
+        """Sync wrapper: delete a rune page by id."""
+        if not self.ws_active or not self.connection or not self.loop:
+            return False
+        future = asyncio.run_coroutine_threadsafe(self._delete_rune_page_async(page_id), self.loop)
+        try:
+            return future.result(timeout=5)
+        except Exception as e:
+            logging.debug("WebSocket: delete rune page failed - %s", e)
+            return False
 
     def fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.ws_active or not self.connection or not self.loop:
@@ -388,6 +520,69 @@ class WebSocketManager(ChampSelectMixin):
             ),
         }
 
+    def _parse_owned_skins_payload(
+        self,
+        items: List[Dict[str, Any]],
+        champion_name: str,
+        *,
+        source: str,
+        log_tag: str,
+    ) -> Dict[str, Any]:
+        owned_skins: List[Dict[str, Any]] = []
+        unmapped_items = 0
+        for item in items:
+            try:
+                skin_id = int(
+                    item.get("id")
+                    or item.get("skinId")
+                    or item.get("championSkinId")
+                    or item.get("selectedSkinId")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                skin_id = 0
+            skin_name = str(item.get("name") or item.get("displayName") or "")
+            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
+            if not skin_data:
+                unmapped_items += 1
+                logging.debug(
+                    "[SKIN][OWNED] %s skin mapping failed champion=%s skin_id=%s skin_name=%s",
+                    log_tag,
+                    champion_name,
+                    skin_id,
+                    skin_name,
+                )
+                continue
+            owned_skins.append(
+                self._build_owned_skin_result_entry(
+                    skin_data,
+                    fallback_skin_id=skin_id,
+                    fallback_skin_name=skin_name,
+                )
+            )
+
+        unique_skins = []
+        seen_ids = set()
+        for skin in owned_skins:
+            sid = int(skin.get("skin_id") or 0)
+            if sid in seen_ids:
+                continue
+            seen_ids.add(sid)
+            unique_skins.append(skin)
+        logging.info(
+            "[SKIN][OWNED] %s parsed champion=%s mapped=%s unmapped=%s",
+            log_tag,
+            champion_name,
+            len(unique_skins),
+            unmapped_items,
+        )
+        return {
+            "ok": True,
+            "message": "",
+            "owned_skins": unique_skins,
+            "source": source,
+        }
+
     async def _fetch_owned_skins_from_inventory(
         self,
         champion_id: int,
@@ -427,54 +622,8 @@ class WebSocketManager(ChampSelectMixin):
 
         items = self._normalize_skin_collection_payload(payload)
         logging.info("[SKIN][OWNED] Inventory payload items=%s", len(items))
-        owned_skins: List[Dict[str, Any]] = []
-        unmapped_items = 0
-        for item in items:
-            if not self._inventory_skin_is_owned(item):
-                continue
-            try:
-                skin_id = int(item.get("id") or item.get("skinId") or item.get("championSkinId") or 0)
-            except (TypeError, ValueError):
-                skin_id = 0
-            skin_name = str(item.get("name") or item.get("displayName") or "")
-            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
-            if not skin_data:
-                unmapped_items += 1
-                logging.debug(
-                    "[SKIN][OWNED] Inventory skin mapping failed champion=%s skin_id=%s skin_name=%s",
-                    champion_name,
-                    skin_id,
-                    skin_name,
-                )
-                continue
-            owned_skins.append(
-                self._build_owned_skin_result_entry(
-                    skin_data,
-                    fallback_skin_id=skin_id,
-                    fallback_skin_name=skin_name,
-                )
-            )
-
-        unique_skins = []
-        seen_ids = set()
-        for skin in owned_skins:
-            skin_id = int(skin.get("skin_id") or 0)
-            if skin_id in seen_ids:
-                continue
-            seen_ids.add(skin_id)
-            unique_skins.append(skin)
-        logging.info(
-            "[SKIN][OWNED] Inventory parsed champion=%s mapped=%s unmapped=%s",
-            champion_name,
-            len(unique_skins),
-            unmapped_items,
-        )
-        return {
-            "ok": True,
-            "message": "",
-            "owned_skins": unique_skins,
-            "source": "inventory",
-        }
+        items = [item for item in items if self._inventory_skin_is_owned(item)]
+        return self._parse_owned_skins_payload(items, champion_name, source="inventory", log_tag="Inventory")
 
     async def _fetch_owned_skins_from_pickable(self, champion_id: int) -> Dict[str, Any]:
         endpoint = "/lol-champ-select/v1/pickable-skins"
@@ -509,64 +658,8 @@ class WebSocketManager(ChampSelectMixin):
 
         items = self._normalize_skin_collection_payload(payload)
         logging.info("[SKIN][OWNED] Pickable fallback payload items=%s", len(items))
-        owned_skins: List[Dict[str, Any]] = []
-        unmapped_items = 0
-        for item in items:
-            try:
-                item_champion_id = int(item.get("championId") or champion_id or 0)
-            except (TypeError, ValueError):
-                item_champion_id = champion_id
-            if champion_id and item_champion_id != champion_id:
-                continue
-            try:
-                skin_id = int(
-                    item.get("id")
-                    or item.get("skinId")
-                    or item.get("championSkinId")
-                    or item.get("selectedSkinId")
-                    or 0
-                )
-            except (TypeError, ValueError):
-                skin_id = 0
-            skin_name = str(item.get("name") or item.get("displayName") or "")
-            skin_data = self._resolve_owned_skin_entry(champion_name, skin_id=skin_id, skin_name=skin_name)
-            if not skin_data:
-                unmapped_items += 1
-                logging.debug(
-                    "[SKIN][OWNED] Pickable skin mapping failed champion=%s skin_id=%s skin_name=%s",
-                    champion_name,
-                    skin_id,
-                    skin_name,
-                )
-                continue
-            owned_skins.append(
-                self._build_owned_skin_result_entry(
-                    skin_data,
-                    fallback_skin_id=skin_id,
-                    fallback_skin_name=skin_name,
-                )
-            )
-
-        unique_skins = []
-        seen_ids = set()
-        for skin in owned_skins:
-            skin_id = int(skin.get("skin_id") or 0)
-            if skin_id in seen_ids:
-                continue
-            seen_ids.add(skin_id)
-            unique_skins.append(skin)
-        logging.info(
-            "[SKIN][OWNED] Pickable fallback parsed champion=%s mapped=%s unmapped=%s",
-            champion_name,
-            len(unique_skins),
-            unmapped_items,
-        )
-        return {
-            "ok": True,
-            "message": "",
-            "owned_skins": unique_skins,
-            "source": "pickable",
-        }
+        items = [item for item in items if int(item.get("championId") or champion_id or 0) == champion_id]
+        return self._parse_owned_skins_payload(items, champion_name, source="pickable", log_tag="Pickable")
 
     async def _fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
         if not self.connection:
@@ -619,13 +712,16 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
 
     def _reset_ws_runtime_state(self) -> None:
+        """Clear per-connection runtime fields before a reconnect or final shutdown."""
         self.connection = None
         self.ws_active = False
         self.state.current_phase = "None"
         self.state.last_reported_summoner = None
+        self.state.current_queue_id = 0
         self.state.reset_between_games()
 
     def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_message: Optional[str] = None) -> None:
+        """Emit a structured disconnect event unless shutdown was explicitly requested."""
         if self._stop_event.is_set():
             return
         self._notify_ui(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
@@ -656,11 +752,14 @@ class WebSocketManager(ChampSelectMixin):
             asyncio.set_event_loop(loop)
             self.loop = loop
             while not self._stop_event.is_set():
+                # Recreate the connector on every retry so a broken connection does
+                # not leak stale event handlers or internal transport state.
                 connector = Connector(loop=loop)
                 self.connector = connector
 
                 @connector.ready
                 async def on_ready(connection):
+                    """Store the live connection and refresh cached player context."""
                     self.connection = connection
                     self.ws_active = True
                     log_history_event(
@@ -678,6 +777,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.close
                 async def on_close(connection):
+                    """Reset local state and notify the UI that the client disappeared."""
                     self._reset_ws_runtime_state()
                     if not self._stop_event.is_set():
                         log_history_event(
@@ -713,6 +813,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_GAMEFLOW)
                 async def _ws_phase(connection, event):
+                    # Phase changes are the main trigger for match-flow automation.
                     phase = event.data
                     if not phase:
                         return
@@ -725,6 +826,8 @@ class WebSocketManager(ChampSelectMixin):
                     self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
                     self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
 
+                    if phase in ("Lobby", "Matchmaking", "ChampSelect"):
+                        await self._refresh_current_queue_id()
                     if phase == "ChampSelect":
                         self.state.reset_between_games()
                         await self._champ_select_tick()
@@ -761,6 +864,8 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):
+                    # Session events can burst quickly; serialize ticks so the mixin
+                    # never reads and writes champ-select state concurrently.
                     if self._cs_tick_lock.locked():
                         return
                     async with self._cs_tick_lock:
@@ -768,6 +873,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION_TIMER)
                 async def _ws_cs_timer(connection, event):
+                    # Timer polling is rate-limited because the LCU can emit frequent updates.
                     if time() - self.state._last_cs_timer_fetch > 0.2:
                         await self._champ_select_timer_tick()
                         self.state._last_cs_timer_fetch = time()
@@ -805,6 +911,7 @@ class WebSocketManager(ChampSelectMixin):
                 finally:
                     self.connector = None
 
+                # Back off briefly between retries so the loop does not hammer process detection.
                 if self._stop_event.wait(self.WS_RETRY_DELAY_S):
                     break
         finally:
@@ -815,9 +922,11 @@ class WebSocketManager(ChampSelectMixin):
                 loop.close()
 
     async def _refresh_player_and_region(self) -> None:
+        """Refresh detected Riot ID and routing data from whichever endpoint is currently available."""
         if not self.connection:
             return
 
+        # Chat identity often exposes the canonical Riot ID earlier than the summoner endpoint.
         chat_me = None
         resp_chat = await self.connection.request("get", "/lol-chat/v1/me")
         if resp_chat.status == 200:
@@ -844,6 +953,7 @@ class WebSocketManager(ChampSelectMixin):
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
+        # Region routing can come from different client endpoints depending on the client state.
         reg = None
         resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
         if resp_reg.status != 200:
@@ -861,6 +971,31 @@ class WebSocketManager(ChampSelectMixin):
                     platform,
                     PLATFORM_TO_REGION.get(platform, "euw"),
                 )
+
+    async def _refresh_current_queue_id(self) -> None:
+        """Poll the lobby endpoint to detect the queue id before champ select starts."""
+        if not self.connection:
+            return
+        try:
+            response = await self.connection.request("get", EP_LOBBY)
+            if response.status != 200:
+                return
+            lobby = await response.json()
+            game_config = lobby.get("gameConfig") or {}
+            queue_id = int(game_config.get("queueId") or 0)
+            game_mode = str(game_config.get("gameMode") or "")
+            logging.info("[LOBBY] queueId=%s gameMode=%r", queue_id, game_mode)
+            if queue_id == self.state.current_queue_id:
+                return
+            self.state.current_queue_id = queue_id
+            if queue_id not in PRESET_ENABLED_QUEUE_IDS:
+                self._notify_ui(
+                    self.EVENT_STATUS,
+                    ("Presets disabled — unsupported lobby type", "GAMEMODE"),
+                )
+                logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
+        except Exception as e:
+            logging.debug("Error polling lobby for queue id: %s", e)
 
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:

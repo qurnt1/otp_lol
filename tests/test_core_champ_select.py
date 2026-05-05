@@ -80,20 +80,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                 "pick_2": {"spell_1": "Ghost", "spell_2": "Flash", "skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
                 "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
             },
-            "role_profiles": {
-                "MIDDLE": {
-                    "presets_enabled": False,
-                    "selected_pick_1": "Lux",
-                    "selected_pick_2": "Ashe",
-                    "selected_pick_3": "",
-                    "selected_ban": "Teemo",
-                    "pick_slots": {
-                        "pick_1": {"spell_1": "Ignite", "spell_2": "", "skin_mode": "random", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 99007, "random_skin_name": "Star Guardian Lux", "random_skin_num": 7, "random_skin_pool": [{"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7}, {"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}]},
-                        "pick_2": {"spell_1": "Heal", "spell_2": "Ghost", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                        "pick_3": {"spell_1": "", "spell_2": "", "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0, "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0, "random_skin_pool": []},
-                    },
-                }
-            },
         }
         self.manager = WebSocketManager(
             ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
@@ -113,6 +99,24 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.manager._inventory_skin_is_owned({"ownershipType": "UNOWNED"}))
         self.assertTrue(self.manager._inventory_skin_is_owned({"owned": True}))
         self.assertFalse(self.manager._inventory_skin_is_owned({"owned": False}))
+
+    async def test_resolve_rune_selection_preserves_disabled_auto_apply(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Fallback", "rune_auto_apply": True}
+        )
+        self.params["pick_slots"]["pick_2"].update(
+            {"rune_page_id": 200, "rune_page_name": "Mid", "rune_auto_apply": False}
+        )
+
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self.manager._resolve_rune_selection(
+            self.params,
+            slot_key="pick_2",
+        )
+
+        self.assertEqual(rune_page_id, 200)
+        self.assertEqual(rune_page_name, "Mid")
+        self.assertEqual(chosen_slot, "pick_2")
+        self.assertFalse(rune_auto_apply)
 
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
@@ -143,6 +147,57 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.manager._is_transient_ws_scan_error(ProcessLookupError("gone")))
         self.assertTrue(self.manager._is_transient_ws_scan_error(RuntimeError("process no longer exists (pid=356)")))
         self.assertFalse(self.manager._is_transient_ws_scan_error(RuntimeError("boom")))
+
+    async def test_fetch_rune_styles_parses_slot_based_perks(self):
+        async def request(method, url, **kwargs):
+            self.assertEqual(method, "get")
+            self.assertEqual(url, "/lol-perks/v1/styles")
+            return FakeResponse(
+                200,
+                [
+                    {
+                        "id": "8000",
+                        "name": "Precision",
+                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/7201_Precision.png",
+                        "slots": [
+                            {
+                                "perks": [
+                                    {
+                                        "id": "8010",
+                                        "name": "Conqueror",
+                                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Precision/Conqueror/Conqueror.png",
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ],
+            )
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+
+        styles = await self.manager._fetch_rune_styles_async()
+
+        self.assertEqual(styles[8000]["perks"][0]["id"], 8010)
+        self.assertEqual(styles[8000]["perks"][0]["name"], "Conqueror")
+        self.assertIn("Conqueror.png", styles[8000]["perks"][0]["iconPath"])
+
+    async def test_extract_rune_style_perks_accepts_flat_perks(self):
+        perks = self.manager._extract_rune_style_perks(
+            {
+                "perks": [
+                    {
+                        "id": "8214",
+                        "name": "Summon Aery",
+                        "iconPath": "/lol-game-data/assets/v1/perk-images/Styles/Sorcery/SummonAery/SummonAery.png",
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(perks[0]["id"], 8214)
+        self.assertEqual(perks[0]["name"], "Summon Aery")
 
     async def test_logic_do_pick_falls_back_to_second_pick(self):
         async def request(method, url, **kwargs):
@@ -197,84 +252,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
         self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
 
-    async def test_pick_priority_uses_role_profile_with_global_fallback(self):
-        self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["selected_pick_2"] = ""
-
-        effective = self.manager._get_effective_champ_select_config(self.params)
-
-        self.assertEqual(effective["selected_pick_1"], "Lux")
-        self.assertEqual(effective["selected_pick_2"], "Lux")
-        self.assertEqual(effective["selected_pick_3"], "Ashe")
-
-    async def test_effective_profile_config_uses_global_fixed_skin_when_role_skin_mode_is_none(self):
-        self.manager.state.assigned_position = "TOP"
-        self.params["pick_slots"]["pick_1"].update(
-            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
-        )
-        self.params["role_profiles"]["TOP"] = {
-            "presets_enabled": True,
-            "selected_pick_1": "Garen",
-            "pick_slots": {
-                "pick_1": {
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                }
-            },
-        }
-
-        effective = self.manager.get_effective_profile_config(params=self.params)
-
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "fixed")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_id"], 86000)
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_source_role"], "GLOBAL")
-
-    async def test_effective_profile_config_uses_global_random_skin_when_role_skin_mode_is_none(self):
-        self.manager.state.assigned_position = "TOP"
-        self.params["pick_slots"]["pick_1"].update(
-            {
-                "skin_mode": "random",
-                "random_skin_id": 86000,
-                "random_skin_name": "Default Garen",
-                "random_skin_num": 0,
-                "random_skin_pool": [{"skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}],
-            }
-        )
-        self.params["role_profiles"]["TOP"] = {
-            "presets_enabled": True,
-            "selected_pick_1": "Garen",
-            "pick_slots": {
-                "pick_1": {
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                }
-            },
-        }
-
-        effective = self.manager.get_effective_profile_config(params=self.params)
-        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
-
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "random")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["random_skin_id"], 86000)
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_source_role"], "GLOBAL")
-        self.assertEqual(chosen_slot, "pick_1")
-        self.assertIsNotNone(skin_selection)
-        self.assertEqual(skin_selection["mode"], "random")
-        self.assertEqual(skin_selection["skin_id"], 86000)
-
     async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
         self.manager.state.assigned_position = "TOP"
         self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "inherit", "pick_3": "inherit"}
@@ -324,14 +301,8 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skin_selection["mode"], "fixed")
         self.assertEqual(skin_selection["skin_id"], 99010)
 
-    async def test_pick_priority_returns_no_candidate_when_role_presets_are_disabled(self):
-        self.manager.state.assigned_position = "MID"
-
-        self.assertEqual(self.manager._get_pick_priority(self.params), [])
-
     async def test_prepick_uses_first_pickable_champion_in_priority(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager.state.time_left_ms = 5000
         self.manager._hover_champion = AsyncMock(return_value=True)
 
@@ -341,6 +312,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "MID"}],
                         "actions": [[{
@@ -379,6 +351,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP"}],
                         "actions": [[
@@ -428,6 +401,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP", "championId": 0}],
                         "actions": [[
@@ -469,11 +443,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_not_awaited()
 
-    async def test_champ_select_tick_ignores_bench_enabled_modes(self):
+    async def test_champ_select_tick_ignores_non_preset_queue_ids(self):
         async def request(method, url, **kwargs):
             self.assertEqual(method, "get")
             self.assertEqual(url, "/lol-champ-select/v1/session")
-            return FakeResponse(200, {"benchEnabled": True})
+            return FakeResponse(200, {"benchEnabled": True, "gameConfig": {"queueId": 0}})
 
         self.manager.connection = type("Connection", (), {})()
         self.manager.connection.request = AsyncMock(side_effect=request)
@@ -533,140 +507,8 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(locked)
 
-    async def test_effective_profile_config_includes_pick_slot_spell_fallback(self):
-        self.manager.state.assigned_position = "MID"
-
-        effective = self.manager.get_effective_profile_config(params=self.params)
-
-        self.assertEqual(effective["selected_pick_1"], "Lux")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["spell_1"], "Ignite")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["spell_2"], "Flash")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["skin_mode"], "random")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["random_skin_id"], 99007)
-        self.assertEqual(len(effective["pick_slots"]["pick_1"]["random_skin_pool"]), 2)
-        self.assertEqual(effective["spell_1"], "Ignite")
-        self.assertEqual(effective["spell_2"], "Flash")
-
-    async def test_set_spells_uses_selected_pick_slot(self):
-        self.manager.state.assigned_position = "MID"
-        self.manager.state.last_locked_pick_slot = "pick_2"
-
-        requests = []
-
-        async def request(method, url, **kwargs):
-            requests.append((method, url, kwargs))
-            if method == "patch":
-                self.assertEqual(url, "/lol-champ-select/v1/session/my-selection")
-                self.assertEqual(kwargs["json"]["spell1Id"], 7)
-                self.assertEqual(kwargs["json"]["spell2Id"], 6)
-                return FakeResponse(200, {})
-            if method == "get":
-                self.assertEqual(url, "/lol-champ-select/v1/session")
-                return FakeResponse(
-                    200,
-                    {
-                        "localPlayerCellId": 1,
-                        "myTeam": [{"cellId": 1, "spell1Id": 7, "spell2Id": 6}],
-                    },
-                )
-            raise AssertionError(f"Unexpected request: {method} {url}")
-
-        self.manager.connection = type("Connection", (), {})()
-        self.manager.connection.request = AsyncMock(side_effect=request)
-
-        await self.manager._set_spells(self.params)
-
-        self.assertEqual(requests[0][1], "/lol-champ-select/v1/session/my-selection")
-        self.assertEqual(requests[1][1], "/lol-champ-select/v1/session")
-        self.assertEqual(self.manager.state.last_confirmed_spell_ids, (7, 6))
-        self.assertIn((WebSocketManager.EVENT_SPELLS_SET, ("Heal", "Ghost")), self.events)
-
-    async def test_set_spells_retries_with_legacy_endpoint_when_confirmation_fails(self):
-        self.manager.state.assigned_position = "MID"
-        self.manager.state.last_locked_pick_slot = "pick_2"
-        self.manager.SPELL_CONFIRM_RETRIES = 0
-
-        async def request(method, url, **kwargs):
-            if method == "patch" and url == "/lol-champ-select/v1/session/my-selection":
-                return FakeResponse(200, {})
-            if method == "patch" and url == "/lol-champ-select-legacy/v1/session/my-selection":
-                return FakeResponse(200, {})
-            if method == "get" and url == "/lol-champ-select/v1/session":
-                if not hasattr(self, "_confirm_calls"):
-                    self._confirm_calls = 0
-                self._confirm_calls += 1
-                if self._confirm_calls == 1:
-                    return FakeResponse(
-                        200,
-                        {
-                            "localPlayerCellId": 1,
-                            "myTeam": [{"cellId": 1, "spell1Id": 4, "spell2Id": 4}],
-                        },
-                    )
-                return FakeResponse(
-                    200,
-                    {
-                        "localPlayerCellId": 1,
-                        "myTeam": [{"cellId": 1, "spell1Id": 7, "spell2Id": 6}],
-                    },
-                )
-            raise AssertionError(f"Unexpected request: {method} {url}")
-
-        self.manager.connection = type("Connection", (), {})()
-        self.manager.connection.request = AsyncMock(side_effect=request)
-
-        await self.manager._set_spells(self.params)
-
-        patch_urls = [call.args[1] for call in self.manager.connection.request.await_args_list if call.args[0] == "patch"]
-        self.assertEqual(
-            patch_urls,
-            [
-                "/lol-champ-select/v1/session/my-selection",
-                "/lol-champ-select-legacy/v1/session/my-selection",
-            ],
-        )
-        self.assertEqual(self.manager.state.last_confirmed_spell_ids, (7, 6))
-
-    async def test_set_skin_uses_selected_pick_slot(self):
-        self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.manager.state.last_locked_pick_slot = "pick_1"
-
-        async def request(method, url, **kwargs):
-            if method == "get" and url == "/lol-champ-select/v1/session":
-                return FakeResponse(
-                    200,
-                    {
-                        "localPlayerCellId": 1,
-                        "myTeam": [{"cellId": 1, "championId": 99, "selectedSkinId": 99007}],
-                    },
-                )
-            if method == "get" and url == "/lol-champ-select/v1/pickable-skins":
-                return FakeResponse(
-                    200,
-                    [
-                        {"skinId": 99007, "name": "Star Guardian Lux", "championId": 99},
-                        {"skinId": 99010, "name": "Battle Academia Lux", "championId": 99},
-                    ],
-                )
-            if method == "patch" and url == "/lol-champ-select/v1/session/my-selection":
-                self.assertEqual(kwargs["json"]["selectedSkinId"], 99007)
-                return FakeResponse(200, {})
-            raise AssertionError(f"Unexpected request: {method} {url}")
-
-        self.manager.connection = type("Connection", (), {})()
-        self.manager.connection.request = AsyncMock(side_effect=request)
-
-        await self.manager._set_skin(self.params)
-
-        self.assertEqual(self.manager.state.last_confirmed_skin_id, 99007)
-
     async def test_set_skin_fixed_validates_pickable_before_applying(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_2"].update(
-            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
-        )
         self.manager.state.last_locked_pick_slot = "pick_2"
 
         async def request(method, url, **kwargs):
@@ -694,10 +536,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_set_skin_fixed_skips_non_pickable_skin(self):
         self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_2"].update(
-            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
-        )
         self.manager.state.last_locked_pick_slot = "pick_2"
 
         async def request(method, url, **kwargs):
@@ -724,53 +562,12 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(patch_calls, [])
         self.assertNotEqual(self.manager.state.last_confirmed_skin_id, 99010)
 
-    async def test_set_skin_random_rerolls_next_preview(self):
-        self.manager.state.assigned_position = "MID"
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.manager.state.last_locked_pick_slot = "pick_1"
-
-        async def request(method, url, **kwargs):
-            if method == "get" and url == "/lol-champ-select/v1/session":
-                return FakeResponse(
-                    200,
-                    {
-                        "localPlayerCellId": 1,
-                        "myTeam": [{"cellId": 1, "championId": 99, "selectedSkinId": 99007}],
-                    },
-                )
-            if method == "get" and url == "/lol-champ-select/v1/pickable-skins":
-                return FakeResponse(
-                    200,
-                    [
-                        {"skinId": 99007, "name": "Star Guardian Lux", "championId": 99},
-                        {"skinId": 99010, "name": "Battle Academia Lux", "championId": 99},
-                    ],
-                )
-            if method == "patch" and url == "/lol-champ-select/v1/session/my-selection":
-                self.assertEqual(kwargs["json"]["selectedSkinId"], 99007)
-                return FakeResponse(200, {})
-            raise AssertionError(f"Unexpected request: {method} {url}")
-
-        self.manager.connection = type("Connection", (), {})()
-        self.manager.connection.request = AsyncMock(side_effect=request)
-        self.manager.update_param = lambda key, value: self.params.__setitem__(key, value)
-        self.manager.dd.resolve_skin_data = lambda champion_id, skin_id=None, skin_name=None: {
-            99007: {"skin_id": 99007, "skin_num": 7, "skin_name": "Star Guardian Lux", "splash_url": "url-a"},
-            99010: {"skin_id": 99010, "skin_num": 10, "skin_name": "Battle Academia Lux", "splash_url": "url-b"},
-        }.get(int(skin_id or 0))
-
-        await self.manager._set_skin(self.params)
-
-        next_skin = self.params["role_profiles"]["MIDDLE"]["pick_slots"]["pick_1"]["random_skin_id"]
-        self.assertEqual(next_skin, 99010)
-
     async def test_champ_select_tick_retries_spells_when_session_does_not_match(self):
         self.manager.state.assigned_position = "MID"
         self.manager.state.has_picked = True
         self.manager.state.last_locked_pick_slot = "pick_2"
         self.manager.state.last_spell_try_ts = 0
         self.params["auto_summoners_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._set_spells = AsyncMock()
 
         async def request(method, url, **kwargs):
@@ -779,6 +576,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "MID", "spell1Id": 4, "spell2Id": 4}],
                         "actions": [],
@@ -798,45 +596,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._set_spells.assert_awaited_once()
 
-    async def test_champ_select_tick_confirms_prepick_from_session_and_triggers_spells(self):
-        self.manager.state.assigned_position = "MID"
-        self.params["auto_summoners_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
-        self.manager._set_spells = AsyncMock()
-
-        async def request(method, url, **kwargs):
-            if url == "/lol-champ-select/v1/session":
-                return FakeResponse(
-                    200,
-                    {
-                        "benchEnabled": False,
-                        "localPlayerCellId": 1,
-                        "myTeam": [{"cellId": 1, "assignedPosition": "MID", "championId": 99, "spell1Id": 4, "spell2Id": 4}],
-                        "actions": [],
-                    },
-                )
-            if url == "/lol-champ-select/v1/pickable-champion-ids":
-                return FakeResponse(200, [99, 22])
-            raise AssertionError(f"Unexpected request: {method} {url}")
-
-        self.manager.connection = type("Connection", (), {})()
-        self.manager.connection.request = AsyncMock(side_effect=request)
-        self.manager._logic_do_pick = AsyncMock()
-        self.manager._logic_do_ban = AsyncMock()
-
-        await self.manager._champ_select_tick()
-        await asyncio.sleep(0)
-
-        self.assertTrue(self.manager.state.has_prepicked)
-        self.assertEqual(self.manager.state.last_prepick_slot, "pick_1")
-        self.manager._set_spells.assert_awaited_once()
-
     async def test_ban_does_not_wait_for_prepick_summs_confirmation(self):
         self.manager.state.assigned_position = "TOP"
         self.manager.state.has_prepicked = True
         self.manager.state.last_prepick_slot = "pick_1"
         self.params["auto_summoners_enabled"] = True
-        self.params["role_profiles"]["MIDDLE"]["presets_enabled"] = True
         self.manager._logic_do_ban = AsyncMock()
         self.manager._logic_do_pick = AsyncMock()
         self.manager._set_spells = AsyncMock()
@@ -847,6 +611,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
                     200,
                     {
                         "benchEnabled": False,
+                        "gameConfig": {"queueId": 420},
                         "localPlayerCellId": 1,
                         "myTeam": [{"cellId": 1, "assignedPosition": "TOP", "championId": 86, "spell1Id": 4, "spell2Id": 12}],
                         "actions": [[

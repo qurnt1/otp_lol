@@ -1,18 +1,53 @@
-"""Settings loading, defaults and migration helpers."""
+"""
+FILE NAME: src/config/settings.py
+GLOBAL PURPOSE:
+- Define default configuration payloads for the application.
+- Load, normalize, reset, import, and export persisted settings.
+- Keep schema migration rules explicit for pick slots and skin settings.
+
+KEY FUNCTIONS:
+- build_pick_slot_defaults: Build a normalized pick-slot structure.
+- load_parameters: Load and validate the persisted settings file.
+- save_parameters: Persist normalized settings to disk.
+- _normalize_parameters: Enforce the current configuration schema.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists so settings schema rules, first-launch defaults, and migration behavior remain centralized and predictable.
+For whom:
+Developers maintaining settings persistence, schema evolution, and configuration import or export.
+
+DEPENDENCIES:
+Used by:
+- src.config.__init__ and runtime modules that load or save settings.
+Uses:
+- Standard library: copy, json, logging, os, shutil, typing
+- Local modules: src.config.constants, src.config.paths
+"""
 
 import copy
 import json
 import logging
 import os
 import shutil
+import tomllib
 from typing import Any, Dict
 
-from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, ROLE_PROFILE_ORDER, SUMMONER_SPELL_MAP
-from .paths import ICONS_CACHE_DIR, PARAMETERS_PATH, SKINS_CACHE_DIR, SPELLS_CACHE_DIR
+import tomli_w
+
+from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
+from .paths import (
+    ICONS_CACHE_DIR,
+    PARAMETERS_PATH,
+    PARAMETERS_JSON_PATH,
+    RUNES_CACHE_DIR,
+    SKINS_CACHE_DIR,
+    SPELLS_CACHE_DIR,
+)
 
 
 def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
-    """Return a pick-slot payload with optional default summs."""
+    """Return a normalized pick-slot payload with optional default summoner spells."""
     return {
         slot: {
             "spell_1": spell_1,
@@ -25,29 +60,59 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
             "random_skin_name": "",
             "random_skin_num": 0,
             "random_skin_pool": [],
+            "rune_page_id": 0,
+            "rune_page_name": "",
+            "rune_auto_apply": True,
+            "rune_keystone_path": "",
+            "rune_sub_style_icon_path": "",
         }
         for slot in PICK_SLOT_ORDER
-    }
-
-
-def build_role_profile_defaults(*, presets_enabled: bool = True) -> Dict[str, Dict[str, Any]]:
-    """Return a fully initialized role profile payload."""
-    return {
-        role: {
-            "presets_enabled": presets_enabled,
-            "selected_pick_1": "",
-            "selected_pick_2": "",
-            "selected_pick_3": "",
-            "selected_ban": "",
-            "pick_slots": build_pick_slot_defaults(),
-        }
-        for role in ROLE_PROFILE_ORDER
     }
 
 
 def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str, str]:
     """Return main-window skin override defaults for each preset slot."""
     return {slot: default_mode for slot in PICK_SLOT_ORDER}
+
+
+def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
+    """Return first-launch preset slots with visible spell and skin examples."""
+    slots = build_pick_slot_defaults()
+    slots["pick_1"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Ignite",
+            "skin_mode": "fixed",
+            "skin_id": 86013,
+            "skin_name": "God-King Garen",
+            "skin_num": 13,
+        }
+    )
+    slots["pick_2"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Teleport",
+            "skin_mode": "random",
+            "random_skin_id": 99007,
+            "random_skin_name": "Star Guardian Lux",
+            "random_skin_num": 7,
+            "random_skin_pool": [
+                {"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7},
+                {"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10},
+            ],
+        }
+    )
+    slots["pick_3"].update(
+        {
+            "spell_1": "Flash",
+            "spell_2": "Barrier",
+            "skin_mode": "fixed",
+            "skin_id": 22004,
+            "skin_name": "Queen Ashe",
+            "skin_num": 4,
+        }
+    )
+    return slots
 
 
 DEFAULT_PARAMS: Dict[str, Any] = {
@@ -61,7 +126,7 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
     "selected_ban": "Teemo",
-    "pick_slots": build_pick_slot_defaults(spell_1="Heal", spell_2="Flash"),
+    "pick_slots": build_demo_pick_slots(),
     "theme": "darkly",
     "summoner_name_auto_detect": True,
     "manual_summoner_name": "VotrePseudo#VotreTag",
@@ -69,8 +134,6 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_detected_riot_id": "",
     "auto_detected_region": "",
     "auto_detected_platform": "",
-    "selected_profile_role": "GLOBAL",
-    "role_profiles": build_role_profile_defaults(),
     "preferred_stats_site": "opgg",
     "preferred_hotkey_site": "porofessor",
     "hotkey_toggle_window": "alt+c",
@@ -81,6 +144,8 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "ignored_update_version": "",
     "main_skin_mode_override": "inherit",
     "main_skin_mode_overrides": build_main_skin_mode_overrides(),
+    "window_x": 0,
+    "window_y": 0,
 }
 
 FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
@@ -92,24 +157,45 @@ FIRST_LAUNCH_PARAMS.update(
         "auto_summoners_enabled": False,
         "presets_enabled": False,
         "auto_play_again_enabled": False,
-        "role_profiles": build_role_profile_defaults(presets_enabled=False),
     }
 )
 
 
 def _build_first_launch_payload() -> Dict[str, Any]:
+    """Return the fully normalized settings payload used for a true first launch."""
     return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
 
 
+def _migrate_json_to_toml() -> bool:
+    """One-time migration: read parameters.json, write parameters.toml, rename old file to .bak."""
+    if not os.path.exists(PARAMETERS_JSON_PATH):
+        return False
+    if os.path.exists(PARAMETERS_PATH):
+        return False
+    try:
+        with open(PARAMETERS_JSON_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        _write_parameters_file(config)
+        backup = PARAMETERS_JSON_PATH + ".bak"
+        os.rename(PARAMETERS_JSON_PATH, backup)
+        logging.info("Migrated settings from %s to %s (backup: %s)", PARAMETERS_JSON_PATH, PARAMETERS_PATH, backup)
+        return True
+    except Exception as e:
+        logging.warning("Failed to migrate JSON settings to TOML: %s", e)
+        return False
+
+
 def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize and write the settings payload to the main parameters file."""
     os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
     sanitized = _normalize_parameters(payload)
-    with open(PARAMETERS_PATH, "w", encoding="utf-8") as f:
-        json.dump(sanitized, f, indent=4, ensure_ascii=False)
+    with open(PARAMETERS_PATH, "wb") as f:
+        tomli_w.dump(sanitized, f)
     return sanitized
 
 
 def _clear_skin_cache() -> None:
+    """Remove cached skin previews when settings are reset to a clean baseline."""
     if not os.path.isdir(SKINS_CACHE_DIR):
         return
     logging.info("Clearing skin cache: %s", SKINS_CACHE_DIR)
@@ -125,22 +211,25 @@ def _clear_skin_cache() -> None:
 
 
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
-    logging.warning("Resetting parameters.json to first-launch defaults: %s", reason)
+    """Reset the settings file to first-launch defaults after a validation failure."""
+    logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
     _clear_skin_cache()
     return _write_parameters_file(_build_first_launch_payload())
 
 
 def load_parameters() -> Dict[str, Any]:
-    """Load parameters from the JSON file."""
+    """Load, validate, and normalize parameters from the TOML settings file."""
+    _migrate_json_to_toml()
+
     if not os.path.exists(PARAMETERS_PATH):
         return _reset_parameters_file("missing file")
 
     try:
-        with open(PARAMETERS_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    except (json.JSONDecodeError, IOError, OSError) as e:
-        logging.warning(f"Error loading settings: {e}")
-        return _reset_parameters_file("invalid json")
+        with open(PARAMETERS_PATH, "rb") as f:
+            config = tomllib.load(f)
+    except (tomllib.TOMLDecodeError, IOError, OSError) as e:
+        logging.warning("Error loading settings: %s", e)
+        return _reset_parameters_file("invalid toml")
 
     if not isinstance(config, dict):
         return _reset_parameters_file("root payload is not an object")
@@ -157,31 +246,39 @@ def load_parameters() -> Dict[str, Any]:
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
-    """Save parameters to the JSON file."""
+    """Persist normalized parameters to the JSON settings file."""
     try:
         _write_parameters_file(params)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Error saving settings: {e}")
+        logging.error("Error saving settings: %s", e)
         return False
 
 
 def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
-    """Export sanitized parameters to a chosen JSON file."""
+    """Export sanitized parameters to a chosen TOML or JSON file (detected from extension)."""
     try:
         sanitized = _normalize_parameters(params)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        if path.lower().endswith(".json"):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(sanitized, f, indent=4, ensure_ascii=False)
+        else:
+            with open(path, "wb") as f:
+                tomli_w.dump(sanitized, f)
         return True
     except (IOError, OSError) as e:
-        logging.error(f"Error exporting settings: {e}")
+        logging.error("Error exporting settings: %s", e)
         return False
 
 
 def import_parameters_from_file(path: str) -> Dict[str, Any]:
-    """Import parameters from a JSON file and normalize them."""
-    with open(path, "r", encoding="utf-8") as f:
-        payload = json.load(f)
+    """Import parameters from a TOML or JSON file and normalize them to the current schema."""
+    if path.lower().endswith(".json"):
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    else:
+        with open(path, "rb") as f:
+            payload = tomllib.load(f)
     if not isinstance(payload, dict):
         raise ValueError("The configuration file is invalid.")
     return _normalize_parameters(payload)
@@ -196,16 +293,19 @@ def _normalize_spell_value(value: Any) -> str:
 
 
 def _normalize_skin_mode(value: Any) -> str:
+    """Normalize stored skin modes to the supported values."""
     mode = str(value or "none").strip().lower()
     return mode if mode in {"none", "fixed", "random"} else "none"
 
 
 def _normalize_main_skin_mode_override(value: Any) -> str:
+    """Normalize the main-window skin override value to a supported mode."""
     mode = str(value or "inherit").strip().lower()
     return mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
 
 
 def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inherit") -> Dict[str, str]:
+    """Build the per-slot main-window skin override mapping, including legacy fallbacks."""
     normalized = build_main_skin_mode_overrides()
     legacy_mode = _normalize_main_skin_mode_override(legacy_value)
     if legacy_mode != "inherit":
@@ -218,6 +318,7 @@ def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inhe
 
 
 def _normalize_skin_id(value: Any) -> int:
+    """Convert persisted skin identifiers to a safe non-negative integer."""
     try:
         skin_id = int(value or 0)
     except (TypeError, ValueError):
@@ -226,6 +327,7 @@ def _normalize_skin_id(value: Any) -> int:
 
 
 def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
+    """Normalize and deduplicate a persisted random-skin pool."""
     if not isinstance(value, list):
         return []
     normalized_pool: list[Dict[str, Any]] = []
@@ -283,6 +385,11 @@ def _build_normalized_pick_slots(
                 "random_skin_pool": _normalize_skin_pool(
                     slot_data.get("random_skin_pool", slots[slot]["random_skin_pool"])
                 ),
+                "rune_page_id": int(slot_data.get("rune_page_id", slots[slot]["rune_page_id"]) or 0),
+                "rune_page_name": str(slot_data.get("rune_page_name", slots[slot]["rune_page_name"]) or ""),
+                "rune_auto_apply": bool(slot_data.get("rune_auto_apply", slots[slot]["rune_auto_apply"])),
+                "rune_keystone_path": str(slot_data.get("rune_keystone_path", slots[slot]["rune_keystone_path"]) or ""),
+                "rune_sub_style_icon_path": str(slot_data.get("rune_sub_style_icon_path", slots[slot]["rune_sub_style_icon_path"]) or ""),
             }
         )
     return slots
@@ -292,7 +399,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize loaded parameters and migrate old keys."""
     merged = copy.deepcopy(DEFAULT_PARAMS)
     for key, value in config.items():
-        if key in {"pick_slots", "role_profiles"}:
+        if key == "pick_slots" or key not in DEFAULT_PARAMS:
             continue
         merged[key] = value
 
@@ -307,19 +414,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     if "auto_detected_platform" not in config:
         merged["auto_detected_platform"] = ""
-
-    selected_profile_role = str(merged.get("selected_profile_role", "GLOBAL")).upper()
-    selected_profile_role = {
-        "MID": "MIDDLE",
-        "ADC": "BOTTOM",
-        "BOT": "BOTTOM",
-        "SUP": "UTILITY",
-        "SUPPORT": "UTILITY",
-        "JGL": "JUNGLE",
-    }.get(selected_profile_role, selected_profile_role)
-    merged["selected_profile_role"] = (
-        selected_profile_role if selected_profile_role in {"GLOBAL", *ROLE_PROFILE_ORDER} else "GLOBAL"
-    )
 
     merged["selected_pick_1"] = str(config.get("selected_pick_1", DEFAULT_PARAMS["selected_pick_1"]))
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
@@ -338,28 +432,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
         fallback_spell_2=config.get("global_spell_2", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_2"]),
     )
-
-    raw_profiles = config.get("role_profiles", {}) if isinstance(config.get("role_profiles", {}), dict) else {}
-    normalized_profiles = build_role_profile_defaults(presets_enabled=merged["presets_enabled"])
-    for role in ROLE_PROFILE_ORDER:
-        role_data = raw_profiles.get(role, {})
-        if not isinstance(role_data, dict):
-            role_data = {}
-        normalized_profiles[role].update(
-            {
-                "presets_enabled": bool(role_data.get("presets_enabled", merged["presets_enabled"])),
-                "selected_pick_1": str(role_data.get("selected_pick_1", "")),
-                "selected_pick_2": str(role_data.get("selected_pick_2", "")),
-                "selected_pick_3": str(role_data.get("selected_pick_3", "")),
-                "selected_ban": str(role_data.get("selected_ban", "")),
-                "pick_slots": _build_normalized_pick_slots(
-                    role_data.get("pick_slots"),
-                    fallback_spell_1=role_data.get("spell_1", ""),
-                    fallback_spell_2=role_data.get("spell_2", ""),
-                ),
-            }
-        )
-    merged["role_profiles"] = normalized_profiles
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:
@@ -389,6 +461,6 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
-    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR]:
+    for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR, RUNES_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)

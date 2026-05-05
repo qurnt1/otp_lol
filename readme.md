@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="./readme.md"><img src="https://img.shields.io/badge/version-10.0-2f81f7" alt="Version"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/version-11.0-2f81f7" alt="Version"></a>
   <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
@@ -15,12 +15,12 @@ Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Current project version: `10.0`
+Current project version: `11.0`
 
 ## Table Of Contents
 
 - [Overview](#overview)
-- [Version 10.0 Highlights](#version-100-highlights)
+- [Version 11.0 Highlights](#version-110-highlights)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Technologies](#technologies)
@@ -57,11 +57,19 @@ The application is designed to work as a lightweight desktop tool:
 - keyboard shortcuts
 - local cache for some Data Dragon data
 
-## Version 10.0 Highlights
+## Version 11.0 Highlights
 
-Version `10.0` introduces advanced skin automation, a complete UI overhaul for update notifications, and a robust configuration migration system.
+Version `11.0` focuses on preset completeness: skins, summoner spells, rune pages, role profiles, and release/update behavior now work together more reliably.
 
-<<<<<<< Updated upstream
+- `Rune page automation`
+  Presets can now store a League rune page and apply it automatically during champion select. The app confirms the selected rune page through the LCU and retries when the client overwrites state.
+
+- `Rune picker with full previews`
+  The settings window now shows every selected rune in the rune picker: primary runes, secondary style, secondary runes, and stat shards. Rows are fully clickable, rune icons come from CommunityDragon, and tooltips expose rune names for easier inspection.
+
+- `Compact rune previews in settings`
+  Preset rune buttons now show a compact main-rune plus secondary-style preview, and clearly flag presets where rune auto-apply is disabled.
+
 - `Skin inventory detection and validation`
   The app now resolves owned skins more reliably, logs inventory and pickable-skin fallbacks more clearly, and validates fixed skins against the skins that are actually pickable in champion select.
 
@@ -74,27 +82,8 @@ Version `10.0` introduces advanced skin automation, a complete UI overhaul for u
 - `Main window skin mode control`
   The main interface now includes a dedicated `Skin` control that cycles between `OFF`, `FIXED`, and `RANDOM`, and shows slot-by-slot skin previews directly from the home screen.
 
-- `Cleaner startup behavior`
-  Audio initialization was adjusted so `pygame` no longer pollutes startup output with its support prompt and deprecated `pkg_resources` warning.
-=======
-- `Advanced Skin Automation Modes`
-  Users can now force specific skin selections in Champion Select. Two modes are available:
-  - **Fixed Mode:** Automatically selects a single pre-determined skin.
-  - **Random Mode:** Randomly picks a skin from a custom user-defined list for each game.
-
-- `Modernized Update Interface`
-  The update popup UI has been completely redesigned to be more aesthetic, intuitive, and aligned with modern design standards (improved spacing, typography, and visual hierarchy).
-
-- `Robust JSON Configuration Migration`
-  The settings logic has been overhauled to prevent bugs during version transitions. The app now detects outdated JSON structures (missing parameters or legacy keys) and automatically regenerates the configuration file while preserving integrity.
-
-- `Intuitive "Default-Off" Initialization`
-  On the first launch, the application now initializes with all automation features (Presets for Champions, Summoners, Runes, and Skins) disabled by default to prevent unexpected behavior. 
-  - **Improved UX:** Although disabled, these presets come with pre-selected placeholders (Champions/Summoners) to make the interface more intuitive and show the user how to configure them once activated.
-
-- `Codebase Cleanup`
-  Optimized internal logic and removed redundant startup logs for a faster and cleaner application launch.
->>>>>>> Stashed changes
+- `Cleaner startup and runtime output`
+  Audio initialization no longer pollutes startup output, temporary rune debug prints were removed, and noisy rune retry logs were moved to debug-level logging.
 
 ## Features
 
@@ -110,8 +99,10 @@ Version `10.0` introduces advanced skin automation, a complete UI overhaul for u
   Automatically bans the configured champion.
 - `Auto-Summs`
   Applies the summs configured for the preset that is actually picked.
+- `Auto-Runes`
+  Applies the rune page configured for the selected preset, with an option to disable rune auto-apply per preset.
 - `Champion Select Recovery`
-  Confirms picks and summs through the LCU session, retries when Riot overwrites state, and falls back when needed.
+  Confirms picks, summs, skins, and runes through the LCU session, retries when Riot overwrites state, and falls back when needed.
 
 ### Post-Game Automation
 
@@ -125,6 +116,8 @@ Version `10.0` introduces advanced skin automation, a complete UI overhaul for u
 - quick links to several player and in-game stats websites
 - per-role preset profiles
 - direct preset buttons with champion and summoner icons
+- compact rune and skin previews in preset rows
+- rune picker with full rune, secondary tree, and shard previews
 - local action history window
 - option to hide the window in the system tray
 - configurable global keyboard shortcuts
@@ -236,20 +229,20 @@ The script also handles:
 ### User Files
 
 - Settings:
-  `%APPDATA%\MainLoL\parameters.json`
+  `%APPDATA%\OTP LOL\parameters.json`
 - Action history:
-  `%APPDATA%\MainLoL\history.json`
+  `%APPDATA%\OTP LOL\history.json`
 - Logs:
-  `%APPDATA%\MainLoL\app_debug.log`
+  `%APPDATA%\OTP LOL\app_debug.log`
 
 ### Local Cache
 
 - Champion cache:
-  `%TEMP%\mainlol_ddragon_champions.json`
+  `%TEMP%\otp_lol_ddragon_champions.json`
 - Champion icon cache:
-  `%TEMP%\mainlol_icons\`
+  `%TEMP%\otp_lol_icons\`
 - Summs icon cache:
-  `%TEMP%\mainlol_spells\`
+  `%TEMP%\otp_lol_spells\`
 
 ### Main Settings
 
@@ -284,10 +277,11 @@ On first launch, you can:
 
 The settings window now exposes champion-select automation through direct preset buttons:
 
-- each preset row includes three direct buttons: champion, `Summ 1`, and `Summ 2`
+- each preset row includes direct buttons for champion, `Summ 1`, `Summ 2`, runes, and skin
 - each button shows its icon and current value directly in the settings window
 - clicking a champion button opens the champion picker immediately
 - clicking a summ button opens the summoner spell picker immediately
+- clicking a rune button opens the full rune page picker, including primary runes, secondary runes, and stat shards
 - champion and summoner pickers include a `None` option to leave a field empty
 - ban remains a separate global configuration
 
@@ -316,6 +310,8 @@ During champion select:
 - it falls back from `Preset 1` to `Preset 2` to `Preset 3`
 - it confirms the final lock through the LCU session state
 - it applies summs for the preset that was actually selected
+- it applies the configured rune page for the selected preset when rune auto-apply is enabled
+- it validates and applies the configured skin mode when possible
 
 After the game:
 
@@ -435,7 +431,7 @@ config/
 If something goes wrong, the first file to check is:
 
 ```text
-%APPDATA%\MainLoL\app_debug.log
+%APPDATA%\OTP LOL\app_debug.log
 ```
 
 ## Possible Roadmap

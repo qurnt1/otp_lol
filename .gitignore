@@ -22,6 +22,12 @@ OTP LOL/
 OTP LOL.exe
 *.exe
 
+# Node / website
+node_modules/
+website/dist/
+website/*-qa.png
+website/tsconfig.tsbuildinfo
+
 # Logs
 *.log
 
@@ -38,3 +44,10 @@ a implémenter.txt
 .tmp_temp/
 test.py
 agents.md
+a implémenter.md
+context.md
+contexte.md
+Setup OTP Lol.md
+.claude
+faire.txt
+claude.md

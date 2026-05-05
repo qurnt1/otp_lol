@@ -1,4 +1,30 @@
-"""Champion select logic extracted from the LCU manager."""
+"""
+FILE NAME: src/core/champ_select.py
+GLOBAL PURPOSE:
+- Hold the champion-select and post-game automation flow used by the websocket manager.
+- Resolve picks, bans, summoner spells, and skins from the current session plus stored settings.
+- Reconcile desired automation state with the live LCU session through retries and confirmations.
+
+KEY FUNCTIONS:
+- _champ_select_tick: Read the current session and decide which safe automation step should run next.
+- _logic_do_pick: Try configured pick presets in priority order until one is confirmed.
+- _resolve_spell_selection: Compute the effective summoner spells for the active pick slot.
+- _resolve_skin_selection: Compute the effective fixed or random skin request for the active pick slot.
+- _set_spells / _set_skin: Apply and confirm the requested selection against the LCU.
+
+AUDIENCE & LOGIC:
+Why:
+This mixin keeps the highest-risk automation logic separate from websocket transport code so retry rules and session reconciliation stay maintainable.
+For whom:
+Developers working on champion-select automation, fallback behavior, and LCU confirmation flows.
+
+DEPENDENCIES:
+Used by:
+- src/core/websocket.py via WebSocketManager inheritance.
+Uses:
+- Standard library: asyncio, json, logging, random, time, typing
+- Local modules: src.config, src.services.skin_modes
+"""
 
 import asyncio
 import json
@@ -7,14 +33,15 @@ import random
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from ..config import EP_PICKABLE, SUMMONER_SPELL_MAP
+from ..config import EP_PICKABLE, PRACTICE_TOOL_GAME_MODE, PRESET_ENABLED_QUEUE_IDS, SUMMONER_SPELL_MAP
+from ..services.skin_modes import build_main_skin_overrides, get_effective_skin_mode_for_slot
 
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
 
 
 class ChampSelectMixin:
-    """Mixin regroupant la logique de champ select et post-game."""
+    """Provide reusable champion-select and post-game automation helpers."""
 
     SPELL_CONFIRM_RETRIES = 5
     SPELL_CONFIRM_DELAY_S = 0.18
@@ -25,9 +52,13 @@ class ChampSelectMixin:
     PREPICK_RETRY_COOLDOWN_S = 0.5
     PREPICK_SOFT_TIMEOUT_S = 2.2
     ACTION_RETRY_COOLDOWN_S = 0.25
+    RUNE_CONFIRM_RETRIES = 4
+    RUNE_CONFIRM_DELAY_S = 0.18
+    RUNE_RETRY_COOLDOWN_S = 0.45
 
     @staticmethod
     def _format_debug_value(payload: Any, limit: int = 240) -> str:
+        """Serialize debug payloads into a compact single-line string for logs."""
         try:
             text = json.dumps(payload, ensure_ascii=True, sort_keys=True)
         except TypeError:
@@ -83,6 +114,7 @@ class ChampSelectMixin:
         return None
 
     def _get_pick_priority(self: "WebSocketManager", params: Dict[str, Any]) -> List[tuple[str, str]]:
+        """Return configured pick presets in the order they should be attempted."""
         effective = self._get_effective_champ_select_config(params)
         if not effective.get("presets_enabled", True):
             return []
@@ -98,6 +130,7 @@ class ChampSelectMixin:
         pickable_ids: Optional[Set[int]],
         banned_ids: Optional[Set[int]] = None,
     ) -> List[tuple[str, str, int]]:
+        """Filter configured presets down to champions that can still be picked now."""
         banned_ids = banned_ids or set()
         candidates: List[tuple[str, str, int]] = []
         for slot_key, champion_name in self._get_pick_priority(params):
@@ -122,6 +155,7 @@ class ChampSelectMixin:
         pickable_ids: Optional[Set[int]],
         banned_ids: Optional[Set[int]] = None,
     ) -> Optional[tuple[str, str, int]]:
+        """Return the first configured champion that survives current session constraints."""
         candidates = self._get_viable_pick_candidates(params, pickable_ids, banned_ids)
         return candidates[0] if candidates else None
 
@@ -176,7 +210,32 @@ class ChampSelectMixin:
             logging.debug("Error fetching champ select session: %s", e)
             return
 
-        if session.get("benchEnabled") is True:
+        game_config = session.get("gameConfig") or {}
+        queue_id = int(game_config.get("queueId") or 0)
+        game_mode = str(game_config.get("gameMode") or "")
+
+        # Practice Tool and some custom games expose queueId=0 in the session
+        # even though the lobby previously reported a real queue id.  Fall back
+        # to the value captured during the Lobby/Matchmaking phase.
+        effective_queue_id = queue_id or self.state.current_queue_id
+
+        if not self.state.non_preset_mode_notified:
+            logging.info(
+                "[SESSION] queueId=%s gameMode=%r effectiveQueueId=%s",
+                queue_id,
+                game_mode,
+                effective_queue_id,
+            )
+
+        presets_allowed = (
+            effective_queue_id in PRESET_ENABLED_QUEUE_IDS
+            or game_mode == PRACTICE_TOOL_GAME_MODE
+        )
+        if not presets_allowed:
+            if not self.state.non_preset_mode_notified:
+                self.state.non_preset_mode_notified = True
+                logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
+                self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
             return
 
         local_id = session.get("localPlayerCellId")
@@ -185,6 +244,8 @@ class ChampSelectMixin:
 
         params = self.get_params()
 
+        # Capture the assigned role as soon as it appears so later profile resolution
+        # can consistently use role-specific overrides.
         if not self.state.assigned_position:
             my_team = session.get("myTeam", [])
             my_player_obj = next((p for p in my_team if p.get("cellId") == local_id), None)
@@ -201,11 +262,16 @@ class ChampSelectMixin:
                 if action.get("actorCellId") == local_id and not action.get("completed"):
                     my_actions.append(action)
 
+        # Collect the live constraints first so every downstream decision uses the
+        # same snapshot of pickability, bans, and prepick state.
         effective = self._get_effective_champ_select_config(params)
         presets_enabled = bool(effective.get("presets_enabled", True))
         pickable_set = await self._fetch_pickable_ids()
         banned_ids = self._extract_banned_champion_ids(session)
+
+        had_prepicked = self.state.has_prepicked
         self._sync_prepick_state_from_session(session, params)
+        prepick_just_confirmed = self.state.has_prepicked and not had_prepicked
 
         prepick_action = next(
             (a for a in my_actions if a.get("type") == "pick" and not a.get("isInProgress")),
@@ -220,6 +286,19 @@ class ChampSelectMixin:
             None,
         )
 
+        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
+
+        # As soon as the prepick is confirmed in the session, fire spells,
+        # runes, and skin all at once so everything is in place before the
+        # pick lock-in even begins.
+        if prepick_just_confirmed and not self.state.has_picked and presets_enabled:
+            if params.get("auto_summoners_enabled"):
+                asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
+            asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
+            asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
+
+        # Pre-pick comes first because the client can expose a hover-only action
+        # before the final ban or pick phase begins.
         if params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1"):
             if prepick_action:
                 best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
@@ -233,7 +312,19 @@ class ChampSelectMixin:
                             prepick_action.get("id"),
                         )
                         hover_success = await self._hover_champion(prepick_action["id"], target_champion_id)
-                        if not hover_success:
+                        if hover_success:
+                            # Re-sync immediately — the session may already reflect the
+                            # hover so we can fire spells/runes/skin without waiting for
+                            # the next tick.
+                            had_prepicked_after = self.state.has_prepicked
+                            self._sync_prepick_state_from_session(session, params)
+                            if self.state.has_prepicked and not had_prepicked_after and not self.state.has_picked:
+                                prepick_slot = self.state.last_prepick_slot or "pick_1"
+                                if params.get("auto_summoners_enabled"):
+                                    asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
+                                asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
+                                asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
+                        else:
                             self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
         prepick_required = (
@@ -242,6 +333,7 @@ class ChampSelectMixin:
             and effective.get("selected_pick_1")
             and prepick_action is not None
         )
+
         if prepick_required and not self.state.has_prepicked:
             if self.state.prepick_wait_started_ts <= 0:
                 self.state.prepick_wait_started_ts = time()
@@ -251,24 +343,26 @@ class ChampSelectMixin:
                 return
             self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
 
-        prepick_sequence_active = params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and (
-            prepick_required or (self.state.has_prepicked and not self.state.has_picked)
-        )
-        prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
-        if params.get("auto_summoners_enabled") and presets_enabled and prepick_sequence_active:
-            if not self._selection_has_expected_spells(session, params, slot_key=prepick_slot):
-                self._log_flow_once(
-                    f"Pre-pick summs are not confirmed on {prepick_slot}; retries continue without blocking ban/pick."
-                )
+        # Reconcile spells, runes, and skin before the ban action so patches
+        # that failed on the first attempt get a second chance early.
+        if self.state.has_prepicked and not self.state.has_picked and presets_enabled:
+            if params.get("auto_summoners_enabled"):
                 self._ensure_spells_are_applied(session, params, slot_key=prepick_slot)
+            self._ensure_rune_is_applied(session, params)
+            self._ensure_skin_is_applied(session, params)
 
         if active_ban_action and params.get("auto_ban_enabled"):
             await self._logic_do_ban(active_ban_action, effective)
         elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
             await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
 
+        # After a successful lock-in, keep reconciling spells, runes, and skins
+        # because the Riot client can overwrite selections after an apparently
+        # successful patch.
         if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
             self._ensure_spells_are_applied(session, params)
+        if self.state.has_picked and presets_enabled:
+            self._ensure_rune_is_applied(session, params)
         if self.state.has_picked and presets_enabled:
             self._ensure_skin_is_applied(session, params)
 
@@ -375,6 +469,7 @@ class ChampSelectMixin:
                 if params.get("auto_summoners_enabled"):
                     asyncio.create_task(self._set_spells(params, slot_key=slot_key))
                 asyncio.create_task(self._set_skin(params, slot_key=slot_key))
+                asyncio.create_task(self._set_rune_page(params, slot_key=slot_key))
                 return
 
             logging.warning(
@@ -395,6 +490,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> tuple[str, str, int, int, str]:
+        """Resolve the effective summoner spell pair for the current pick slot."""
         effective = self.get_effective_profile_config(params=params)
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
@@ -413,6 +509,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> tuple[Optional[Dict[str, Any]], str]:
+        """Resolve the effective fixed or random skin request for the current slot."""
         effective = self.get_effective_profile_config(params=params)
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
@@ -422,21 +519,12 @@ class ChampSelectMixin:
         if not champion_name:
             return None, chosen_slot
 
-        skin_mode_overrides = params.get("main_skin_mode_overrides", {})
-        if isinstance(skin_mode_overrides, dict):
-            raw_override = skin_mode_overrides.get(chosen_slot, "inherit")
-        else:
-            raw_override = "inherit"
-        if raw_override in {None, "", "inherit"}:
-            raw_override = params.get("main_skin_mode_override", "inherit")
-        skin_mode_override = str(raw_override or "inherit").strip().lower()
-        if skin_mode_override not in {"inherit", "none", "fixed", "random"}:
-            skin_mode_override = "inherit"
-        if skin_mode_override == "none":
-            return None, chosen_slot
-
-        slot_skin_mode = str(slot_data.get("skin_mode") or fallback_slot.get("skin_mode") or "none").strip().lower()
-        skin_mode = skin_mode_override if skin_mode_override in {"fixed", "random"} else slot_skin_mode
+        skin_mode = get_effective_skin_mode_for_slot(
+            chosen_slot,
+            effective,
+            build_main_skin_overrides(params),
+            fallback_slot_key="pick_1",
+        )
         if skin_mode not in {"fixed", "random"}:
             return None, chosen_slot
 
@@ -453,7 +541,7 @@ class ChampSelectMixin:
                     "skin_id": skin_id,
                     "skin_name": skin_name,
                     "skin_num": skin_num,
-                    "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+                    "skin_source_role": "GLOBAL",
                 },
                 chosen_slot,
             )
@@ -472,7 +560,7 @@ class ChampSelectMixin:
                 "skin_name": random_skin_name,
                 "skin_num": random_skin_num,
                 "random_skin_pool": random_skin_pool,
-                "skin_source_role": slot_data.get("skin_source_role") or fallback_slot.get("skin_source_role") or "GLOBAL",
+                "skin_source_role": "GLOBAL",
             },
             chosen_slot,
         )
@@ -588,9 +676,25 @@ class ChampSelectMixin:
         params: Dict[str, Any],
     ) -> bool:
         local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            return False
-        champion_id = int(local_selection.get("championId") or 0)
+        champion_id = int(local_selection.get("championId") or 0) if local_selection else 0
+
+        # When myTeam does not yet reflect a hover (common in Practice Tool) fall
+        # back to scanning the actions block — a successful hover sets championId
+        # on the pick action even before myTeam is updated.
+        if champion_id <= 0:
+            local_id = session.get("localPlayerCellId") if isinstance(session, dict) else None
+            if local_id is not None:
+                for action in self._iter_session_actions(session):
+                    if (
+                        action.get("type") == "pick"
+                        and action.get("actorCellId") == local_id
+                        and not action.get("completed")
+                    ):
+                        hovered_id = int(action.get("championId") or 0)
+                        if hovered_id > 0:
+                            champion_id = hovered_id
+                            break
+
         if champion_id <= 0:
             return False
 
@@ -628,6 +732,33 @@ class ChampSelectMixin:
             and int(local_selection.get("spell2Id") or 0) == spell2_id
         )
 
+    async def _parse_champ_select_session_payload(
+        self: "WebSocketManager",
+        response: Any,
+        *,
+        area: str,
+        endpoint: str,
+        include_actions: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        payload = await response.json()
+        if not isinstance(payload, dict):
+            return None
+        body = self._build_selection_debug_snapshot(payload)
+        if include_actions:
+            body["actions"] = [
+                {
+                    "id": action.get("id"),
+                    "actorCellId": action.get("actorCellId"),
+                    "type": action.get("type"),
+                    "completed": action.get("completed"),
+                    "isInProgress": action.get("isInProgress"),
+                    "championId": action.get("championId"),
+                }
+                for action in self._iter_session_actions(payload)
+            ]
+        self._log_lcu_response(area, "get", endpoint, response, body=body)
+        return payload
+
     async def _fetch_current_champ_select_session(
         self: "WebSocketManager",
         *,
@@ -641,56 +772,20 @@ class ChampSelectMixin:
             self._log_lcu_request(area, "get", endpoint)
             response = await self.connection.request("get", endpoint)
             if response and response.status == 200:
-                payload = await response.json()
-                if isinstance(payload, dict):
-                    body = self._build_selection_debug_snapshot(payload)
-                    if include_actions:
-                        body["actions"] = [
-                            {
-                                "id": action.get("id"),
-                                "actorCellId": action.get("actorCellId"),
-                                "type": action.get("type"),
-                                "completed": action.get("completed"),
-                                "isInProgress": action.get("isInProgress"),
-                                "championId": action.get("championId"),
-                            }
-                            for action in self._iter_session_actions(payload)
-                        ]
-                    self._log_lcu_response(
-                        area,
-                        "get",
-                        endpoint,
-                        response,
-                        body=body,
-                    )
+                payload = await self._parse_champ_select_session_payload(
+                    response, area=area, endpoint=endpoint, include_actions=include_actions
+                )
+                if payload is not None:
                     return payload
 
             endpoint = "/lol-champ-select-legacy/v1/session"
             self._log_lcu_request(area, "get", endpoint)
             response = await self.connection.request("get", endpoint)
             if response and response.status == 200:
-                payload = await response.json()
-                if isinstance(payload, dict):
-                    body = self._build_selection_debug_snapshot(payload)
-                    if include_actions:
-                        body["actions"] = [
-                            {
-                                "id": action.get("id"),
-                                "actorCellId": action.get("actorCellId"),
-                                "type": action.get("type"),
-                                "completed": action.get("completed"),
-                                "isInProgress": action.get("isInProgress"),
-                                "championId": action.get("championId"),
-                            }
-                            for action in self._iter_session_actions(payload)
-                        ]
-                    self._log_lcu_response(
-                        area,
-                        "get",
-                        endpoint,
-                        response,
-                        body=body,
-                    )
+                payload = await self._parse_champ_select_session_payload(
+                    response, area=area, endpoint=endpoint, include_actions=include_actions
+                )
+                if payload is not None:
                     return payload
         except Exception as e:
             logging.warning("[%s] Unable to fetch champ-select session for confirmation: %s", area, e)
@@ -787,6 +882,7 @@ class ChampSelectMixin:
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> None:
+        """Re-apply spells when live session state drifts away from the expected values."""
         if self.state.spell_apply_in_progress or not self.connection:
             return
         local_selection = self._extract_local_player_selection(session)
@@ -900,27 +996,13 @@ class ChampSelectMixin:
                 await asyncio.sleep(self.SKIN_CONFIRM_DELAY_S)
         return False
 
-    def _selection_has_expected_skin(
-        self: "WebSocketManager",
-        session: Optional[Dict[str, Any]],
-        params: Dict[str, Any],
-        *,
-        slot_key: Optional[str] = None,
-    ) -> bool:
-        local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            return False
-        skin_selection, _ = self._resolve_skin_selection(params, slot_key=slot_key)
-        if not skin_selection or int(skin_selection.get("skin_id") or 0) <= 0:
-            return True
-        return int(local_selection.get("selectedSkinId") or 0) == int(skin_selection.get("skin_id") or 0)
-
     def _ensure_skin_is_applied(
         self: "WebSocketManager",
         session: Dict[str, Any],
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
     ) -> None:
+        """Re-apply the desired skin when the client does not keep the requested value."""
         if self.state.skin_apply_in_progress or not self.connection:
             return
         local_selection = self._extract_local_player_selection(session)
@@ -929,7 +1011,12 @@ class ChampSelectMixin:
         skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
         if not skin_selection:
             return
-        desired_skin_id = int(skin_selection.get("skin_id") or 0)
+        
+        if skin_selection.get("mode") == "random" and self.state.locked_random_skin_id is not None:
+            desired_skin_id = self.state.locked_random_skin_id
+        else:
+            desired_skin_id = int(skin_selection.get("skin_id") or 0)
+            
         if desired_skin_id <= 0 and skin_selection.get("mode") != "random":
             return
         self.state.desired_skin_id = desired_skin_id or None
@@ -947,67 +1034,37 @@ class ChampSelectMixin:
         )
         asyncio.create_task(self._set_skin(params, slot_key=chosen_slot))
 
+    @staticmethod
+    def _pick_slot_update_value(skin: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "skin_mode": "random",
+            "skin_id": 0,
+            "skin_name": "",
+            "skin_num": 0,
+            "random_skin_id": int(skin.get("skin_id") or 0),
+            "random_skin_name": str(skin.get("skin_name") or ""),
+            "random_skin_num": int(skin.get("skin_num") or 0),
+        }
+
     def _persist_random_skin_preview(
         self: "WebSocketManager",
         slot_key: str,
         *,
-        source_role: str,
+        source_role: str = "GLOBAL",
         skin: Dict[str, Any],
     ) -> None:
         if not self.update_param:
             return
 
-        if source_role not in {"GLOBAL", "TOP", "JUNGLE", "MIDDLE", "BOTTOM", "UTILITY"}:
-            source_role = "GLOBAL"
-
-        if source_role == "GLOBAL":
-            params = self.get_params()
-            pick_slots = params.get("pick_slots", {})
-            if not isinstance(pick_slots, dict):
-                pick_slots = {}
-            new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
-            slot_data = new_slots.get(slot_key, {})
-            slot_data.update(
-                {
-                    "skin_mode": "random",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": int(skin.get("skin_id") or 0),
-                    "random_skin_name": str(skin.get("skin_name") or ""),
-                    "random_skin_num": int(skin.get("skin_num") or 0),
-                }
-            )
-            new_slots[slot_key] = slot_data
-            self.update_param("pick_slots", new_slots)
-            return
-
         params = self.get_params()
-        role_profiles = params.get("role_profiles", {})
-        if not isinstance(role_profiles, dict):
-            role_profiles = {}
-        new_profiles = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in role_profiles.items()}
-        role_data = new_profiles.get(source_role, {})
-        pick_slots = role_data.get("pick_slots", {})
+        pick_slots = params.get("pick_slots", {})
         if not isinstance(pick_slots, dict):
             pick_slots = {}
         new_slots = {name: (data.copy() if isinstance(data, dict) else {}) for name, data in pick_slots.items()}
         slot_data = new_slots.get(slot_key, {})
-        slot_data.update(
-            {
-                "skin_mode": "random",
-                "skin_id": 0,
-                "skin_name": "",
-                "skin_num": 0,
-                "random_skin_id": int(skin.get("skin_id") or 0),
-                "random_skin_name": str(skin.get("skin_name") or ""),
-                "random_skin_num": int(skin.get("skin_num") or 0),
-            }
-        )
+        slot_data.update(self._pick_slot_update_value(skin))
         new_slots[slot_key] = slot_data
-        role_data["pick_slots"] = new_slots
-        new_profiles[source_role] = role_data
-        self.update_param("role_profiles", new_profiles)
+        self.update_param("pick_slots", new_slots)
 
     async def _lock_in_champion(
         self: "WebSocketManager",
@@ -1070,11 +1127,10 @@ class ChampSelectMixin:
         payload = {"spell1Id": spell1_id, "spell2Id": spell2_id}
         self.state.desired_spell_ids = (spell1_id, spell2_id)
         self.state.last_spell_try_ts = time()
-        effective = self.get_effective_profile_config(params=params)
         logging.info(
             "[SPELLS] Applying %s for %s: %s(%s) + %s(%s).",
             chosen_slot,
-            effective.get("resolved_role", "GLOBAL"),
+            "GLOBAL",
             spell1_name,
             spell1_id,
             spell2_name,
@@ -1104,7 +1160,7 @@ class ChampSelectMixin:
                             {
                                 "spell_1": spell1_name,
                                 "spell_2": spell2_name,
-                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "role": "GLOBAL",
                                 "pick_slot": chosen_slot,
                                 "endpoint": endpoint,
                             },
@@ -1159,7 +1215,6 @@ class ChampSelectMixin:
             return
 
         self.state.skin_apply_in_progress = True
-        effective = self.get_effective_profile_config(params=params)
         selected_skin = dict(skin_selection)
         try:
             pickable_skins = await self._fetch_pickable_skins(champion_id)
@@ -1202,7 +1257,7 @@ class ChampSelectMixin:
             logging.info(
                 "[SKIN] Applying %s for %s: %s (%s).",
                 chosen_slot,
-                effective.get("resolved_role", "GLOBAL"),
+                "GLOBAL",
                 selected_skin.get("skin_name") or skin_id,
                 skin_id,
             )
@@ -1222,6 +1277,10 @@ class ChampSelectMixin:
                 if response and response.status < 400 and await self._confirm_skin_applied(skin_id):
                     previous_confirmed = self.state.last_confirmed_skin_id
                     self.state.last_confirmed_skin_id = skin_id
+                    
+                    if selected_skin.get("mode") == "random":
+                        self.state.locked_random_skin_id = skin_id
+                        
                     if previous_confirmed != skin_id:
                         self._log_history(
                             "skin",
@@ -1229,7 +1288,7 @@ class ChampSelectMixin:
                             {
                                 "skin_id": skin_id,
                                 "skin_name": selected_skin.get("skin_name") or "",
-                                "role": effective.get("resolved_role", "GLOBAL"),
+                                "role": "GLOBAL",
                                 "pick_slot": chosen_slot,
                                 "endpoint": endpoint,
                             },
@@ -1253,7 +1312,7 @@ class ChampSelectMixin:
                         if next_skin:
                             self._persist_random_skin_preview(
                                 chosen_slot,
-                                source_role=str(selected_skin.get("skin_source_role") or "GLOBAL"),
+                                source_role="GLOBAL",
                                 skin=next_skin,
                             )
                     return
@@ -1266,7 +1325,164 @@ class ChampSelectMixin:
         finally:
             self.state.skin_apply_in_progress = False
 
+    def _resolve_rune_selection(
+        self: "WebSocketManager",
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> tuple[int, str, str, bool]:
+        """Resolve the effective rune page id and auto-apply flag for the current pick slot."""
+        effective = self.get_effective_profile_config(params=params)
+        chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
+        pick_slots = effective.get("pick_slots", {})
+        slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
+        fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
+        rune_page_id = int(slot_data.get("rune_page_id") or fallback_slot.get("rune_page_id") or 0)
+        rune_page_name = str(slot_data.get("rune_page_name") or fallback_slot.get("rune_page_name") or "")
+        if "rune_auto_apply" in slot_data:
+            rune_auto_apply = bool(slot_data.get("rune_auto_apply"))
+        else:
+            rune_auto_apply = bool(fallback_slot.get("rune_auto_apply", True))
+        return rune_page_id, rune_page_name, chosen_slot, rune_auto_apply
+
+    def _ensure_rune_is_applied(
+        self: "WebSocketManager",
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        slot_key: Optional[str] = None,
+    ) -> None:
+        """Re-apply the rune page when the live session state does not match the expected value."""
+        if self.state.rune_applied_for_session:
+            return
+        if self.state.rune_apply_in_progress or not self.connection:
+            return
+        local_selection = self._extract_local_player_selection(session)
+        if not local_selection:
+            return
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+        if rune_page_id <= 0 or not rune_auto_apply:
+            return
+        self.state.desired_rune_page_id = rune_page_id
+        current_rune_page_id = int(local_selection.get("selectedRunePageId") or 0)
+        if current_rune_page_id == rune_page_id:
+            self.state.last_confirmed_rune_page_id = rune_page_id
+            return
+        if time() - self.state.last_rune_try_ts < self.RUNE_RETRY_COOLDOWN_S:
+            return
+        logging.debug(
+            "[RUNES] Mismatch detected for %s: current=%s expected=%s. Retrying.",
+            chosen_slot,
+            current_rune_page_id,
+            rune_page_id,
+        )
+        asyncio.create_task(self._set_rune_page(params, slot_key=chosen_slot))
+
+    async def _confirm_rune_applied(self: "WebSocketManager", rune_page_id: int) -> bool:
+        for attempt in range(self.RUNE_CONFIRM_RETRIES + 1):
+            # Primary check: the session's selectedRunePageId (may stay 0 during early prepick).
+            session = await self._fetch_current_champ_select_session(area="RUNES")
+            local_selection = self._extract_local_player_selection(session)
+            selected_rune = int(local_selection.get("selectedRunePageId") or 0) if local_selection else 0
+
+            # Secondary check: ask the perks API which page is actually active.
+            current_page = await self._fetch_current_rune_page_async()
+            perks_active_id = int(current_page.get("id") or 0) if current_page else 0
+
+            logging.debug(
+                "[RUNES] Confirmation %s/%s selectedRunePageId=%s perksCurrentId=%s expected=%s",
+                attempt + 1, self.RUNE_CONFIRM_RETRIES + 1,
+                selected_rune, perks_active_id, rune_page_id,
+            )
+
+            if selected_rune == rune_page_id or perks_active_id == rune_page_id:
+                logging.debug(
+                    "[RUNES] Confirmed via %s (id=%s).",
+                    "selectedRunePageId" if selected_rune == rune_page_id else "perks/currentpage",
+                    rune_page_id,
+                )
+                return True
+
+            if attempt < self.RUNE_CONFIRM_RETRIES:
+                await asyncio.sleep(self.RUNE_CONFIRM_DELAY_S)
+        return False
+
+    async def _set_rune_page(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
+        if not self.connection or self.state.rune_apply_in_progress:
+            return
+
+        self.state.rune_apply_in_progress = True
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+        if rune_page_id <= 0:
+            logging.debug("[RUNES] No rune page configured for %s; skipping.", chosen_slot)
+            self.state.rune_apply_in_progress = False
+            return
+        if not rune_auto_apply:
+            logging.debug("[RUNES] Auto-apply disabled for %s; skipping.", chosen_slot)
+            self.state.rune_apply_in_progress = False
+            return
+
+        self.state.desired_rune_page_id = rune_page_id
+        self.state.last_rune_try_ts = time()
+        logging.info(
+            "[RUNES] Applying for %s: page \"%s\" (id=%s) via role=%s.",
+            chosen_slot,
+            rune_page_name or rune_page_id,
+            rune_page_id,
+            "GLOBAL",
+        )
+
+        try:
+            # Fetch the target page's full data from the list so we can PUT it back.
+            all_pages = await self._fetch_rune_pages_async()
+            target_page = next((p for p in all_pages if p["id"] == rune_page_id), None)
+            if not target_page:
+                logging.warning("[RUNES] Target page %s not found in account pages, cannot apply.", rune_page_id)
+                return
+
+            # PUT the page data with current: true via lol-perks API.
+            logging.debug(
+                "[RUNES] Setting page \"%s\" (id=%s) as active via PUT /lol-perks/v1/pages/%s.",
+                target_page.get("name", ""), rune_page_id, rune_page_id,
+            )
+            put_ok = await self._set_rune_page_via_perks_async(target_page)
+            logging.debug("[RUNES] PUT /lol-perks/v1/pages/%s -> %s.", rune_page_id, "OK" if put_ok else "FAILED")
+
+            if put_ok:
+                confirmed = await self._confirm_rune_applied(rune_page_id)
+                logging.debug("[RUNES] Confirmation after PUT -> %s.", "CONFIRMED" if confirmed else "NOT CONFIRMED")
+            else:
+                confirmed = False
+
+            if confirmed:
+                previous_confirmed = self.state.last_confirmed_rune_page_id
+                self.state.last_confirmed_rune_page_id = rune_page_id
+                self.state.rune_applied_for_session = True
+                logging.info(
+                    "[RUNES] Successfully applied page \"%s\" (id=%s) for %s.",
+                    rune_page_name or rune_page_id, rune_page_id, chosen_slot,
+                )
+                if previous_confirmed != rune_page_id:
+                    self._log_history(
+                        "runes",
+                        f"Rune page applied: \"{rune_page_name}\" (id={rune_page_id}).",
+                        {
+                            "rune_page_id": rune_page_id,
+                            "rune_page_name": rune_page_name,
+                            "role": "GLOBAL",
+                            "pick_slot": chosen_slot,
+                        },
+                        level="success",
+                        category="Champion Select",
+                        action="runes",
+                    )
+                    self._notify_ui(self.EVENT_STATUS, (f"Runes set: {rune_page_name}.", "RUNES"))
+                return
+
+            logging.warning("[RUNES] Unable to confirm rune page %s for %s after PUT attempt.", rune_page_id, chosen_slot)
+        finally:
+            self.state.rune_apply_in_progress = False
+
     async def _handle_post_game(self: "WebSocketManager") -> None:
+        """Try to return to lobby after the game when that automation is enabled."""
         params = self.get_params()
         if not params.get("auto_play_again_enabled"):
             return

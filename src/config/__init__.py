@@ -1,6 +1,28 @@
-"""Configuration package for OTP LOL."""
+"""
+FILE NAME: src/config/__init__.py
+GLOBAL PURPOSE:
+- Provide the public configuration API for the application.
+- Re-export constants, paths, and settings helpers from the config package.
+- Keep runtime path synchronization centralized before settings helpers are called.
 
-from . import paths as _paths
+KEY FUNCTIONS:
+- load_parameters: Load normalized application settings.
+- save_parameters: Persist normalized application settings.
+- get_cache_dirs: Ensure cache directories exist before use.
+
+AUDIENCE & LOGIC:
+Why:
+This module exists as the single import surface for configuration so callers do not need to know how the package is internally split.
+For whom:
+Developers importing configuration values, settings helpers, or resource paths.
+
+DEPENDENCIES:
+Used by:
+- launcher.py and most runtime modules under `src`.
+Uses:
+- Local modules: src.config.constants, src.config.logging_config, src.config.paths, src.config.settings
+"""
+
 from . import settings as _settings
 from .constants import (
     APP_IMAGE_FILES,
@@ -9,9 +31,15 @@ from .constants import (
     CURRENT_VERSION,
     GITHUB_DOWNLOAD_ZIP_URL,
     EP_CHAT_ME,
+    EP_CS_RUNE_PAGE,
     EP_CURRENT_SUMMONER,
     EP_GAMEFLOW,
     EP_LOGIN,
+    EP_LOBBY,
+    EP_PERKS_INVENTORY,
+    EP_PERKS_CURRENT_PAGE,
+    EP_PERKS_PAGES,
+    EP_PERKS_STYLES,
     EP_PICKABLE,
     EP_READY_CHECK,
     EP_SESSION,
@@ -24,13 +52,13 @@ from .constants import (
     HOTKEY_SITE_LABELS,
     HOTKEY_SITE_ORDER,
     PHASE_DISPLAY_MAP,
-    PLATFORM_TO_REGION,
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
+    PLATFORM_TO_REGION,
+    PRESET_ENABLED_QUEUE_IDS,
+    PRACTICE_TOOL_GAME_MODE,
+    QUEUE_ID_LABELS,
     REGION_LIST,
-    ROLE_PROFILE_ICON_FILES,
-    ROLE_PROFILE_LABELS,
-    ROLE_PROFILE_ORDER,
     STATS_SITE_LABELS,
     STATS_SITE_ORDER,
     THEME_LABELS,
@@ -46,8 +74,8 @@ from .constants import (
     URL_DD_SKIN_SPLASH,
     URL_CDRAGON_ASSET_PREFIX,
     URL_CDRAGON_CHAMPION_DETAIL,
+    URL_PERK_ICON_PREFIX,
     URL_PHASE_RUSH_ICON,
-    URL_DD_SPLASH,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
 )
@@ -60,44 +88,35 @@ from .paths import (
     PARAMETERS_PATH,
     SPELLS_CACHE_DIR,
     SKINS_CACHE_DIR,
+    RUNES_CACHE_DIR,
     get_appdata_path,
     resource_path,
 )
 from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
 
 
-def _sync_runtime_paths() -> None:
-    _paths.PARAMETERS_PATH = PARAMETERS_PATH
-    _settings.PARAMETERS_PATH = PARAMETERS_PATH
-    _paths.HISTORY_PATH = HISTORY_PATH
-    _paths.LOCKFILE_PATH = LOCKFILE_PATH
-    _settings.ICONS_CACHE_DIR = ICONS_CACHE_DIR
-    _settings.SPELLS_CACHE_DIR = SPELLS_CACHE_DIR
-    _settings.SKINS_CACHE_DIR = SKINS_CACHE_DIR
-
-
 def load_parameters():
-    _sync_runtime_paths()
+    """Load application parameters from the TOML settings file."""
     return _settings.load_parameters()
 
 
 def save_parameters(params):
-    _sync_runtime_paths()
+    """Persist application parameters to the TOML settings file."""
     return _settings.save_parameters(params)
 
 
 def export_parameters_to_file(path, params):
-    _sync_runtime_paths()
+    """Export parameters to a chosen TOML or JSON file."""
     return _settings.export_parameters_to_file(path, params)
 
 
 def import_parameters_from_file(path):
-    _sync_runtime_paths()
+    """Import parameters from a chosen TOML or JSON file."""
     return _settings.import_parameters_from_file(path)
 
 
 def get_cache_dirs():
-    _sync_runtime_paths()
+    """Create cache directories if they do not exist."""
     return _settings.get_cache_dirs()
 
 
@@ -119,8 +138,8 @@ __all__ = [
     "URL_DD_SKIN_SPLASH",
     "URL_CDRAGON_CHAMPION_DETAIL",
     "URL_CDRAGON_ASSET_PREFIX",
+    "URL_PERK_ICON_PREFIX",
     "URL_PHASE_RUSH_ICON",
-    "URL_DD_SPLASH",
     "EP_SESSION",
     "EP_SESSION_TIMER",
     "EP_SESSION_LEGACY",
@@ -129,17 +148,23 @@ __all__ = [
     "EP_PICKABLE",
     "EP_CURRENT_SUMMONER",
     "EP_CHAT_ME",
+    "EP_CS_RUNE_PAGE",
     "EP_LOGIN",
+    "EP_LOBBY",
+    "EP_PERKS_INVENTORY",
+    "EP_PERKS_CURRENT_PAGE",
+    "EP_PERKS_PAGES",
+    "EP_PERKS_STYLES",
     "REGION_LIST",
     "SUMMONER_SPELL_MAP",
     "SUMMONER_SPELL_LIST",
     "PLATFORM_TO_REGION",
     "PICK_SLOT_ORDER",
     "PICK_SLOT_LABELS",
+    "PRESET_ENABLED_QUEUE_IDS",
+    "PRACTICE_TOOL_GAME_MODE",
+    "QUEUE_ID_LABELS",
     "PHASE_DISPLAY_MAP",
-    "ROLE_PROFILE_ORDER",
-    "ROLE_PROFILE_LABELS",
-    "ROLE_PROFILE_ICON_FILES",
     "WEBSITE_LOGO_FILES",
     "STATS_SITE_LABELS",
     "STATS_SITE_ORDER",
@@ -157,6 +182,7 @@ __all__ = [
     "ICONS_CACHE_DIR",
     "SPELLS_CACHE_DIR",
     "SKINS_CACHE_DIR",
+    "RUNES_CACHE_DIR",
     "DEFAULT_PARAMS",
     "FIRST_LAUNCH_PARAMS",
     "load_parameters",
