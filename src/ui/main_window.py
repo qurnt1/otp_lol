@@ -145,7 +145,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         self.apply_theme(self.theme)
         self.create_system_tray()
         self.setup_hotkeys()
-        self._refresh_safe_controls()
 
     @property
     def tray_available(self) -> bool:
@@ -412,9 +411,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
             return params.get("auto_detected_riot_id") or self.get_auto_summoner_name()
         return params.get("manual_summoner_name")
 
-    def _refresh_safe_controls(self) -> None:
-        return
-
     def _handle_window_close(self) -> None:
         if self.tray_available and not self.closing_requested:
             self.hide_window()
@@ -456,7 +452,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
             is_presets_automation_enabled=self.is_tray_presets_automation_enabled,
             is_auto_ban_enabled=self.is_tray_auto_ban_enabled,
             quit_callback=self.request_quit_from_external_thread,
-            on_failure=lambda: self.root.after(0, self._refresh_safe_controls),
         )
 
     def setup_hotkeys(self) -> None:
@@ -473,7 +468,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
             return
         self.hotkey_manager.shutdown()
         self.setup_hotkeys()
-        self._refresh_safe_controls()
 
     def suspend_hotkeys(self) -> None:
         """Temporarily disable global shortcuts while the settings window captures a new shortcut."""
@@ -482,7 +476,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         self._hotkeys_suspended = True
         self._hotkeys_were_available = self.hotkey_manager.available
         self.hotkey_manager.shutdown()
-        self._refresh_safe_controls()
 
     def resume_hotkeys(self) -> None:
         """Restore global shortcuts after shortcut capture has finished or been cancelled."""
@@ -493,7 +486,6 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
         self._hotkeys_were_available = False
         if should_restore:
             self.setup_hotkeys()
-        self._refresh_safe_controls()
 
     def open_preferred_hotkey_site(self) -> None:
         riot_id = self._get_riot_id_display()

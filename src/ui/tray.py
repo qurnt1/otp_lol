@@ -26,6 +26,7 @@ Uses:
 """
 
 import logging
+from typing import Callable, Optional
 
 import pystray
 from PIL import Image
@@ -50,7 +51,7 @@ class TrayController:
         is_presets_automation_enabled,
         is_auto_ban_enabled,
         quit_callback,
-        on_failure,
+        on_failure: Optional[Callable[[], None]] = None,
     ) -> bool:
         """Create the tray icon, wire callbacks, and run the tray loop in the provided executor."""
         try:
@@ -115,7 +116,8 @@ class TrayController:
                 except Exception as e:
                     self.available = False
                     logging.debug("System tray error: %s", e)
-                    on_failure()
+                    if on_failure:
+                        on_failure()
 
             executor.submit(run_tray)
         except Exception as e:
