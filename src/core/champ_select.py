@@ -716,22 +716,6 @@ class ChampSelectMixin:
             )
         return True
 
-    def _selection_has_expected_spells(
-        self: "WebSocketManager",
-        session: Optional[Dict[str, Any]],
-        params: Dict[str, Any],
-        *,
-        slot_key: Optional[str] = None,
-    ) -> bool:
-        local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            return False
-        _, _, spell1_id, spell2_id, _ = self._resolve_spell_selection(params, slot_key=slot_key)
-        return (
-            int(local_selection.get("spell1Id") or 0) == spell1_id
-            and int(local_selection.get("spell2Id") or 0) == spell2_id
-        )
-
     async def _parse_champ_select_session_payload(
         self: "WebSocketManager",
         response: Any,

@@ -24,7 +24,7 @@ Uses:
 
 from dataclasses import dataclass, field, fields, MISSING
 from threading import Lock
-from typing import Optional, Set
+from typing import Optional
 
 
 @dataclass
@@ -41,10 +41,8 @@ class GameState:
     auto_tag_line: Optional[str] = None
     platform_routing: str = "euw1"
     region_routing: str = "europe"
-    last_game_start_notify_ts: float = 0.0
     last_reported_summoner: Optional[str] = None
     current_queue_id: int = 0
-    lobby_presets_warning_shown: bool = field(default=False, metadata={"transient": True})
     cache_lock: Lock = field(default_factory=Lock, repr=False)
 
     # ---- Transient fields (reset between every game) ----
@@ -54,11 +52,6 @@ class GameState:
     time_left_ms: int = field(default=0, metadata={"transient": True})
     has_picked: bool = field(default=False, metadata={"transient": True})
     has_banned: bool = field(default=False, metadata={"transient": True})
-    intent_done: bool = field(default=False, metadata={"transient": True})
-    completed_actions: Set[int] = field(default_factory=set, metadata={"transient": True})
-    last_action_try_ts: float = field(default=0.0, metadata={"transient": True})
-    last_intent_try_ts: float = field(default=0.0, metadata={"transient": True})
-    _last_cs_session_fetch: float = field(default=0.0, metadata={"transient": True})
     _last_cs_timer_fetch: float = field(default=0.0, metadata={"transient": True})
     has_played_accept_sound: bool = field(default=False, metadata={"transient": True})
     has_prepicked: bool = field(default=False, metadata={"transient": True})
@@ -82,7 +75,6 @@ class GameState:
     last_rune_try_ts: float = field(default=0.0, metadata={"transient": True})
     rune_apply_in_progress: bool = field(default=False, metadata={"transient": True})
     rune_applied_for_session: bool = field(default=False, metadata={"transient": True})
-    rune_task_scheduled: int = field(default=0, metadata={"transient": True})
     last_flow_note: str = field(default="", metadata={"transient": True})
     non_preset_mode_notified: bool = field(default=False, metadata={"transient": True})
 

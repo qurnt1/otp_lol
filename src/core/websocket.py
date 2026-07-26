@@ -109,7 +109,6 @@ class WebSocketManager(ChampSelectMixin):
         self.ws_active: bool = False
         self._stop_event = Event()
         self._cs_tick_lock = asyncio.Lock()
-        self.game_start_cooldown: float = 12.0
         self._session_generation = 0
         self._tasks_by_scope: Dict[str, Set[asyncio.Task[Any]]] = {
             scope: set() for scope in self.TASK_SCOPES

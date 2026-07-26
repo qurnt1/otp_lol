@@ -74,7 +74,6 @@ def test_reset_between_games_covers_all_fields():
         "auto_tag_line",
         "platform_routing",
         "region_routing",
-        "last_game_start_notify_ts",
         "last_reported_summoner",
         "cache_lock",
     }
@@ -83,3 +82,19 @@ def test_reset_between_games_covers_all_fields():
     assert not unclassified, (
         f"Unclassified fields (add them as transient or persistent): {unclassified}"
     )
+
+
+def test_confirmed_dead_state_fields_are_removed():
+    removed_fields = {
+        "last_game_start_notify_ts",
+        "lobby_presets_warning_shown",
+        "intent_done",
+        "completed_actions",
+        "last_action_try_ts",
+        "last_intent_try_ts",
+        "_last_cs_session_fetch",
+        "rune_task_scheduled",
+    }
+    state = GameState()
+
+    assert removed_fields.isdisjoint(vars(state))
