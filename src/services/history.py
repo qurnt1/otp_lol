@@ -30,6 +30,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from ..atomic_io import atomic_write
 from ..config import HISTORY_PATH
 
 MAX_HISTORY_ENTRIES = 250
@@ -74,14 +75,23 @@ def _read_history() -> List[Dict[str, Any]]:
             return [entry for entry in payload if isinstance(entry, dict)]
     except (OSError, json.JSONDecodeError) as e:
         logging.debug("Unreadable history: %s", e)
+        try:
+            backup_path = f"{HISTORY_PATH}.bak"
+            with open(HISTORY_PATH, "rb") as source, open(backup_path, "wb") as backup:
+                backup.write(source.read())
+            logging.warning("Backed up unreadable history to %s", backup_path)
+        except OSError as backup_error:
+            logging.error("Unable to back up unreadable history: %s", backup_error)
     return []
 
 
 def _write_history(entries: List[Dict[str, Any]]) -> None:
     """Write the bounded history list back to disk."""
-    os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
-    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(entries[-MAX_HISTORY_ENTRIES:], f, indent=2, ensure_ascii=False)
+    atomic_write(
+        HISTORY_PATH,
+        lambda stream: json.dump(entries[-MAX_HISTORY_ENTRIES:], stream, indent=2, ensure_ascii=False),
+        mode="w",
+    )
 
 
 def log_history_event(

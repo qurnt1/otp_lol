@@ -74,8 +74,9 @@ class ConfigTests(unittest.TestCase):
             ):
                 loaded = config.load_parameters()
 
-        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
-        self.assertFalse((skins_cache_dir / "old_skin.img").exists())
+            self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+            self.assertFalse((skins_cache_dir / "old_skin.img").exists())
+            self.assertEqual(Path(f"{params_path}.bak").read_text(encoding="utf-8"), "{ invalid json")
 
     def test_load_parameters_resets_when_config_version_is_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -165,6 +166,51 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(imported["preferred_hotkey_site"], "dpm")
         self.assertEqual(imported["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(imported["hotkey_open_site"], "ctrl+alt+p")
+
+    def test_settings_serialization_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            params_path.write_text("previous = true\n", encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings.tomli_w, "dump", side_effect=ValueError("serialization failed")
+            ):
+                with self.assertRaises(ValueError):
+                    config._settings._write_parameters_file(config.DEFAULT_PARAMS)
+
+            self.assertEqual(params_path.read_text(encoding="utf-8"), "previous = true\n")
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_settings_replace_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            params_path.write_text("previous = true\n", encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch(
+                "src.atomic_io.os.replace", side_effect=OSError("replace failed")
+            ):
+                self.assertFalse(config.save_parameters(config.DEFAULT_PARAMS))
+
+            self.assertEqual(params_path.read_text(encoding="utf-8"), "previous = true\n")
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_json_settings_migration_keeps_backup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toml_path = Path(tmpdir) / "parameters.toml"
+            json_path = Path(tmpdir) / "parameters.json"
+            json_path.write_text(json.dumps(config.FIRST_LAUNCH_PARAMS), encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(toml_path)), patch.object(
+                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
+            ):
+                loaded = config.load_parameters()
+
+            self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+            self.assertTrue(toml_path.exists())
+            self.assertEqual(
+                json.loads(Path(f"{json_path}.bak").read_text(encoding="utf-8")),
+                config.FIRST_LAUNCH_PARAMS,
+            )
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from typing import Any, Dict
 
 import tomli_w
 
+from ..atomic_io import atomic_write
 from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
 from .paths import (
     ICONS_CACHE_DIR,
@@ -187,11 +188,28 @@ def _migrate_json_to_toml() -> bool:
 
 def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize and write the settings payload to the main parameters file."""
-    os.makedirs(os.path.dirname(PARAMETERS_PATH), exist_ok=True)
     sanitized = _normalize_parameters(payload)
-    with open(PARAMETERS_PATH, "wb") as f:
-        tomli_w.dump(sanitized, f)
+
+    atomic_write(
+        PARAMETERS_PATH,
+        lambda stream: tomli_w.dump(sanitized, stream),
+        mode="wb",
+    )
     return sanitized
+
+
+def _backup_parameters_file() -> bool:
+    """Preserve an invalid settings file before replacing it with safe defaults."""
+    if not os.path.exists(PARAMETERS_PATH):
+        return True
+    backup_path = f"{PARAMETERS_PATH}.bak"
+    try:
+        shutil.copy2(PARAMETERS_PATH, backup_path)
+        logging.warning("Backed up invalid settings to %s", backup_path)
+        return True
+    except OSError as e:
+        logging.error("Unable to back up invalid settings: %s", e)
+        return False
 
 
 def _clear_skin_cache() -> None:
@@ -213,6 +231,8 @@ def _clear_skin_cache() -> None:
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     """Reset the settings file to first-launch defaults after a validation failure."""
     logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
+    if not _backup_parameters_file():
+        return _build_first_launch_payload()
     _clear_skin_cache()
     return _write_parameters_file(_build_first_launch_payload())
 
@@ -260,11 +280,17 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
     try:
         sanitized = _normalize_parameters(params)
         if path.lower().endswith(".json"):
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(sanitized, f, indent=4, ensure_ascii=False)
+            atomic_write(
+                path,
+                lambda stream: json.dump(sanitized, stream, indent=4, ensure_ascii=False),
+                mode="w",
+            )
         else:
-            with open(path, "wb") as f:
-                tomli_w.dump(sanitized, f)
+            atomic_write(
+                path,
+                lambda stream: tomli_w.dump(sanitized, stream),
+                mode="wb",
+            )
         return True
     except (IOError, OSError) as e:
         logging.error("Error exporting settings: %s", e)

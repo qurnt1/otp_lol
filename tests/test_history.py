@@ -1,5 +1,10 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from src.services import history
 from src.services.history import format_history_entry
 
 
@@ -35,6 +40,47 @@ class HistoryFormattingTests(unittest.TestCase):
             formatted["detail_lines"],
             ["Summs: Flash + Ignite", "Profile: MIDDLE"],
         )
+
+    def test_history_serialization_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text('[{"message": "previous"}]', encoding="utf-8")
+
+            with patch.object(history, "HISTORY_PATH", str(history_path)), patch.object(
+                history.json, "dump", side_effect=ValueError("serialization failed")
+            ):
+                with self.assertRaises(ValueError):
+                    history._write_history([{"message": "new"}])
+
+            self.assertEqual(history_path.read_text(encoding="utf-8"), '[{"message": "previous"}]')
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_history_replace_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text('[{"message": "previous"}]', encoding="utf-8")
+
+            with patch.object(history, "HISTORY_PATH", str(history_path)), patch(
+                "src.atomic_io.os.replace", side_effect=OSError("replace failed")
+            ):
+                with self.assertRaises(OSError):
+                    history._write_history([{"message": "new"}])
+
+            self.assertEqual(history_path.read_text(encoding="utf-8"), '[{"message": "previous"}]')
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_corrupt_history_is_backed_up_before_new_event_is_written(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text("{ invalid json", encoding="utf-8")
+
+            with patch.object(history, "HISTORY_PATH", str(history_path)):
+                self.assertEqual(history._read_history(), [])
+                history.log_history_event("pick", "new event")
+
+            self.assertEqual(Path(f"{history_path}.bak").read_text(encoding="utf-8"), "{ invalid json")
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload[-1]["message"], "new event")
 
 
 if __name__ == "__main__":
