@@ -28,9 +28,10 @@ Uses:
 
 import asyncio
 import logging
+from contextvars import ContextVar, copy_context
 from threading import Event, Thread, current_thread
 from time import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set
 
 try:
     from lcu_driver import Connector
@@ -65,6 +66,12 @@ from .champ_select import ChampSelectMixin
 from .game_state import GameState
 
 
+_task_session_generation: ContextVar[Optional[int]] = ContextVar(
+    "otp_lol_task_session_generation",
+    default=None,
+)
+
+
 class WebSocketManager(ChampSelectMixin):
     """Manage the LCU connector lifecycle and dispatch live client events."""
 
@@ -80,6 +87,7 @@ class WebSocketManager(ChampSelectMixin):
     EVENT_TOAST = "toast"
     EVENT_READY_CHECK_ACCEPTED = "ready_check_accepted"
     WS_RETRY_DELAY_S = 2.0
+    TASK_SCOPES = {"session", "connection", "application"}
 
     def __init__(
         self,
@@ -102,9 +110,78 @@ class WebSocketManager(ChampSelectMixin):
         self._stop_event = Event()
         self._cs_tick_lock = asyncio.Lock()
         self.game_start_cooldown: float = 12.0
+        self._session_generation = 0
+        self._tasks_by_scope: Dict[str, Set[asyncio.Task[Any]]] = {
+            scope: set() for scope in self.TASK_SCOPES
+        }
+        self._tasks_by_key: Dict[tuple[str, str], asyncio.Task[Any]] = {}
 
     def _notify_ui(self, event_type: str, data: Any = None) -> None:
         self.ui_callback(event_type, data)
+
+    def _is_current_session_task(self) -> bool:
+        """Return whether the current supervised task still belongs to this champ-select session."""
+        task_generation = _task_session_generation.get()
+        return task_generation is None or task_generation == self._session_generation
+
+    def _spawn_task(
+        self,
+        coroutine: Awaitable[Any],
+        *,
+        scope: str,
+        key: Optional[str] = None,
+    ) -> asyncio.Task[Any]:
+        """Create and supervise one background task in the current asyncio loop."""
+        if scope not in self.TASK_SCOPES:
+            raise ValueError(f"Unknown task scope: {scope}")
+
+        task_key = (scope, key) if key else None
+        if task_key:
+            existing = self._tasks_by_key.get(task_key)
+            if existing and not existing.done():
+                close = getattr(coroutine, "close", None)
+                if close:
+                    close()
+                return existing
+
+        captured_generation = self._session_generation if scope == "session" else None
+        task_context = copy_context()
+        if captured_generation is not None:
+            task_context.run(_task_session_generation.set, captured_generation)
+        task = asyncio.create_task(coroutine, context=task_context)
+        self._tasks_by_scope[scope].add(task)
+        if task_key:
+            self._tasks_by_key[task_key] = task
+
+        def on_done(completed: asyncio.Task[Any]) -> None:
+            self._tasks_by_scope[scope].discard(completed)
+            if task_key and self._tasks_by_key.get(task_key) is completed:
+                self._tasks_by_key.pop(task_key, None)
+            try:
+                completed.result()
+            except asyncio.CancelledError:
+                return
+            except Exception:
+                logging.exception("Unhandled exception in %s background task", scope)
+
+        task.add_done_callback(on_done)
+        return task
+
+    def _cancel_task_scopes(self, *scopes: str) -> None:
+        """Cancel all supervised tasks in the requested scopes."""
+        for scope in scopes:
+            for task in tuple(self._tasks_by_scope.get(scope, ())):
+                task.cancel()
+
+    def _start_champ_select_session(self) -> None:
+        """Invalidate prior session tasks and advance the champ-select generation."""
+        self._session_generation += 1
+        self._cancel_task_scopes("session")
+
+    def _invalidate_champ_select_session(self) -> None:
+        """Invalidate pending session work when champion select ends or disconnects."""
+        self._session_generation += 1
+        self._cancel_task_scopes("session")
 
     def _log_history(
         self,
@@ -132,6 +209,13 @@ class WebSocketManager(ChampSelectMixin):
     def stop(self) -> None:
         """Request connector shutdown and wait briefly for the worker thread to exit."""
         self._stop_event.set()
+        if self.loop and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(
+                self._cancel_task_scopes,
+                "session",
+                "connection",
+                "application",
+            )
         if self.connector and self.connection and self.loop and not self.loop.is_closed():
             try:
                 future = asyncio.run_coroutine_threadsafe(self.connector.stop(), self.loop)
@@ -709,10 +793,16 @@ class WebSocketManager(ChampSelectMixin):
 
     def force_refresh_summoner(self) -> None:
         if self.ws_active and self.connection and self.loop:
-            asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
+            def schedule_refresh() -> None:
+                if self.connection and self.loop and not self.loop.is_closed():
+                    self._spawn_task(self._refresh_player_and_region(), scope="connection", key="refresh_summoner")
+
+            self.loop.call_soon_threadsafe(schedule_refresh)
 
     def _reset_ws_runtime_state(self) -> None:
         """Clear per-connection runtime fields before a reconnect or final shutdown."""
+        self._invalidate_champ_select_session()
+        self._cancel_task_scopes("connection", "application")
         self.connection = None
         self.ws_active = False
         self.state.current_phase = "None"
@@ -818,9 +908,13 @@ class WebSocketManager(ChampSelectMixin):
                     if not phase:
                         return
 
-                    if phase != self.state.current_phase:
+                    previous_phase = self.state.current_phase
+                    if phase != previous_phase:
                         logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
                     self.state.current_phase = phase
+
+                    if previous_phase == "ChampSelect" and phase != "ChampSelect":
+                        self._invalidate_champ_select_session()
 
                     friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
                     self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
@@ -829,6 +923,8 @@ class WebSocketManager(ChampSelectMixin):
                     if phase in ("Lobby", "Matchmaking", "ChampSelect"):
                         await self._refresh_current_queue_id()
                     if phase == "ChampSelect":
+                        if previous_phase != "ChampSelect":
+                            self._start_champ_select_session()
                         self.state.reset_between_games()
                         await self._champ_select_tick()
                     if phase in ("EndOfGame", "WaitingForStats"):

@@ -290,12 +290,12 @@ class ChampSelectMixin:
 
         # As soon as the prepick is confirmed in the session, fire spells,
         # runes, and skin all at once so everything is in place before the
-        # pick lock-in even begins.
+            # pick lock-in even begins.
         if prepick_just_confirmed and not self.state.has_picked and presets_enabled:
             if params.get("auto_summoners_enabled"):
-                asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
-            asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
-            asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
+                self._spawn_task(self._set_spells(params, slot_key=prepick_slot), scope="session", key="spells")
+            self._spawn_task(self._set_rune_page(params, slot_key=prepick_slot), scope="session", key="runes")
+            self._spawn_task(self._set_skin(params, slot_key=prepick_slot), scope="session", key="skin")
 
         # Pre-pick comes first because the client can expose a hover-only action
         # before the final ban or pick phase begins.
@@ -321,9 +321,9 @@ class ChampSelectMixin:
                             if self.state.has_prepicked and not had_prepicked_after and not self.state.has_picked:
                                 prepick_slot = self.state.last_prepick_slot or "pick_1"
                                 if params.get("auto_summoners_enabled"):
-                                    asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
-                                asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
-                                asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
+                                    self._spawn_task(self._set_spells(params, slot_key=prepick_slot), scope="session", key="spells")
+                                self._spawn_task(self._set_rune_page(params, slot_key=prepick_slot), scope="session", key="runes")
+                                self._spawn_task(self._set_skin(params, slot_key=prepick_slot), scope="session", key="skin")
                         else:
                             self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
@@ -467,9 +467,9 @@ class ChampSelectMixin:
                 self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
                 self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in. Ready to play.", "PICK"))
                 if params.get("auto_summoners_enabled"):
-                    asyncio.create_task(self._set_spells(params, slot_key=slot_key))
-                asyncio.create_task(self._set_skin(params, slot_key=slot_key))
-                asyncio.create_task(self._set_rune_page(params, slot_key=slot_key))
+                    self._spawn_task(self._set_spells(params, slot_key=slot_key), scope="session", key="spells")
+                self._spawn_task(self._set_skin(params, slot_key=slot_key), scope="session", key="skin")
+                self._spawn_task(self._set_rune_page(params, slot_key=slot_key), scope="session", key="runes")
                 return
 
             logging.warning(
@@ -905,7 +905,7 @@ class ChampSelectMixin:
             spell1_id,
             spell2_id,
         )
-        asyncio.create_task(self._set_spells(params, slot_key=chosen_slot))
+        self._spawn_task(self._set_spells(params, slot_key=chosen_slot), scope="session", key="spells")
 
     async def _fetch_pickable_skins(
         self: "WebSocketManager",
@@ -1032,7 +1032,7 @@ class ChampSelectMixin:
             current_skin_id,
             desired_skin_id or "random",
         )
-        asyncio.create_task(self._set_skin(params, slot_key=chosen_slot))
+        self._spawn_task(self._set_skin(params, slot_key=chosen_slot), scope="session", key="skin")
 
     @staticmethod
     def _pick_slot_update_value(skin: Dict[str, Any]) -> Dict[str, Any]:
@@ -1053,6 +1053,8 @@ class ChampSelectMixin:
         source_role: str = "GLOBAL",
         skin: Dict[str, Any],
     ) -> None:
+        if not self._is_current_session_task():
+            return
         if not self.update_param:
             return
 
@@ -1116,7 +1118,7 @@ class ChampSelectMixin:
         return confirmed
 
     async def _set_spells(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if not self.connection or self.state.spell_apply_in_progress:
+        if not self._is_current_session_task() or not self.connection or self.state.spell_apply_in_progress:
             return
 
         self.state.spell_apply_in_progress = True
@@ -1151,6 +1153,8 @@ class ChampSelectMixin:
 
                 self._log_lcu_response("SPELLS", "patch", endpoint, response)
                 if response and response.status < 400 and await self._confirm_spells_applied(spell1_id, spell2_id):
+                    if not self._is_current_session_task():
+                        return
                     previous_confirmed = self.state.last_confirmed_spell_ids
                     self.state.last_confirmed_spell_ids = (spell1_id, spell2_id)
                     if previous_confirmed != (spell1_id, spell2_id):
@@ -1187,10 +1191,11 @@ class ChampSelectMixin:
                 (f"Summs not confirmed yet for {chosen_slot}; retry will continue if possible.", "WARN"),
             )
         finally:
-            self.state.spell_apply_in_progress = False
+            if self._is_current_session_task():
+                self.state.spell_apply_in_progress = False
 
     async def _set_skin(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if not self.connection or self.state.skin_apply_in_progress:
+        if not self._is_current_session_task() or not self.connection or self.state.skin_apply_in_progress:
             logging.info(
                 "[SKIN] Skipping _set_skin connection=%s in_progress=%s",
                 bool(self.connection),
@@ -1205,7 +1210,7 @@ class ChampSelectMixin:
 
         session = await self._fetch_current_champ_select_session(area="SKIN")
         local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
+        if not self._is_current_session_task() or not local_selection:
             logging.info("[SKIN] No local player selection available for slot=%s", chosen_slot)
             return
 
@@ -1275,6 +1280,8 @@ class ChampSelectMixin:
 
                 self._log_lcu_response("SKIN", "patch", endpoint, response)
                 if response and response.status < 400 and await self._confirm_skin_applied(skin_id):
+                    if not self._is_current_session_task():
+                        return
                     previous_confirmed = self.state.last_confirmed_skin_id
                     self.state.last_confirmed_skin_id = skin_id
                     
@@ -1323,7 +1330,8 @@ class ChampSelectMixin:
                 skin_id,
             )
         finally:
-            self.state.skin_apply_in_progress = False
+            if self._is_current_session_task():
+                self.state.skin_apply_in_progress = False
 
     def _resolve_rune_selection(
         self: "WebSocketManager",
@@ -1373,7 +1381,7 @@ class ChampSelectMixin:
             current_rune_page_id,
             rune_page_id,
         )
-        asyncio.create_task(self._set_rune_page(params, slot_key=chosen_slot))
+        self._spawn_task(self._set_rune_page(params, slot_key=chosen_slot), scope="session", key="runes")
 
     async def _confirm_rune_applied(self: "WebSocketManager", rune_page_id: int) -> bool:
         for attempt in range(self.RUNE_CONFIRM_RETRIES + 1):
@@ -1405,7 +1413,7 @@ class ChampSelectMixin:
         return False
 
     async def _set_rune_page(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if not self.connection or self.state.rune_apply_in_progress:
+        if not self._is_current_session_task() or not self.connection or self.state.rune_apply_in_progress:
             return
 
         self.state.rune_apply_in_progress = True
@@ -1452,6 +1460,8 @@ class ChampSelectMixin:
                 confirmed = False
 
             if confirmed:
+                if not self._is_current_session_task():
+                    return
                 previous_confirmed = self.state.last_confirmed_rune_page_id
                 self.state.last_confirmed_rune_page_id = rune_page_id
                 self.state.rune_applied_for_session = True
@@ -1478,7 +1488,8 @@ class ChampSelectMixin:
 
             logging.warning("[RUNES] Unable to confirm rune page %s for %s after PUT attempt.", rune_page_id, chosen_slot)
         finally:
-            self.state.rune_apply_in_progress = False
+            if self._is_current_session_task():
+                self.state.rune_apply_in_progress = False
 
     async def _handle_post_game(self: "WebSocketManager") -> None:
         """Try to return to lobby after the game when that automation is enabled."""

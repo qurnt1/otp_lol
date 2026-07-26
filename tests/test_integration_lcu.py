@@ -173,6 +173,93 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr = self._make_manager()
         self.assertTrue(mgr.is_active)
 
+    async def test_supervised_task_logs_unhandled_exception(self):
+        mgr = self._make_manager()
+
+        async def fail():
+            raise RuntimeError("supervised failure")
+
+        with self.assertLogs(level="ERROR") as logs:
+            mgr._spawn_task(fail(), scope="application")
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+        self.assertTrue(any("Unhandled exception in application background task" in line for line in logs.output))
+
+    async def test_supervised_task_is_removed_after_completion(self):
+        mgr = self._make_manager()
+
+        async def finish():
+            return "done"
+
+        task = mgr._spawn_task(finish(), scope="application")
+        self.assertIn(task, mgr._tasks_by_scope["application"])
+        await task
+        await asyncio.sleep(0)
+
+        self.assertNotIn(task, mgr._tasks_by_scope["application"])
+
+    async def test_cancelled_supervised_task_is_ignored(self):
+        mgr = self._make_manager()
+        task = mgr._spawn_task(asyncio.sleep(60), scope="session")
+
+        mgr._cancel_task_scopes("session")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        self.assertTrue(task.cancelled())
+        self.assertNotIn(task, mgr._tasks_by_scope["session"])
+
+    async def test_duplicate_supervised_key_reuses_existing_task(self):
+        mgr = self._make_manager()
+        release = asyncio.Event()
+
+        async def wait_for_release():
+            await release.wait()
+
+        first = mgr._spawn_task(wait_for_release(), scope="session", key="runes")
+        second = mgr._spawn_task(wait_for_release(), scope="session", key="runes")
+        self.assertIs(first, second)
+
+        release.set()
+        await first
+        await asyncio.sleep(0)
+
+    async def test_old_session_task_is_cancelled_before_new_session(self):
+        mgr = self._make_manager()
+        started = asyncio.Event()
+        wrote_result = False
+
+        async def old_session_work():
+            nonlocal wrote_result
+            started.set()
+            await asyncio.sleep(60)
+            if mgr._is_current_session_task():
+                wrote_result = True
+
+        mgr._start_champ_select_session()
+        task = mgr._spawn_task(old_session_work(), scope="session")
+        await started.wait()
+        old_generation = mgr._session_generation
+
+        mgr._start_champ_select_session()
+        await asyncio.sleep(0)
+
+        self.assertNotEqual(mgr._session_generation, old_generation)
+        self.assertTrue(task.cancelled())
+        self.assertFalse(wrote_result)
+
+    async def test_connection_tasks_are_cancelled_on_runtime_reset(self):
+        mgr = self._make_manager()
+        task = mgr._spawn_task(asyncio.sleep(60), scope="connection", key="refresh_summoner")
+
+        mgr._reset_ws_runtime_state()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        self.assertTrue(task.cancelled())
+        self.assertNotIn(task, mgr._tasks_by_scope["connection"])
+
     async def test_no_connection_returns_empty_rune_pages(self):
         mgr = self._make_manager()
         mgr.connection = None
