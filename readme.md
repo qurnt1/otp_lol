@@ -130,6 +130,9 @@ Version `11.0` focuses on preset completeness: skins, summoner spells, rune page
 The project now includes several useful safeguards:
 
 - separation between `manual_*` and `auto_detected_*` values
+- thread-safe parameter snapshots between the UI and background workers
+- atomic settings/history writes with `.bak` recovery for unreadable files
+- supervised background tasks cancelled when their client session becomes stale
 - cleaner application shutdown
 - safer tray callbacks that are marshalled back to the Tk UI thread
 - safer shortcut capture that temporarily disables existing global hotkeys
@@ -229,7 +232,8 @@ The script also handles:
 ### User Files
 
 - Settings:
-  `%APPDATA%\OTP LOL\parameters.json`
+  `%APPDATA%\OTP LOL\parameters.toml`
+  Legacy `parameters.json` files are migrated automatically and retained as a backup.
 - Action history:
   `%APPDATA%\OTP LOL\history.json`
 - Logs:
@@ -339,24 +343,29 @@ otp_lol/
 |-- readme.md
 |-- src/
 |   |-- __init__.py
+|   |-- atomic_io.py
 |   |-- config/
 |   |-- core/
 |   |-- services/
 |   |-- ui/
-|   `-- utils.py
+|   `-- ui_qt/ (secondary UI implementation)
 |-- config/
 |   |-- son.wav
 |   `-- images/
 |-- docs/
 |   `-- images/
 `-- tests/
+    |-- fake_lcu_server.py
     |-- test_config.py
     |-- test_core_champ_select.py
     |-- test_history.py
+    |-- test_imports.py
+    |-- test_integration_lcu.py
+    |-- test_launcher.py
     |-- test_main_window.py
     |-- test_release_metadata.py
     |-- test_ui_settings.py
-    `-- test_utils.py
+    `-- ...
 ```
 
 ### Role Of Main Files
@@ -371,8 +380,8 @@ otp_lol/
   External URLs, history, updates, DPI, and single-instance handling.
 - `src/ui/`
   Graphical interface, system tray, toasts, shortcuts, and user interaction handling.
-- `src/utils.py`
-  Utility functions: lockfile, external URLs, update check, DPI.
+- `src/atomic_io.py`
+  Shared same-directory temporary-file replacement for recoverable JSON/TOML writes.
 - `create_exe.py`
   Windows build through PyInstaller.
 
@@ -392,6 +401,7 @@ To run the tests:
 
 ```bash
 python -m unittest discover -s tests -v
+python -m pytest -q
 ```
 
 To quickly verify that the code compiles:
@@ -399,6 +409,9 @@ To quickly verify that the code compiles:
 ```bash
 python -m compileall launcher.py src create_exe.py tests
 ```
+
+The import-isolation regression check also verifies that importing core business modules
+does not load the graphical UI stack.
 
 ## Troubleshooting
 

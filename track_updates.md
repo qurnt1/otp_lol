@@ -17,3 +17,9 @@
 - feat: fire spells and runes as soon as prepick hover is confirmed, before ban/pick
 - feat: scan session actions for prepick detection when myTeam does not yet reflect the hover
 - feat: poll lobby during ChampSelect phase so queue ID is available on the first tick
+- fix: reapply configured rune pages after client-side selection drift
+- refactor: supervise background automation tasks by session and connection scope
+- refactor: protect shared parameters with snapshots and atomic persistence
+- refactor: remove confirmed dead state and split champion-select orchestration
+- refactor: lazy-load package facades to avoid unnecessary graphical imports
+- refactor: remove inert UI control refresh hook
