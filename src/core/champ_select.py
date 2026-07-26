@@ -1351,8 +1351,6 @@ class ChampSelectMixin:
         slot_key: Optional[str] = None,
     ) -> None:
         """Re-apply the rune page when the live session state does not match the expected value."""
-        if self.state.rune_applied_for_session:
-            return
         if self.state.rune_apply_in_progress or not self.connection:
             return
         local_selection = self._extract_local_player_selection(session)
@@ -1366,6 +1364,7 @@ class ChampSelectMixin:
         if current_rune_page_id == rune_page_id:
             self.state.last_confirmed_rune_page_id = rune_page_id
             return
+        self.state.rune_applied_for_session = False
         if time() - self.state.last_rune_try_ts < self.RUNE_RETRY_COOLDOWN_S:
             return
         logging.debug(

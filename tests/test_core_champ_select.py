@@ -118,6 +118,102 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(chosen_slot, "pick_2")
         self.assertFalse(rune_auto_apply)
 
+    async def test_ensure_rune_reapplies_after_client_drift(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_applied_for_session = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_awaited_once_with(self.params, slot_key="pick_1")
+        self.assertFalse(self.manager.state.rune_applied_for_session)
+
+    async def test_ensure_rune_does_not_reapply_when_current_page_is_correct(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_applied_for_session = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 100}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+        self.assertEqual(self.manager.state.last_confirmed_rune_page_id, 100)
+
+    async def test_ensure_rune_skips_when_auto_apply_is_disabled(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": False}
+        )
+        self.manager.connection = object()
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_skips_invalid_page_id(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 0, "rune_page_name": "Invalid", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_skips_when_application_is_in_progress(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_apply_in_progress = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_respects_retry_cooldown(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.last_rune_try_ts = time() + 1
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
 
