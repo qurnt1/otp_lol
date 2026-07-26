@@ -198,81 +198,21 @@ class ChampSelectMixin:
 
     async def _champ_select_tick(self: "WebSocketManager") -> None:
         """Read the current champ-select session and perform the next safe automation step."""
-        if not self.connection:
+        context = await self._prepare_champ_select_tick()
+        if context is None:
             return
 
-        try:
-            response = await self.connection.request("get", "/lol-champ-select/v1/session")
-            if response.status != 200:
-                return
-            session = await response.json()
-        except Exception as e:
-            logging.debug("Error fetching champ select session: %s", e)
-            return
-
-        game_config = session.get("gameConfig") or {}
-        queue_id = int(game_config.get("queueId") or 0)
-        game_mode = str(game_config.get("gameMode") or "")
-
-        # Practice Tool and some custom games expose queueId=0 in the session
-        # even though the lobby previously reported a real queue id.  Fall back
-        # to the value captured during the Lobby/Matchmaking phase.
-        effective_queue_id = queue_id or self.state.current_queue_id
-
-        if not self.state.non_preset_mode_notified:
-            logging.info(
-                "[SESSION] queueId=%s gameMode=%r effectiveQueueId=%s",
-                queue_id,
-                game_mode,
-                effective_queue_id,
-            )
-
-        presets_allowed = (
-            effective_queue_id in PRESET_ENABLED_QUEUE_IDS
-            or game_mode == PRACTICE_TOOL_GAME_MODE
-        )
-        if not presets_allowed:
-            if not self.state.non_preset_mode_notified:
-                self.state.non_preset_mode_notified = True
-                logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
-                self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
-            return
-
-        local_id = session.get("localPlayerCellId")
-        if local_id is None:
-            return
-
-        params = self.get_params()
-
-        # Capture the assigned role as soon as it appears so later profile resolution
-        # can consistently use role-specific overrides.
-        if not self.state.assigned_position:
-            my_team = session.get("myTeam", [])
-            my_player_obj = next((p for p in my_team if p.get("cellId") == local_id), None)
-            if my_player_obj:
-                pos = (my_player_obj.get("assignedPosition") or "").upper()
-                if pos:
-                    self.state.assigned_position = pos
-                    self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {pos}", "ROLE"))
-
-        actions_groups = session.get("actions", [])
-        my_actions = []
-        for group in actions_groups:
-            for action in group:
-                if action.get("actorCellId") == local_id and not action.get("completed"):
-                    my_actions.append(action)
-
-        # Collect the live constraints first so every downstream decision uses the
-        # same snapshot of pickability, bans, and prepick state.
-        effective = self._get_effective_champ_select_config(params)
-        presets_enabled = bool(effective.get("presets_enabled", True))
-        pickable_set = await self._fetch_pickable_ids()
-        banned_ids = self._extract_banned_champion_ids(session)
+        session = context["session"]
+        params = context["params"]
+        effective = context["effective"]
+        presets_enabled = context["presets_enabled"]
+        pickable_set = context["pickable_set"]
+        banned_ids = context["banned_ids"]
+        my_actions = context["my_actions"]
 
         had_prepicked = self.state.has_prepicked
         self._sync_prepick_state_from_session(session, params)
         prepick_just_confirmed = self.state.has_prepicked and not had_prepicked
-
         prepick_action = next(
             (a for a in my_actions if a.get("type") == "pick" and not a.get("isInProgress")),
             None,
@@ -285,47 +225,152 @@ class ChampSelectMixin:
             (a for a in my_actions if a.get("type") == "pick" and a.get("isInProgress") is True),
             None,
         )
-
         prepick_slot = self.state.last_prepick_slot or self.state.last_locked_pick_slot or "pick_1"
 
-        # As soon as the prepick is confirmed in the session, fire spells,
-        # runes, and skin all at once so everything is in place before the
-            # pick lock-in even begins.
-        if prepick_just_confirmed and not self.state.has_picked and presets_enabled:
-            if params.get("auto_summoners_enabled"):
-                self._spawn_task(self._set_spells(params, slot_key=prepick_slot), scope="session", key="spells")
-            self._spawn_task(self._set_rune_page(params, slot_key=prepick_slot), scope="session", key="runes")
-            self._spawn_task(self._set_skin(params, slot_key=prepick_slot), scope="session", key="skin")
+        self._schedule_confirmed_prepick_loadout(params, prepick_slot, prepick_just_confirmed, presets_enabled)
+        if await self._handle_prepick_action(
+            session,
+            params,
+            effective,
+            pickable_set,
+            banned_ids,
+            prepick_action,
+            presets_enabled,
+        ):
+            return
 
-        # Pre-pick comes first because the client can expose a hover-only action
-        # before the final ban or pick phase begins.
-        if params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1"):
-            if prepick_action:
-                best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
-                target_champion_id = best_pick[2] if best_pick else None
-                current_hover = prepick_action.get("championId")
-                if target_champion_id and current_hover != target_champion_id:
-                    if time() - self.state.last_prepick_try_ts > self.PREPICK_RETRY_COOLDOWN_S and self._can_hover_now():
-                        self.state.last_prepick_try_ts = time()
-                        logging.info(
-                            "[PREPICK] Action detected on id=%s before ban/pick resolution.",
-                            prepick_action.get("id"),
-                        )
-                        hover_success = await self._hover_champion(prepick_action["id"], target_champion_id)
-                        if hover_success:
-                            # Re-sync immediately — the session may already reflect the
-                            # hover so we can fire spells/runes/skin without waiting for
-                            # the next tick.
-                            had_prepicked_after = self.state.has_prepicked
-                            self._sync_prepick_state_from_session(session, params)
-                            if self.state.has_prepicked and not had_prepicked_after and not self.state.has_picked:
-                                prepick_slot = self.state.last_prepick_slot or "pick_1"
-                                if params.get("auto_summoners_enabled"):
-                                    self._spawn_task(self._set_spells(params, slot_key=prepick_slot), scope="session", key="spells")
-                                self._spawn_task(self._set_rune_page(params, slot_key=prepick_slot), scope="session", key="runes")
-                                self._spawn_task(self._set_skin(params, slot_key=prepick_slot), scope="session", key="skin")
-                        else:
-                            self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
+        self._reconcile_pre_pick_loadout(session, params, prepick_slot, presets_enabled)
+
+        if active_ban_action and params.get("auto_ban_enabled"):
+            await self._logic_do_ban(active_ban_action, effective)
+        elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
+            await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
+
+        self._reconcile_post_pick_loadout(session, params, presets_enabled)
+
+    async def _prepare_champ_select_tick(self: "WebSocketManager") -> Optional[Dict[str, Any]]:
+        """Load and validate the session snapshot used by one champ-select tick."""
+        if not self.connection:
+            return None
+
+        try:
+            response = await self.connection.request("get", "/lol-champ-select/v1/session")
+            if response.status != 200:
+                return None
+            session = await response.json()
+        except Exception as e:
+            logging.debug("Error fetching champ select session: %s", e)
+            return None
+
+        game_config = session.get("gameConfig") or {}
+        queue_id = int(game_config.get("queueId") or 0)
+        game_mode = str(game_config.get("gameMode") or "")
+        effective_queue_id = queue_id or self.state.current_queue_id
+
+        if not self.state.non_preset_mode_notified:
+            logging.info(
+                "[SESSION] queueId=%s gameMode=%r effectiveQueueId=%s",
+                queue_id,
+                game_mode,
+                effective_queue_id,
+            )
+
+        presets_allowed = effective_queue_id in PRESET_ENABLED_QUEUE_IDS or game_mode == PRACTICE_TOOL_GAME_MODE
+        if not presets_allowed:
+            if not self.state.non_preset_mode_notified:
+                self.state.non_preset_mode_notified = True
+                logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
+                self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
+            return None
+
+        local_id = session.get("localPlayerCellId")
+        if local_id is None:
+            return None
+
+        params = self.get_params()
+        self._capture_assigned_position(session, local_id)
+        my_actions = self._get_local_open_actions(session, local_id)
+        effective = self._get_effective_champ_select_config(params)
+        pickable_set = await self._fetch_pickable_ids()
+
+        return {
+            "session": session,
+            "params": params,
+            "effective": effective,
+            "presets_enabled": bool(effective.get("presets_enabled", True)),
+            "pickable_set": pickable_set,
+            "banned_ids": self._extract_banned_champion_ids(session),
+            "my_actions": my_actions,
+        }
+
+    def _capture_assigned_position(self: "WebSocketManager", session: Dict[str, Any], local_id: Any) -> None:
+        """Remember the role as soon as the session exposes it."""
+        if self.state.assigned_position:
+            return
+        my_team = session.get("myTeam", [])
+        my_player_obj = next((p for p in my_team if p.get("cellId") == local_id), None)
+        if my_player_obj:
+            position = (my_player_obj.get("assignedPosition") or "").upper()
+            if position:
+                self.state.assigned_position = position
+                self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {position}", "ROLE"))
+
+    @staticmethod
+    def _get_local_open_actions(session: Dict[str, Any], local_id: Any) -> List[Dict[str, Any]]:
+        """Return unfinished actions owned by the local player."""
+        return [
+            action
+            for group in session.get("actions", [])
+            for action in group
+            if action.get("actorCellId") == local_id and not action.get("completed")
+        ]
+
+    def _schedule_confirmed_prepick_loadout(
+        self,
+        params: Dict[str, Any],
+        prepick_slot: str,
+        prepick_just_confirmed: bool,
+        presets_enabled: bool,
+    ) -> None:
+        """Start loadout tasks immediately after the session confirms a pre-pick."""
+        if not prepick_just_confirmed or self.state.has_picked or not presets_enabled:
+            return
+        if params.get("auto_summoners_enabled"):
+            self._spawn_task(self._set_spells(params, slot_key=prepick_slot), scope="session", key="spells")
+        self._spawn_task(self._set_rune_page(params, slot_key=prepick_slot), scope="session", key="runes")
+        self._spawn_task(self._set_skin(params, slot_key=prepick_slot), scope="session", key="skin")
+
+    async def _handle_prepick_action(
+        self,
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        effective: Dict[str, Any],
+        pickable_set: Optional[Set[int]],
+        banned_ids: Set[int],
+        prepick_action: Optional[Dict[str, Any]],
+        presets_enabled: bool,
+    ) -> bool:
+        """Hover the configured pre-pick and stop the tick while confirmation is pending."""
+        if params.get("auto_pick_enabled") and presets_enabled and effective.get("selected_pick_1") and prepick_action:
+            best_pick = self._pick_first_viable_champion(params, pickable_set, banned_ids)
+            target_champion_id = best_pick[2] if best_pick else None
+            current_hover = prepick_action.get("championId")
+            if target_champion_id and current_hover != target_champion_id:
+                if time() - self.state.last_prepick_try_ts > self.PREPICK_RETRY_COOLDOWN_S and self._can_hover_now():
+                    self.state.last_prepick_try_ts = time()
+                    logging.info(
+                        "[PREPICK] Action detected on id=%s before ban/pick resolution.",
+                        prepick_action.get("id"),
+                    )
+                    hover_success = await self._hover_champion(prepick_action["id"], target_champion_id)
+                    if hover_success:
+                        had_prepicked_after = self.state.has_prepicked
+                        self._sync_prepick_state_from_session(session, params)
+                        if self.state.has_prepicked and not had_prepicked_after and not self.state.has_picked:
+                            prepick_slot = self.state.last_prepick_slot or "pick_1"
+                            self._schedule_confirmed_prepick_loadout(params, prepick_slot, True, presets_enabled)
+                    else:
+                        self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
         prepick_required = (
             params.get("auto_pick_enabled")
@@ -333,38 +378,45 @@ class ChampSelectMixin:
             and effective.get("selected_pick_1")
             and prepick_action is not None
         )
+        if not prepick_required or self.state.has_prepicked:
+            return False
+        if self.state.prepick_wait_started_ts <= 0:
+            self.state.prepick_wait_started_ts = time()
+        wait_elapsed = time() - self.state.prepick_wait_started_ts
+        if wait_elapsed < self.PREPICK_SOFT_TIMEOUT_S:
+            self._log_flow_once("Waiting for pre-pick confirmation before ban/pick actions.")
+            return True
+        self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
+        return False
 
-        if prepick_required and not self.state.has_prepicked:
-            if self.state.prepick_wait_started_ts <= 0:
-                self.state.prepick_wait_started_ts = time()
-            wait_elapsed = time() - self.state.prepick_wait_started_ts
-            if wait_elapsed < self.PREPICK_SOFT_TIMEOUT_S:
-                self._log_flow_once("Waiting for pre-pick confirmation before ban/pick actions.")
-                return
-            self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
+    def _reconcile_pre_pick_loadout(
+        self,
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        prepick_slot: str,
+        presets_enabled: bool,
+    ) -> None:
+        """Retry loadout patches before the ban action while a pick is still pending."""
+        if not self.state.has_prepicked or self.state.has_picked or not presets_enabled:
+            return
+        if params.get("auto_summoners_enabled"):
+            self._ensure_spells_are_applied(session, params, slot_key=prepick_slot)
+        self._ensure_rune_is_applied(session, params)
+        self._ensure_skin_is_applied(session, params)
 
-        # Reconcile spells, runes, and skin before the ban action so patches
-        # that failed on the first attempt get a second chance early.
-        if self.state.has_prepicked and not self.state.has_picked and presets_enabled:
-            if params.get("auto_summoners_enabled"):
-                self._ensure_spells_are_applied(session, params, slot_key=prepick_slot)
-            self._ensure_rune_is_applied(session, params)
-            self._ensure_skin_is_applied(session, params)
-
-        if active_ban_action and params.get("auto_ban_enabled"):
-            await self._logic_do_ban(active_ban_action, effective)
-        elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
-            await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
-
-        # After a successful lock-in, keep reconciling spells, runes, and skins
-        # because the Riot client can overwrite selections after an apparently
-        # successful patch.
-        if self.state.has_picked and params.get("auto_summoners_enabled") and presets_enabled:
+    def _reconcile_post_pick_loadout(
+        self,
+        session: Dict[str, Any],
+        params: Dict[str, Any],
+        presets_enabled: bool,
+    ) -> None:
+        """Keep loadout selections aligned after the champion is locked in."""
+        if not self.state.has_picked or not presets_enabled:
+            return
+        if params.get("auto_summoners_enabled"):
             self._ensure_spells_are_applied(session, params)
-        if self.state.has_picked and presets_enabled:
-            self._ensure_rune_is_applied(session, params)
-        if self.state.has_picked and presets_enabled:
-            self._ensure_skin_is_applied(session, params)
+        self._ensure_rune_is_applied(session, params)
+        self._ensure_skin_is_applied(session, params)
 
     async def _hover_champion(self: "WebSocketManager", action_id: int, champion_id: int) -> bool:
         area = "PREPICK"

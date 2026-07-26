@@ -4,6 +4,7 @@ from time import time
 from unittest.mock import AsyncMock
 
 from src.core import WebSocketManager
+from src.config import PRACTICE_TOOL_GAME_MODE
 
 
 class FakeResponse:
@@ -552,6 +553,33 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         await self.manager._champ_select_tick()
 
+        self.manager._logic_do_pick.assert_not_awaited()
+        self.manager._logic_do_ban.assert_not_awaited()
+
+    async def test_champ_select_tick_allows_practice_tool_and_captures_role(self):
+        async def request(method, url, **kwargs):
+            if url == "/lol-champ-select/v1/session":
+                return FakeResponse(
+                    200,
+                    {
+                        "gameConfig": {"queueId": 0, "gameMode": PRACTICE_TOOL_GAME_MODE},
+                        "localPlayerCellId": 1,
+                        "myTeam": [{"cellId": 1, "assignedPosition": "JUNGLE"}],
+                        "actions": [],
+                    },
+                )
+            if url == "/lol-champ-select/v1/pickable-champion-ids":
+                return FakeResponse(200, [86, 99, 22])
+            raise AssertionError(f"Unexpected request: {method} {url}")
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+        self.manager._logic_do_pick = AsyncMock()
+        self.manager._logic_do_ban = AsyncMock()
+
+        await self.manager._champ_select_tick()
+
+        self.assertEqual(self.manager.state.assigned_position, "JUNGLE")
         self.manager._logic_do_pick.assert_not_awaited()
         self.manager._logic_do_ban.assert_not_awaited()
 
