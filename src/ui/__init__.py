@@ -21,7 +21,23 @@ Uses:
 - Local modules: src.ui.main_window, src.ui.settings_window
 """
 
-from .main_window import LoLAssistantUI
-from .settings_window import SettingsWindow
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .main_window import LoLAssistantUI
+    from .settings_window import SettingsWindow
 
 __all__ = ["LoLAssistantUI", "SettingsWindow"]
+
+
+def __getattr__(name: str):
+    """Load graphical classes only when a caller requests them."""
+    if name == "LoLAssistantUI":
+        from .main_window import LoLAssistantUI
+
+        return LoLAssistantUI
+    if name == "SettingsWindow":
+        from .settings_window import SettingsWindow
+
+        return SettingsWindow
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -35,10 +35,11 @@ from src.config import (
     load_parameters, save_parameters,
     get_cache_dirs, CURRENT_VERSION
 )
-from src.core import DataDragon, WebSocketManager
+from src.core.datadragon import DataDragon
+from src.core.websocket import WebSocketManager
 from src.services.single_instance import check_single_instance, remove_lockfile
 from src.services.updates import check_for_updates
-from src.ui import LoLAssistantUI
+from src.ui.main_window import LoLAssistantUI
 
 
 class OtpLolApplication:

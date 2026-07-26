@@ -21,8 +21,28 @@ Uses:
 - Local modules: src.core.datadragon, src.core.game_state, src.core.websocket
 """
 
-from .datadragon import DataDragon
-from .game_state import GameState
-from .websocket import WebSocketManager
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .datadragon import DataDragon
+    from .game_state import GameState
+    from .websocket import WebSocketManager
 
 __all__ = ["DataDragon", "GameState", "WebSocketManager"]
+
+
+def __getattr__(name: str):
+    """Load public core classes only when a caller requests them."""
+    if name == "DataDragon":
+        from .datadragon import DataDragon
+
+        return DataDragon
+    if name == "GameState":
+        from .game_state import GameState
+
+        return GameState
+    if name == "WebSocketManager":
+        from .websocket import WebSocketManager
+
+        return WebSocketManager
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
