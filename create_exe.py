@@ -26,9 +26,9 @@ Uses:
 """
 
 import os
+import shutil
 import subprocess
 import sys
-import shutil
 
 from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
@@ -118,31 +118,26 @@ def main():
         # Ship runtime assets explicitly because they are loaded from disk at runtime.
         '--add-data', r'.\config;config',
         
-        # Include the source tree as data as an extra safety net for modules and
-        # resources that are resolved dynamically at runtime.
-        '--add-data', r'.\src;src',
-        
-        # ttkbootstrap bundles theme assets that are easier to keep intact via collect-all.
-        '--collect-all', 'ttkbootstrap',
+        # Include the Qt plugins and multimedia backend used by the desktop app.
+        '--collect-all', 'PyQt6',
         
         # Hidden imports document packaging assumptions for modules that may be
         # missed when imports are optional, indirect, or environment-dependent.
         '--hidden-import=src',
         '--hidden-import=src.config',
         '--hidden-import=src.core',
-        '--hidden-import=src.ui',
+        '--hidden-import=src.application',
+        '--hidden-import=src.desktop',
+        '--hidden-import=src.services',
         
         # Third-party modules referenced through dynamic code paths.
         '--hidden-import=keyboard',
-        '--hidden-import=pygame',
-        '--hidden-import=pygame.mixer',
-        '--hidden-import=pygame.sndarray',
         '--hidden-import=psutil',
         '--hidden-import=urllib3',
-        '--hidden-import=pystray',
         '--hidden-import=PIL.Image',
-        '--hidden-import=PIL.ImageTk',
         '--hidden-import=PIL.ImageEnhance',
+        '--hidden-import=PyQt6.QtMultimedia',
+        '--hidden-import=PyQt6.QtWidgets',
         '--hidden-import=lcu_driver',
         '--hidden-import=packaging',
         '--hidden-import=requests',
@@ -218,7 +213,7 @@ def main():
     source = os.path.join(dist_path, exe_name)
     target = os.path.join(root_dir, exe_name)
     
-    print(f"\n📁 Déplacement de l'exécutable...")
+    print("\n📁 Déplacement de l'exécutable...")
     
     if os.path.exists(source):
         if os.path.exists(target):

@@ -1,8 +1,7 @@
 import subprocess
 import sys
-from pathlib import Path
 import unittest
-
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -18,6 +17,27 @@ assert 'tkinter' not in __import__('sys').modules
 assert 'ttkbootstrap' not in __import__('sys').modules
 assert 'pystray' not in __import__('sys').modules
 assert 'PIL' not in __import__('sys').modules
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_launcher_import_uses_pyqt_without_loading_removed_toolkits(self):
+        script = """
+import launcher
+modules = __import__('sys').modules
+assert launcher.OtpLolApplication is not None
+assert 'PyQt6.QtWidgets' in modules
+assert 'tkinter' not in modules
+assert 'ttkbootstrap' not in modules
+assert 'pystray' not in modules
+assert 'pygame' not in modules
+assert 'src.ui' not in modules
 """
         result = subprocess.run(
             [sys.executable, "-c", script],

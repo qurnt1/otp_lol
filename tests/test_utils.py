@@ -1,5 +1,5 @@
-import unittest
 import base64
+import unittest
 from unittest.mock import Mock, patch
 
 from src.services.updates import (
@@ -11,8 +11,8 @@ from src.services.updates import (
     normalize_version,
 )
 from src.services.urls import (
-    build_dpm_url,
     build_deeplol_url,
+    build_dpm_url,
     build_hotkey_site_url,
     build_leagueofgraphs_url,
     build_opgg_url,

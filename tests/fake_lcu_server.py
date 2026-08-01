@@ -11,11 +11,9 @@ USAGE:
     await server.stop()
 """
 
-import asyncio
 import socket
 from typing import Any, Dict, Optional
 
-import aiohttp
 from aiohttp import web
 
 

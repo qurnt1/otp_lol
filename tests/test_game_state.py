@@ -13,13 +13,13 @@ def test_all_transient_fields_are_reset():
     for f in fields(GameState):
         if not f.metadata.get("transient"):
             continue
-        if f.type == "bool" or f.type == bool:
+        if f.type == "bool" or f.type is bool:
             setattr(state, f.name, True)
-        elif f.type == "int" or f.type == int:
+        elif f.type == "int" or f.type is int:
             setattr(state, f.name, 999)
-        elif f.type == "float" or f.type == float:
+        elif f.type == "float" or f.type is float:
             setattr(state, f.name, 99.9)
-        elif f.type == "str" or f.type == str:
+        elif f.type == "str" or f.type is str:
             setattr(state, f.name, "modified")
         else:
             setattr(state, f.name, None)

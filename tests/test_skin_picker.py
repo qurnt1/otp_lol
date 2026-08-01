@@ -1,173 +1,102 @@
 import unittest
+from unittest.mock import Mock
 
-from src.ui._picker_common import picker_lcu_status_message
-from src.ui.skin_picker import (
-    _confirm_unowned_skin_selection,
-    _get_picker_image_url,
-    _merge_catalog_and_owned_skins,
-    _sort_skins_for_display,
+from src.services.skin_catalog import (
+    confirm_unowned_skin_selection,
+    get_picker_image_url,
+    merge_catalog_and_owned_skins,
+    picker_lcu_status_message,
+    sort_skins_for_display,
 )
 
 
-class SkinPickerMergeTests(unittest.TestCase):
+class SkinCatalogTests(unittest.TestCase):
     def test_merge_catalog_and_owned_marks_unowned_entries(self):
-        merged = _merge_catalog_and_owned_skins(
-            [
-                {
-                    "skin_id": 1,
-                    "skin_name": "Base",
-                    "skin_num": 1,
-                    "tile_url": "tile-1",
-                    "splash_url": "splash-1",
-                },
-                {
-                    "skin_id": 2,
-                    "skin_name": "Fancy",
-                    "skin_num": 1,
-                    "tile_url": "tile-2",
-                    "splash_url": "splash-2",
-                },
-            ],
-            [
-                {
-                    "skin_id": 2,
-                    "skin_name": "Fancy",
-                    "skin_num": 1,
-                    "preview_url": "owned-preview-2",
-                }
-            ],
+        catalog = [
+            {"skin_id": 1000, "skin_num": 0, "skin_name": "Default", "tile_url": "default"},
+            {"skin_id": 1001, "skin_num": 1, "skin_name": "Owned", "tile_url": "owned"},
+            {"skin_id": 1002, "skin_num": 2, "skin_name": "Other", "tile_url": "other"},
+        ]
+        merged = merge_catalog_and_owned_skins(
+            catalog,
+            [{"skin_id": 1001, "skin_num": 1, "skin_name": "Owned", "owned": True}],
         )
+        by_id = {skin["skin_id"]: skin for skin in merged}
+        self.assertTrue(by_id[1000]["owned"])
+        self.assertTrue(by_id[1001]["owned"])
+        self.assertFalse(by_id[1002]["owned"])
 
-        self.assertEqual(len(merged), 2)
-        self.assertFalse(merged[0]["owned"])
-        self.assertEqual(merged[0]["preview_url"], "tile-1")
-        self.assertTrue(merged[1]["owned"])
-        self.assertEqual(merged[1]["preview_url"], "owned-preview-2")
-
-    def test_merge_catalog_marks_default_skin_as_owned_without_lcu_inventory(self):
-        merged = _merge_catalog_and_owned_skins(
-            [
-                {
-                    "skin_id": 86000,
-                    "skin_name": "default",
-                    "skin_num": 0,
-                    "tile_url": "tile-default",
-                    "splash_url": "splash-default",
-                },
-                {
-                    "skin_id": 86001,
-                    "skin_name": "Sanguine Garen",
-                    "skin_num": 1,
-                    "tile_url": "tile-1",
-                    "splash_url": "splash-1",
-                },
-            ],
+    def test_merge_adds_owned_entries_missing_from_catalog(self):
+        merged = merge_catalog_and_owned_skins(
             [],
+            [{"skin_id": 2001, "skin_num": 1, "skin_name": "Legacy", "tile_url": "tile"}],
         )
-
+        self.assertEqual(merged[0]["skin_name"], "Legacy")
         self.assertTrue(merged[0]["owned"])
-        self.assertFalse(merged[1]["owned"])
 
-    def test_picker_image_url_prefers_splash_over_tile(self):
+    def test_picker_image_url_prefers_centered_splash(self):
         self.assertEqual(
-            _get_picker_image_url(
+            get_picker_image_url(
                 {
-                    "tile_url": "tile-2",
-                    "splash_url": "splash-2",
-                    "centered_splash_url": "centered-2",
-                    "uncentered_splash_url": "uncentered-2",
+                    "centered_splash_url": "centered",
+                    "splash_url": "splash",
+                    "tile_url": "tile",
                 }
             ),
-            "centered-2",
+            "centered",
         )
 
     def test_picker_image_url_skips_uncentered_fallback(self):
         self.assertEqual(
-            _get_picker_image_url(
-                {
-                    "tile_url": "tile-2",
-                    "splash_url": "splash-2",
-                    "uncentered_splash_url": "uncentered-2",
-                }
-            ),
-            "splash-2",
+            get_picker_image_url({"uncentered_splash_url": "uncentered", "tile_url": "tile"}),
+            "tile",
         )
 
-    def test_sort_skins_for_display_prioritizes_selected_fixed_skin(self):
-        skins = [
-            {"skin_id": 1, "skin_name": "A"},
-            {"skin_id": 2, "skin_name": "B"},
-            {"skin_id": 3, "skin_name": "C"},
-        ]
-
-        ordered = _sort_skins_for_display(skins, mode="fixed", fixed_skin_id=2)
-
-        self.assertEqual([skin["skin_id"] for skin in ordered], [2, 1, 3])
-
-    def test_sort_skins_for_display_prioritizes_random_pool(self):
-        skins = [
-            {"skin_id": 1, "skin_name": "A"},
-            {"skin_id": 2, "skin_name": "B"},
-            {"skin_id": 3, "skin_name": "C"},
-        ]
-
-        ordered = _sort_skins_for_display(skins, mode="random", pool_ids={3, 1})
-
-        self.assertEqual([skin["skin_id"] for skin in ordered], [1, 3, 2])
-
-    def test_confirm_unowned_skin_selection_skips_prompt_for_owned_skin(self):
-        prompts = []
-
-        result = _confirm_unowned_skin_selection(
-            {"skin_id": 1, "skin_name": "Owned", "owned": True},
-            ask_fn=lambda *args, **kwargs: prompts.append((args, kwargs)),
+    def test_sort_prioritizes_selected_fixed_skin(self):
+        skins = [{"skin_id": 1}, {"skin_id": 2}, {"skin_id": 3}]
+        self.assertEqual(
+            [skin["skin_id"] for skin in sort_skins_for_display(skins, mode="fixed", fixed_skin_id=3)],
+            [3, 1, 2],
         )
 
-        self.assertTrue(result)
-        self.assertEqual(prompts, [])
-
-    def test_confirm_unowned_skin_selection_uses_prompt_result(self):
-        self.assertTrue(
-            _confirm_unowned_skin_selection(
-                {"skin_id": 2, "skin_name": "Unknown", "owned": False},
-                ask_fn=lambda *args, **kwargs: True,
-            )
+    def test_sort_prioritizes_random_pool(self):
+        skins = [{"skin_id": 1}, {"skin_id": 2}, {"skin_id": 3}]
+        self.assertEqual(
+            [skin["skin_id"] for skin in sort_skins_for_display(skins, mode="random", pool_ids={2, 3})],
+            [2, 3, 1],
         )
+
+    def test_owned_skin_skips_confirmation(self):
+        ask = Mock(return_value=False)
+        self.assertTrue(confirm_unowned_skin_selection({"owned": True}, ask_fn=ask))
+        ask.assert_not_called()
+
+    def test_unowned_skin_uses_confirmation_result(self):
+        ask = Mock(return_value=True)
+        self.assertTrue(confirm_unowned_skin_selection({"owned": False}, ask_fn=ask))
+        ask.assert_called_once()
+
+    def test_offline_unowned_warning_mentions_client_detection(self):
+        calls = []
+
+        def ask(title, message):
+            calls.append((title, message))
+            return False
+
         self.assertFalse(
-            _confirm_unowned_skin_selection(
-                {"skin_id": 2, "skin_name": "Unknown", "owned": False},
-                ask_fn=lambda *args, **kwargs: False,
+            confirm_unowned_skin_selection(
+                {"owned": False},
+                ask_fn=ask,
+                lcu_available=False,
             )
         )
-
-    def test_confirm_unowned_skin_lcu_unavailable_shows_different_message(self):
-        """When LCU is not available the prompt uses the client-not-detected wording."""
-        captured_title = []
-        captured_message = []
-
-        def capture(title, message):
-            captured_title.append(title)
-            captured_message.append(message)
-            return True
-
-        result = _confirm_unowned_skin_selection(
-            {"skin_id": 2, "skin_name": "Unknown", "owned": False},
-            ask_fn=capture,
-            lcu_available=False,
-        )
-
-        self.assertTrue(result)
-        self.assertIn("LoL client not detected", captured_title[0])
-        self.assertIn("Unable to verify", captured_message[0])
+        self.assertIn("not detected", calls[0][0].lower())
+        self.assertIn("offline", calls[0][1].lower())
 
     def test_picker_lcu_status_message_uses_standard_wording(self):
         self.assertEqual(
             picker_lcu_status_message("skins"),
             "Unable to fetch skins: LoL client is not detected. Launch League of Legends to refresh.",
-        )
-        self.assertEqual(
-            picker_lcu_status_message("runes"),
-            "Unable to fetch runes: LoL client is not detected. Launch League of Legends to refresh.",
         )
 
 

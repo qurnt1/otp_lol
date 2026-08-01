@@ -57,14 +57,22 @@ from ..config import (
     EP_SESSION_TIMER,
     PHASE_DISPLAY_MAP,
     PLATFORM_TO_REGION,
-    PRACTICE_TOOL_GAME_MODE,
     PRESET_ENABLED_QUEUE_IDS,
 )
 from ..services.history import log_history_event
 from ..services.profile_config import build_effective_profile_config
 from .champ_select import ChampSelectMixin
+from .events import (
+    Connected,
+    CoreEvent,
+    Disconnected,
+    PhaseChanged,
+    ReadyCheckAccepted,
+    SpellsApplied,
+    StatusChanged,
+    SummonerUpdated,
+)
 from .game_state import GameState
-
 
 _task_session_generation: ContextVar[Optional[int]] = ContextVar(
     "otp_lol_task_session_generation",
@@ -75,29 +83,18 @@ _task_session_generation: ContextVar[Optional[int]] = ContextVar(
 class WebSocketManager(ChampSelectMixin):
     """Manage the LCU connector lifecycle and dispatch live client events."""
 
-    EVENT_CONNECTED = "connected"
-    EVENT_DISCONNECTED = "disconnected"
-    EVENT_STATUS = "status"
-    EVENT_PHASE_CHANGE = "phase_change"
-    EVENT_SUMMONER_UPDATE = "summoner_update"
-    EVENT_CHAMPION_PICKED = "champion_picked"
-    EVENT_CHAMPION_BANNED = "champion_banned"
-    EVENT_SPELLS_SET = "spells_set"
-    EVENT_PLAY_AGAIN = "play_again"
-    EVENT_TOAST = "toast"
-    EVENT_READY_CHECK_ACCEPTED = "ready_check_accepted"
     WS_RETRY_DELAY_S = 2.0
     TASK_SCOPES = {"session", "connection", "application"}
 
     def __init__(
         self,
-        ui_callback: Callable[[str, Any], None],
+        event_sink: Callable[[CoreEvent], None],
         dd,
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
     ):
         """Store shared collaborators and initialize per-run websocket state."""
-        self.ui_callback = ui_callback
+        self.event_sink = event_sink
         self.dd = dd
         self.get_params = get_params
         self.update_param = update_param
@@ -115,8 +112,17 @@ class WebSocketManager(ChampSelectMixin):
         }
         self._tasks_by_key: Dict[tuple[str, str], asyncio.Task[Any]] = {}
 
-    def _notify_ui(self, event_type: str, data: Any = None) -> None:
-        self.ui_callback(event_type, data)
+    def _emit(self, event: CoreEvent) -> None:
+        self.event_sink(event)
+
+    def _emit_status(self, message: str, category: str = "") -> None:
+        self._emit(StatusChanged(message, category))
+
+    def _emit_disconnect(self, *, transient: bool, reason: str) -> None:
+        self._emit(Disconnected(transient=transient, reason=reason))
+
+    def _emit_spells(self, first: str, second: str) -> None:
+        self._emit(SpellsApplied(first, second))
 
     def _is_current_session_task(self) -> bool:
         """Return whether the current supervised task still belongs to this champ-select session."""
@@ -197,7 +203,7 @@ class WebSocketManager(ChampSelectMixin):
     def start(self) -> None:
         """Start the background LCU loop if the connector is available."""
         if Connector is None:
-            self._notify_ui(self.EVENT_STATUS, ("Error: 'lcu_driver' is missing.", "ERROR"))
+            self._emit_status("Error: 'lcu_driver' is missing.", "ERROR")
             return
         if self.thread and self.thread.is_alive():
             return
@@ -265,6 +271,20 @@ class WebSocketManager(ChampSelectMixin):
             return int(self.state.summoner_id or 0) or None
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def should_auto_accept_ready_check(
+        current_phase: str,
+        event_data: Dict[str, Any],
+        params: Dict[str, Any],
+    ) -> bool:
+        """Return whether one ready-check event should trigger the accept request."""
+        return (
+            current_phase in {"Matchmaking", "ReadyCheck", "None", "Lobby"}
+            and bool(params.get("auto_accept_enabled", True))
+            and event_data.get("state") == "InProgress"
+            and event_data.get("playerResponse") != "Accepted"
+        )
 
     async def _fetch_rune_pages_async(self) -> List[Dict[str, Any]]:
         """Fetch all valid rune pages from the LCU."""
@@ -813,9 +833,9 @@ class WebSocketManager(ChampSelectMixin):
         """Emit a structured disconnect event unless shutdown was explicitly requested."""
         if self._stop_event.is_set():
             return
-        self._notify_ui(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
+        self._emit_disconnect(transient=transient, reason=reason)
         if status_message:
-            self._notify_ui(self.EVENT_STATUS, (status_message, "WARN"))
+            self._emit_status(status_message, "WARN")
 
     def _is_transient_ws_scan_error(self, exc: BaseException) -> bool:
         transient_types: tuple[type[BaseException], ...] = (ProcessLookupError,)
@@ -829,6 +849,33 @@ class WebSocketManager(ChampSelectMixin):
             return True
         message = str(exc).strip().lower()
         return "process no longer exists" in message or "no such process" in message
+
+    async def _handle_phase_event(self, phase: str) -> None:
+        """Apply one gameflow transition and run its associated automation."""
+        if not phase:
+            return
+
+        previous_phase = self.state.current_phase
+        if phase != previous_phase:
+            logging.info("[PHASE] %s -> %s", previous_phase, phase)
+        self.state.current_phase = phase
+
+        if previous_phase == "ChampSelect" and phase != "ChampSelect":
+            self._invalidate_champ_select_session()
+
+        friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
+        self._emit(PhaseChanged(phase))
+        self._emit_status(f"Status: {friendly_phase}", "INFO")
+
+        if phase in {"Lobby", "Matchmaking", "ChampSelect"}:
+            await self._refresh_current_queue_id()
+        if phase == "ChampSelect":
+            if previous_phase != "ChampSelect":
+                self._start_champ_select_session()
+                self.state.reset_between_games()
+            await self._champ_select_tick()
+        if phase in {"EndOfGame", "WaitingForStats"}:
+            await self._handle_post_game()
 
     def _ws_loop(self) -> None:
         """Run the LCU connector in its own asyncio loop and forward LCU events to the UI thread."""
@@ -859,8 +906,8 @@ class WebSocketManager(ChampSelectMixin):
                         category="Connection",
                         action="connected",
                     )
-                    self._notify_ui(self.EVENT_CONNECTED, None)
-                    self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "WS"))
+                    self._emit(Connected())
+                    self._emit_status("LoL client detected! Ready to help.", "WS")
                     logging.info("[WS] Connected to the LCU client.")
                     await self._refresh_player_and_region()
 
@@ -897,49 +944,18 @@ class WebSocketManager(ChampSelectMixin):
                 async def _ws_login_session(connection, event):
                     data = event.data or {}
                     if data.get("status") == "SUCCEEDED":
-                        self._notify_ui(self.EVENT_STATUS, ("Login detected...", "INFO"))
+                        self._emit_status("Login detected...", "INFO")
                         await self._refresh_player_and_region()
 
                 @connector.ws.register(EP_GAMEFLOW)
                 async def _ws_phase(connection, event):
-                    # Phase changes are the main trigger for match-flow automation.
-                    phase = event.data
-                    if not phase:
-                        return
-
-                    previous_phase = self.state.current_phase
-                    if phase != previous_phase:
-                        logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
-                    self.state.current_phase = phase
-
-                    if previous_phase == "ChampSelect" and phase != "ChampSelect":
-                        self._invalidate_champ_select_session()
-
-                    friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
-                    self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
-                    self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
-
-                    if phase in ("Lobby", "Matchmaking", "ChampSelect"):
-                        await self._refresh_current_queue_id()
-                    if phase == "ChampSelect":
-                        if previous_phase != "ChampSelect":
-                            self._start_champ_select_session()
-                        self.state.reset_between_games()
-                        await self._champ_select_tick()
-                    if phase in ("EndOfGame", "WaitingForStats"):
-                        await self._handle_post_game()
+                    await self._handle_phase_event(event.data)
 
                 @connector.ws.register(EP_READY_CHECK)
                 async def _ws_ready(connection, event):
-                    if self.state.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]:
-                        return
                     data = event.data or {}
                     params = self.get_params()
-                    if (
-                        params.get("auto_accept_enabled", True)
-                        and data.get("state") == "InProgress"
-                        and data.get("playerResponse") != "Accepted"
-                    ):
+                    if self.should_auto_accept_ready_check(self.state.current_phase, data, params):
                         accept_url = f"{EP_READY_CHECK}/accept"
                         logging.info("[READY] POST %s", accept_url)
                         response = await connection.request("post", accept_url)
@@ -952,10 +968,10 @@ class WebSocketManager(ChampSelectMixin):
                                 category="Match found",
                                 action="accepted",
                             )
-                            self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "OK"))
+                            self._emit_status("Match accepted!", "OK")
                             if not self.state.has_played_accept_sound:
                                 self.state.has_played_accept_sound = True
-                                self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
+                                self._emit(ReadyCheckAccepted())
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):
@@ -1043,8 +1059,8 @@ class WebSocketManager(ChampSelectMixin):
                 self.state.summoner = me.get("displayName", "Unknown")
 
         if self.state.summoner != self.state.last_reported_summoner:
-            self._notify_ui(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
-            self._notify_ui(self.EVENT_STATUS, (f"Connected: {self.get_riot_id()}", "USER"))
+            self._emit(SummonerUpdated(self.get_riot_id()))
+            self._emit_status(f"Connected: {self.get_riot_id()}", "USER")
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
@@ -1084,10 +1100,7 @@ class WebSocketManager(ChampSelectMixin):
                 return
             self.state.current_queue_id = queue_id
             if queue_id not in PRESET_ENABLED_QUEUE_IDS:
-                self._notify_ui(
-                    self.EVENT_STATUS,
-                    ("Presets disabled — unsupported lobby type", "GAMEMODE"),
-                )
+                self._emit_status("Presets disabled — unsupported lobby type", "GAMEMODE")
                 logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
         except Exception as e:
             logging.debug("Error polling lobby for queue id: %s", e)

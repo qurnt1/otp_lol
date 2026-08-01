@@ -23,12 +23,14 @@ Uses:
 
 from typing import TYPE_CHECKING
 
+from .events import CoreEvent, RuntimeEvent
+
 if TYPE_CHECKING:
     from .datadragon import DataDragon
     from .game_state import GameState
     from .websocket import WebSocketManager
 
-__all__ = ["DataDragon", "GameState", "WebSocketManager"]
+__all__ = ["CoreEvent", "RuntimeEvent", "DataDragon", "GameState", "WebSocketManager"]
 
 
 def __getattr__(name: str):

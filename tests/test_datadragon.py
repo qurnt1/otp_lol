@@ -1,5 +1,5 @@
-import unittest
 import json
+import unittest
 from unittest.mock import patch
 
 from PIL import Image

@@ -1,6 +1,11 @@
 import unittest
 
-from src.services.champion_roles import champion_matches_role, fallback_positions_from_tags, role_score, sort_champions_for_role
+from src.services.champion_roles import (
+    champion_matches_role,
+    fallback_positions_from_tags,
+    role_score,
+    sort_champions_for_role,
+)
 
 
 class FakeDataDragon:

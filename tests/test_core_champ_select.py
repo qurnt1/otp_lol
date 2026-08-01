@@ -3,8 +3,9 @@ import unittest
 from time import time
 from unittest.mock import AsyncMock
 
-from src.core import WebSocketManager
 from src.config import PRACTICE_TOOL_GAME_MODE
+from src.core import WebSocketManager
+from src.core.events import ChampionPicked
 
 
 class FakeResponse:
@@ -83,7 +84,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         self.manager = WebSocketManager(
-            ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
+            event_sink=self.events.append,
             dd=DummyDataDragon(
                 {
                     "Garen": 86,
@@ -310,7 +311,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_awaited_once_with(123, 99, action_type="pick")
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_logic_do_pick_skips_banned_primary_champion(self):
         self.manager._lock_in_champion = AsyncMock(return_value=True)
@@ -324,7 +325,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_awaited_once_with(123, 99, action_type="pick")
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_logic_do_pick_tries_next_viable_preset_when_first_lock_fails(self):
         self.manager._lock_in_champion = AsyncMock(side_effect=[False, True])
@@ -347,7 +348,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager._lock_in_champion.await_args_list[0].kwargs, {"action_type": "pick"})
         self.assertEqual(self.manager._lock_in_champion.await_args_list[1].kwargs, {"action_type": "pick"})
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
         self.manager.state.assigned_position = "TOP"

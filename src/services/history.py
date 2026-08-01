@@ -18,7 +18,7 @@ Developers maintaining action history, event labeling, and history display behav
 
 DEPENDENCIES:
 Used by:
-- src.core.websocket, src.core.champ_select, and src.ui.main_window.
+- src.core.websocket, src.core.champ_select, and src.desktop.history_dialog.
 Uses:
 - Standard library: datetime, json, logging, os, typing
 - Local modules: src.config
@@ -28,12 +28,14 @@ import json
 import logging
 import os
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
 from ..atomic_io import atomic_write
 from ..config import HISTORY_PATH
 
 MAX_HISTORY_ENTRIES = 250
+_HISTORY_LOCK = RLock()
 
 EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "connection": {"level": "info", "category": "Connection", "action": "client"},
@@ -114,26 +116,29 @@ def log_history_event(
         "message": message,
         "details": details or {},
     }
-    entries = _read_history()
-    entries.append(entry)
-    try:
-        _write_history(entries)
-    except OSError as e:
-        logging.debug("Unable to write history: %s", e)
+    with _HISTORY_LOCK:
+        entries = _read_history()
+        entries.append(entry)
+        try:
+            _write_history(entries)
+        except OSError as e:
+            logging.debug("Unable to write history: %s", e)
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
     """Return the newest history entries first, limited to the requested count."""
-    entries = _read_history()
+    with _HISTORY_LOCK:
+        entries = _read_history()
     return list(reversed(entries[-limit:]))
 
 
 def clear_history_entries() -> None:
     """Remove all persisted history entries."""
-    try:
-        _write_history([])
-    except OSError as e:
-        logging.debug("Unable to clear history: %s", e)
+    with _HISTORY_LOCK:
+        try:
+            _write_history([])
+        except OSError as e:
+            logging.debug("Unable to clear history: %s", e)
 
 
 def _format_timestamp(timestamp: str) -> str:

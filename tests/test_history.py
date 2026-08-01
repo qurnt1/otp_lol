@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -81,6 +82,17 @@ class HistoryFormattingTests(unittest.TestCase):
             self.assertEqual(Path(f"{history_path}.bak").read_text(encoding="utf-8"), "{ invalid json")
             payload = json.loads(history_path.read_text(encoding="utf-8"))
             self.assertEqual(payload[-1]["message"], "new event")
+
+    def test_concurrent_history_writes_do_not_lose_events(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            with patch.object(history, "HISTORY_PATH", str(history_path)):
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    list(pool.map(lambda index: history.log_history_event("pick", f"event-{index}"), range(50)))
+
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload), 50)
+            self.assertEqual({entry["message"] for entry in payload}, {f"event-{index}" for index in range(50)})
 
 
 if __name__ == "__main__":

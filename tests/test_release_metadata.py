@@ -3,7 +3,6 @@ from pathlib import Path
 
 from src.config.constants import CURRENT_VERSION, GITHUB_REPO_NAME
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 

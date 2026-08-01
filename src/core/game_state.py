@@ -22,7 +22,7 @@ Uses:
 - Standard library: dataclasses, threading, typing
 """
 
-from dataclasses import dataclass, field, fields, MISSING
+from dataclasses import MISSING, dataclass, field, fields
 from threading import Lock
 from typing import Optional
 

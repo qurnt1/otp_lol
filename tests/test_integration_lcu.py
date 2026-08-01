@@ -15,18 +15,18 @@ KEY TESTS:
 
 import asyncio
 import unittest
+from unittest.mock import AsyncMock, Mock
 
+from src.core.events import SummonerUpdated
 from src.core.websocket import WebSocketManager
-
 from tests.fake_lcu_server import FakeLCUServer
-
 
 # Shared event collector
 _events = []
 
 
-def _collect_event(event_type, data):
-    _events.append((event_type, data))
+def _collect_event(event):
+    _events.append(event)
 
 
 def _clear_events():
@@ -156,7 +156,7 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         params = _fake_get_params()
         params.update(overrides)
         mgr = WebSocketManager(
-            ui_callback=_collect_event,
+            event_sink=_collect_event,
             dd=FakeDataDragon(),
             get_params=lambda: dict(params),
             update_param=lambda k, v: None,
@@ -288,7 +288,7 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         _clear_events()
         await mgr._refresh_player_and_region()
 
-        self.assertIn(("summoner_update", "TestPlayer#EUW"), _events)
+        self.assertIn(SummonerUpdated("TestPlayer#EUW"), _events)
 
     async def test_refresh_player_and_region_sets_platform(self):
         mgr = self._make_manager()
@@ -333,13 +333,10 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr.state.current_phase = "ReadyCheck"
         self.server.clear_requests()
 
-        # Build an event that mimics what the LCU websocket would emit
-        event = type("Event", (), {"data": {"state": "InProgress", "playerResponse": "None"}})()
-
         # Re-apply the decorator logic: the @connector.ws.register(EP_READY_CHECK)
         # handler checks auto-accept and POSTs if InProgress + not yet accepted
+
         from src.config import EP_READY_CHECK
-        import types
 
         # Simulate connector.ready callback to set up the connection
         # The ready-check handler is registered inside _ws_loop as:
@@ -355,6 +352,14 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         self.server.ready_check_state = "InProgress"
         self.server.ready_check_player_response = "None"
 
+        self.assertTrue(
+            mgr.should_auto_accept_ready_check(
+                "ReadyCheck",
+                {"state": "InProgress", "playerResponse": "None"},
+                {"auto_accept_enabled": True},
+            )
+        )
+
         # Directly simulate the ready-check handler logic
         accept_url = f"{EP_READY_CHECK}/accept"
         response = await mgr.connection.request("post", accept_url)
@@ -365,9 +370,13 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr = self._make_manager(auto_accept_enabled=False)
         self.server.clear_requests()
 
-        accept_url = "/lol-matchmaking/v1/ready-check/accept"
-        # When auto-accept is disabled, the handler would skip the POST.
-        # We verify the server hasn't received an accept request.
+        should_accept = mgr.should_auto_accept_ready_check(
+            "ReadyCheck",
+            {"state": "InProgress", "playerResponse": "None"},
+            {"auto_accept_enabled": False},
+        )
+
+        self.assertFalse(should_accept)
         self.assertEqual(self.server.accept_requests, 0)
 
     # ------------------------------------------------------------
@@ -376,12 +385,15 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_champ_select_phase_resets_between_game_flags(self):
         mgr = self._make_manager()
+        mgr.state.current_phase = "ReadyCheck"
         mgr.state.rune_applied_for_session = True
         mgr.state.rune_apply_in_progress = True
         mgr.state.has_picked = True
         mgr.state.has_banned = True
 
-        mgr.state.reset_between_games()
+        mgr._refresh_current_queue_id = AsyncMock()
+        mgr._champ_select_tick = AsyncMock()
+        await mgr._handle_phase_event("ChampSelect")
 
         self.assertFalse(mgr.state.rune_applied_for_session)
         self.assertFalse(mgr.state.rune_apply_in_progress)
@@ -391,5 +403,20 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
     async def test_phase_change_updates_current_phase(self):
         mgr = self._make_manager()
         mgr.state.current_phase = "None"
-        mgr.state.current_phase = "Lobby"
+        mgr._refresh_current_queue_id = AsyncMock()
+        await mgr._handle_phase_event("Lobby")
         self.assertEqual(mgr.state.current_phase, "Lobby")
+
+    async def test_repeated_champ_select_event_does_not_reset_session_state(self):
+        mgr = self._make_manager()
+        mgr.state.current_phase = "ChampSelect"
+        mgr.state.has_picked = True
+        mgr._refresh_current_queue_id = AsyncMock()
+        mgr._champ_select_tick = AsyncMock()
+        mgr._start_champ_select_session = Mock()
+
+        await mgr._handle_phase_event("ChampSelect")
+
+        self.assertTrue(mgr.state.has_picked)
+        mgr._start_champ_select_session.assert_not_called()
+        mgr._champ_select_tick.assert_awaited_once_with()

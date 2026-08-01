@@ -36,11 +36,11 @@ from typing import Any, Dict
 import tomli_w
 
 from ..atomic_io import atomic_write
-from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
+from .constants import CURRENT_VERSION, PICK_SLOT_ORDER, SETTINGS_SCHEMA_VERSION, SUMMONER_SPELL_MAP
 from .paths import (
     ICONS_CACHE_DIR,
-    PARAMETERS_PATH,
     PARAMETERS_JSON_PATH,
+    PARAMETERS_PATH,
     RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
@@ -118,6 +118,7 @@ def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
 
 DEFAULT_PARAMS: Dict[str, Any] = {
     "config_version": CURRENT_VERSION,
+    "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "auto_accept_enabled": True,
     "auto_pick_enabled": True,
     "auto_ban_enabled": True,
@@ -237,6 +238,25 @@ def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     return _write_parameters_file(_build_first_launch_payload())
 
 
+def _migrate_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Upgrade a readable settings payload without discarding user preferences."""
+    raw_schema_version = config.get("settings_schema_version", 0)
+    try:
+        schema_version = int(raw_schema_version or 0)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid settings schema version: {raw_schema_version!r}") from exc
+
+    if schema_version > SETTINGS_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported future settings schema (found={schema_version}, expected<={SETTINGS_SCHEMA_VERSION})"
+        )
+
+    migrated = copy.deepcopy(config)
+    migrated["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
+    migrated["config_version"] = CURRENT_VERSION
+    return _normalize_parameters(migrated)
+
+
 def load_parameters() -> Dict[str, Any]:
     """Load, validate, and normalize parameters from the TOML settings file."""
     _migrate_json_to_toml()
@@ -254,14 +274,14 @@ def load_parameters() -> Dict[str, Any]:
     if not isinstance(config, dict):
         return _reset_parameters_file("root payload is not an object")
 
-    if str(config.get("config_version") or "").strip() != CURRENT_VERSION:
-        return _reset_parameters_file(
-            f"config version mismatch (found={config.get('config_version')!r}, expected={CURRENT_VERSION!r})"
-        )
+    try:
+        normalized = _migrate_parameters(config)
+    except ValueError as e:
+        return _reset_parameters_file(str(e))
 
-    normalized = _normalize_parameters(config)
     if config != normalized:
-        return _reset_parameters_file("schema mismatch")
+        logging.info("Migrating parameters.toml to settings schema %s", SETTINGS_SCHEMA_VERSION)
+        return _write_parameters_file(normalized)
     return normalized
 
 
@@ -428,6 +448,9 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         if key == "pick_slots" or key not in DEFAULT_PARAMS:
             continue
         merged[key] = value
+
+    merged["config_version"] = CURRENT_VERSION
+    merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
 
     if "manual_region" not in config:
         merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])

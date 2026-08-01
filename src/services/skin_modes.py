@@ -17,7 +17,7 @@ Developers maintaining skin selection, main preview toggles, and champion-select
 
 DEPENDENCIES:
 Used by:
-- src.core.champ_select, src.ui.main_preview, and src.ui.main_skin_overrides
+- src.core.champ_select, src.desktop.main_window, and src.desktop.application
 Uses:
 - Standard library: typing
 - Local modules: src.config.constants

@@ -16,7 +16,7 @@ Developers maintaining shared constants for networking, UI labels, assets, and s
 
 DEPENDENCIES:
 Used by:
-- Most modules under `src.config`, `src.core`, `src.services`, and `src.ui`.
+- Most modules under `src.config`, `src.core`, `src.services`, and `src.desktop`.
 Uses:
 - Standard library typing helpers.
 """
@@ -27,6 +27,7 @@ APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
 CURRENT_VERSION: str = "11.0"
+SETTINGS_SCHEMA_VERSION: int = 1
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_DOWNLOAD_ZIP_URL: str = f"{GITHUB_REPO_URL}/archive/refs/heads/main.zip"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
