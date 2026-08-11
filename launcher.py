@@ -1,20 +1,16 @@
-"""Bootstrap the PyQt6 desktop application and its runtime controller."""
+"""Bootstrap the PySide6 desktop application and its runtime controller."""
 
 import logging
 import sys
 from threading import Lock
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QGuiApplication, QIcon
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtWidgets import QApplication
 
 from src.application import ApplicationController, SettingsStore
 from src.config import APP_IMAGE_FILES, APP_NAME, CURRENT_VERSION, get_cache_dirs, resource_path
 from src.core.datadragon import DataDragon
-from src.desktop.application import DesktopApplication
-from src.desktop.event_bridge import CoreEventBridge
-from src.desktop.main_window import MainWindow
-from src.desktop.tasks import TaskRunner
 from src.services.single_instance import check_single_instance, remove_lockfile
 
 
@@ -36,6 +32,11 @@ class OtpLolApplication:
         self.qt_app.setApplicationVersion(CURRENT_VERSION)
         self.qt_app.setQuitOnLastWindowClosed(False)
         self.qt_app.setWindowIcon(QIcon(resource_path(APP_IMAGE_FILES["icon_ico"])))
+
+        from src.desktop.application import DesktopApplication
+        from src.desktop.event_bridge import CoreEventBridge
+        from src.desktop.main_window import MainWindow
+        from src.desktop.tasks import TaskRunner
 
         self.settings_store = SettingsStore()
         get_cache_dirs()
@@ -68,7 +69,7 @@ class OtpLolApplication:
             logging.error("Failed to save settings.")
 
     def run(self) -> int:
-        logging.info("OTP LOL v%s started with PyQt6", CURRENT_VERSION)
+        logging.info("OTP LOL v%s started with PySide6", CURRENT_VERSION)
         self.desktop.show()
         self.controller.start()
         return self.qt_app.exec()

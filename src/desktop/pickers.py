@@ -1,13 +1,12 @@
-"""PyQt6 champion, spell, rune, and skin selection dialogs."""
+"""PySide6 champion, spell, rune, and skin selection dialogs."""
 
 import weakref
 from collections.abc import Mapping
 from typing import Any
 
-from PyQt6 import sip
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,
@@ -24,6 +23,7 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
 )
+from shiboken6 import isValid
 
 from src.config import SUMMONER_SPELL_LIST
 from src.services.champion_roles import champion_matches_role, sort_champions_for_role
@@ -48,14 +48,14 @@ def _guarded_callback(owner: QDialog, method_name: str):
 
     def callback(value: Any) -> None:
         target = owner_ref()
-        if target is not None and not sip.isdeleted(target):
+        if target is not None and isValid(target):
             getattr(target, method_name)(value)
 
     return callback
 
 
 class ChampionPickerDialog(QDialog):
-    champion_selected = pyqtSignal(str)
+    champion_selected = Signal(str)
 
     def __init__(
         self,
@@ -170,7 +170,7 @@ class ChampionPickerDialog(QDialog):
 
 
 class SpellPickerDialog(QDialog):
-    spell_selected = pyqtSignal(str)
+    spell_selected = Signal(str)
 
     def __init__(
         self,
@@ -225,7 +225,7 @@ class SpellPickerDialog(QDialog):
 
 
 class RunePickerDialog(QDialog):
-    rune_selected = pyqtSignal(object)
+    rune_selected = Signal(object)
 
     def __init__(
         self,
@@ -356,7 +356,7 @@ class RunePickerDialog(QDialog):
 
 
 class SkinPickerDialog(QDialog):
-    skin_selected = pyqtSignal(object)
+    skin_selected = Signal(object)
 
     def __init__(
         self,

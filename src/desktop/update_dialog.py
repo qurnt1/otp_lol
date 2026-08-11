@@ -1,11 +1,11 @@
-"""PyQt6 update notification dialog."""
+"""PySide6 update notification dialog."""
 
 import html
 import re
 
-from PyQt6.QtCore import QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -19,7 +19,7 @@ from src.config import CURRENT_VERSION, GITHUB_REPO_URL
 
 
 class UpdateDialog(QDialog):
-    ignored = pyqtSignal(str)
+    ignored = Signal(str)
 
     def __init__(self, version: str, highlights: str, parent=None) -> None:
         super().__init__(parent)

@@ -2,7 +2,7 @@ from copy import deepcopy
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 
 from src.config.settings import DEFAULT_PARAMS
 from src.core.events import Connected, Disconnected, ReadyCheckAccepted

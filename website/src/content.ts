@@ -35,10 +35,10 @@ export const content: Record<Lang, SiteCopy> = {
     workflow: {
       title: "Set the route once. Keep every stop visible.",
       intro: "OTP LOL stays explicit about what is configured and what the local League Client is doing.",
-      captureNote: "PyQt6 desktop preview",
+      captureNote: "PySide6 desktop preview",
       steps: [
         { number: "01", verb: "Configure", title: "Build the preset you actually play.", body: "Choose champion priorities, bans, summoner spells, runes, and skins for each ordered preset from one settings flow.", image: "assets/screenshots/settings-window.png", alt: "OTP LOL settings for automation, champions, spells, runes, and skins" },
-        { number: "02", verb: "Choose", title: "Find the right champion without endless scrolling.", body: "Search by name or narrow the responsive picker by Top, Jungle, Mid, ADC, or Support before assigning a preset.", image: "assets/screenshots/champ-select.png", alt: "Searchable PyQt6 champion picker with role filters" },
+        { number: "02", verb: "Choose", title: "Find the right champion without endless scrolling.", body: "Search by name or narrow the responsive picker by Top, Jungle, Mid, ADC, or Support before assigning a preset.", image: "assets/screenshots/champ-select.png", alt: "Searchable PySide6 champion picker with role filters" },
         { number: "03", verb: "Control", title: "See the active state without digging.", body: "The compact main window keeps connection and automation controls available, including the optional return-to-lobby action.", image: "assets/screenshots/main-window.png", alt: "OTP LOL main window with local automation controls" },
       ],
     },
@@ -83,10 +83,10 @@ export const content: Record<Lang, SiteCopy> = {
     workflow: {
       title: "Trace le parcours une fois. Garde chaque étape visible.",
       intro: "OTP LOL reste explicite sur ce qui est configuré et sur ce que fait le client League local.",
-      captureNote: "Aperçu desktop PyQt6",
+      captureNote: "Aperçu desktop PySide6",
       steps: [
         { number: "01", verb: "Configurer", title: "Construis le preset que tu joues vraiment.", body: "Choisis les priorités de champions, bans, sorts d’invocateur, runes et skins pour chaque preset ordonné depuis un seul parcours de réglages.", image: "assets/screenshots/settings-window.png", alt: "Réglages OTP LOL pour l’automatisation, les champions, sorts, runes et skins" },
-        { number: "02", verb: "Choisir", title: "Trouve le bon champion sans défilement interminable.", body: "Recherche par nom ou filtre la grille responsive par Top, Jungle, Mid, ADC ou Support avant d’assigner un preset.", image: "assets/screenshots/champ-select.png", alt: "Sélecteur de champions PyQt6 avec recherche et filtres de rôle" },
+        { number: "02", verb: "Choisir", title: "Trouve le bon champion sans défilement interminable.", body: "Recherche par nom ou filtre la grille responsive par Top, Jungle, Mid, ADC ou Support avant d’assigner un preset.", image: "assets/screenshots/champ-select.png", alt: "Sélecteur de champions PySide6 avec recherche et filtres de rôle" },
         { number: "03", verb: "Contrôler", title: "Vois l’état actif sans chercher.", body: "La fenêtre principale compacte garde la connexion et les contrôles d’automatisation accessibles, y compris le retour optionnel au lobby.", image: "assets/screenshots/main-window.png", alt: "Fenêtre principale OTP LOL avec les contrôles d’automatisation locale" },
       ],
     },

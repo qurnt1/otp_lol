@@ -4,6 +4,6 @@ lcu-driver~=3.0
 packaging~=24.0
 Pillow~=10.0
 psutil~=5.9
-PyQt6~=6.10
+PySide6~=6.10
 requests~=2.31
 tomli_w~=1.2

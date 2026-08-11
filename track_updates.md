@@ -23,3 +23,6 @@
 - refactor: remove confirmed dead state and split champion-select orchestration
 - refactor: lazy-load package facades to avoid unnecessary graphical imports
 - refactor: remove inert UI control refresh hook
+- refactor: replace the PyQt6 desktop layer with PySide6
+- feat: add the League Companion sidebar and operational dashboard
+- feat: split preset, automation, history, and settings into focused pages

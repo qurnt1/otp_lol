@@ -27,12 +27,12 @@ assert 'PIL' not in __import__('sys').modules
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
-    def test_launcher_import_uses_pyqt_without_loading_removed_toolkits(self):
+    def test_launcher_import_uses_pyside_without_loading_removed_toolkits(self):
         script = """
 import launcher
 modules = __import__('sys').modules
 assert launcher.OtpLolApplication is not None
-assert 'PyQt6.QtWidgets' in modules
+assert 'PySide6.QtWidgets' in modules
 assert 'tkinter' not in modules
 assert 'ttkbootstrap' not in modules
 assert 'pystray' not in modules

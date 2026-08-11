@@ -119,7 +119,7 @@ def main():
         '--add-data', r'.\config;config',
         
         # Include the Qt plugins and multimedia backend used by the desktop app.
-        '--collect-all', 'PyQt6',
+        '--collect-all', 'PySide6',
         
         # Hidden imports document packaging assumptions for modules that may be
         # missed when imports are optional, indirect, or environment-dependent.
@@ -136,8 +136,8 @@ def main():
         '--hidden-import=urllib3',
         '--hidden-import=PIL.Image',
         '--hidden-import=PIL.ImageEnhance',
-        '--hidden-import=PyQt6.QtMultimedia',
-        '--hidden-import=PyQt6.QtWidgets',
+        '--hidden-import=PySide6.QtMultimedia',
+        '--hidden-import=PySide6.QtWidgets',
         '--hidden-import=lcu_driver',
         '--hidden-import=packaging',
         '--hidden-import=requests',

@@ -1,22 +1,22 @@
 import unittest
 from threading import Thread
 
-from PyQt6.QtCore import QObject, Qt, QThread, pyqtSignal, pyqtSlot
-from PyQt6.QtTest import QSignalSpy
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtTest import QSignalSpy
+from PySide6.QtWidgets import QApplication
 
 from src.core.events import ChampionPicked
 from src.desktop.event_bridge import CoreEventBridge
 
 
 class ThreadRecordingReceiver(QObject):
-    handled = pyqtSignal()
+    handled = Signal()
 
     def __init__(self):
         super().__init__()
         self.execution_thread = None
 
-    @pyqtSlot(object)
+    @Slot(object)
     def handle(self, _event):
         self.execution_thread = QThread.currentThread()
         self.handled.emit()
@@ -32,8 +32,8 @@ class CoreEventBridgeTests(unittest.TestCase):
         spy = QSignalSpy(bridge.event_received)
         event = ChampionPicked("Lux")
         bridge.publish(event)
-        self.assertEqual(len(spy), 1)
-        self.assertIs(spy[0][0], event)
+        self.assertEqual(spy.count(), 1)
+        self.assertIs(spy.at(0)[0], event)
 
     def test_publish_rejects_untyped_payloads(self):
         bridge = CoreEventBridge()

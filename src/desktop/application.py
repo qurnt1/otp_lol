@@ -1,12 +1,12 @@
-"""Coordinate the PyQt6 windows and desktop integrations."""
+"""Coordinate the PySide6 windows and desktop integrations."""
 
 import logging
 from collections.abc import Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from PyQt6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, pyqtSlot
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Slot
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication
 
 from src.application import ApplicationController
 from src.config import PICK_SLOT_ORDER
@@ -29,11 +29,13 @@ from src.services.urls import build_hotkey_site_url, build_stats_site_url, is_va
 from .event_bridge import CoreEventBridge
 from .history_dialog import HistoryDialog
 from .integrations import AudioManager, GlobalHotkeyManager, TrayController
-from .main_window import MainWindow
 from .settings_dialog import SettingsDialog
 from .tasks import TaskRunner
 from .theme import stylesheet_for
 from .update_dialog import UpdateDialog
+
+if TYPE_CHECKING:
+    from .main_window import MainWindow
 
 
 class DesktopApplication(QObject):
@@ -45,7 +47,7 @@ class DesktopApplication(QObject):
         qt_app: QApplication,
         controller: ApplicationController,
         event_bridge: CoreEventBridge,
-        main_window: MainWindow,
+        main_window: "MainWindow",
         task_runner: TaskRunner,
     ) -> None:
         super().__init__()
@@ -109,19 +111,20 @@ class DesktopApplication(QObject):
         self.main_window.raise_()
         self.main_window.activateWindow()
 
-    @pyqtSlot(str, object)
+    @Slot(str, object)
     def _set_setting(self, key: str, value: Any) -> None:
         self.controller.update_setting(key, value)
         self._settings_changed()
 
-    @pyqtSlot(bool)
+    @Slot(bool)
     def _set_presets_enabled(self, enabled: bool) -> None:
         self.controller.set_presets_enabled(enabled)
         self._settings_changed()
 
     def _settings_changed(self) -> None:
         settings = self.controller.settings_snapshot()
-        self.controller.save_settings()
+        if not self.controller.save_settings():
+            self.main_window.enqueue_toast("Settings could not be saved.", 3200)
         self.main_window.refresh_settings(settings)
         self.tray.sync(
             presets_enabled=bool(settings.get("presets_enabled", False)),
@@ -246,7 +249,7 @@ class DesktopApplication(QObject):
             QUrl(build_hotkey_site_url(str(settings.get("preferred_hotkey_site") or "porofessor"), region, riot_id))
         )
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _handle_runtime_event(self, event: RuntimeEvent) -> None:
         if isinstance(event, Connected):
             self._connected = True
@@ -307,7 +310,7 @@ class DesktopApplication(QObject):
         if self._shutdown_started:
             return
         self._shutdown_started = True
-        logging.info("Closing PyQt6 desktop application")
+        logging.info("Closing PySide6 desktop application")
         self.auto_hide_timer.stop()
         self.disconnect_timer.stop()
         self._save_window_position()

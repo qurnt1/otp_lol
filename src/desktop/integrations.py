@@ -2,17 +2,17 @@
 
 import logging
 
-from PyQt6.QtCore import QObject, QUrl, pyqtSignal
-from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtMultimedia import QSoundEffect
-from PyQt6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+from PySide6.QtCore import QObject, QUrl, Signal
+from PySide6.QtGui import QAction, QIcon
+from PySide6.QtMultimedia import QSoundEffect
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from src.config import APP_IMAGE_FILES, APP_NAME, resource_path
 
 
 class GlobalHotkeyManager(QObject):
-    toggle_requested = pyqtSignal()
-    website_requested = pyqtSignal()
+    toggle_requested = Signal()
+    website_requested = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -55,11 +55,11 @@ class GlobalHotkeyManager(QObject):
 
 
 class TrayController(QObject):
-    toggle_requested = pyqtSignal()
-    settings_requested = pyqtSignal()
-    presets_requested = pyqtSignal(bool)
-    auto_ban_requested = pyqtSignal(bool)
-    quit_requested = pyqtSignal()
+    toggle_requested = Signal()
+    settings_requested = Signal()
+    presets_requested = Signal(bool)
+    auto_ban_requested = Signal(bool)
+    quit_requested = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)

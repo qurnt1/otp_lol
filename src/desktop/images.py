@@ -1,8 +1,8 @@
-"""Thread-safe image conversion helpers for PyQt6 widgets."""
+"""Thread-safe image conversion helpers for PySide6 widgets."""
 
 from typing import Any
 
-from PyQt6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap
 
 
 def pil_to_qimage(image: Any, *, size: tuple[int, int] | None = None) -> QImage | None:

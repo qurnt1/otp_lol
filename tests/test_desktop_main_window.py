@@ -1,5 +1,5 @@
-from PyQt6.QtTest import QSignalSpy
-from PyQt6.QtWidgets import QCheckBox
+from PySide6.QtTest import QSignalSpy
+from PySide6.QtWidgets import QCheckBox
 
 from src.core.events import Connected, Disconnected, SpellsApplied, StatusChanged
 from src.desktop.main_window import MainWindow
@@ -46,5 +46,5 @@ def test_presets_switch_emits_canonical_command(qtbot):
 
     presets_switch.setChecked(False)
 
-    assert len(spy) == 1
-    assert spy[0][0] is False
+    assert spy.count() == 1
+    assert spy.at(0)[0] is False

@@ -1,4 +1,4 @@
-"""Application orchestration shared by the PyQt6 entry point and tests."""
+"""Application orchestration shared by the PySide6 entry point and tests."""
 
 import logging
 from collections.abc import Callable

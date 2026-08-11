@@ -1,13 +1,13 @@
-"""PyQt6 settings window with all persisted desktop controls."""
+"""PySide6 settings window with all persisted desktop controls."""
 
 import copy
 from collections.abc import Mapping
 from functools import partial
 from typing import Any
 
-from PyQt6.QtCore import QSize, Qt, QUrl, pyqtSignal
-from PyQt6.QtGui import QDesktopServices, QIcon, QKeySequence
-from PyQt6.QtWidgets import (
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QIcon, QKeySequence
+from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
@@ -49,8 +49,8 @@ from .tasks import TaskRunner, guarded_callback
 
 
 class GlobalKeySequenceEdit(QKeySequenceEdit):
-    capture_started = pyqtSignal()
-    capture_finished = pyqtSignal()
+    capture_started = Signal()
+    capture_finished = Signal()
 
     def focusInEvent(self, event) -> None:
         self.capture_started.emit()
@@ -62,14 +62,14 @@ class GlobalKeySequenceEdit(QKeySequenceEdit):
 
 
 class SettingsDialog(QDialog):
-    setting_changed = pyqtSignal(str, object)
-    presets_changed = pyqtSignal(bool)
-    settings_imported = pyqtSignal(object)
-    theme_changed = pyqtSignal(str)
-    history_requested = pyqtSignal()
-    force_summoner_refresh = pyqtSignal()
-    hotkey_capture_started = pyqtSignal()
-    hotkey_capture_finished = pyqtSignal()
+    setting_changed = Signal(str, object)
+    presets_changed = Signal(bool)
+    settings_imported = Signal(object)
+    theme_changed = Signal(str)
+    history_requested = Signal()
+    force_summoner_refresh = Signal()
+    hotkey_capture_started = Signal()
+    hotkey_capture_finished = Signal()
 
     def __init__(
         self,

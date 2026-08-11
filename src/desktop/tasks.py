@@ -6,8 +6,8 @@ import weakref
 from collections.abc import Callable
 from typing import Any
 
-from PyQt6 import sip
-from PyQt6.QtCore import QObject, QRunnable, QThreadPool, pyqtSignal, pyqtSlot
+from PySide6.QtCore import QObject, QRunnable, QThreadPool, Signal, Slot
+from shiboken6 import isValid
 
 
 def guarded_callback(owner: QObject, method_name: str) -> Callable[[Any], None]:
@@ -16,16 +16,16 @@ def guarded_callback(owner: QObject, method_name: str) -> Callable[[Any], None]:
 
     def callback(value: Any) -> None:
         target = owner_ref()
-        if target is not None and not sip.isdeleted(target):
+        if target is not None and isValid(target):
             getattr(target, method_name)(value)
 
     return callback
 
 
 class _WorkerSignals(QObject):
-    succeeded = pyqtSignal(str, object)
-    failed = pyqtSignal(str, str)
-    finished = pyqtSignal(str)
+    succeeded = Signal(str, object)
+    failed = Signal(str, str)
+    finished = Signal(str)
 
 
 class _Worker(QRunnable):
@@ -70,19 +70,19 @@ class TaskRunner(QObject):
         self._pool.start(worker)
         return task_id
 
-    @pyqtSlot(str, object)
+    @Slot(str, object)
     def _handle_success(self, task_id: str, result: Any) -> None:
         callbacks = self._callbacks.get(task_id)
         if callbacks:
             callbacks[0](result)
 
-    @pyqtSlot(str, str)
+    @Slot(str, str)
     def _handle_failure(self, task_id: str, message: str) -> None:
         callbacks = self._callbacks.get(task_id)
         if callbacks and callbacks[1]:
             callbacks[1](message)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def _handle_finished(self, task_id: str) -> None:
         self._callbacks.pop(task_id, None)
         self._workers.pop(task_id, None)

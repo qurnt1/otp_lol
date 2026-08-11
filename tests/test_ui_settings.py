@@ -1,7 +1,7 @@
 from copy import deepcopy
 
-from PyQt6.QtCore import QEvent
-from PyQt6.QtGui import QFocusEvent, QKeySequence
+from PySide6.QtCore import QEvent
+from PySide6.QtGui import QFocusEvent, QKeySequence
 
 from src.config.settings import DEFAULT_PARAMS
 from src.desktop.settings_dialog import SettingsDialog

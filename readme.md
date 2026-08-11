@@ -34,7 +34,7 @@ The current preset model is global. The assigned role helps filter and sort cham
 
 ## Desktop interface
 
-The desktop application is implemented entirely with PyQt6:
+The desktop application is implemented with PySide6:
 
 - `QApplication` lifecycle and thread-safe Qt event bridge
 - main window and settings tabs
@@ -63,7 +63,7 @@ npm run build
 - League of Legends installed for live LCU features
 - Node.js only when developing the website
 
-PyQt6 reports `GPL-3.0-only` in its installed package metadata. This repository currently has no license file. Before distributing the rewritten executable, choose either a GPL-compatible project license or a commercial PyQt license and add the corresponding legal files. This is a release blocker, not a runtime limitation.
+PySide6 reports `LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only` in its installed package metadata. This repository currently has no license file. Before distributing the rewritten executable, choose the applicable project license and add the corresponding legal files. This is a release blocker, not a runtime limitation.
 
 ## Install and run from source
 
@@ -109,9 +109,9 @@ python -m pip install -r requirements-build.txt
 python create_exe.py
 ```
 
-The PyInstaller script creates `OTP LOL.exe` in the repository root. It includes the `config` assets, PyQt6 plugins, Qt Multimedia, LCU dependencies, and optional desktop-shortcut creation.
+The PyInstaller script creates `OTP LOL.exe` in the repository root. It includes the `config` assets, PySide6 plugins, Qt Multimedia, LCU dependencies, and optional desktop-shortcut creation.
 
-Do not publish a new binary until the PyQt6 license decision above is resolved and the packaged smoke checks in [`docs/pyqt6-feature-parity.md`](./docs/pyqt6-feature-parity.md) pass.
+Do not publish a new binary until the PySide6 license decision above is resolved and the packaged smoke checks pass.
 
 ## Architecture
 
@@ -123,7 +123,7 @@ otp_lol/
 |   |-- application/            # toolkit-neutral controller and settings store
 |   |-- config/                 # schema, paths, constants, logging
 |   |-- core/                   # Data Dragon, LCU, game state, typed events
-|   |-- desktop/                # complete PyQt6 presentation and integrations
+|   |-- desktop/                # complete PySide6 presentation and integrations
 |   |-- services/               # pure/shared URLs, history, runes, skins, updates
 |   `-- atomic_io.py
 |-- config/                     # bundled sound, icons, role data
