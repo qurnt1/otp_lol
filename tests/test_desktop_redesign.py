@@ -27,6 +27,7 @@ def test_league_companion_shell_exposes_operational_pages(qtbot):
     assert all(not button.icon().isNull() for button in window.nav_buttons.values())
     assert not window.account_avatar.pixmap().isNull()
     assert not window.rank_icon.pixmap().isNull()
+    assert not window.brand_logo.pixmap().isNull()
     assert all(not icon.pixmap().isNull() for icon in window.quick_access_icons.values())
     assert not window.active_champion_icon.pixmap().isNull()
     assert all(not icon.pixmap().isNull() for icon in window.active_spell_icons)

@@ -403,9 +403,13 @@ class MainWindow(QMainWindow):
 
         brand = QHBoxLayout()
         brand.setSpacing(10)
-        brand_logo = _icon_label(38, "brandLogo")
-        _set_icon_label(brand_logo, QIcon(resource_path(APP_IMAGE_FILES["logo_svg"])), 38)
-        brand.addWidget(brand_logo)
+        self.brand_logo = _icon_label(38, "brandLogo")
+        _set_icon_label(
+            self.brand_logo,
+            _resource_icon(APP_IMAGE_FILES["icon_webp"], APP_IMAGE_FILES["icon_ico"]),
+            38,
+        )
+        brand.addWidget(self.brand_logo)
         brand_copy = QVBoxLayout()
         brand_copy.setSpacing(2)
         brand_copy.addWidget(_label("OTP LOL", "brandName"))
