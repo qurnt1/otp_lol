@@ -152,3 +152,6 @@ class UpdateAvailable(ApplicationEvent):
 
     version: str
     highlights: str
+    release_url: str = ""
+    asset_url: str = ""
+    asset_name: str = ""

@@ -26,3 +26,9 @@
 - refactor: replace the PyQt6 desktop layer with PySide6
 - feat: add the League Companion sidebar and operational dashboard
 - feat: split preset, automation, history, and settings into focused pages
+- fix: protect single-instance lock ownership during launcher shutdown
+- fix: preserve settings across app upgrades with explicit schema migrations
+- fix: make settings and history persistence atomic and concurrent-safe
+- fix: use GitHub Releases as the desktop and website update source
+- chore: add Windows Python CI and tagged release workflows
+- chore: harden website metadata, accessibility, responsive states, and copy

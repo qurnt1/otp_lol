@@ -21,9 +21,20 @@ from src.config import CURRENT_VERSION, GITHUB_REPO_URL
 class UpdateDialog(QDialog):
     ignored = Signal(str)
 
-    def __init__(self, version: str, highlights: str, parent=None) -> None:
+    def __init__(
+        self,
+        version: str,
+        highlights: str,
+        *,
+        release_url: str = "",
+        asset_url: str = "",
+        asset_name: str = "",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.version = version
+        self.release_url = release_url or f"{GITHUB_REPO_URL}/releases/latest"
+        self.asset_url = asset_url
         self.setWindowTitle("OTP LOL update")
         self.resize(620, 520)
         root = QVBoxLayout(self)
@@ -40,9 +51,10 @@ class UpdateDialog(QDialog):
         self.do_not_remind = QCheckBox("Do not remind me about this version")
         root.addWidget(self.do_not_remind)
 
-        download = QPushButton("Open latest release")
+        download_label = f"Download {asset_name}" if asset_name else "Open latest release"
+        download = QPushButton(download_label)
         download.clicked.connect(
-            lambda: QDesktopServices.openUrl(QUrl(f"{GITHUB_REPO_URL}/releases/latest"))
+            lambda: QDesktopServices.openUrl(QUrl(self.asset_url or self.release_url))
         )
         source = QPushButton("Open repository")
         source.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_REPO_URL)))

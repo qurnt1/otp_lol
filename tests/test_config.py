@@ -88,6 +88,7 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
         self.assertEqual(loaded["config_version"], config.CURRENT_VERSION)
+        self.assertEqual(loaded["config_schema_version"], config.CONFIG_SCHEMA_VERSION)
         self.assertEqual(loaded["settings_schema_version"], config.SETTINGS_SCHEMA_VERSION)
 
     def test_load_parameters_preserves_settings_across_app_version_upgrade(self):
@@ -126,6 +127,7 @@ class ConfigTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+            payload["config_schema_version"] = config.CONFIG_SCHEMA_VERSION + 1
             payload["settings_schema_version"] = config.SETTINGS_SCHEMA_VERSION + 1
             params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
@@ -136,6 +138,28 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
         self.assertTrue(backup_exists)
+
+    def test_load_parameters_migrates_legacy_schema_aliases(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            payload = {
+                "settings_schema_version": 1,
+                "config_version": "9.0",
+                "selected_pick_1": "Ahri",
+                "main_skin_mode_override": "fixed",
+                "global_spell_1": "Flash",
+                "global_spell_2": "Ignite",
+            }
+            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["selected_pick_1"], "Ahri")
+        self.assertEqual(loaded["config_schema_version"], config.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(loaded["settings_schema_version"], config.SETTINGS_SCHEMA_VERSION)
+        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Ignite")
+        self.assertEqual(loaded["main_skin_mode_overrides"]["pick_2"], "fixed")
 
     def test_load_parameters_accepts_current_exact_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -38,9 +38,24 @@ class ApplicationControllerTests(unittest.TestCase):
         self.assertIn(ToastRequested("Champions loaded (2)", 1500), self.events)
 
     def test_update_event_preserves_release_metadata(self):
-        self.controller._update_checker = lambda: {"version": "12.0", "highlights": "Faster startup"}
+        self.controller._update_checker = lambda: {
+            "version": "12.0",
+            "highlights": "Faster startup",
+            "release_url": "https://github.com/qurnt1/otp_lol/releases/tag/v12.0",
+            "asset_url": "https://example.test/OTP%20LOL.exe",
+            "asset_name": "OTP LOL.exe",
+        }
         self.controller._check_updates()
-        self.assertIn(UpdateAvailable("12.0", "Faster startup"), self.events)
+        self.assertIn(
+            UpdateAvailable(
+                "12.0",
+                "Faster startup",
+                "https://github.com/qurnt1/otp_lol/releases/tag/v12.0",
+                "https://example.test/OTP%20LOL.exe",
+                "OTP LOL.exe",
+            ),
+            self.events,
+        )
 
     def test_stop_is_idempotent_and_drops_late_events(self):
         self.controller.stop()

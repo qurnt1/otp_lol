@@ -305,7 +305,14 @@ class DesktopApplication(QObject):
     def _show_update(self, event: UpdateAvailable) -> None:
         if self.update_dialog and self.update_dialog.isVisible():
             return
-        dialog = UpdateDialog(event.version, event.highlights, self.main_window)
+        dialog = UpdateDialog(
+            event.version,
+            event.highlights,
+            release_url=event.release_url,
+            asset_url=event.asset_url,
+            asset_name=event.asset_name,
+            parent=self.main_window,
+        )
         dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         dialog.ignored.connect(lambda version: self._set_setting("ignored_update_version", version))
         dialog.destroyed.connect(lambda: setattr(self, "update_dialog", None))

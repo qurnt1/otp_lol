@@ -26,8 +26,11 @@ from typing import Dict
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-CURRENT_VERSION: str = "11.0"
-SETTINGS_SCHEMA_VERSION: int = 1
+APP_VERSION: str = "11.0"
+CURRENT_VERSION: str = APP_VERSION
+CONFIG_SCHEMA_VERSION: int = 3
+# Keep the legacy name available for settings written by the PySide6 branch.
+SETTINGS_SCHEMA_VERSION: int = CONFIG_SCHEMA_VERSION
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_DOWNLOAD_ZIP_URL: str = f"{GITHUB_REPO_URL}/archive/refs/heads/main.zip"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"

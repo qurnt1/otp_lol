@@ -1,0 +1,90 @@
+- main [ref=e3]:
+  - link "Aller au contenu" [ref=e161] [cursor=pointer]:
+    - /url: "#top"
+  - generic [ref=e5]:
+    - link "Accueil OTP LOL" [ref=e162] [cursor=pointer]:
+      - /url: "#top"
+      - generic [ref=e7]: OTP LOL
+    - group "Sélecteur de langue" [ref=e163]:
+      - button "Passer en anglais" [ref=e164] [cursor=pointer]: EN
+      - button "Passer en français" [active] [pressed] [ref=e165] [cursor=pointer]: FR
+  - generic [ref=e21]:
+    - generic [ref=e22]:
+      - img "OTP LOL logo" [ref=e23]
+      - heading "OTP LOL" [level=1] [ref=e24]
+    - generic [ref=e25]:
+      - generic [ref=e26]: Assistant Windows pour League of Legends
+      - heading "Automatise tes actions sur League of Legends." [level=2] [ref=e166]
+      - generic [ref=e28]:
+        - button "Télécharger la dernière version" [ref=e167] [cursor=pointer]
+        - link "Autres versions" [ref=e168] [cursor=pointer]:
+          - /url: https://github.com/qurnt1/otp_lol/releases
+  - generic [ref=e38]:
+    - paragraph [ref=e39]: Pensé par un OTP, pour les OTPs. OTP LOL aide à automatiser la queue et la champion select tout en gardant tout local, transparent et sans publicité.
+    - paragraph [ref=e40]: Créé par un étudiant en troisième année de data science qui construit l'outil qu'il voulait utiliser chaque jour. Les retours et idées sont bienvenus.
+  - region [ref=e169]:
+    - generic [ref=e42]:
+      - generic [ref=e43]: Fonctions
+      - heading "Concentré sur les actions que tu répètes à chaque game." [level=2] [ref=e170]
+    - generic [ref=e45]:
+      - article [ref=e46]:
+        - heading "Auto Accept" [level=3] [ref=e49]
+        - paragraph [ref=e50]: Accepte automatiquement le ready check quand le client League trouve une partie.
+      - article [ref=e51]:
+        - heading "Champion Select" [level=3] [ref=e61]
+        - paragraph [ref=e62]: Utilise tes presets pour les picks, bans et summoner spells.
+      - article [ref=e63]:
+        - heading "Skins" [level=3] [ref=e67]
+        - paragraph [ref=e68]: Applique des skins fixes ou aléatoires depuis ta configuration locale.
+      - article [ref=e69]:
+        - heading "Play Again" [level=3] [ref=e75]
+        - paragraph [ref=e76]: Permet de revenir plus vite en lobby après la fin d'une partie.
+  - region [ref=e171]:
+    - generic [ref=e78]:
+      - generic [ref=e79]: Captures
+      - heading "Une interface compacte, une configuration rapide." [level=2] [ref=e172]
+    - generic [ref=e81]:
+      - figure "Fenêtre principale" [ref=e173]:
+        - img "OTP LOL Fenêtre principale screenshot" [ref=e174]
+      - figure "Paramètres" [ref=e175]:
+        - img "OTP LOL Paramètres screenshot" [ref=e176]
+      - figure "Champion Select" [ref=e88]:
+        - img "OTP LOL Champion Select screenshot" [ref=e89]
+  - region [ref=e177]:
+    - generic [ref=e92]:
+      - generic [ref=e93]: Vie privée
+      - heading "Pas de pubs. Pas de compte OTP LOL. Pas de dépendance cloud." [level=2] [ref=e178]
+    - generic [ref=e95]:
+      - article [ref=e179]:
+        - heading "Pas de pubs" [level=3] [ref=e185]
+        - paragraph [ref=e186]: Aucun script publicitaire, bannière ou pixel de tracking.
+      - article [ref=e187]:
+        - heading "Réglages locaux" [level=3] [ref=e190]
+        - paragraph [ref=e191]: Ta configuration reste sur ta machine Windows.
+      - article [ref=e192]:
+        - heading "Pas de compte OTP LOL" [level=3] [ref=e196]
+        - paragraph [ref=e197]: Pas de dashboard cloud et pas de profil hébergé à créer.
+  - region [ref=e198]:
+    - generic [ref=e124]:
+      - generic [ref=e125]: APIs transparentes
+      - heading "Données publiques Riot et événements locaux du client." [level=2] [ref=e199]
+      - paragraph [ref=e127]: OTP LOL utilise Riot Data Dragon pour les métadonnées publiques de League comme les champions, icônes, summoner spells et versions. L'automatisation fonctionne via l'interface locale League Client Update sur ton propre PC.
+      - paragraph [ref=e128]: OTP LOL n'est pas approuvé par Riot Games. C'est un assistant Windows local pour ton propre setup.
+  - region [ref=e200]:
+    - generic [ref=e130]:
+      - generic [ref=e131]: Contact
+      - heading "Aide à améliorer OTP LOL." [level=2] [ref=e201]
+    - generic [ref=e133]:
+      - link "Envoyer un feedback" [ref=e202] [cursor=pointer]:
+        - /url: mailto:chbtquentin@gmail.com?subject=feedback%20OTP%20LOL
+      - link "Donner des idées au dev" [ref=e203] [cursor=pointer]:
+        - /url: mailto:chbtquentin@gmail.com?subject=ideas%20OTP%20LOL
+      - link "Voir le code" [ref=e204] [cursor=pointer]:
+        - /url: https://github.com/qurnt1/otp_lol
+  - generic [ref=e145]:
+    - generic [ref=e146]: OTP LOL
+    - link "Releases GitHub" [ref=e205] [cursor=pointer]:
+      - /url: https://github.com/qurnt1/otp_lol/releases
+    - link "Code source" [ref=e206] [cursor=pointer]:
+      - /url: https://github.com/qurnt1/otp_lol
+    - generic [ref=e157]: Windows uniquement

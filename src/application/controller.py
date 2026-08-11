@@ -131,6 +131,9 @@ class ApplicationController:
                 UpdateAvailable(
                     version=version,
                     highlights=str(update_info.get("highlights") or "").strip(),
+                    release_url=str(update_info.get("release_url") or "").strip(),
+                    asset_url=str(update_info.get("asset_url") or "").strip(),
+                    asset_name=str(update_info.get("asset_name") or "").strip(),
                 )
             )
         except Exception:

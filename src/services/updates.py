@@ -1,12 +1,12 @@
 """
 FILE NAME: src/services/updates.py
 GLOBAL PURPOSE:
-- Check whether the repository README advertises a newer application version.
-- Extract release highlights from the README and format them for the update popup.
-- Keep remote version parsing and comparison logic in one service module.
+- Check whether the latest GitHub Release is newer than the running application.
+- Expose release notes and download metadata to the update popup.
+- Keep legacy README parsing helpers available for compatibility and tests.
 
 KEY FUNCTIONS:
-- fetch_remote_readme: Download the repository README through the GitHub API.
+- fetch_latest_release: Download the latest GitHub Release metadata.
 - check_for_updates: Return update metadata when the remote version is newer.
 - extract_version_from_readme: Find the advertised version inside README content.
 - format_highlights_for_popup: Convert markdown highlights into readable plain text.
@@ -34,18 +34,18 @@ from typing import Dict, Optional
 import requests
 from packaging.version import InvalidVersion, Version
 
-from src.config import CURRENT_VERSION, GITHUB_REPO_API
+from src.config import CURRENT_VERSION, GITHUB_REPO_API, GITHUB_REPO_URL
+
+_GITHUB_HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "User-Agent": "OTP-LOL-UpdateChecker",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
 
 
 def fetch_remote_readme() -> Optional[str]:
     """Return the remote README text from GitHub, or None on failure."""
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "OTP-LOL-UpdateChecker",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-    resp = requests.get(f"{GITHUB_REPO_API}/readme", headers=headers, timeout=10)
+    resp = requests.get(f"{GITHUB_REPO_API}/readme", headers=_GITHUB_HEADERS, timeout=10)
 
     if resp.status_code == 200:
         data = resp.json()
@@ -63,21 +63,66 @@ def fetch_remote_readme() -> Optional[str]:
     return None
 
 
+def fetch_latest_release() -> Optional[Dict[str, object]]:
+    """Return the latest GitHub Release payload, or None when unavailable."""
+    response = requests.get(
+        f"{GITHUB_REPO_API}/releases/latest",
+        headers=_GITHUB_HEADERS,
+        timeout=10,
+    )
+    if response.status_code != 200:
+        logging.warning("[Update] Latest release API response: %s", response.status_code)
+        return None
+    payload = response.json()
+    if not isinstance(payload, dict):
+        logging.warning("[Update] Latest release payload is not an object")
+        return None
+    return payload
+
+
+def _extract_release_version(release: Dict[str, object]) -> Optional[str]:
+    """Extract a valid semantic version from a release tag, then its name."""
+    for value in (release.get("tag_name"), release.get("name")):
+        match = re.search(r"(?<!\d)v?(\d+(?:\.\d+){1,2})(?!\d)", str(value or ""), re.IGNORECASE)
+        if not match:
+            continue
+        version = normalize_version(match.group(1))
+        try:
+            parse_version(version)
+        except InvalidVersion:
+            continue
+        return version
+    return None
+
+
 def check_for_updates() -> Optional[Dict[str, str]]:
-    """Return remote update info when the README advertises a newer version."""
+    """Return release metadata when GitHub advertises a newer version."""
     try:
-        logging.info("[Update] Checking README version...")
-        readme_text = fetch_remote_readme()
-        if not readme_text:
+        logging.info("[Update] Checking latest GitHub Release...")
+        release = fetch_latest_release()
+        if not release:
             return None
 
-        remote_version = extract_version_from_readme(readme_text)
+        remote_version = _extract_release_version(release)
         logging.info("[Update] Remote version: %s, local: %s", remote_version, CURRENT_VERSION)
 
         if remote_version and is_newer_version(remote_version, CURRENT_VERSION):
+            assets = release.get("assets")
+            executable = next(
+                (
+                    asset
+                    for asset in assets
+                    if isinstance(asset, dict)
+                    and str(asset.get("name") or "").lower().endswith(".exe")
+                ),
+                {},
+            ) if isinstance(assets, list) else {}
             return {
                 "version": remote_version,
-                "highlights": extract_highlights_section(readme_text, remote_version),
+                "highlights": str(release.get("body") or "").strip(),
+                "release_url": str(release.get("html_url") or f"{GITHUB_REPO_URL}/releases/latest"),
+                "asset_name": str(executable.get("name") or ""),
+                "asset_url": str(executable.get("browser_download_url") or ""),
             }
 
     except requests.RequestException as e:
