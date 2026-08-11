@@ -17,17 +17,25 @@ Developers working on filesystem access, caching, packaging, or resource loading
 
 DEPENDENCIES:
 Used by:
-- src.config, src.core, src.services, and src.ui modules that read files or write caches.
+- src.config, src.core, src.services, and src.desktop modules that read files or write caches.
 Uses:
 - Standard library: os, sys, tempfile
 """
 
 import os
+import shutil
 import sys
 import tempfile
 
 APP_STORAGE_FOLDER = "OTP LOL"
 APP_TEMP_PREFIX = "otp_lol"
+
+
+def _cache_root() -> str:
+    app_data_dir = os.getenv("APPDATA")
+    if not app_data_dir:
+        return tempfile.gettempdir()
+    return os.path.join(app_data_dir, APP_STORAGE_FOLDER, "cache")
 
 
 def resource_path(relative_path: str) -> str:
@@ -67,8 +75,31 @@ PARAMETERS_PATH: str = get_appdata_path("parameters.toml")
 PARAMETERS_JSON_PATH: str = get_appdata_path("parameters.json")
 HISTORY_PATH: str = get_appdata_path("history.json")
 LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}.lock")
-DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json")
-ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_icons")
-SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
-SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")
-RUNES_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes")
+CACHE_ROOT: str = _cache_root()
+DDRAGON_CACHE_FILE: str = os.path.join(CACHE_ROOT, f"{APP_TEMP_PREFIX}_ddragon_champions.json")
+ICONS_CACHE_DIR: str = os.path.join(CACHE_ROOT, f"{APP_TEMP_PREFIX}_icons")
+SPELLS_CACHE_DIR: str = os.path.join(CACHE_ROOT, f"{APP_TEMP_PREFIX}_spells")
+SKINS_CACHE_DIR: str = os.path.join(CACHE_ROOT, f"{APP_TEMP_PREFIX}_skins")
+RUNES_CACHE_DIR: str = os.path.join(CACHE_ROOT, f"{APP_TEMP_PREFIX}_runes")
+
+LEGACY_CACHE_PATHS: tuple[str, ...] = (
+    os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json"),
+    os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_icons"),
+    os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells"),
+    os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins"),
+    os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes"),
+)
+
+
+def cleanup_legacy_cache_paths() -> None:
+    """Remove caches written by versions that stored images directly in TEMP."""
+    if CACHE_ROOT == tempfile.gettempdir():
+        return
+    for target in LEGACY_CACHE_PATHS:
+        try:
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            elif os.path.isfile(target):
+                os.remove(target)
+        except OSError:
+            pass

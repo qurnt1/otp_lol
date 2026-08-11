@@ -10,8 +10,8 @@ from src.services.updates import (
     normalize_version,
 )
 from src.services.urls import (
-    build_dpm_url,
     build_deeplol_url,
+    build_dpm_url,
     build_hotkey_site_url,
     build_leagueofgraphs_url,
     build_opgg_url,
@@ -147,8 +147,8 @@ class UtilsTests(unittest.TestCase):
             "html_url": "https://github.com/qurnt1/otp_lol/releases/tag/v12.0",
             "assets": [
                 {
-                    "name": "OTP-LOL-12.0.exe",
-                    "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-12.0.exe",
+                    "name": "OTP LOL.exe",
+                    "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP%20LOL.exe",
                 }
             ],
         }
@@ -160,7 +160,7 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(update_info["version"], normalize_version("12.0"))
         self.assertEqual(update_info["release_url"], response.json.return_value["html_url"])
         self.assertEqual(update_info["asset_url"], response.json.return_value["assets"][0]["browser_download_url"])
-        self.assertIn("`Feature A`", update_info["highlights"])
+        self.assertIn("Feature A", update_info["highlights"])
         self.assertIn("Description A.", update_info["highlights"])
 
     def test_check_for_updates_ignores_release_without_valid_version(self):

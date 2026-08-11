@@ -46,9 +46,11 @@ from ..config import (
     SPELLS_CACHE_DIR,
     URL_CDRAGON_ASSET_PREFIX,
     URL_CDRAGON_CHAMPION_DETAIL,
-    URL_DD_CHAMPIONS,
+    URL_CDRAGON_RANK_EMBLEM,
     URL_DD_CHAMPION_DETAIL,
+    URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
+    URL_DD_IMG_PROFILE_ICON,
     URL_DD_IMG_SPELL,
     URL_DD_SKIN_SPLASH,
     URL_DD_SUMMONERS,
@@ -387,6 +389,50 @@ class DataDragon:
         except Exception as e:
             logging.warning("DataDragon: Summ icon download error - %s", e)
         return None
+
+    def get_profile_icon(self, profile_icon_id: Any) -> Optional[Image.Image]:
+        """Fetch the profile avatar identified by the LCU profile icon id."""
+        try:
+            icon_id = int(profile_icon_id)
+        except (TypeError, ValueError):
+            return None
+        if icon_id <= 0:
+            return None
+        if not self.version:
+            self.load()
+        if not self.version or self.version == "offline":
+            return None
+        return self.get_remote_image(
+            URL_DD_IMG_PROFILE_ICON.format(version=self.version, icon_id=icon_id),
+            cache_key=f"profile_icon_{icon_id}",
+        )
+
+    def get_rank_icon(self, tier: str) -> Optional[Image.Image]:
+        """Fetch the current ranked emblem for a tier and crop transparent margins."""
+        normalized_tier = str(tier or "").strip().lower()
+        if normalized_tier not in {
+            "iron",
+            "bronze",
+            "silver",
+            "gold",
+            "platinum",
+            "emerald",
+            "diamond",
+            "master",
+            "grandmaster",
+            "challenger",
+        }:
+            return None
+        image = self.get_remote_image(
+            URL_CDRAGON_RANK_EMBLEM.format(tier=normalized_tier),
+            cache_key=f"rank_emblem_{normalized_tier}",
+            cache_dir=ICONS_CACHE_DIR,
+        )
+        if image is None:
+            return None
+        rgba = image.convert("RGBA")
+        alpha_box = rgba.getchannel("A").getbbox()
+        return rgba.crop(alpha_box) if alpha_box else rgba
 
     def get_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)
@@ -757,27 +803,33 @@ class DataDragon:
         composite.paste(sub_img, position, sub_img)
         return composite
 
-    def get_remote_image(self, url: str, *, cache_key: str) -> Optional[Image.Image]:
+    def get_remote_image(
+        self,
+        url: str,
+        *,
+        cache_key: str,
+        cache_dir: str = SKINS_CACHE_DIR,
+    ) -> Optional[Image.Image]:
         cached = self._cache_get(cache_key)
         if cached:
             return cached
 
         try:
             cache_filename = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in cache_key)
-            cache_path = os.path.join(SKINS_CACHE_DIR, f"{cache_filename}.img")
-            if self._is_cache_fresh(SKINS_CACHE_DIR) and os.path.exists(cache_path):
+            cache_path = os.path.join(cache_dir, f"{cache_filename}.img")
+            if self._is_cache_fresh(cache_dir) and os.path.exists(cache_path):
                 img = Image.open(cache_path)
                 self._cache_put(cache_key, img)
                 return img
 
-            os.makedirs(SKINS_CACHE_DIR, exist_ok=True)
+            os.makedirs(cache_dir, exist_ok=True)
             response = requests.get(url, stream=True, timeout=8)
             if response.status_code == 200:
                 img = Image.open(BytesIO(response.content))
                 with open(cache_path, "wb") as f:
                     f.write(response.content)
                 self._cache_put(cache_key, img)
-                self._mark_cache_fresh(SKINS_CACHE_DIR)
+                self._mark_cache_fresh(cache_dir)
                 return img
         except Exception as e:
             logging.warning("DataDragon: Remote image error for %s - %s", url, e)

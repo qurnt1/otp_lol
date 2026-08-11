@@ -1,591 +1,211 @@
-import unittest
+from copy import deepcopy
+from unittest.mock import Mock
 
-from src.core import WebSocketManager
-from src.ui.main_window import LoLAssistantUI
+import pytest
+from PySide6.QtWidgets import QApplication
+
+from src.config.settings import DEFAULT_PARAMS
+from src.core.events import Connected, Disconnected, ReadyCheckAccepted
+from src.desktop.application import DesktopApplication
+from src.desktop.event_bridge import CoreEventBridge
+from src.desktop.integrations import GlobalHotkeyManager, TrayController
+from src.desktop.main_window import MainWindow
+from src.desktop.tasks import TaskRunner
 
 
-class DummyWidget:
+class FakeDataDragon:
+    all_names = ["Ashe", "Garen", "Lux", "Teemo"]
+
+    def get_champion_icon(self, _name):
+        return None
+
+    def get_summoner_icon(self, _name):
+        return None
+
+
+class FakeWebSocket:
     def __init__(self):
-        self.last_config = {}
-        self.image = None
+        self.riot_id = "Detected#EUW"
+        self.region = "euw"
 
-    def configure(self, **kwargs):
-        self.last_config.update(kwargs)
+    def get_riot_id(self):
+        return self.riot_id
 
+    def get_platform_for_websites(self):
+        return self.region
 
-class DummyToastRecorder:
-    def __init__(self):
-        self.messages = []
+    def force_refresh_summoner(self):
+        return None
 
-    def __call__(self, message, duration=0):
-        self.messages.append((message, duration))
+    def is_active(self):
+        return False
 
+    def fetch_rune_pages(self):
+        return []
 
-class DummySettingsWindow:
-    class Window:
-        @staticmethod
-        def winfo_exists():
-            return True
+    def fetch_rune_styles(self):
+        return {}
 
-    def __init__(self):
-        self.window = self.Window()
-        self.sync_calls = 0
-
-    def _sync_from_params(self):
-        self.sync_calls += 1
+    def fetch_current_rune_page(self):
+        return None
 
 
-class MutableParamsWindow:
-    def __init__(self, params):
-        self._params = params
-        self.settings_win = DummySettingsWindow()
-        self.toasts = []
+class FakeStore:
+    def __init__(self, settings):
+        self.settings = settings
 
-    def get_params(self):
-        return self._params
-
-    def update_param(self, key, value):
-        self._params[key] = value
-
-    def show_toast(self, message, duration=0):
-        self.toasts.append((message, duration))
+    def update_many(self, values):
+        self.settings.update(deepcopy(values))
 
 
-class DummyRoot:
-    def __init__(self):
-        self.calls = []
-        self.cancelled = []
+class FakeController:
+    def __init__(self, settings=None):
+        self.settings = deepcopy(settings or DEFAULT_PARAMS)
+        self.settings_store = FakeStore(self.settings)
+        self.websocket_manager = FakeWebSocket()
+        self.data_dragon = FakeDataDragon()
+        self.saved = 0
+        self.stopped = 0
 
-    def after(self, delay, callback):
-        self.calls.append((delay, callback))
-        return len(self.calls)
+    def settings_snapshot(self):
+        return deepcopy(self.settings)
 
-    def after_cancel(self, after_id):
-        self.cancelled.append(after_id)
+    def update_setting(self, key, value):
+        self.settings[key] = deepcopy(value)
 
-
-class MainWindowLogicTests(unittest.TestCase):
-    def test_effective_profile_config_without_ws_uses_selected_pick_keys(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.ws_manager = None
-        window.get_params = lambda: {
-            "presets_enabled": True,
-            "selected_pick_1": "Garen",
-            "selected_pick_2": "Lux",
-            "selected_pick_3": "Ashe",
-            "selected_ban": "Teemo",
-            "pick_slots": {
-                "pick_1": {"spell_1": "Ghost", "spell_2": "Flash"},
-                "pick_2": {"spell_1": "Heal", "spell_2": "Flash"},
-                "pick_3": {"spell_1": "Barrier", "spell_2": "Ignite"},
-            },
-        }
-
-        effective = window.get_effective_profile_config()
-
-        self.assertEqual(effective["selected_pick_1"], "Garen")
-        self.assertEqual(effective["selected_pick_2"], "Lux")
-        self.assertEqual(effective["selected_pick_3"], "Ashe")
-        self.assertEqual(effective["pick_slots"]["pick_1"]["champion"], "Garen")
-        self.assertEqual(effective["pick_slots"]["pick_2"]["champion"], "Lux")
-        self.assertEqual(effective["pick_slots"]["pick_3"]["champion"], "Ashe")
-
-    def test_build_feature_preview_payload_uses_global_flags_and_effective_values(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        params = {
-            "auto_pick_enabled": True,
-            "auto_ban_enabled": False,
-            "auto_summoners_enabled": True,
-            "main_skin_mode_override": "inherit",
-            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
-        }
-        effective = {
-            "presets_enabled": False,
-            "selected_pick_1": "Garen",
-            "selected_pick_2": "Lux",
-            "selected_pick_3": "Ashe",
-            "selected_ban": "Teemo",
-            "pick_slots": {
-                "pick_1": {
-                    "champion": "Garen",
-                    "skin_mode": "fixed",
-                    "skin_id": 86000,
-                    "skin_name": "Default Garen",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                },
-                "pick_2": {
-                    "champion": "Lux",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                },
-                "pick_3": {
-                    "champion": "Ashe",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                },
-            },
-        }
-
-        payload = window._build_feature_preview_payload(params, effective)
-
-        self.assertFalse(payload["presets"]["enabled"])
-        self.assertFalse(payload["ban"]["enabled"])
-        self.assertEqual(payload["presets"]["values"], ["Garen", "Lux", "Ashe"])
-        self.assertTrue(payload["skins"]["enabled"])
-        self.assertEqual(payload["skins"]["mode"], "mixed")
-        self.assertEqual(len(payload["skins"]["values"]), 3)
-        self.assertEqual(payload["skins"]["values"][0]["mode"], "fixed")
-        self.assertEqual(payload["skins"]["values"][1]["mode"], "none")
-        self.assertEqual(payload["ban"]["values"], ["Teemo"])
-
-    def test_toggle_main_preview_feature_updates_param_and_syncs_settings(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        params = {
-            "auto_pick_enabled": True,
-            "auto_summoners_enabled": True,
-            "presets_enabled": True,
-        }
-        updates = []
-        recorder = DummyToastRecorder()
-        settings = DummySettingsWindow()
-
-        window.get_params = lambda: params.copy()
-        window.update_param = lambda key, value: updates.append((key, value))
-        window.show_toast = recorder
-        window.settings_win = settings
-        window.is_main_preview_presets_enabled = lambda: True
-        window.set_main_preview_presets_enabled = lambda enabled: updates.extend(
-            [
-                ("auto_pick_enabled", enabled),
-                ("auto_summoners_enabled", enabled),
-                ("presets_enabled", enabled),
-            ]
-        )
-        window._sync_settings_window_if_open = lambda: settings._sync_from_params()
-
-        window._toggle_main_preview_feature("presets")
-
-        self.assertEqual(
-            updates,
-            [
-                ("auto_pick_enabled", False),
-                ("auto_summoners_enabled", False),
-                ("presets_enabled", False),
-            ],
-        )
-        self.assertEqual(settings.sync_calls, 1)
-        self.assertEqual(recorder.messages[0][0], "Presets disabled.")
-
-    def test_set_feature_icon_updates_slot_when_section_disabled(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.theme = "darkly"
-        window.preview_placeholder = object()
-        window.preview_icon_cache = {}
-        window.PREVIEW_ICON_SIZE = 48
-        
-        class MockDD:
-            def get_summoner_icon(self, name): return None
-        window.dd = MockDD()
-        
-        class MockExecutor:
-            def submit(self, fn): pass
-        window.executor = MockExecutor()
-        
-        widget = DummyWidget()
-
-        window._set_feature_icon(widget, "Flash", is_champion=False, enabled=False, accent="warning")
-
-        # Now it shouldn't just set the placeholder and return, it should actually process the icon request.
-        # But initially before loading it sets the placeholder with text=""
-        self.assertEqual(widget.last_config["text"], "")
-        self.assertIs(widget.image, window.preview_placeholder)
-
-    def test_build_preview_signature_changes_when_values_change(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        preview_a = {
-            "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
-            "skins": {"enabled": False, "mode": "none", "values": [{"mode": "none"}, {"mode": "none"}, {"mode": "none"}]},
-            "ban": {"enabled": True, "values": ["Teemo"]},
-        }
-        preview_b = {
-            "presets": {"enabled": True, "values": ["Garen", "Lux", "Ashe"]},
-            "skins": {"enabled": True, "mode": "fixed", "values": [{"mode": "fixed", "skin_id": 1}, {"mode": "none"}, {"mode": "none"}]},
-            "ban": {"enabled": False, "values": ["Teemo"]},
-        }
-
-        self.assertNotEqual(window._build_preview_signature(preview_a), window._build_preview_signature(preview_b))
-
-    def test_preview_icon_cache_key_separates_type_and_name(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-
-        champion_key = window._get_preview_icon_cache_key("Garen", True)
-        spell_key = window._get_preview_icon_cache_key("Garen", False)
-
-        self.assertNotEqual(champion_key, spell_key)
-        self.assertEqual(champion_key, ("champ", "Garen", 30))
-
-    def test_request_quit_from_external_thread_schedules_ui_callback(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window._quit_callback = lambda: None
-
-        window.request_quit_from_external_thread()
-
-        self.assertEqual(len(window.root.calls), 1)
-        self.assertEqual(window.root.calls[0][0], 0)
-        self.assertIs(window.root.calls[0][1], window._quit_callback)
-
-    def test_request_toggle_from_external_thread_schedules_toggle(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.toggle_window = lambda: None
-
-        window.request_toggle_window_from_external_thread()
-
-        self.assertEqual(len(window.root.calls), 1)
-        self.assertEqual(window.root.calls[0][0], 0)
-        self.assertIs(window.root.calls[0][1], window.toggle_window)
-
-    def test_request_open_settings_from_external_thread_schedules_open(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.open_settings = lambda: None
-
-        window.request_open_settings_from_external_thread()
-
-        self.assertEqual(len(window.root.calls), 1)
-        self.assertEqual(window.root.calls[0][0], 0)
-        self.assertIs(window.root.calls[0][1], window.open_settings)
-
-    def test_request_toggle_presets_from_external_thread_schedules_toggle(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.toggle_tray_presets_automation = lambda: None
-
-        window.request_toggle_presets_automation_from_external_thread()
-
-        self.assertEqual(len(window.root.calls), 1)
-        self.assertEqual(window.root.calls[0][0], 0)
-        self.assertIs(window.root.calls[0][1], window.toggle_tray_presets_automation)
-
-    def test_request_toggle_auto_ban_from_external_thread_schedules_toggle(self):
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.toggle_tray_auto_ban = lambda: None
-
-        window.request_toggle_auto_ban_from_external_thread()
-
-        self.assertEqual(len(window.root.calls), 1)
-        self.assertEqual(window.root.calls[0][0], 0)
-        self.assertIs(window.root.calls[0][1], window.toggle_tray_auto_ban)
-
-    def test_toggle_tray_auto_ban_updates_global_setting(self):
-        params = {"auto_ban_enabled": True}
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window.show_toast = mutable.show_toast
-        window.settings_win = mutable.settings_win
-
-        window.toggle_tray_auto_ban()
-
-        self.assertFalse(params["auto_ban_enabled"])
-        self.assertEqual(window.settings_win.sync_calls, 1)
-        self.assertEqual(mutable.toasts[0][0], "Auto-ban disabled.")
-
-    def test_set_main_preview_presets_enabled_updates_global_flags(self):
-        params = {
-            "auto_pick_enabled": False,
-            "auto_summoners_enabled": False,
-            "presets_enabled": False,
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-
-        window.set_main_preview_presets_enabled(True)
-
-        self.assertTrue(params["auto_pick_enabled"])
-        self.assertTrue(params["auto_summoners_enabled"])
-        self.assertTrue(params["presets_enabled"])
-
-    def test_toggle_main_preview_feature_cycles_skin_modes_in_global_slot(self):
-        params = {
-            "main_skin_mode_override": "inherit",
-            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
-            "pick_slots": {
-                "pick_1": {
-                    "skin_mode": "none",
-                    "skin_id": 86000,
-                    "skin_name": "Default Garen",
-                    "skin_num": 0,
-                    "random_skin_id": 86001,
-                    "random_skin_name": "Fancy Garen",
-                    "random_skin_num": 1,
-                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
-                }
+    def set_presets_enabled(self, enabled):
+        self.settings.update(
+            {
+                "presets_enabled": enabled,
+                "auto_pick_enabled": enabled,
+                "auto_summoners_enabled": enabled,
             }
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window.show_toast = mutable.show_toast
-        window.settings_win = mutable.settings_win
-        window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
-        window.get_effective_profile_config = lambda: {
-            "pick_slots": {
-                "pick_1": {
-                    "champion": "Garen",
-                    "skin_mode": "fixed",
-                    "skin_id": 86000,
-                    "skin_name": "Default Garen",
-                    "skin_num": 0,
-                    "random_skin_id": 86001,
-                    "random_skin_name": "Fancy Garen",
-                    "random_skin_num": 1,
-                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
-                    "skin_source_role": "GLOBAL",
-                },
-                "pick_2": {
-                    "champion": "Lux",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                    "skin_source_role": "GLOBAL",
-                },
-                "pick_3": {
-                    "champion": "Ashe",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                    "skin_source_role": "GLOBAL",
-                },
-            }
-        }
-
-        window._toggle_main_preview_feature("skins")
-        self.assertEqual(
-            params["main_skin_mode_overrides"],
-            {"pick_1": "fixed", "pick_2": "fixed", "pick_3": "fixed"},
-        )
-        self.assertEqual(mutable.toasts[-1][0], "Fixed skin enabled.")
-
-        window._toggle_main_preview_feature("skins")
-        self.assertEqual(
-            params["main_skin_mode_overrides"],
-            {"pick_1": "random", "pick_2": "random", "pick_3": "random"},
-        )
-        self.assertEqual(mutable.toasts[-1][0], "Random skins enabled.")
-
-        window._toggle_main_preview_feature("skins")
-        self.assertEqual(
-            params["main_skin_mode_overrides"],
-            {"pick_1": "none", "pick_2": "none", "pick_3": "none"},
-        )
-        self.assertEqual(mutable.toasts[-1][0], "Skin off.")
-
-    def test_toggle_main_preview_skin_slot_cycles_only_target_slot(self):
-        params = {
-            "main_skin_mode_override": "inherit",
-            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window.show_toast = mutable.show_toast
-        window.settings_win = mutable.settings_win
-        window._sync_settings_window_if_open = lambda: mutable.settings_win._sync_from_params()
-        window.get_effective_profile_config = lambda: {
-            "pick_slots": {
-                "pick_1": {
-                    "champion": "Garen",
-                    "skin_mode": "fixed",
-                    "skin_id": 86000,
-                    "skin_name": "Default Garen",
-                    "skin_num": 0,
-                    "random_skin_id": 86001,
-                    "random_skin_name": "Fancy Garen",
-                    "random_skin_num": 1,
-                    "random_skin_pool": [{"skin_id": 86001, "skin_name": "Fancy Garen", "skin_num": 1}],
-                },
-                "pick_2": {
-                    "champion": "Lux",
-                    "skin_mode": "fixed",
-                    "skin_id": 99010,
-                    "skin_name": "Battle Academia Lux",
-                    "skin_num": 10,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                },
-                "pick_3": {
-                    "champion": "Ashe",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                },
-            }
-        }
-
-        window._toggle_main_preview_skin_slot("pick_1")
-        self.assertEqual(params["main_skin_mode_overrides"]["pick_1"], "random")
-        self.assertEqual(params["main_skin_mode_overrides"]["pick_2"], "inherit")
-        self.assertEqual(mutable.toasts[-1][0], "Pick 1 random skin enabled.")
-
-        window._toggle_main_preview_skin_slot("pick_2")
-        self.assertEqual(params["main_skin_mode_overrides"]["pick_2"], "none")
-        self.assertEqual(mutable.toasts[-1][0], "Pick 2 skin off.")
-
-    def test_toggle_main_preview_feature_shows_toast_when_no_skin_is_configured(self):
-        params = {
-            "main_skin_mode_override": "inherit",
-            "main_skin_mode_overrides": {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
-            "pick_slots": {
-                "pick_1": {
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                }
-            }
-        }
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        mutable = MutableParamsWindow(params)
-        window.get_params = mutable.get_params
-        window.update_param = mutable.update_param
-        window.show_toast = mutable.show_toast
-        window.settings_win = mutable.settings_win
-        window.get_effective_profile_config = lambda: {
-            "pick_slots": {
-                "pick_1": {
-                    "champion": "Garen",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                    "skin_source_role": "GLOBAL",
-                },
-                "pick_2": {
-                    "champion": "Lux",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                    "skin_source_role": "GLOBAL",
-                },
-                "pick_3": {
-                    "champion": "Ashe",
-                    "skin_mode": "none",
-                    "skin_id": 0,
-                    "skin_name": "",
-                    "skin_num": 0,
-                    "random_skin_id": 0,
-                    "random_skin_name": "",
-                    "random_skin_num": 0,
-                    "random_skin_pool": [],
-                    "skin_source_role": "GLOBAL",
-                },
-            }
-        }
-
-        window._toggle_main_preview_feature("skins")
-
-        self.assertEqual(params["main_skin_mode_override"], "inherit")
-        self.assertEqual(
-            params["main_skin_mode_overrides"],
-            {"pick_1": "inherit", "pick_2": "inherit", "pick_3": "inherit"},
-        )
-        self.assertEqual(mutable.toasts[-1][0], "No skin configured in presets.")
-
-    def test_handle_core_event_schedules_close_for_real_disconnect(self):
-        scheduled = []
-        connection_updates = []
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.disconnect_close_after_id = None
-        window.update_connection_indicator = lambda connected: connection_updates.append(connected)
-        window.get_params = lambda: {"close_app_on_lol_exit": True}
-        window._schedule_disconnect_close = lambda: scheduled.append("scheduled")
-        window._cancel_disconnect_close = lambda: scheduled.append("cancelled")
-        window._queue_feature_preview_refresh = lambda: None
-        window._refresh_stats_button = lambda: None
-        window.history_window = None
-
-        window._handle_core_event(WebSocketManager.EVENT_DISCONNECTED, None)
-
-        self.assertEqual(connection_updates, [False])
-        self.assertEqual(scheduled, ["scheduled"])
-
-    def test_handle_core_event_does_not_schedule_close_for_transient_disconnect(self):
-        actions = []
-        connection_updates = []
-        window = LoLAssistantUI.__new__(LoLAssistantUI)
-        window.root = DummyRoot()
-        window.disconnect_close_after_id = None
-        window.update_connection_indicator = lambda connected: connection_updates.append(connected)
-        window.get_params = lambda: {"close_app_on_lol_exit": True}
-        window._schedule_disconnect_close = lambda: actions.append("scheduled")
-        window._cancel_disconnect_close = lambda: actions.append("cancelled")
-        window._queue_feature_preview_refresh = lambda: None
-        window._refresh_stats_button = lambda: None
-        window.history_window = None
-
-        window._handle_core_event(
-            WebSocketManager.EVENT_DISCONNECTED,
-            {"transient": True, "reason": "lcu_process_scan_failed"},
         )
 
-        self.assertEqual(connection_updates, [False])
-        self.assertEqual(actions, ["cancelled"])
+    def replace_settings(self, settings):
+        self.settings = deepcopy(settings)
+        self.settings_store.settings = self.settings
+
+    def save_settings(self):
+        self.saved += 1
+        return True
+
+    def stop(self):
+        self.stopped += 1
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.fixture
+def desktop(qtbot, monkeypatch):
+    monkeypatch.setattr(GlobalHotkeyManager, "setup", lambda self, *_args: False)
+    monkeypatch.setattr(TrayController, "setup", lambda self, **_kwargs: False)
+    controller = FakeController()
+    window = MainWindow(controller.settings_snapshot())
+    qtbot.addWidget(window)
+    task_runner = TaskRunner()
+    application = DesktopApplication(
+        qt_app=QApplication.instance(),
+        controller=controller,
+        event_bridge=CoreEventBridge(),
+        main_window=window,
+        task_runner=task_runner,
+    )
+    yield application, controller, window
+    application.auto_hide_timer.stop()
+    application.disconnect_timer.stop()
+    application.hotkeys.shutdown()
+    application.tray.shutdown()
+    application.audio.shutdown()
+    task_runner.shutdown()
+    window.allow_close()
+    window.close()
+
+
+def test_main_toggle_updates_store_and_refreshes_card(desktop):
+    application, controller, window = desktop
+    window.automation_cards["auto_accept_enabled"].switch.setChecked(False)
+    assert controller.settings["auto_accept_enabled"] is False
+    assert controller.saved == 1
+    assert not window.automation_cards["auto_accept_enabled"].switch.isChecked()
+
+
+def test_preset_toggle_updates_all_related_flags(desktop):
+    _application, controller, window = desktop
+    window.automation_cards["presets_enabled"].switch.setChecked(False)
+    assert controller.settings["presets_enabled"] is False
+    assert controller.settings["auto_pick_enabled"] is False
+    assert controller.settings["auto_summoners_enabled"] is False
+
+
+def test_skin_cycle_changes_only_requested_slot(desktop):
+    application, controller, _window = desktop
+    application._cycle_skin_mode("pick_1")
+    overrides = controller.settings["main_skin_mode_overrides"]
+    assert overrides["pick_1"] == "none"
+    assert overrides["pick_2"] == "inherit"
+    assert overrides["pick_3"] == "inherit"
+
+
+def test_skin_cycle_without_configured_skin_shows_message(desktop):
+    application, controller, window = desktop
+    slot = controller.settings["pick_slots"]["pick_1"]
+    slot.update(
+        {
+            "skin_mode": "none",
+            "skin_id": 0,
+            "skin_name": "",
+            "random_skin_id": 0,
+            "random_skin_name": "",
+            "random_skin_pool": [],
+        }
+    )
+    application._cycle_skin_mode("pick_1")
+    assert "Configure a fixed or random skin" in window.statusBar().currentMessage()
+
+
+def test_real_disconnect_schedules_close(desktop):
+    application, _controller, _window = desktop
+    application._handle_runtime_event(Disconnected(transient=False, reason="client exited"))
+    assert application.disconnect_timer.isActive()
+
+
+def test_transient_disconnect_never_schedules_close(desktop):
+    application, _controller, _window = desktop
+    application.disconnect_timer.start()
+    application._handle_runtime_event(Disconnected(transient=True, reason="scan failed"))
+    assert not application.disconnect_timer.isActive()
+
+
+def test_reconnect_cancels_pending_close(desktop):
+    application, _controller, _window = desktop
+    application.disconnect_timer.start()
+    application._handle_runtime_event(Connected())
+    assert not application.disconnect_timer.isActive()
+
+
+def test_ready_check_uses_qt_audio_manager(desktop):
+    application, _controller, _window = desktop
+    application.audio.play_accept_sound = Mock()
+    application._handle_runtime_event(ReadyCheckAccepted())
+    application.audio.play_accept_sound.assert_called_once_with()
+
+
+def test_website_account_uses_detected_or_manual_settings(desktop):
+    application, controller, _window = desktop
+    assert application._account_for_websites() == ("Detected#EUW", "euw")
+    controller.settings.update(
+        {
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Manual#NA",
+            "manual_region": "na",
+        }
+    )
+    assert application._account_for_websites() == ("Manual#NA", "na")
+
+
+def test_settings_window_is_singleton(desktop):
+    application, _controller, _window = desktop
+    application.open_settings()
+    first = application.settings_dialog
+    application.open_settings()
+    assert application.settings_dialog is first
+    first.close()

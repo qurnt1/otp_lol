@@ -3,7 +3,9 @@ import unittest
 from time import time
 from unittest.mock import AsyncMock
 
+from src.config import PRACTICE_TOOL_GAME_MODE
 from src.core import WebSocketManager
+from src.core.events import ChampionPicked
 
 
 class FakeResponse:
@@ -82,7 +84,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         self.manager = WebSocketManager(
-            ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
+            event_sink=self.events.append,
             dd=DummyDataDragon(
                 {
                     "Garen": 86,
@@ -117,6 +119,102 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rune_page_name, "Mid")
         self.assertEqual(chosen_slot, "pick_2")
         self.assertFalse(rune_auto_apply)
+
+    async def test_ensure_rune_reapplies_after_client_drift(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_applied_for_session = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_awaited_once_with(self.params, slot_key="pick_1")
+        self.assertFalse(self.manager.state.rune_applied_for_session)
+
+    async def test_ensure_rune_does_not_reapply_when_current_page_is_correct(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_applied_for_session = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 100}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+        self.assertEqual(self.manager.state.last_confirmed_rune_page_id, 100)
+
+    async def test_ensure_rune_skips_when_auto_apply_is_disabled(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": False}
+        )
+        self.manager.connection = object()
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_skips_invalid_page_id(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 0, "rune_page_name": "Invalid", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_skips_when_application_is_in_progress(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.rune_apply_in_progress = True
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
+
+    async def test_ensure_rune_respects_retry_cooldown(self):
+        self.params["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 100, "rune_page_name": "Configured", "rune_auto_apply": True}
+        )
+        self.manager.connection = object()
+        self.manager.state.last_rune_try_ts = time() + 1
+        self.manager._set_rune_page = AsyncMock()
+
+        self.manager._ensure_rune_is_applied(
+            {"localPlayerCellId": 1, "myTeam": [{"cellId": 1, "selectedRunePageId": 200}]},
+            self.params,
+        )
+        await asyncio.sleep(0)
+
+        self.manager._set_rune_page.assert_not_awaited()
 
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
@@ -213,7 +311,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_awaited_once_with(123, 99, action_type="pick")
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_logic_do_pick_skips_banned_primary_champion(self):
         self.manager._lock_in_champion = AsyncMock(return_value=True)
@@ -227,7 +325,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._lock_in_champion.assert_awaited_once_with(123, 99, action_type="pick")
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_logic_do_pick_tries_next_viable_preset_when_first_lock_fails(self):
         self.manager._lock_in_champion = AsyncMock(side_effect=[False, True])
@@ -250,7 +348,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager._lock_in_champion.await_args_list[0].kwargs, {"action_type": "pick"})
         self.assertEqual(self.manager._lock_in_champion.await_args_list[1].kwargs, {"action_type": "pick"})
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
-        self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
+        self.assertIn(ChampionPicked("Lux"), self.events)
 
     async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
         self.manager.state.assigned_position = "TOP"
@@ -456,6 +554,33 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         await self.manager._champ_select_tick()
 
+        self.manager._logic_do_pick.assert_not_awaited()
+        self.manager._logic_do_ban.assert_not_awaited()
+
+    async def test_champ_select_tick_allows_practice_tool_and_captures_role(self):
+        async def request(method, url, **kwargs):
+            if url == "/lol-champ-select/v1/session":
+                return FakeResponse(
+                    200,
+                    {
+                        "gameConfig": {"queueId": 0, "gameMode": PRACTICE_TOOL_GAME_MODE},
+                        "localPlayerCellId": 1,
+                        "myTeam": [{"cellId": 1, "assignedPosition": "JUNGLE"}],
+                        "actions": [],
+                    },
+                )
+            if url == "/lol-champ-select/v1/pickable-champion-ids":
+                return FakeResponse(200, [86, 99, 22])
+            raise AssertionError(f"Unexpected request: {method} {url}")
+
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(side_effect=request)
+        self.manager._logic_do_pick = AsyncMock()
+        self.manager._logic_do_ban = AsyncMock()
+
+        await self.manager._champ_select_tick()
+
+        self.assertEqual(self.manager.state.assigned_position, "JUNGLE")
         self.manager._logic_do_pick.assert_not_awaited()
         self.manager._logic_do_ban.assert_not_awaited()
 

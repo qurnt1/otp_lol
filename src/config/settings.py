@@ -30,20 +30,28 @@ import json
 import logging
 import os
 import shutil
-import tempfile
 import tomllib
 from typing import Any, Dict
 
 import tomli_w
 
-from .constants import APP_VERSION, CONFIG_SCHEMA_VERSION, CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
+from ..atomic_io import atomic_write
+from .constants import (
+    APP_VERSION,
+    CONFIG_SCHEMA_VERSION,
+    CURRENT_VERSION,
+    PICK_SLOT_ORDER,
+    SETTINGS_SCHEMA_VERSION,
+    SUMMONER_SPELL_MAP,
+)
 from .paths import (
     ICONS_CACHE_DIR,
-    PARAMETERS_PATH,
     PARAMETERS_JSON_PATH,
+    PARAMETERS_PATH,
     RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
+    cleanup_legacy_cache_paths,
 )
 
 
@@ -119,6 +127,7 @@ def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
 DEFAULT_PARAMS: Dict[str, Any] = {
     "config_version": CURRENT_VERSION,
     "config_schema_version": CONFIG_SCHEMA_VERSION,
+    "settings_schema_version": SETTINGS_SCHEMA_VERSION,
     "auto_accept_enabled": True,
     "auto_pick_enabled": True,
     "auto_ban_enabled": True,
@@ -169,7 +178,7 @@ def _build_first_launch_payload() -> Dict[str, Any]:
 
 
 def _migrate_json_to_toml() -> bool:
-    """Migrate the legacy JSON settings file once, keeping a recoverable backup."""
+    """One-time migration: read parameters.json, write parameters.toml, rename old file to .bak."""
     if not os.path.exists(PARAMETERS_JSON_PATH):
         return False
     if os.path.exists(PARAMETERS_PATH):
@@ -187,51 +196,29 @@ def _migrate_json_to_toml() -> bool:
         return False
 
 
-def _atomic_write_bytes(path: str, content: bytes) -> None:
-    """Write bytes to a temporary file and replace the destination atomically."""
-    absolute_path = os.path.abspath(path)
-    directory = os.path.dirname(absolute_path) or "."
-    os.makedirs(directory, exist_ok=True)
-    file_descriptor, temporary_path = tempfile.mkstemp(
-        prefix=f".{os.path.basename(absolute_path)}.",
-        suffix=".tmp",
-        dir=directory,
-    )
-    try:
-        with os.fdopen(file_descriptor, "wb") as temporary_file:
-            file_descriptor = None
-            temporary_file.write(content)
-            temporary_file.flush()
-            os.fsync(temporary_file.fileno())
-        os.replace(temporary_path, absolute_path)
-    finally:
-        if file_descriptor is not None:
-            os.close(file_descriptor)
-        if os.path.exists(temporary_path):
-            try:
-                os.remove(temporary_path)
-            except OSError:
-                logging.debug("Unable to remove temporary settings file: %s", temporary_path)
-
-
 def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Normalize and write the settings payload to the main parameters file."""
     sanitized = _normalize_parameters(payload)
-    _atomic_write_bytes(PARAMETERS_PATH, tomli_w.dumps(sanitized).encode("utf-8"))
+
+    atomic_write(
+        PARAMETERS_PATH,
+        lambda stream: tomli_w.dump(sanitized, stream),
+        mode="wb",
+    )
     return sanitized
 
 
 def _backup_parameters_file() -> bool:
-    """Preserve an unreadable settings file before replacing it with safe defaults."""
+    """Preserve an invalid settings file before replacing it with safe defaults."""
     if not os.path.exists(PARAMETERS_PATH):
         return True
     backup_path = f"{PARAMETERS_PATH}.bak"
     try:
         shutil.copy2(PARAMETERS_PATH, backup_path)
-        logging.warning("Backed up unreadable settings to %s", backup_path)
+        logging.warning("Backed up invalid settings to %s", backup_path)
         return True
     except OSError as e:
-        logging.error("Unable to back up unreadable settings to %s: %s", backup_path, e)
+        logging.error("Unable to back up invalid settings: %s", e)
         return False
 
 
@@ -267,14 +254,15 @@ def _reset_parameters_file(reason: str) -> Dict[str, Any]:
 
 
 def _migrate_schema_0_to_1(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Mark schema-less TOML/JSON settings as the first durable schema."""
+    """Mark schema-less settings as the first durable schema."""
     migrated = copy.deepcopy(config)
     migrated["config_schema_version"] = 1
+    migrated["settings_schema_version"] = 1
     return migrated
 
 
 def _migrate_schema_1_to_2(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Add per-slot skin override storage while preserving the legacy global value."""
+    """Add per-slot skin overrides while preserving the legacy global value."""
     migrated = copy.deepcopy(config)
     if "main_skin_mode_overrides" not in migrated:
         migrated["main_skin_mode_overrides"] = _normalize_main_skin_mode_overrides(
@@ -282,11 +270,12 @@ def _migrate_schema_1_to_2(config: Dict[str, Any]) -> Dict[str, Any]:
             legacy_value=migrated.get("main_skin_mode_override", "inherit"),
         )
     migrated["config_schema_version"] = 2
+    migrated["settings_schema_version"] = 2
     return migrated
 
 
 def _migrate_schema_2_to_3(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Materialize per-slot settings from legacy global summoner-spell fields."""
+    """Materialize per-slot spells from legacy global spell fields."""
     migrated = copy.deepcopy(config)
     if "pick_slots" not in migrated:
         migrated["pick_slots"] = _build_normalized_pick_slots(
@@ -295,6 +284,7 @@ def _migrate_schema_2_to_3(config: Dict[str, Any]) -> Dict[str, Any]:
             fallback_spell_2=migrated.get("global_spell_2", ""),
         )
     migrated["config_schema_version"] = 3
+    migrated["settings_schema_version"] = 3
     return migrated
 
 
@@ -306,7 +296,7 @@ _SCHEMA_MIGRATIONS = {
 
 
 def _read_schema_version(config: Dict[str, Any]) -> int:
-    """Read the canonical schema marker plus the names used by legacy builds."""
+    """Read the canonical schema marker and legacy aliases safely."""
     raw_schema_version = config.get(
         "config_schema_version",
         config.get("settings_schema_version", config.get("schema_version", 0)),
@@ -340,6 +330,7 @@ def _migrate_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     migrated["config_version"] = APP_VERSION
     migrated["config_schema_version"] = CONFIG_SCHEMA_VERSION
+    migrated["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
     return _normalize_parameters(migrated)
 
 
@@ -376,11 +367,11 @@ def load_parameters() -> Dict[str, Any]:
 
 
 def save_parameters(params: Dict[str, Any]) -> bool:
-    """Persist normalized parameters to the TOML settings file."""
+    """Persist normalized parameters to the JSON settings file."""
     try:
         _write_parameters_file(params)
         return True
-    except (IOError, OSError) as e:
+    except (IOError, OSError, TypeError, ValueError) as e:
         logging.error("Error saving settings: %s", e)
         return False
 
@@ -390,12 +381,19 @@ def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
     try:
         sanitized = _normalize_parameters(params)
         if path.lower().endswith(".json"):
-            content = json.dumps(sanitized, indent=4, ensure_ascii=False).encode("utf-8")
+            atomic_write(
+                path,
+                lambda stream: json.dump(sanitized, stream, indent=4, ensure_ascii=False),
+                mode="w",
+            )
         else:
-            content = tomli_w.dumps(sanitized).encode("utf-8")
-        _atomic_write_bytes(path, content)
+            atomic_write(
+                path,
+                lambda stream: tomli_w.dump(sanitized, stream),
+                mode="wb",
+            )
         return True
-    except (IOError, OSError) as e:
+    except (IOError, OSError, TypeError, ValueError) as e:
         logging.error("Error exporting settings: %s", e)
         return False
 
@@ -410,7 +408,7 @@ def import_parameters_from_file(path: str) -> Dict[str, Any]:
             payload = tomllib.load(f)
     if not isinstance(payload, dict):
         raise ValueError("The configuration file is invalid.")
-    return _migrate_parameters(payload)
+    return _normalize_parameters(payload)
 
 
 def _normalize_spell_value(value: Any) -> str:
@@ -534,6 +532,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     merged["config_version"] = APP_VERSION
     merged["config_schema_version"] = CONFIG_SCHEMA_VERSION
+    merged["settings_schema_version"] = SETTINGS_SCHEMA_VERSION
 
     if "manual_region" not in config:
         merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])
@@ -593,6 +592,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
+    cleanup_legacy_cache_paths()
     for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR, RUNES_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)

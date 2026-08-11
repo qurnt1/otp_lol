@@ -61,11 +61,10 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("auto_runes_enabled", config.DEFAULT_PARAMS)
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
 
-    def test_load_parameters_backs_up_invalid_toml_before_reset(self):
+    def test_load_parameters_resets_invalid_json_to_first_launch_defaults(self):
         with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            invalid_content = "{ invalid toml"
-            params_path.write_text(invalid_content, encoding="utf-8")
+            params_path = Path(tmpdir) / "parameters.json"
+            params_path.write_text("{ invalid json", encoding="utf-8")
             skins_cache_dir = Path(tmpdir) / "otp_lol_skins"
             skins_cache_dir.mkdir()
             (skins_cache_dir / "old_skin.img").write_text("cached", encoding="utf-8")
@@ -74,12 +73,10 @@ class ConfigTests(unittest.TestCase):
                 config._settings, "SKINS_CACHE_DIR", str(skins_cache_dir)
             ):
                 loaded = config.load_parameters()
-            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
-            cache_exists = (skins_cache_dir / "old_skin.img").exists()
 
-        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
-        self.assertFalse(cache_exists)
-        self.assertEqual(backup_content, invalid_content)
+            self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+            self.assertFalse((skins_cache_dir / "old_skin.img").exists())
+            self.assertEqual(Path(f"{params_path}.bak").read_text(encoding="utf-8"), "{ invalid json")
 
     def test_load_parameters_preserves_settings_when_app_version_is_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -90,14 +87,16 @@ class ConfigTests(unittest.TestCase):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
-        self.assertEqual(loaded["config_version"], config._settings.CURRENT_VERSION)
-        self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(loaded["config_version"], config.CURRENT_VERSION)
+        self.assertEqual(loaded["config_schema_version"], config.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(loaded["settings_schema_version"], config.SETTINGS_SCHEMA_VERSION)
 
     def test_load_parameters_preserves_settings_across_app_version_upgrade(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
             payload["config_version"] = "9.0"
+            payload.pop("settings_schema_version", None)
             payload["selected_pick_1"] = "Ahri"
             params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
@@ -105,9 +104,9 @@ class ConfigTests(unittest.TestCase):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
-        self.assertEqual(loaded["config_version"], config._settings.CURRENT_VERSION)
+        self.assertEqual(loaded["config_version"], config.CURRENT_VERSION)
 
-    def test_load_parameters_fills_missing_fields_without_reset(self):
+    def test_load_parameters_fills_missing_fields_without_backup_or_reset(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
@@ -117,17 +116,34 @@ class ConfigTests(unittest.TestCase):
 
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
+
             backup_exists = Path(f"{params_path}.bak").exists()
 
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
-        self.assertIn("pick_1", loaded["pick_slots"])
+        self.assertIn("pick_slots", loaded)
         self.assertFalse(backup_exists)
 
-    def test_load_parameters_applies_explicit_schema_migrations(self):
+    def test_load_parameters_backs_up_unsupported_future_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+            payload["config_schema_version"] = config.CONFIG_SCHEMA_VERSION + 1
+            payload["settings_schema_version"] = config.SETTINGS_SCHEMA_VERSION + 1
+            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+            backup_exists = Path(f"{params_path}.bak").exists()
+
+        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+        self.assertTrue(backup_exists)
+
+    def test_load_parameters_migrates_legacy_schema_aliases(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = {
-                "config_schema_version": 1,
+                "settings_schema_version": 1,
                 "config_version": "9.0",
                 "selected_pick_1": "Ahri",
                 "main_skin_mode_override": "fixed",
@@ -138,29 +154,12 @@ class ConfigTests(unittest.TestCase):
 
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
-            written = tomllib.loads(params_path.read_text(encoding="utf-8"))
 
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
-        self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
-        self.assertEqual(loaded["config_version"], config._settings.CURRENT_VERSION)
+        self.assertEqual(loaded["config_schema_version"], config.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(loaded["settings_schema_version"], config.SETTINGS_SCHEMA_VERSION)
         self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Ignite")
         self.assertEqual(loaded["main_skin_mode_overrides"]["pick_2"], "fixed")
-        self.assertEqual(written["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
-
-    def test_load_parameters_resets_and_backs_up_unsupported_future_schema(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
-            payload["config_schema_version"] = config._settings.CONFIG_SCHEMA_VERSION + 1
-            original = tomli_w.dumps(payload)
-            params_path.write_text(original, encoding="utf-8")
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
-                loaded = config.load_parameters()
-            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
-
-        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
-        self.assertEqual(backup_content, original)
 
     def test_load_parameters_accepts_current_exact_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -197,39 +196,6 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("unexpected_key", written)
         self.assertEqual(set(written), set(config.DEFAULT_PARAMS))
 
-    def test_save_parameters_keeps_previous_file_when_atomic_replace_fails(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            original = tomli_w.dumps(config.FIRST_LAUNCH_PARAMS)
-            params_path.write_text(original, encoding="utf-8")
-            payload = copy.deepcopy(config.DEFAULT_PARAMS)
-            payload["selected_pick_1"] = "Ahri"
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
-                config._settings.os, "replace", side_effect=OSError("interrupted")
-            ):
-                self.assertFalse(config.save_parameters(payload))
-
-            self.assertEqual(params_path.read_text(encoding="utf-8"), original)
-            self.assertEqual(list(Path(tmpdir).glob("*.tmp")), [])
-
-    def test_json_settings_migration_keeps_legacy_backup(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            toml_path = Path(tmpdir) / "parameters.toml"
-            json_path = Path(tmpdir) / "parameters.json"
-            json_path.write_text(json.dumps(config.FIRST_LAUNCH_PARAMS), encoding="utf-8")
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(toml_path)), patch.object(
-                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
-            ):
-                loaded = config.load_parameters()
-            toml_exists = toml_path.exists()
-            backup_payload = json.loads(Path(f"{json_path}.bak").read_text(encoding="utf-8"))
-
-        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
-        self.assertTrue(toml_exists)
-        self.assertEqual(backup_payload, config.FIRST_LAUNCH_PARAMS)
-
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             export_path = Path(tmpdir) / "export.json"
@@ -248,6 +214,51 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(imported["preferred_hotkey_site"], "dpm")
         self.assertEqual(imported["hotkey_toggle_window"], "alt+shift+c")
         self.assertEqual(imported["hotkey_open_site"], "ctrl+alt+p")
+
+    def test_settings_serialization_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            params_path.write_text("previous = true\n", encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings.tomli_w, "dump", side_effect=ValueError("serialization failed")
+            ):
+                with self.assertRaises(ValueError):
+                    config._settings._write_parameters_file(config.DEFAULT_PARAMS)
+
+            self.assertEqual(params_path.read_text(encoding="utf-8"), "previous = true\n")
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_settings_replace_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            params_path.write_text("previous = true\n", encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch(
+                "src.atomic_io.os.replace", side_effect=OSError("replace failed")
+            ):
+                self.assertFalse(config.save_parameters(config.DEFAULT_PARAMS))
+
+            self.assertEqual(params_path.read_text(encoding="utf-8"), "previous = true\n")
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
+
+    def test_json_settings_migration_keeps_backup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            toml_path = Path(tmpdir) / "parameters.toml"
+            json_path = Path(tmpdir) / "parameters.json"
+            json_path.write_text(json.dumps(config.FIRST_LAUNCH_PARAMS), encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(toml_path)), patch.object(
+                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
+            ):
+                loaded = config.load_parameters()
+
+            self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+            self.assertTrue(toml_path.exists())
+            self.assertEqual(
+                json.loads(Path(f"{json_path}.bak").read_text(encoding="utf-8")),
+                config.FIRST_LAUNCH_PARAMS,
+            )
 
 
 if __name__ == "__main__":

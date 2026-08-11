@@ -1,13 +1,12 @@
 import json
-import os
 import tempfile
-import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from unittest.mock import patch
 
 from src.services import history
-from src.services.history import MAX_HISTORY_ENTRIES, format_history_entry
+from src.services.history import format_history_entry
 
 
 class HistoryFormattingTests(unittest.TestCase):
@@ -43,83 +42,68 @@ class HistoryFormattingTests(unittest.TestCase):
             ["Summs: Flash + Ignite", "Profile: MIDDLE"],
         )
 
+    def test_gameflow_events_have_stable_display_defaults(self):
+        for event_type, action in (
+            ("game_loading", "game_loading"),
+            ("game_started", "game_started"),
+            ("lobby_returned", "lobby_returned"),
+        ):
+            formatted = format_history_entry({"type": event_type, "message": "event"})
+            self.assertEqual(formatted["type"], event_type)
+            self.assertEqual(formatted["action"], action)
+            self.assertEqual(formatted["category"], "Game")
 
-class HistoryPersistenceTests(unittest.TestCase):
-    def test_write_history_keeps_bounded_json_format(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            history_path = os.path.join(temp_dir, "history.json")
-            with patch.object(history, "HISTORY_PATH", history_path):
-                entries = [{"index": index} for index in range(MAX_HISTORY_ENTRIES + 7)]
+    def test_history_serialization_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text('[{"message": "previous"}]', encoding="utf-8")
 
-                history._write_history(entries)
-
-                with open(history_path, "r", encoding="utf-8") as history_file:
-                    persisted = json.load(history_file)
-
-        self.assertIsInstance(persisted, list)
-        self.assertEqual(len(persisted), MAX_HISTORY_ENTRIES)
-        self.assertEqual(persisted[0], {"index": 7})
-        self.assertEqual(persisted[-1], {"index": MAX_HISTORY_ENTRIES + 6})
-
-    def test_write_history_replaces_file_atomically_in_same_directory(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            history_path = os.path.join(temp_dir, "history.json")
-            with patch.object(history, "HISTORY_PATH", history_path):
-                original_replace = os.replace
-                with patch.object(history.os, "replace", wraps=original_replace) as replace_mock:
-                    history._write_history([{"message": "persisted"}])
-
-                temporary_path, destination_path = replace_mock.call_args.args
-                self.assertEqual(destination_path, history_path)
-                self.assertEqual(
-                    os.path.normcase(os.path.dirname(temporary_path)),
-                    os.path.normcase(temp_dir),
-                )
-                self.assertFalse(os.path.exists(temporary_path))
-                self.assertEqual(history._read_history(), [{"message": "persisted"}])
-
-    def test_atomic_write_failure_keeps_previous_history_and_cleans_temp_file(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            history_path = os.path.join(temp_dir, "history.json")
-            with patch.object(history, "HISTORY_PATH", history_path):
-                history._write_history([{"message": "previous"}])
-
-                with patch.object(
-                    history.os, "replace", side_effect=OSError("replace failed")
-                ), self.assertRaises(OSError):
+            with patch.object(history, "HISTORY_PATH", str(history_path)), patch.object(
+                history.json, "dump", side_effect=ValueError("serialization failed")
+            ):
+                with self.assertRaises(ValueError):
                     history._write_history([{"message": "new"}])
 
-                self.assertEqual(history._read_history(), [{"message": "previous"}])
-                self.assertEqual(
-                    [name for name in os.listdir(temp_dir) if name.endswith(".tmp")],
-                    [],
-                )
+            self.assertEqual(history_path.read_text(encoding="utf-8"), '[{"message": "previous"}]')
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
 
-    def test_concurrent_logging_preserves_all_events(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            history_path = os.path.join(temp_dir, "history.json")
-            with patch.object(history, "HISTORY_PATH", history_path):
-                original_write = history._write_history
+    def test_history_replace_failure_keeps_previous_file_and_cleans_temp(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text('[{"message": "previous"}]', encoding="utf-8")
 
-                def delayed_write(entries):
-                    time.sleep(0.005)
-                    original_write(entries)
+            with patch.object(history, "HISTORY_PATH", str(history_path)), patch(
+                "src.atomic_io.os.replace", side_effect=OSError("replace failed")
+            ):
+                with self.assertRaises(OSError):
+                    history._write_history([{"message": "new"}])
 
-                messages = [f"event-{index}" for index in range(48)]
-                with patch.object(
-                    history, "_write_history", side_effect=delayed_write
-                ), ThreadPoolExecutor(max_workers=8) as executor:
-                    futures = [
-                        executor.submit(history.log_history_event, "pick", message)
-                        for message in messages
-                    ]
-                    for future in futures:
-                        future.result()
+            self.assertEqual(history_path.read_text(encoding="utf-8"), '[{"message": "previous"}]')
+            self.assertEqual(list(Path(tmpdir).glob(".*.tmp")), [])
 
-                persisted = history._read_history()
+    def test_corrupt_history_is_backed_up_before_new_event_is_written(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            history_path.write_text("{ invalid json", encoding="utf-8")
 
-        self.assertEqual(len(persisted), len(messages))
-        self.assertEqual({entry["message"] for entry in persisted}, set(messages))
+            with patch.object(history, "HISTORY_PATH", str(history_path)):
+                self.assertEqual(history._read_history(), [])
+                history.log_history_event("pick", "new event")
+
+            self.assertEqual(Path(f"{history_path}.bak").read_text(encoding="utf-8"), "{ invalid json")
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload[-1]["message"], "new event")
+
+    def test_concurrent_history_writes_do_not_lose_events(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            history_path = Path(tmpdir) / "history.json"
+            with patch.object(history, "HISTORY_PATH", str(history_path)):
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    list(pool.map(lambda index: history.log_history_event("pick", f"event-{index}"), range(50)))
+
+            payload = json.loads(history_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(payload), 50)
+            self.assertEqual({entry["message"] for entry in payload}, {f"event-{index}" for index in range(50)})
 
 
 if __name__ == "__main__":

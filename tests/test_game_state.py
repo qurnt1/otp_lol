@@ -13,13 +13,13 @@ def test_all_transient_fields_are_reset():
     for f in fields(GameState):
         if not f.metadata.get("transient"):
             continue
-        if f.type == "bool" or f.type == bool:
+        if f.type == "bool" or f.type is bool:
             setattr(state, f.name, True)
-        elif f.type == "int" or f.type == int:
+        elif f.type == "int" or f.type is int:
             setattr(state, f.name, 999)
-        elif f.type == "float" or f.type == float:
+        elif f.type == "float" or f.type is float:
             setattr(state, f.name, 99.9)
-        elif f.type == "str" or f.type == str:
+        elif f.type == "str" or f.type is str:
             setattr(state, f.name, "modified")
         else:
             setattr(state, f.name, None)
@@ -74,7 +74,6 @@ def test_reset_between_games_covers_all_fields():
         "auto_tag_line",
         "platform_routing",
         "region_routing",
-        "last_game_start_notify_ts",
         "last_reported_summoner",
         "cache_lock",
     }
@@ -83,3 +82,19 @@ def test_reset_between_games_covers_all_fields():
     assert not unclassified, (
         f"Unclassified fields (add them as transient or persistent): {unclassified}"
     )
+
+
+def test_confirmed_dead_state_fields_are_removed():
+    removed_fields = {
+        "last_game_start_notify_ts",
+        "lobby_presets_warning_shown",
+        "intent_done",
+        "completed_actions",
+        "last_action_try_ts",
+        "last_intent_try_ts",
+        "_last_cs_session_fetch",
+        "rune_task_scheduled",
+    }
+    state = GameState()
+
+    assert removed_fields.isdisjoint(vars(state))

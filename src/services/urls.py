@@ -19,7 +19,7 @@ Developers maintaining external website integration and Riot ID normalization.
 
 DEPENDENCIES:
 Used by:
-- src.ui.main_window and tests.
+- src.desktop.application and tests.
 Uses:
 - Standard library: urllib.parse
 """

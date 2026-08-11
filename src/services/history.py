@@ -18,7 +18,7 @@ Developers maintaining action history, event labeling, and history display behav
 
 DEPENDENCIES:
 Used by:
-- src.core.websocket, src.core.champ_select, and src.ui.main_window.
+- src.core.websocket, src.core.champ_select, and src.desktop.history_dialog.
 Uses:
 - Standard library: datetime, json, logging, os, typing
 - Local modules: src.config
@@ -27,15 +27,15 @@ Uses:
 import json
 import logging
 import os
-import tempfile
-import threading
 from datetime import datetime, timezone
+from threading import RLock
 from typing import Any, Dict, List, Optional
 
+from ..atomic_io import atomic_write
 from ..config import HISTORY_PATH
 
 MAX_HISTORY_ENTRIES = 250
-_HISTORY_LOCK = threading.RLock()
+_HISTORY_LOCK = RLock()
 
 EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "connection": {"level": "info", "category": "Connection", "action": "client"},
@@ -45,6 +45,9 @@ EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "pick": {"level": "success", "category": "Champion Select", "action": "pick"},
     "spells": {"level": "success", "category": "Summs", "action": "set"},
     "play_again": {"level": "success", "category": "End game", "action": "play_again"},
+    "game_loading": {"level": "info", "category": "Game", "action": "game_loading"},
+    "game_started": {"level": "success", "category": "Game", "action": "game_started"},
+    "lobby_returned": {"level": "success", "category": "Game", "action": "lobby_returned"},
     "error": {"level": "error", "category": "Error", "action": "error"},
 }
 
@@ -68,49 +71,32 @@ CATEGORY_LABELS = {
 
 def _read_history() -> List[Dict[str, Any]]:
     """Read the persisted history file and return only valid dictionary entries."""
-    with _HISTORY_LOCK:
-        if not os.path.exists(HISTORY_PATH):
-            return []
-        try:
-            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            if isinstance(payload, list):
-                return [entry for entry in payload if isinstance(entry, dict)]
-        except (OSError, json.JSONDecodeError) as e:
-            logging.debug("Unreadable history: %s", e)
+    if not os.path.exists(HISTORY_PATH):
         return []
+    try:
+        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        if isinstance(payload, list):
+            return [entry for entry in payload if isinstance(entry, dict)]
+    except (OSError, json.JSONDecodeError) as e:
+        logging.debug("Unreadable history: %s", e)
+        try:
+            backup_path = f"{HISTORY_PATH}.bak"
+            with open(HISTORY_PATH, "rb") as source, open(backup_path, "wb") as backup:
+                backup.write(source.read())
+            logging.warning("Backed up unreadable history to %s", backup_path)
+        except OSError as backup_error:
+            logging.error("Unable to back up unreadable history: %s", backup_error)
+    return []
 
 
 def _write_history(entries: List[Dict[str, Any]]) -> None:
     """Write the bounded history list back to disk."""
-    with _HISTORY_LOCK:
-        history_dir = os.path.dirname(os.path.abspath(HISTORY_PATH))
-        os.makedirs(history_dir, exist_ok=True)
-        temporary_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=history_dir,
-                prefix=f".{os.path.basename(HISTORY_PATH)}.",
-                suffix=".tmp",
-                delete=False,
-            ) as temporary_file:
-                temporary_path = temporary_file.name
-                json.dump(entries[-MAX_HISTORY_ENTRIES:], temporary_file, indent=2, ensure_ascii=False)
-                temporary_file.flush()
-                os.fsync(temporary_file.fileno())
-
-            os.replace(temporary_path, HISTORY_PATH)
-            temporary_path = None
-        finally:
-            if temporary_path is not None:
-                try:
-                    os.unlink(temporary_path)
-                except OSError:
-                    logging.getLogger(__name__).debug(
-                        "Unable to remove temporary history file: %s", temporary_path
-                    )
+    atomic_write(
+        HISTORY_PATH,
+        lambda stream: json.dump(entries[-MAX_HISTORY_ENTRIES:], stream, indent=2, ensure_ascii=False),
+        mode="w",
+    )
 
 
 def log_history_event(
@@ -133,29 +119,29 @@ def log_history_event(
         "message": message,
         "details": details or {},
     }
-    try:
-        with _HISTORY_LOCK:
-            entries = _read_history()
-            entries.append(entry)
+    with _HISTORY_LOCK:
+        entries = _read_history()
+        entries.append(entry)
+        try:
             _write_history(entries)
-    except OSError as e:
-        logging.debug("Unable to write history: %s", e)
+        except OSError as e:
+            logging.debug("Unable to write history: %s", e)
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
     """Return the newest history entries first, limited to the requested count."""
     with _HISTORY_LOCK:
         entries = _read_history()
-        return list(reversed(entries[-limit:]))
+    return list(reversed(entries[-limit:]))
 
 
 def clear_history_entries() -> None:
     """Remove all persisted history entries."""
-    try:
-        with _HISTORY_LOCK:
+    with _HISTORY_LOCK:
+        try:
             _write_history([])
-    except OSError as e:
-        logging.debug("Unable to clear history: %s", e)
+        except OSError as e:
+            logging.debug("Unable to clear history: %s", e)
 
 
 def _format_timestamp(timestamp: str) -> str:
@@ -216,9 +202,12 @@ def format_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     category = CATEGORY_LABELS.get(category, category)
     return {
         "time": _format_timestamp(entry.get("timestamp", "")),
+        "type": event_type,
+        "action": str(entry.get("action") or defaults.get("action", event_type)),
         "level": level,
         "level_label": LEVEL_LABELS.get(level, LEVEL_LABELS["info"]),
         "category": category,
         "message": entry.get("message", "Event"),
+        "details": entry.get("details", {}) if isinstance(entry.get("details", {}), dict) else {},
         "detail_lines": _build_detail_lines(entry.get("details", {})),
     }

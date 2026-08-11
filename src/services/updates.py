@@ -36,7 +36,6 @@ from packaging.version import InvalidVersion, Version
 
 from src.config import CURRENT_VERSION, GITHUB_REPO_API, GITHUB_REPO_URL
 
-
 _GITHUB_HEADERS = {
     "Accept": "application/vnd.github+json",
     "User-Agent": "OTP-LOL-UpdateChecker",
