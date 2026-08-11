@@ -25,9 +25,10 @@ Uses:
 - Local modules: src.config, src.core, src.services, src.ui
 """
 
+import copy
 import sys
 import logging
-from threading import Thread, Lock
+from threading import RLock, Thread
 from typing import Dict, Any
 
 from src.config import (
@@ -51,7 +52,8 @@ class OtpLolApplication:
             windll.shcore.SetProcessDpiAwareness(1)
         except Exception:
             pass
-        self._shutdown_lock = Lock()
+        self._shutdown_lock = RLock()
+        self._params_lock = RLock()
         self._shutdown_started = False
         self._cleanup_done = False
         
@@ -76,7 +78,7 @@ class OtpLolApplication:
         logging.info("Creating UI...")
         self.ui = LoLAssistantUI(
             dd=self.dd,
-            params=self._params,
+            params=self._get_params(),
             save_callback=self._save_params,
             update_param_callback=self._update_param,
             get_params_callback=self._get_params,
@@ -129,16 +131,19 @@ class OtpLolApplication:
             Thread(target=load_task, daemon=True).start()
     
     def _get_params(self) -> Dict[str, Any]:
-        """Return a defensive copy of the current parameter snapshot."""
-        return self._params.copy()
+        """Return a deeply isolated parameter snapshot for another thread."""
+        with self._params_lock:
+            return copy.deepcopy(self._params)
     
     def _update_param(self, key: str, value: Any) -> None:
         """Update one in-memory parameter value shared by the runtime components."""
-        self._params[key] = value
+        with self._params_lock:
+            self._params[key] = copy.deepcopy(value)
     
     def _save_params(self) -> None:
         """Persist the current parameter snapshot and log the outcome."""
-        if save_parameters(self._params):
+        params = self._get_params()
+        if save_parameters(params):
             logging.info("Settings saved successfully.")
         else:
             logging.error("Failed to save settings.")
@@ -150,7 +155,7 @@ class OtpLolApplication:
                 update_info = check_for_updates()
                 if update_info:
                     new_version = str(update_info.get("version") or "")
-                    ignored_version = str(self._params.get("ignored_update_version") or "").strip()
+                    ignored_version = str(self._get_params().get("ignored_update_version") or "").strip()
                     if ignored_version and ignored_version == new_version:
                         logging.info(f"Update {new_version} ignored by user preference.")
                         return

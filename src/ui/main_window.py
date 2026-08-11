@@ -43,7 +43,6 @@ from ..config import (
     APP_NAME,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
-    GITHUB_DOWNLOAD_ZIP_URL,
     GITHUB_REPO_URL,
     THEME_PALETTE,
     WEBSITE_LOGO_FILES,
@@ -936,7 +935,8 @@ class LoLAssistantUI(MainPreviewMixin, MainSkinOverridesMixin):
 
         def on_download() -> None:
             _ignore_if_checked()
-            webbrowser.open(GITHUB_DOWNLOAD_ZIP_URL)
+            release_url = str(update_info.get("release_url") or f"{GITHUB_REPO_URL}/releases/latest")
+            webbrowser.open(release_url)
 
         def on_open_repo() -> None:
             _ignore_if_checked()

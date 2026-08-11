@@ -27,12 +27,15 @@ Uses:
 import json
 import logging
 import os
+import tempfile
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from ..config import HISTORY_PATH
 
 MAX_HISTORY_ENTRIES = 250
+_HISTORY_LOCK = threading.RLock()
 
 EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "connection": {"level": "info", "category": "Connection", "action": "client"},
@@ -65,23 +68,49 @@ CATEGORY_LABELS = {
 
 def _read_history() -> List[Dict[str, Any]]:
     """Read the persisted history file and return only valid dictionary entries."""
-    if not os.path.exists(HISTORY_PATH):
+    with _HISTORY_LOCK:
+        if not os.path.exists(HISTORY_PATH):
+            return []
+        try:
+            with open(HISTORY_PATH, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            if isinstance(payload, list):
+                return [entry for entry in payload if isinstance(entry, dict)]
+        except (OSError, json.JSONDecodeError) as e:
+            logging.debug("Unreadable history: %s", e)
         return []
-    try:
-        with open(HISTORY_PATH, "r", encoding="utf-8") as f:
-            payload = json.load(f)
-        if isinstance(payload, list):
-            return [entry for entry in payload if isinstance(entry, dict)]
-    except (OSError, json.JSONDecodeError) as e:
-        logging.debug("Unreadable history: %s", e)
-    return []
 
 
 def _write_history(entries: List[Dict[str, Any]]) -> None:
     """Write the bounded history list back to disk."""
-    os.makedirs(os.path.dirname(HISTORY_PATH), exist_ok=True)
-    with open(HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(entries[-MAX_HISTORY_ENTRIES:], f, indent=2, ensure_ascii=False)
+    with _HISTORY_LOCK:
+        history_dir = os.path.dirname(os.path.abspath(HISTORY_PATH))
+        os.makedirs(history_dir, exist_ok=True)
+        temporary_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=history_dir,
+                prefix=f".{os.path.basename(HISTORY_PATH)}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = temporary_file.name
+                json.dump(entries[-MAX_HISTORY_ENTRIES:], temporary_file, indent=2, ensure_ascii=False)
+                temporary_file.flush()
+                os.fsync(temporary_file.fileno())
+
+            os.replace(temporary_path, HISTORY_PATH)
+            temporary_path = None
+        finally:
+            if temporary_path is not None:
+                try:
+                    os.unlink(temporary_path)
+                except OSError:
+                    logging.getLogger(__name__).debug(
+                        "Unable to remove temporary history file: %s", temporary_path
+                    )
 
 
 def log_history_event(
@@ -104,24 +133,27 @@ def log_history_event(
         "message": message,
         "details": details or {},
     }
-    entries = _read_history()
-    entries.append(entry)
     try:
-        _write_history(entries)
+        with _HISTORY_LOCK:
+            entries = _read_history()
+            entries.append(entry)
+            _write_history(entries)
     except OSError as e:
         logging.debug("Unable to write history: %s", e)
 
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
     """Return the newest history entries first, limited to the requested count."""
-    entries = _read_history()
-    return list(reversed(entries[-limit:]))
+    with _HISTORY_LOCK:
+        entries = _read_history()
+        return list(reversed(entries[-limit:]))
 
 
 def clear_history_entries() -> None:
     """Remove all persisted history entries."""
     try:
-        _write_history([])
+        with _HISTORY_LOCK:
+            _write_history([])
     except OSError as e:
         logging.debug("Unable to clear history: %s", e)
 

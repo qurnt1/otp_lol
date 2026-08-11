@@ -17,3 +17,9 @@
 - feat: fire spells and runes as soon as prepick hover is confirmed, before ban/pick
 - feat: scan session actions for prepick detection when myTeam does not yet reflect the hover
 - feat: poll lobby during ChampSelect phase so queue ID is available on the first tick
+- fix: protect single-instance lock ownership during launcher shutdown
+- fix: preserve settings across app upgrades with explicit schema migrations
+- fix: make settings and history persistence atomic and concurrent-safe
+- fix: use GitHub Releases as the desktop and website update source
+- chore: add Windows Python CI and tagged release workflows
+- chore: harden website metadata, accessibility, responsive states, and copy

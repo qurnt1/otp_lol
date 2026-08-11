@@ -1,0 +1,2 @@
+[console_scripts]
+otp-lol = otp_lol.application:main

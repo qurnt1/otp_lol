@@ -73,6 +73,10 @@ def check_single_instance() -> bool:
 def remove_lockfile() -> None:
     """Release the lock and delete the file during shutdown."""
     global _lock_fd
+    if _lock_fd is None:
+        logging.debug("Skipping lockfile removal because this process does not own it.")
+        return
+
     try:
         if _lock_fd is not None:
             os.lseek(_lock_fd, 0, os.SEEK_SET)

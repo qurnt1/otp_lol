@@ -1,0 +1,5 @@
+- generic [active] [ref=e1]:
+  - text: The server is configured with a public base URL of /ContextPacker/ - did you mean to visit
+  - link /ContextPacker/otp_lol/ [ref=e2] [cursor=pointer]:
+    - /url: /ContextPacker/otp_lol/
+  - text: instead?

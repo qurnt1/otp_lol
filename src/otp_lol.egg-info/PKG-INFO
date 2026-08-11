@@ -1,5 +1,23 @@
+Metadata-Version: 2.4
+Name: otp-lol
+Version: 12.0
+Summary: Windows desktop assistant for League of Legends.
+Requires-Python: <3.14,>=3.13
+Description-Content-Type: text/markdown
+Requires-Dist: aiohttp==3.12.15
+Requires-Dist: keyboard==0.13.5
+Requires-Dist: lcu-driver==3.0.2
+Requires-Dist: packaging==25.0
+Requires-Dist: Pillow==10.4.0
+Requires-Dist: psutil==7.0.0
+Requires-Dist: pygame==2.6.1
+Requires-Dist: pystray==0.19.5
+Requires-Dist: requests==2.32.4
+Requires-Dist: ttkbootstrap==1.14.2
+Requires-Dist: tomli_w==1.2.0
+
 <p align="center">
-  <a href="./readme.md"><img src="https://img.shields.io/badge/version-11.0-2f81f7" alt="Version"></a>
+  <a href="./readme.md"><img src="https://img.shields.io/badge/version-12.0-2f81f7" alt="Version"></a>
   <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
@@ -15,12 +33,13 @@ Windows desktop assistant for League of Legends, written in Python.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
 
-Current project version: `11.0`
+Current project version: `12.0`
 
 ## Table Of Contents
 
 - [Overview](#overview)
-- [Version 11.0 Highlights](#version-110-highlights)
+- [Version 12.0 Highlights](#version-120-highlights)
+- [Version 11.0 Highlights (previous release)](#version-110-highlights-previous-release)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Technologies](#technologies)
@@ -57,7 +76,23 @@ The application is designed to work as a lightweight desktop tool:
 - keyboard shortcuts
 - local cache for some Data Dragon data
 
-## Version 11.0 Highlights
+## Version 12.0 Highlights
+
+Version `12.0` focuses on production hardening while preserving the existing interface, automation flow, configuration model, and normal user workflow.
+
+- `Thread-safe UI and shutdown`
+  Tray, hotkey, worker, and network callbacks are marshalled safely to Tkinter. Shutdown now cancels pending work and preserves the last window position before persistence.
+
+- `Safer LCU automation`
+  LCU operations handle connection loss, timeouts, malformed responses, unavailable champions, and unavailable skins without applying unsafe fallback actions.
+
+- `Atomic persistence and cache recovery`
+  Settings, history, metadata, and image-cache writes are protected against partial writes. Corrupt files are backed up before clean recovery, and cache freshness is tracked per file.
+
+- `Release and packaging hygiene`
+  The Python package, console entry point, PyInstaller build, CI checks, documentation, and release metadata are aligned on version `12.0`. Build artifacts stay outside the tracked source tree.
+
+## Version 11.0 Highlights (previous release)
 
 Version `11.0` focuses on preset completeness: skins, summoner spells, rune pages, role profiles, and release/update behavior now work together more reliably.
 
@@ -183,16 +218,18 @@ Before running the project from source, you need:
 ```bash
 git clone https://github.com/qurnt1/otp_lol.git
 cd otp_lol
-pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 ## Launch
 
-To run the application locally:
+To run the application locally after the editable install:
 
 ```bash
-python launcher.py
+otp-lol
 ```
+
+After an editable install, `otp-lol` is also available as the project entry point.
 
 On startup, the application:
 
@@ -208,8 +245,10 @@ On startup, the application:
 The project provides a PyInstaller build script:
 
 ```bash
-pip install -r requirements-build.txt
-python create_exe.py
+python -m venv .venv-build
+.venv-build\\Scripts\\activate
+python -m pip install -r requirements-build.txt
+python create_exe.py --no-shortcut
 ```
 
 This script generates a portable executable:
@@ -224,6 +263,15 @@ The script also handles:
 - several hidden imports for PyInstaller
 - cleanup of temporary build folders
 
+For a CI or release build, the builder can write to a dedicated directory:
+
+```bash
+python create_exe.py --no-shortcut --output-dir output\\exe
+```
+
+The release asset must be built from a clean tagged checkout. Local EXE files
+are not release inputs.
+
 ## Configuration And Used Files
 
 ### User Files
@@ -234,6 +282,8 @@ The script also handles:
   `%APPDATA%\OTP LOL\history.json`
 - Logs:
   `%APPDATA%\OTP LOL\app_debug.log`
+- Support bundle:
+  Exportable from `Settings > Diagnostics`, with diagnostics, recent history, and logs.
 
 ### Local Cache
 
@@ -259,6 +309,8 @@ The application stores, among other things:
 - preferred stats and shortcut websites
 - global keyboard shortcuts
 - theme, auto-hide, auto-play-again, and close-on-LoL-exit options
+
+Settings are stored in the current TOML schema. If the file is malformed or uses an unsupported schema version, the application keeps a timestamped backup and creates a clean first-launch configuration.
 
 ## Usage
 
@@ -332,21 +384,20 @@ Default values:
 
 ```text
 otp_lol/
-|-- launcher.py
 |-- create_exe.py
+|-- pyproject.toml
 |-- requirements.txt
 |-- requirements-build.txt
 |-- readme.md
 |-- src/
-|   |-- __init__.py
-|   |-- config/
-|   |-- core/
-|   |-- services/
-|   |-- ui/
-|   `-- utils.py
-|-- config/
-|   |-- son.wav
-|   `-- images/
+|   |-- otp_lol/
+|       |-- __main__.py
+|       |-- application/
+|       |-- assets/
+|       |-- config/
+|       |-- core/
+|       |-- services/
+|       |-- ui/
 |-- docs/
 |   `-- images/
 `-- tests/
@@ -361,16 +412,18 @@ otp_lol/
 
 ### Role Of Main Files
 
-- `launcher.py`
-  Main entry point and lifecycle orchestration.
-- `src/config/`
+- `otp_lol.__main__`
+  Package entry point used by `otp-lol` and the PyInstaller build.
+- `src/otp_lol/config/`
   Constants, paths, version, default settings, and config file handling.
-- `src/core/`
+- `src/otp_lol/core/`
   Business logic, Data Dragon, WebSocket / LCU, and game automations.
-- `src/services/`
-  External URLs, history, updates, role data, skin modes, and single-instance handling.
-- `src/ui/`
+- `src/otp_lol/services/`
+  External URLs, history, updates, DPI, and single-instance handling.
+- `src/otp_lol/ui/`
   Graphical interface, system tray, toasts, shortcuts, and user interaction handling.
+- `src/otp_lol/application/`
+  Application bootstrap and orderly runtime shutdown.
 - `create_exe.py`
   Windows build through PyInstaller.
 
@@ -389,13 +442,22 @@ The project contains regression tests for:
 To run the tests:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests -t . -q
+python -m pytest -q
 ```
 
 To quickly verify that the code compiles:
 
 ```bash
-python -m compileall launcher.py src create_exe.py tests
+python -m compileall src create_exe.py tests
+```
+
+To verify the full local quality gate:
+
+```bash
+python -m ruff check src tests create_exe.py
+python -m ruff format --check src tests create_exe.py
+python -m pip check  # run in a clean Python 3.13 environment
 ```
 
 ## Troubleshooting
@@ -417,11 +479,13 @@ Check that:
 
 ### Images Or Icons Do Not Load
 
-Check that this folder exists:
+Check that the packaged assets folder exists:
 
 ```text
-config/
-`-- images/
+src/otp_lol/assets/
+|-- images/
+|-- champion_roles.json
+`-- son.wav
 ```
 
 ### Logs
@@ -441,6 +505,8 @@ Some ideas for future improvements:
 - more visual presentation page
 - multi-language support
 - release automation
+
+The Windows release checklist is maintained in `docs/release-checklist.md`.
 
 ## Author
 
