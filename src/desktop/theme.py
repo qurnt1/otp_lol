@@ -45,7 +45,7 @@ QPushButton#navButton:checked { background: #1a2938; color: #e0b95d; border-colo
 QFrame#panel, QFrame#matchPanel, QFrame#activePresetPanel, QFrame#automationSummary,
 QFrame#quickAccessPanel, QFrame#activityPanel, QFrame#shortcutsPanel, QFrame#newsPanel,
 QFrame#historyListPanel, QFrame#settingSummary, QFrame#accountPanel, QFrame#automationCard,
-QFrame#presetCard { background: #121e2b; border: 1px solid #26384a; border-radius: 11px; }
+QFrame#presetCard, QFrame#rankPanel { background: #121e2b; border: 1px solid #26384a; border-radius: 11px; }
 QFrame#matchPanel { background: #152331; }
 QLabel#eyebrow { color: #d0a843; }
 QLabel#connectionChip { background: #2d2223; color: #e3a3a3; border: 1px solid #61393b; }
@@ -55,7 +55,7 @@ QLabel#statePill, QLabel#statePill[state=\"on\"] { background: #2b2415; color: #
 QLabel#statePill[state=\"off\"] { background: #1c2733; color: #8594a4; }
 QLabel#activityTime, QLabel#activityLevel { color: #93a2b2; }
 QLabel#shortcutKey { background: #172331; border: 1px solid #2b4053; color: #d5dee8; }
-QLabel#quickAccessItem { background: #172331; border: 1px solid #293d50; border-radius: 7px; padding: 10px 8px; color: #dbe4ec; }
+QFrame#quickAccessItem { background: #172331; border: 1px solid #293d50; border-radius: 7px; color: #dbe4ec; }
 QFrame#activityRow { background: #101a26; border: 1px solid #1e3042; border-radius: 7px; }
 QPushButton { background: #172331; color: #e7edf2; border: 1px solid #30465a; }
 QPushButton:hover { background: #1d2e40; border-color: #506a82; }
@@ -94,7 +94,7 @@ QPushButton#navButton:checked { background: #fffdf8; color: #765014; border-colo
 QFrame#panel, QFrame#matchPanel, QFrame#activePresetPanel, QFrame#automationSummary,
 QFrame#quickAccessPanel, QFrame#activityPanel, QFrame#shortcutsPanel, QFrame#newsPanel,
 QFrame#historyListPanel, QFrame#settingSummary, QFrame#accountPanel, QFrame#automationCard,
-QFrame#presetCard { background: #fffdf8; border: 1px solid #c8d0d7; border-radius: 11px; }
+QFrame#presetCard, QFrame#rankPanel { background: #fffdf8; border: 1px solid #c8d0d7; border-radius: 11px; }
 QFrame#matchPanel { background: #f8fafb; }
 QLabel#eyebrow { color: #8a641e; }
 QLabel#connectionChip { background: #f5e4e2; color: #8d3631; border: 1px solid #d5aaa6; }
@@ -104,7 +104,7 @@ QLabel#statePill, QLabel#statePill[state=\"on\"] { background: #f5ead0; color: #
 QLabel#statePill[state=\"off\"] { background: #e6ebef; color: #71808c; }
 QLabel#activityTime, QLabel#activityLevel { color: #697886; }
 QLabel#shortcutKey { background: #edf1f4; border: 1px solid #ccd5dc; color: #43515e; }
-QLabel#quickAccessItem { background: #f3f6f8; border: 1px solid #d0d8df; border-radius: 7px; padding: 10px 8px; color: #31404c; }
+QFrame#quickAccessItem { background: #f3f6f8; border: 1px solid #d0d8df; border-radius: 7px; color: #31404c; }
 QFrame#activityRow { background: #f6f8fa; border: 1px solid #d9e0e5; border-radius: 7px; }
 QPushButton { background: #fffdf8; color: #1f2933; border: 1px solid #b9c3cc; }
 QPushButton:hover { background: #f3eee3; border-color: #8d9aa5; }

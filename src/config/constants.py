@@ -38,6 +38,7 @@ URL_DD_CHAMPIONS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/
 URL_DD_SUMMONERS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
 URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
+URL_DD_IMG_PROFILE_ICON: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{icon_id}.png"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
 URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
 URL_CDRAGON_CHAMPION_DETAIL: str = (
@@ -132,6 +133,45 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "question_mark_white_mode": "config/images/app/question-mark-white_mode.png",
     "question_mark_black_mode": "config/images/app/question-mark-black_mode.png",
 }
+
+APP_ICON_FILES: Dict[str, str] = {
+    "home": "config/images/app/navigation/home.svg",
+    "presets": "config/images/app/navigation/presets.svg",
+    "automation": "config/images/app/navigation/automation.svg",
+    "history": "config/images/app/navigation/history.svg",
+    "settings": "config/images/app/navigation/settings.svg",
+    "connection": "config/images/app/navigation/connection.svg",
+    "external_link": "config/images/app/navigation/external-link.svg",
+    "champion_select": "config/images/app/navigation/champion-select.svg",
+    "spells": "config/images/app/navigation/spells.svg",
+    "runes": "config/images/app/navigation/runes.svg",
+    "skin": "config/images/app/navigation/skin.svg",
+    "activity": "config/images/app/navigation/activity.svg",
+    "shortcuts": "config/images/app/navigation/shortcuts.svg",
+    "news": "config/images/app/navigation/news.svg",
+    "rank_placeholder": "config/images/app/navigation/rank-placeholder.svg",
+}
+
+APP_NAVIGATION_ICON_NAMES: tuple[str, ...] = (
+    "home",
+    "presets",
+    "automation",
+    "history",
+    "settings",
+)
+
+APP_CONTENT_ICON_NAMES: tuple[str, ...] = (
+    "connection",
+    "external_link",
+    "champion_select",
+    "spells",
+    "runes",
+    "skin",
+    "activity",
+    "shortcuts",
+    "news",
+    "rank_placeholder",
+)
 
 WEBSITE_LOGO_FILES: Dict[str, str] = {
     "opgg": "config/images/websites/opgg.png",

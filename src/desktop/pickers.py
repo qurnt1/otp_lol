@@ -244,6 +244,7 @@ class RunePickerDialog(QDialog):
         self.task_runner = task_runner
         self.slot_data = dict(slot_data)
         self.styles: dict[Any, Any] = {}
+        self._page_icon_paths: dict[int, tuple[str, str]] = {}
 
         root = QVBoxLayout(self)
         header = QHBoxLayout()
@@ -256,6 +257,7 @@ class RunePickerDialog(QDialog):
         root.addLayout(header)
 
         self.list = QListWidget()
+        self.list.setIconSize(QSize(38, 38))
         self.list.currentItemChanged.connect(self._show_details)
         root.addWidget(self.list, 1)
         self.details = QLabel("Select a page to inspect it.")
@@ -279,10 +281,30 @@ class RunePickerDialog(QDialog):
         self.list.setEnabled(False)
 
         def load() -> dict[str, Any]:
+            pages = self.websocket_manager.fetch_rune_pages()
+            styles = self.websocket_manager.fetch_rune_styles()
+            page_icon_paths: dict[int, tuple[str, str]] = {}
+            page_images: dict[int, Any] = {}
+            compose_rune = getattr(self.data_dragon, "compose_rune_button_icon", None)
+            if callable(compose_rune) and isinstance(pages, list) and isinstance(styles, Mapping):
+                for page in pages:
+                    if not isinstance(page, Mapping):
+                        continue
+                    page_id = safe_int(page.get("id"))
+                    icon_paths = get_rune_page_icon_paths(page, styles, self.data_dragon)
+                    page_icon_paths[page_id] = icon_paths
+                    page_images[page_id] = pil_to_qimage(
+                        compose_rune(icon_paths[0], icon_paths[1], size=38)
+                        if icon_paths[0]
+                        else None,
+                        size=(38, 38),
+                    )
             return {
-                "pages": self.websocket_manager.fetch_rune_pages(),
-                "styles": self.websocket_manager.fetch_rune_styles(),
+                "pages": pages,
+                "styles": styles,
                 "active": self.websocket_manager.fetch_current_rune_page(),
+                "page_icon_paths": page_icon_paths,
+                "page_images": page_images,
             }
 
         self.task_runner.submit(
@@ -297,6 +319,8 @@ class RunePickerDialog(QDialog):
     def _apply_pages(self, payload: Mapping[str, Any]) -> None:
         pages = payload.get("pages", [])
         self.styles = dict(payload.get("styles", {})) if isinstance(payload.get("styles"), Mapping) else {}
+        self._page_icon_paths = dict(payload.get("page_icon_paths", {}))
+        page_images = payload.get("page_images", {})
         active = payload.get("active", {})
         active_id = safe_int(active.get("id")) if isinstance(active, Mapping) else 0
         selected_id = safe_int(self.slot_data.get("rune_page_id"))
@@ -314,6 +338,9 @@ class RunePickerDialog(QDialog):
             if page_id == active_id:
                 label += " (active)"
             item = QListWidgetItem(label)
+            page_image = page_images.get(page_id) if isinstance(page_images, Mapping) else None
+            if page_image is not None:
+                item.setIcon(QIcon(qpixmap_from_image(page_image)))
             item.setData(Qt.ItemDataRole.UserRole, page)
             self.list.addItem(item)
             if page_id == selected_id:
@@ -342,7 +369,11 @@ class RunePickerDialog(QDialog):
         page = current.data(Qt.ItemDataRole.UserRole)
         if not isinstance(page, Mapping):
             return
-        keystone, sub_style = get_rune_page_icon_paths(page, self.styles, self.data_dragon)
+        page_id = safe_int(page.get("id"))
+        icon_paths = self._page_icon_paths.get(page_id)
+        if icon_paths is None:
+            icon_paths = get_rune_page_icon_paths(page, self.styles, self.data_dragon)
+        keystone, sub_style = icon_paths
         self.rune_selected.emit(
             {
                 "rune_page_id": safe_int(page.get("id")),
@@ -425,8 +456,34 @@ class SkinPickerDialog(QDialog):
             catalog = self.data_dragon.get_skin_catalog(champion_id)
             ownership = self.websocket_manager.fetch_owned_skins_for_champion(champion_id)
             owned = ownership.get("owned_skins", []) if isinstance(ownership, Mapping) else []
+            skins = merge_catalog_and_owned_skins(catalog, owned)
+            get_preview_url = getattr(self.data_dragon, "get_skin_preview_url", None)
+            get_remote_image = getattr(self.data_dragon, "get_remote_image", None)
+            skin_images: dict[int, Any] = {}
+            if callable(get_preview_url) and callable(get_remote_image):
+                for skin in skins:
+                    skin_id = safe_int(skin.get("skin_id"))
+                    skin_url = (
+                        skin.get("tile_url")
+                        or skin.get("centered_splash_url")
+                        or skin.get("uncentered_splash_url")
+                        or skin.get("splash_url")
+                    )
+                    if not skin_url:
+                        skin_url = get_preview_url(
+                            self.champion_name,
+                            skin_name=skin.get("skin_name"),
+                            skin_id=skin_id,
+                            skin_num=skin.get("skin_num"),
+                        )
+                    if skin_url:
+                        skin_images[skin_id] = pil_to_qimage(
+                            get_remote_image(skin_url, cache_key=f"picker_skin_{champion_id}_{skin_id}"),
+                            size=(40, 40),
+                        )
             return {
-                "skins": merge_catalog_and_owned_skins(catalog, owned),
+                "skins": skins,
+                "skin_images": skin_images,
                 "ok": bool(ownership.get("ok")) if isinstance(ownership, Mapping) else False,
                 "message": str(ownership.get("message") or "") if isinstance(ownership, Mapping) else "",
             }
@@ -442,6 +499,7 @@ class SkinPickerDialog(QDialog):
 
     def _apply_skins(self, payload: Mapping[str, Any]) -> None:
         self.skins = [dict(skin) for skin in payload.get("skins", []) if isinstance(skin, Mapping)]
+        self.skin_images = payload.get("skin_images", {})
         self.lcu_available = bool(payload.get("ok"))
         message = str(payload.get("message") or "")
         self.status.setText(message or f"{len(self.skins)} skins available")
@@ -465,6 +523,9 @@ class SkinPickerDialog(QDialog):
         for skin in skins:
             skin_id = safe_int(skin.get("skin_id"))
             item = QTreeWidgetItem([str(skin.get("skin_name") or skin.get("name") or skin_id), "Owned" if skin.get("owned") else "Unverified"])
+            skin_image = self.skin_images.get(skin_id) if isinstance(self.skin_images, Mapping) else None
+            if skin_image is not None:
+                item.setIcon(0, QIcon(qpixmap_from_image(skin_image)))
             item.setData(0, Qt.ItemDataRole.UserRole, skin)
             if mode == "random":
                 item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)

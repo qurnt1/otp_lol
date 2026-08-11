@@ -67,6 +67,8 @@ from .events import (
     CoreEvent,
     Disconnected,
     PhaseChanged,
+    ProfileUpdated,
+    RankedEntry,
     ReadyCheckAccepted,
     SpellsApplied,
     StatusChanged,
@@ -78,6 +80,7 @@ _task_session_generation: ContextVar[Optional[int]] = ContextVar(
     "otp_lol_task_session_generation",
     default=None,
 )
+_EP_RANKED_STATS = "/lol-ranked/v1/current-ranked-stats"
 
 
 class WebSocketManager(ChampSelectMixin):
@@ -271,6 +274,85 @@ class WebSocketManager(ChampSelectMixin):
             return int(self.state.summoner_id or 0) or None
         except (TypeError, ValueError):
             return None
+
+    async def _fetch_lcu_json(self, endpoint: str) -> Any:
+        """Return a successful JSON payload, or ``None`` for unavailable data."""
+        if not self.connection:
+            return None
+        try:
+            response = await self.connection.request("get", endpoint)
+            if not response or getattr(response, "status", None) != 200:
+                return None
+            return await response.json()
+        except Exception as error:
+            logging.debug("LCU GET %s unavailable: %s", endpoint, error)
+            return None
+
+    @staticmethod
+    def _positive_int(value: Any) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    @staticmethod
+    def _non_negative_int(value: Any) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    @staticmethod
+    def _optional_text(value: Any) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        value = value.strip()
+        return value or None
+
+    @classmethod
+    def _parse_ranked_entries(cls, payload: Any) -> tuple[RankedEntry, ...]:
+        """Parse only queue entries explicitly returned by current-ranked-stats."""
+        if not isinstance(payload, dict):
+            return ()
+
+        raw_entries = payload.get("queues")
+        if not isinstance(raw_entries, list) or not raw_entries:
+            highest = payload.get("highestRankedEntry")
+            raw_entries = [highest] if isinstance(highest, dict) else []
+
+        entries: list[RankedEntry] = []
+        for raw_entry in raw_entries:
+            if not isinstance(raw_entry, dict):
+                continue
+            queue_type = cls._optional_text(raw_entry.get("queueType"))
+            if not queue_type:
+                continue
+            entries.append(
+                RankedEntry(
+                    queue_type=queue_type,
+                    tier=cls._optional_text(raw_entry.get("tier")),
+                    division=cls._optional_text(raw_entry.get("division")),
+                    league_points=cls._non_negative_int(raw_entry.get("leaguePoints")),
+                    wins=cls._non_negative_int(raw_entry.get("wins")),
+                    losses=cls._non_negative_int(raw_entry.get("losses")),
+                    is_provisional=(
+                        raw_entry.get("isProvisional")
+                        if isinstance(raw_entry.get("isProvisional"), bool)
+                        else None
+                    ),
+                )
+            )
+        return tuple(entries)
+
+    async def _fetch_ranked_entries_async(self) -> tuple[RankedEntry, ...]:
+        """Fetch ranked queues without deriving values when LCU data is absent."""
+        return self._parse_ranked_entries(await self._fetch_lcu_json(_EP_RANKED_STATS))
 
     @staticmethod
     def should_auto_accept_ready_check(
@@ -1038,50 +1120,78 @@ class WebSocketManager(ChampSelectMixin):
             return
 
         # Chat identity often exposes the canonical Riot ID earlier than the summoner endpoint.
-        chat_me = None
-        resp_chat = await self.connection.request("get", "/lol-chat/v1/me")
-        if resp_chat.status == 200:
-            chat_me = await resp_chat.json()
+        chat_me = await self._fetch_lcu_json("/lol-chat/v1/me")
+        current_summoner = await self._fetch_lcu_json(EP_CURRENT_SUMMONER)
 
         if isinstance(chat_me, dict):
-            self.state.auto_game_name = chat_me.get("gameName")
-            self.state.auto_tag_line = chat_me.get("gameTag")
+            self.state.auto_game_name = self._optional_text(chat_me.get("gameName"))
+            self.state.auto_tag_line = self._optional_text(chat_me.get("gameTag"))
             if self.state.auto_game_name and self.state.auto_tag_line:
                 self.state.summoner = f"{self.state.auto_game_name}#{self.state.auto_tag_line}"
             else:
-                self.state.summoner = chat_me.get("name", "Unknown")
-            self.state.summoner_id = chat_me.get("summonerId")
-            self.state.puuid = chat_me.get("puuid")
-        else:
-            resp_me = await self.connection.request("get", "/lol-summoner/v1/current-summoner")
-            if resp_me.status == 200:
-                me = await resp_me.json()
-                self.state.summoner = me.get("displayName", "Unknown")
+                chat_name = self._optional_text(chat_me.get("name"))
+                if chat_name:
+                    self.state.summoner = chat_name
+            chat_summoner_id = self._positive_int(chat_me.get("summonerId"))
+            if chat_summoner_id is not None:
+                self.state.summoner_id = chat_summoner_id
+            chat_puuid = self._optional_text(chat_me.get("puuid"))
+            if chat_puuid:
+                self.state.puuid = chat_puuid
 
-        if self.state.summoner != self.state.last_reported_summoner:
-            self._emit(SummonerUpdated(self.get_riot_id()))
-            self._emit_status(f"Connected: {self.get_riot_id()}", "USER")
+        if isinstance(current_summoner, dict):
+            current_name = self._optional_text(current_summoner.get("displayName"))
+            if current_name and not isinstance(chat_me, dict):
+                self.state.summoner = current_name
+            current_summoner_id = self._positive_int(current_summoner.get("summonerId"))
+            if current_summoner_id is not None:
+                self.state.summoner_id = current_summoner_id
+            current_puuid = self._optional_text(current_summoner.get("puuid"))
+            if current_puuid:
+                self.state.puuid = current_puuid
+
+        riot_id = self.get_riot_id()
+        if riot_id and self.state.summoner != self.state.last_reported_summoner:
+            self._emit(SummonerUpdated(riot_id))
+            self._emit_status(f"Connected: {riot_id}", "USER")
             self.state.last_reported_summoner = self.state.summoner
-        self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
+        self._store_auto_detected_values(riot_id, self.state.platform_routing, self.get_platform_for_websites())
 
         # Region routing can come from different client endpoints depending on the client state.
-        reg = None
-        resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
-        if resp_reg.status != 200:
-            resp_reg = await self.connection.request("get", "/riotclient/region-locale")
-        if resp_reg.status == 200:
-            reg = await resp_reg.json()
+        reg = await self._fetch_lcu_json("/riotclient/get_region_locale")
+        if reg is None:
+            reg = await self._fetch_lcu_json("/riotclient/region-locale")
 
         if isinstance(reg, dict):
-            platform = (reg.get("platformId") or reg.get("region") or "").lower()
+            platform = str(reg.get("platformId") or reg.get("region") or "").lower()
             if platform:
                 self.state.platform_routing = platform
                 self.state.region_routing = self._platform_to_region_routing(platform)
                 self._store_auto_detected_values(
-                    self.get_riot_id(),
+                    riot_id,
                     platform,
                     PLATFORM_TO_REGION.get(platform, "euw"),
                 )
+
+        profile_source = current_summoner if isinstance(current_summoner, dict) else {}
+        fallback_source = chat_me if isinstance(chat_me, dict) else {}
+        profile_icon_id = self._positive_int(profile_source.get("profileIconId"))
+        if profile_icon_id is None:
+            profile_icon_id = self._positive_int(fallback_source.get("profileIconId"))
+        summoner_level = self._positive_int(profile_source.get("summonerLevel"))
+        if summoner_level is None:
+            summoner_level = self._positive_int(fallback_source.get("summonerLevel"))
+        ranked_entries = await self._fetch_ranked_entries_async()
+        self._emit(
+            ProfileUpdated(
+                riot_id=riot_id,
+                summoner_id=self.get_current_summoner_id(),
+                puuid=self._optional_text(self.state.puuid),
+                profile_icon_id=profile_icon_id,
+                summoner_level=summoner_level,
+                ranked_entries=ranked_entries,
+            )
+        )
 
     async def _refresh_current_queue_id(self) -> None:
         """Poll the lobby endpoint to detect the queue id before champ select starts."""

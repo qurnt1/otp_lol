@@ -23,6 +23,22 @@ class FakeResponse:
 
 
 class DataDragonSkinCatalogTests(unittest.TestCase):
+    def test_profile_icon_uses_lcu_id_and_dedicated_cache_key(self):
+        dd = DataDragon()
+        dd.version = "15.15.1"
+        expected = Image.new("RGBA", (64, 64), (1, 2, 3, 255))
+        dd.get_remote_image = lambda url, *, cache_key: (
+            self.assertEqual(
+                url,
+                "https://ddragon.leagueoflegends.com/cdn/15.15.1/img/profileicon/42.png",
+            ),
+            self.assertEqual(cache_key, "profile_icon_42"),
+            expected,
+        )[-1]
+
+        self.assertIs(dd.get_profile_icon(42), expected)
+        self.assertIsNone(dd.get_profile_icon(0))
+
     def test_rune_asset_path_is_converted_to_communitydragon_url(self):
         url = DataDragon._communitydragon_asset_url(
             "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"

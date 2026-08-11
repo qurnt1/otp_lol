@@ -57,6 +57,41 @@ class SummonerUpdated(CoreEvent):
 
 
 @dataclass(frozen=True, slots=True)
+class RankedEntry:
+    """One ranked queue entry returned by the LCU ranked-stats endpoint.
+
+    Missing or malformed LCU fields remain ``None``.  The core never derives a
+    tier, division, LP value, or record from another source.
+    """
+
+    queue_type: str
+    tier: str | None = None
+    division: str | None = None
+    league_points: int | None = None
+    wins: int | None = None
+    losses: int | None = None
+    is_provisional: bool | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileUpdated(CoreEvent):
+    """The current LCU profile snapshot needed by downstream surfaces.
+
+    ``profile_icon_id`` is the authoritative LCU avatar identifier.  It is an
+    identifier rather than a fabricated URL or image, so a presentation layer
+    can resolve it through its existing asset conventions.  ``ranked_entries``
+    is empty when the LCU endpoint is unavailable or returns no valid queue.
+    """
+
+    riot_id: str | None
+    summoner_id: int | None
+    puuid: str | None
+    profile_icon_id: int | None
+    summoner_level: int | None
+    ranked_entries: tuple[RankedEntry, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class ChampionPicked(CoreEvent):
     """A configured champion was locked in."""
 

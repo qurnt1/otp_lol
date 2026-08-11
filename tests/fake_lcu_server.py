@@ -37,10 +37,27 @@ class FakeLCUServer:
         self.phase: str = "None"
         self.summoner_name: str = "TestPlayer"
         self.summoner_id: int = 12345678
+        self.profile_icon_id: int = 42
+        self.summoner_level: int = 125
+        self.current_summoner_status: int = 200
         self.auto_game_name: str = "TestPlayer"
         self.auto_tag_line: str = "EUW"
         self.puuid: str = "fake-puuid-1234"
         self.platform_id: str = "euw1"
+        self.ranked_stats_status: int = 200
+        self.ranked_stats: Dict[str, Any] = {
+            "queues": [
+                {
+                    "queueType": "RANKED_SOLO_5x5",
+                    "tier": "GOLD",
+                    "division": "II",
+                    "leaguePoints": 75,
+                    "wins": 20,
+                    "losses": 15,
+                    "isProvisional": False,
+                }
+            ]
+        }
         self.ready_check_state: str = "InProgress"
         self.ready_check_player_response: str = "None"
         self.champ_select_data: Dict[str, Any] = {"actions": [], "myTeam": []}
@@ -52,6 +69,7 @@ class FakeLCUServer:
     def _setup_routes(self) -> None:
         self._app.router.add_get("/lol-summoner/v1/current-summoner", self._handle_current_summoner)
         self._app.router.add_get("/lol-chat/v1/me", self._handle_chat_me)
+        self._app.router.add_get("/lol-ranked/v1/current-ranked-stats", self._handle_ranked_stats)
         self._app.router.add_get("/lol-gameflow/v1/gameflow-phase", self._handle_gameflow_phase)
         self._app.router.add_get("/lol-matchmaking/v1/ready-check", self._handle_ready_check)
         self._app.router.add_post("/lol-matchmaking/v1/ready-check/accept", self._handle_accept_ready)
@@ -78,11 +96,15 @@ class FakeLCUServer:
 
     async def _handle_current_summoner(self, request: web.Request) -> web.Response:
         self.requests.append({"method": "GET", "path": request.path})
+        if self.current_summoner_status != 200:
+            return web.Response(status=self.current_summoner_status)
         return web.json_response(
             {
                 "displayName": self.summoner_name,
                 "summonerId": self.summoner_id,
                 "puuid": self.puuid,
+                "profileIconId": self.profile_icon_id,
+                "summonerLevel": self.summoner_level,
             }
         )
 
@@ -97,6 +119,12 @@ class FakeLCUServer:
                 "puuid": self.puuid,
             }
         )
+
+    async def _handle_ranked_stats(self, request: web.Request) -> web.Response:
+        self.requests.append({"method": "GET", "path": request.path})
+        if self.ranked_stats_status != 200:
+            return web.Response(status=self.ranked_stats_status)
+        return web.json_response(self.ranked_stats)
 
     async def _handle_gameflow_phase(self, request: web.Request) -> web.Response:
         self.requests.append({"method": "GET", "path": request.path})

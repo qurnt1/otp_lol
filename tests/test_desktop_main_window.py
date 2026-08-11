@@ -1,7 +1,7 @@
 from PySide6.QtTest import QSignalSpy
 from PySide6.QtWidgets import QCheckBox
 
-from src.core.events import Connected, Disconnected, SpellsApplied, StatusChanged
+from src.core.events import Connected, Disconnected, ProfileUpdated, RankedEntry, SpellsApplied, StatusChanged
 from src.desktop.main_window import MainWindow
 
 
@@ -32,6 +32,28 @@ def test_runtime_events_update_visible_state(qtbot):
 
     window.handle_runtime_event(Disconnected(False, "client_stopped"))
     assert window.connection_chip.text() == "Client offline"
+
+
+def test_profile_event_updates_rank_and_keeps_visual_fallbacks(qtbot):
+    window = MainWindow(build_settings())
+    qtbot.addWidget(window)
+
+    window.handle_runtime_event(
+        ProfileUpdated(
+            riot_id="Player#EUW",
+            summoner_id=42,
+            puuid="puuid",
+            profile_icon_id=123,
+            summoner_level=125,
+            ranked_entries=(RankedEntry("RANKED_SOLO_5x5", "PLATINUM", "II", 45, 20, 15),),
+        )
+    )
+
+    assert window.account_name.text() == "Player#EUW"
+    assert window.rank_title.text() == "Ranked Solo/Duo Platinum II"
+    assert window.rank_detail.text() == "45 LP · 20W 15L"
+    assert not window.account_avatar.pixmap().isNull()
+    assert not window.rank_icon.pixmap().isNull()
 
 
 def test_presets_switch_emits_canonical_command(qtbot):

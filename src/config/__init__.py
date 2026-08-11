@@ -26,6 +26,7 @@ Uses:
 from . import settings as _settings
 from .constants import (
     APP_BUILD_NAME,
+    APP_ICON_FILES,
     APP_IMAGE_FILES,
     APP_NAME,
     CURRENT_VERSION,
@@ -72,6 +73,7 @@ from .constants import (
     URL_DD_CHAMPION_DETAIL,
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
+    URL_DD_IMG_PROFILE_ICON,
     URL_DD_IMG_SPELL,
     URL_DD_SKIN_SPLASH,
     URL_DD_SUMMONERS,
@@ -124,6 +126,7 @@ def get_cache_dirs():
 __all__ = [
     "APP_NAME",
     "APP_BUILD_NAME",
+    "APP_ICON_FILES",
     "APP_IMAGE_FILES",
     "GITHUB_REPO_NAME",
     "GITHUB_REPO_API",
@@ -137,6 +140,7 @@ __all__ = [
     "URL_DD_SUMMONERS",
     "URL_DD_IMG_CHAMP",
     "URL_DD_IMG_SPELL",
+    "URL_DD_IMG_PROFILE_ICON",
     "URL_DD_CHAMPION_DETAIL",
     "URL_DD_SKIN_SPLASH",
     "URL_CDRAGON_CHAMPION_DETAIL",

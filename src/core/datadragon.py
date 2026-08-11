@@ -49,6 +49,7 @@ from ..config import (
     URL_DD_CHAMPION_DETAIL,
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
+    URL_DD_IMG_PROFILE_ICON,
     URL_DD_IMG_SPELL,
     URL_DD_SKIN_SPLASH,
     URL_DD_SUMMONERS,
@@ -387,6 +388,23 @@ class DataDragon:
         except Exception as e:
             logging.warning("DataDragon: Summ icon download error - %s", e)
         return None
+
+    def get_profile_icon(self, profile_icon_id: Any) -> Optional[Image.Image]:
+        """Fetch the profile avatar identified by the LCU profile icon id."""
+        try:
+            icon_id = int(profile_icon_id)
+        except (TypeError, ValueError):
+            return None
+        if icon_id <= 0:
+            return None
+        if not self.version:
+            self.load()
+        if not self.version or self.version == "offline":
+            return None
+        return self.get_remote_image(
+            URL_DD_IMG_PROFILE_ICON.format(version=self.version, icon_id=icon_id),
+            cache_key=f"profile_icon_{icon_id}",
+        )
 
     def get_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)

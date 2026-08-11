@@ -40,10 +40,12 @@ from src.config import (
     STATS_SITE_ORDER,
     THEME_LABELS,
     THEME_ORDER,
+    WEBSITE_LOGO_FILES,
+    resource_path,
 )
 from src.config.settings import export_parameters_to_file, import_parameters_from_file
 
-from .images import pil_to_qimage, qpixmap_from_image
+from .images import load_app_icon, pil_to_qimage, qpixmap_from_image
 from .pickers import ChampionPickerDialog, RunePickerDialog, SkinPickerDialog, SpellPickerDialog
 from .tasks import TaskRunner, guarded_callback
 
@@ -110,9 +112,17 @@ class SettingsDialog(QDialog):
         root.addLayout(heading)
 
         tabs = QTabWidget()
-        tabs.addTab(self._scrollable(self._build_general_tab()), "General")
-        tabs.addTab(self._scrollable(self._build_automation_tab()), "Champion select")
-        tabs.addTab(self._scrollable(self._build_integrations_tab()), "Websites & shortcuts")
+        tabs.addTab(self._scrollable(self._build_general_tab()), load_app_icon("settings"), "General")
+        tabs.addTab(
+            self._scrollable(self._build_automation_tab()),
+            load_app_icon("champion_select"),
+            "Champion select",
+        )
+        tabs.addTab(
+            self._scrollable(self._build_integrations_tab()),
+            load_app_icon("external_link"),
+            "Websites & shortcuts",
+        )
         root.addWidget(tabs, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.rejected.connect(self.close)
@@ -224,19 +234,27 @@ class SettingsDialog(QDialog):
         for row, slot_key in enumerate(PICK_SLOT_ORDER, start=1):
             grid.addWidget(QLabel(PICK_SLOT_LABELS[slot_key]), row, 0)
             champion = QPushButton()
+            champion.setIcon(load_app_icon("champion_select"))
+            champion.setIconSize(QSize(28, 28))
             champion.clicked.connect(partial(self._open_champion_picker, slot_key))
             self.pick_buttons[slot_key] = champion
             grid.addWidget(champion, row, 1)
             for spell_number in (1, 2):
                 spell = QPushButton()
+                spell.setIcon(load_app_icon("spells"))
+                spell.setIconSize(QSize(28, 28))
                 spell.clicked.connect(partial(self._open_spell_picker, slot_key, spell_number))
                 self.spell_buttons[(slot_key, spell_number)] = spell
                 grid.addWidget(spell, row, 1 + spell_number)
             rune = QPushButton()
+            rune.setIcon(load_app_icon("runes"))
+            rune.setIconSize(QSize(28, 28))
             rune.clicked.connect(partial(self._open_rune_picker, slot_key))
             self.rune_buttons[slot_key] = rune
             grid.addWidget(rune, row, 4)
             skin = QPushButton()
+            skin.setIcon(load_app_icon("skin"))
+            skin.setIconSize(QSize(32, 32))
             skin.clicked.connect(partial(self._open_skin_picker, slot_key))
             self.skin_buttons[slot_key] = skin
             grid.addWidget(skin, row, 5)
@@ -266,14 +284,14 @@ class SettingsDialog(QDialog):
         form = QFormLayout(websites)
         self.stats_site = QComboBox()
         for site in STATS_SITE_ORDER:
-            self.stats_site.addItem(STATS_SITE_LABELS[site], site)
+            self.stats_site.addItem(QIcon(resource_path(WEBSITE_LOGO_FILES[site])), STATS_SITE_LABELS[site], site)
         self.stats_site.setCurrentIndex(max(self.stats_site.findData(self.settings.get("preferred_stats_site")), 0))
         self.stats_site.currentIndexChanged.connect(
             lambda: self._set_setting("preferred_stats_site", self.stats_site.currentData())
         )
         self.hotkey_site = QComboBox()
         for site in HOTKEY_SITE_ORDER:
-            self.hotkey_site.addItem(HOTKEY_SITE_LABELS[site], site)
+            self.hotkey_site.addItem(QIcon(resource_path(WEBSITE_LOGO_FILES[site])), HOTKEY_SITE_LABELS[site], site)
         self.hotkey_site.setCurrentIndex(max(self.hotkey_site.findData(self.settings.get("preferred_hotkey_site")), 0))
         self.hotkey_site.currentIndexChanged.connect(
             lambda: self._set_setting("preferred_hotkey_site", self.hotkey_site.currentData())
@@ -504,6 +522,49 @@ class SettingsDialog(QDialog):
                     images[(slot_key, "spell", number)] = pil_to_qimage(
                         self.data_dragon.get_summoner_icon(spell), size=(28, 28)
                     )
+                slot = slots.get(slot_key, {})
+                if isinstance(slot, Mapping):
+                    keystone = str(slot.get("rune_keystone_path") or "")
+                    sub_style = str(slot.get("rune_sub_style_icon_path") or "")
+                    compose_rune = getattr(self.data_dragon, "compose_rune_button_icon", None)
+                    images[(slot_key, "rune", 0)] = pil_to_qimage(
+                        compose_rune(keystone, sub_style, size=28)
+                        if keystone and callable(compose_rune)
+                        else None,
+                        size=(28, 28),
+                    )
+                    skin_mode = str(slot.get("skin_mode") or "none")
+                    if skin_mode == "random":
+                        skin_name = str(slot.get("random_skin_name") or "")
+                        skin_id = slot.get("random_skin_id")
+                        skin_num = slot.get("random_skin_num")
+                    elif skin_mode == "fixed":
+                        skin_name = str(slot.get("skin_name") or "")
+                        skin_id = slot.get("skin_id")
+                        skin_num = slot.get("skin_num")
+                    else:
+                        skin_name = ""
+                        skin_id = 0
+                        skin_num = 0
+                    get_skin_url = getattr(self.data_dragon, "get_skin_preview_url", None)
+                    skin_url = (
+                        get_skin_url(
+                            picks[slot_key],
+                            skin_name=skin_name,
+                            skin_id=skin_id,
+                            skin_num=skin_num,
+                        )
+                        if (skin_name or skin_id or skin_num) and callable(get_skin_url)
+                        else None
+                    )
+                    get_remote_image = getattr(self.data_dragon, "get_remote_image", None)
+                    images[(slot_key, "skin", 0)] = pil_to_qimage(
+                        get_remote_image(
+                            skin_url,
+                            cache_key=f"settings_skin_{slot_key}_{skin_id}_{skin_num}",
+                        ) if skin_url and callable(get_remote_image) else None,
+                        size=(32, 32),
+                    )
             return {"generation": generation, "images": images}
 
         self.task_runner.submit(load, guarded_callback(self, "_apply_slot_icons"))
@@ -516,12 +577,18 @@ class SettingsDialog(QDialog):
             return
         for slot_key in PICK_SLOT_ORDER:
             champion_image = images.get((slot_key, "champion", 0))
-            self.pick_buttons[slot_key].setIcon(QIcon(qpixmap_from_image(champion_image)))
-            self.pick_buttons[slot_key].setIconSize(QSize(28, 28))
+            if champion_image is not None and not champion_image.isNull():
+                self.pick_buttons[slot_key].setIcon(QIcon(qpixmap_from_image(champion_image)))
             for number in (1, 2):
                 spell_image = images.get((slot_key, "spell", number))
-                self.spell_buttons[(slot_key, number)].setIcon(QIcon(qpixmap_from_image(spell_image)))
-                self.spell_buttons[(slot_key, number)].setIconSize(QSize(28, 28))
+                if spell_image is not None and not spell_image.isNull():
+                    self.spell_buttons[(slot_key, number)].setIcon(QIcon(qpixmap_from_image(spell_image)))
+            rune_image = images.get((slot_key, "rune", 0))
+            if rune_image is not None and not rune_image.isNull():
+                self.rune_buttons[slot_key].setIcon(QIcon(qpixmap_from_image(rune_image)))
+            skin_image = images.get((slot_key, "skin", 0))
+            if skin_image is not None and not skin_image.isNull():
+                self.skin_buttons[slot_key].setIcon(QIcon(qpixmap_from_image(skin_image)))
 
     def _save_hotkey(self, key: str, editor: QKeySequenceEdit) -> None:
         value = editor.keySequence().toString(QKeySequence.SequenceFormat.PortableText).replace(" ", "").lower()

@@ -2,6 +2,7 @@ from copy import deepcopy
 
 from PySide6.QtCore import QEvent
 from PySide6.QtGui import QFocusEvent, QKeySequence
+from PySide6.QtWidgets import QTabWidget
 
 from src.config.settings import DEFAULT_PARAMS
 from src.desktop.settings_dialog import SettingsDialog
@@ -100,6 +101,13 @@ def test_settings_expose_website_choices_and_current_values(qtbot):
     assert dialog.hotkey_site.currentData() == "porofessor"
     assert dialog.stats_site.count() == 4
     assert dialog.hotkey_site.count() == 4
+    assert all(not button.icon().isNull() for button in dialog.pick_buttons.values())
+    assert all(not button.icon().isNull() for button in dialog.spell_buttons.values())
+    assert all(not button.icon().isNull() for button in dialog.rune_buttons.values())
+    assert all(not button.icon().isNull() for button in dialog.skin_buttons.values())
+    tabs = dialog.findChild(QTabWidget)
+    assert tabs is not None
+    assert all(not tabs.tabIcon(index).isNull() for index in range(tabs.count()))
 
 
 def test_preset_master_switch_emits_once_and_updates_all_flags(qtbot):

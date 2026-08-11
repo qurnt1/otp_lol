@@ -17,7 +17,7 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from src.core.events import SummonerUpdated
+from src.core.events import ProfileUpdated, RankedEntry, SummonerUpdated
 from src.core.websocket import WebSocketManager
 from tests.fake_lcu_server import FakeLCUServer
 
@@ -289,6 +289,75 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         await mgr._refresh_player_and_region()
 
         self.assertIn(SummonerUpdated("TestPlayer#EUW"), _events)
+
+    async def test_refresh_player_emits_profile_avatar_and_rank_snapshot(self):
+        mgr = self._make_manager()
+        _clear_events()
+
+        await mgr._refresh_player_and_region()
+
+        profile_events = [event for event in _events if isinstance(event, ProfileUpdated)]
+        self.assertEqual(len(profile_events), 1)
+        profile = profile_events[0]
+        self.assertEqual(profile.riot_id, "TestPlayer#EUW")
+        self.assertEqual(profile.summoner_id, 12345678)
+        self.assertEqual(profile.puuid, "fake-puuid-1234")
+        self.assertEqual(profile.profile_icon_id, 42)
+        self.assertEqual(profile.summoner_level, 125)
+        self.assertEqual(
+            profile.ranked_entries,
+            (RankedEntry("RANKED_SOLO_5x5", "GOLD", "II", 75, 20, 15, False),),
+        )
+        self.assertIn(
+            {"method": "GET", "path": "/lol-ranked/v1/current-ranked-stats"},
+            self.server.requests,
+        )
+
+    async def test_refresh_player_handles_missing_profile_and_rank_responses(self):
+        self.server.current_summoner_status = 404
+        self.server.ranked_stats_status = 404
+        mgr = self._make_manager()
+        _clear_events()
+
+        await mgr._refresh_player_and_region()
+
+        profile = next(event for event in _events if isinstance(event, ProfileUpdated))
+        self.assertIsNone(profile.profile_icon_id)
+        self.assertIsNone(profile.summoner_level)
+        self.assertEqual(profile.ranked_entries, ())
+
+    async def test_refresh_player_does_not_invent_malformed_rank_values(self):
+        self.server.ranked_stats = {
+            "queues": [
+                {
+                    "queueType": "RANKED_SOLO_5x5",
+                    "tier": "SILVER",
+                    "leaguePoints": "unknown",
+                    "wins": -1,
+                },
+                {"tier": "GOLD", "division": "I"},
+            ]
+        }
+        mgr = self._make_manager()
+        _clear_events()
+
+        await mgr._refresh_player_and_region()
+
+        profile = next(event for event in _events if isinstance(event, ProfileUpdated))
+        self.assertEqual(len(profile.ranked_entries), 1)
+        entry = profile.ranked_entries[0]
+        self.assertEqual(entry.tier, "SILVER")
+        self.assertIsNone(entry.league_points)
+        self.assertIsNone(entry.wins)
+
+    async def test_refresh_player_is_noop_when_lcu_is_offline(self):
+        mgr = self._make_manager()
+        mgr.connection = None
+        _clear_events()
+
+        await mgr._refresh_player_and_region()
+
+        self.assertEqual(_events, [])
 
     async def test_refresh_player_and_region_sets_platform(self):
         mgr = self._make_manager()
