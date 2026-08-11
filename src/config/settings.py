@@ -44,6 +44,7 @@ from .paths import (
     RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
+    cleanup_legacy_cache_paths,
 )
 
 
@@ -510,6 +511,7 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_cache_dirs() -> None:
     """Create cache directories if they do not exist."""
+    cleanup_legacy_cache_paths()
     for cache_dir in [ICONS_CACHE_DIR, SPELLS_CACHE_DIR, SKINS_CACHE_DIR, RUNES_CACHE_DIR]:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir, exist_ok=True)

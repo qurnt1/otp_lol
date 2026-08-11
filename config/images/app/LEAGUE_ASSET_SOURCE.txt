@@ -1,0 +1,5 @@
+League of Legends logo source: Riot Games official press assets.
+https://www.riotgames.com/en/press/riot-games-assets
+
+The bundled 128px PNG is a cropped, downscaled transparent glyph from the
+official League of Legends logo asset, used only as the local launcher icon.

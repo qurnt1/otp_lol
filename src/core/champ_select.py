@@ -1324,8 +1324,10 @@ class ChampSelectMixin:
                             "skin",
                             f"Skin applied automatically: {selected_skin.get('skin_name') or skin_id}.",
                             {
+                                "champion": champion_name,
                                 "skin_id": skin_id,
                                 "skin_name": selected_skin.get("skin_name") or "",
+                                "skin_num": selected_skin.get("skin_num") or 0,
                                 "role": "GLOBAL",
                                 "pick_slot": chosen_slot,
                                 "endpoint": endpoint,
@@ -1501,6 +1503,9 @@ class ChampSelectMixin:
                     rune_page_name or rune_page_id, rune_page_id, chosen_slot,
                 )
                 if previous_confirmed != rune_page_id:
+                    effective = self.get_effective_profile_config(params=params)
+                    pick_slots = effective.get("pick_slots", {})
+                    slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
                     self._log_history(
                         "runes",
                         f"Rune page applied: \"{rune_page_name}\" (id={rune_page_id}).",
@@ -1509,6 +1514,8 @@ class ChampSelectMixin:
                             "rune_page_name": rune_page_name,
                             "role": "GLOBAL",
                             "pick_slot": chosen_slot,
+                            "rune_keystone_path": slot_data.get("rune_keystone_path", ""),
+                            "rune_sub_style_icon_path": slot_data.get("rune_sub_style_icon_path", ""),
                         },
                         level="success",
                         category="Champion Select",
@@ -1534,13 +1541,6 @@ class ChampSelectMixin:
                 break
             response = await self.connection.request("post", "/lol-lobby/v2/play-again")
             if response and response.status < 400:
-                self._log_history(
-                    "play_again",
-                    "Automatically returned to lobby after the game.",
-                    level="success",
-                    category="End game",
-                    action="play_again",
-                )
                 self._emit(PlayAgainSucceeded())
                 self._emit_status("Auto play again succeeded.", "OK")
                 break

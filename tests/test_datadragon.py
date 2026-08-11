@@ -1,9 +1,10 @@
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from PIL import Image
 
+from src.config.paths import ICONS_CACHE_DIR
 from src.core.datadragon import DataDragon
 
 
@@ -38,6 +39,32 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
 
         self.assertIs(dd.get_profile_icon(42), expected)
         self.assertIsNone(dd.get_profile_icon(0))
+
+    def test_rank_icon_uses_current_communitydragon_emblem_and_crops_canvas(self):
+        dd = DataDragon()
+        dd.loaded = True
+        expected = Image.new("RGBA", (100, 80), (0, 0, 0, 0))
+        for x in range(20, 80):
+            for y in range(10, 70):
+                expected.putpixel((x, y), (20, 220, 120, 255))
+        dd.get_remote_image = Mock(return_value=expected)
+
+        result = dd.get_rank_icon("Emerald")
+
+        self.assertEqual(result.size, (60, 60))
+        dd.get_remote_image.assert_called_once_with(
+            "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/"
+            "ranked-emblem/emblem-emerald.png",
+            cache_key="rank_emblem_emerald",
+            cache_dir=ICONS_CACHE_DIR,
+        )
+
+    def test_rank_icon_rejects_unknown_tier(self):
+        dd = DataDragon()
+        dd.get_remote_image = Mock()
+
+        self.assertIsNone(dd.get_rank_icon("unranked"))
+        dd.get_remote_image.assert_not_called()
 
     def test_rune_asset_path_is_converted_to_communitydragon_url(self):
         url = DataDragon._communitydragon_asset_url(

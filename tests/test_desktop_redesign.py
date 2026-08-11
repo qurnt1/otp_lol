@@ -3,10 +3,12 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QSize
+from PySide6.QtTest import QSignalSpy
 
 from src.config.constants import (
     APP_CONTENT_ICON_NAMES,
     APP_ICON_FILES,
+    APP_IMAGE_FILES,
     APP_NAVIGATION_ICON_NAMES,
 )
 from src.config.settings import DEFAULT_PARAMS
@@ -31,7 +33,10 @@ def test_league_companion_shell_exposes_operational_pages(qtbot):
     assert not window.active_rune_icon.pixmap().isNull()
     assert not window.active_skin_icon.pixmap().isNull()
     assert all(not row.icon.pixmap().isNull() for row in window.preset_rows.values())
-    assert window.stats_button.accessibleName() == "Open configured player stats website"
+    assert window.riot_client_button.accessibleName() == "Open League Client"
+    assert window.riot_client_button.height() == window.connection_panel.height() == 56
+    assert not window.queue_hint.icon().isNull()
+    assert window.open_stats_button.accessibleName() == "Open selected stats website"
 
     window.edit_presets_button.click()
     assert window.page_title.text() == "Presets"
@@ -51,8 +56,24 @@ def test_local_icon_set_has_navigation_and_content_assets(qtbot):
         assert path.is_file()
         assert path.parent.name == "navigation"
         assert path.suffix == ".svg"
-        assert 'stroke="#EEF3F8"' in path.read_text(encoding="utf-8")
+        assert 'stroke="#F2F5F8"' in path.read_text(encoding="utf-8")
         assert not load_app_icon(name).isNull()
+
+    assert Path(APP_IMAGE_FILES["icon_ico"]).name == "garen.ico"
+    assert Path(APP_IMAGE_FILES["icon_ico"]).is_file()
+    assert Path(APP_IMAGE_FILES["riot_client_logo"]).is_file()
+    assert Path(APP_IMAGE_FILES["league_client_logo"]).is_file()
+
+
+def test_settings_sidebar_opens_detailed_settings_signal(qtbot):
+    window = MainWindow(deepcopy(DEFAULT_PARAMS))
+    qtbot.addWidget(window)
+    spy = QSignalSpy(window.settings_requested)
+
+    window.nav_buttons["settings"].click()
+
+    assert window.page_title.text() == "Settings"
+    assert spy.count() == 1
 
 
 def test_local_icon_loader_returns_icons_and_supports_tint(qtbot):

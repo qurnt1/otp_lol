@@ -17,7 +17,15 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from src.core.events import ProfileUpdated, RankedEntry, SummonerUpdated
+from src.core.events import (
+    GameLoading,
+    GameStarted,
+    PhaseChanged,
+    ProfileUpdated,
+    RankedEntry,
+    ReturnedToLobby,
+    SummonerUpdated,
+)
 from src.core.websocket import WebSocketManager
 from tests.fake_lcu_server import FakeLCUServer
 
@@ -475,6 +483,33 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr._refresh_current_queue_id = AsyncMock()
         await mgr._handle_phase_event("Lobby")
         self.assertEqual(mgr.state.current_phase, "Lobby")
+
+    async def test_gameflow_transitions_emit_typed_events_and_history_once(self):
+        mgr = self._make_manager()
+        mgr._log_history = Mock()
+        mgr._refresh_current_queue_id = AsyncMock()
+
+        await mgr._handle_phase_event("GameStart")
+        await mgr._handle_phase_event("GameStart")
+        await mgr._handle_phase_event("InProgress")
+        await mgr._handle_phase_event("Lobby")
+        await mgr._handle_phase_event("Lobby")
+
+        lifecycle_events = [
+            event
+            for event in _events
+            if isinstance(event, (GameLoading, GameStarted, ReturnedToLobby))
+        ]
+        self.assertEqual(lifecycle_events, [GameLoading(), GameStarted(), ReturnedToLobby()])
+        self.assertEqual(mgr._log_history.call_count, 3)
+        self.assertEqual(
+            [call.args[0] for call in mgr._log_history.call_args_list],
+            ["game_loading", "game_started", "lobby_returned"],
+        )
+        self.assertEqual(
+            [event.phase for event in _events if isinstance(event, PhaseChanged)],
+            ["GameStart", "GameStart", "InProgress", "Lobby", "Lobby"],
+        )
 
     async def test_repeated_champ_select_event_does_not_reset_session_state(self):
         mgr = self._make_manager()

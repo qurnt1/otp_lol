@@ -2,7 +2,7 @@
 
 THESIS: Show connection, active preset, automation, and health at a glance; refuse
 the crowded settings wall.
-OWN-WORLD: Midnight navy surfaces, warm gold action state, green connection state,
+OWN-WORLD: Midnight navy surfaces, coral actions, green connection state,
 compact Segoe UI, thin cool borders, and quiet layered depth.
 STORY: Home answers the live questions first, while Presets, Automation, History,
 and Settings hold focused configuration and review tasks.
@@ -17,11 +17,21 @@ from collections.abc import Mapping
 from functools import partial
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, QSize, Qt, QTimer, Signal, Slot
-from PySide6.QtGui import QCloseEvent, QIcon
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QSignalBlocker,
+    QSize,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
+)
+from PySide6.QtGui import QCloseEvent, QColor, QIcon, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
+    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -37,6 +47,8 @@ from src.config import (
     APP_ICON_FILES,
     APP_IMAGE_FILES,
     CURRENT_VERSION,
+    HOTKEY_SITE_LABELS,
+    PHASE_DISPLAY_MAP,
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
     STATS_SITE_LABELS,
@@ -89,6 +101,12 @@ _VISUAL_ICON_PATHS = {
     "news": APP_ICON_FILES["news"],
 }
 
+_LOCAL_NEWS_HIGHLIGHTS = (
+    "Home dashboard with live preset and automation state.",
+    "Real champion, spell, rune, skin, rank, and activity icons.",
+    "Improved League client lifecycle feedback and shortcuts.",
+)
+
 
 def _resource_icon(relative_path: str, fallback: str | None = None) -> QIcon:
     icon = QIcon(resource_path(relative_path))
@@ -125,6 +143,31 @@ def _set_qimage_label(label: QLabel, image: Any, size: int, fallback_key: str) -
     _set_icon_label(label, fallback, size)
 
 
+class ToggleSwitch(QCheckBox):
+    """Small accessible switch matching the Home reference controls."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setFixedSize(36, 22)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def paintEvent(self, _event: Any) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        track = self.rect().adjusted(1, 3, -1, -3)
+        painter.setPen(QColor("#f1cf69" if self.isChecked() else "#4b6275"))
+        painter.setBrush(QColor("#d0a843" if self.isChecked() else "#273746"))
+        painter.drawRoundedRect(track, track.height() / 2, track.height() / 2)
+        knob_x = track.right() - 15 if self.isChecked() else track.left() + 3
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#fffaf0" if self.isChecked() else "#b8c2cc"))
+        painter.drawEllipse(knob_x, track.top() + 3, 12, 12)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QColor("#ff9c8d"))
+            painter.drawRoundedRect(self.rect().adjusted(0, 1, -1, -2), 5, 5)
+
+
 class Panel(QFrame):
     """Reusable bordered surface for the shell pages."""
 
@@ -137,24 +180,40 @@ class Panel(QFrame):
 class AutomationCard(Panel):
     toggled = Signal(str, bool)
 
-    def __init__(self, key: str, title: str, description: str, enabled: bool) -> None:
-        super().__init__("automationCard")
+    def __init__(
+        self,
+        key: str,
+        title: str,
+        description: str,
+        enabled: bool,
+        *,
+        compact: bool = False,
+    ) -> None:
+        super().__init__("automationSwitchRow" if compact else "automationCard")
         self.key = key
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(7)
-        header = QHBoxLayout()
+        layout = QHBoxLayout(self) if compact else QVBoxLayout(self)
+        if compact:
+            layout.setContentsMargins(10, 7, 10, 7)
+        else:
+            layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(8 if compact else 7)
         title_label = _label(title, "cardTitle")
-        self.switch = QCheckBox()
+        self.switch = ToggleSwitch()
         self.switch.setAccessibleName("Pick presets" if key == "presets_enabled" else title)
         self.switch.setToolTip(description)
         self.switch.setChecked(enabled)
         self.switch.toggled.connect(partial(self.toggled.emit, key))
-        header.addWidget(title_label)
-        header.addStretch()
-        header.addWidget(self.switch)
-        layout.addLayout(header)
-        layout.addWidget(_label(description, secondary=True))
+        if compact:
+            layout.addWidget(title_label, 1)
+            layout.addWidget(self.switch)
+            self.setToolTip(description)
+        else:
+            header = QHBoxLayout()
+            header.addWidget(title_label)
+            header.addStretch()
+            header.addWidget(self.switch)
+            layout.addLayout(header)
+            layout.addWidget(_label(description, secondary=True))
 
     def set_checked(self, checked: bool) -> None:
         with QSignalBlocker(self.switch):
@@ -251,7 +310,9 @@ class MainWindow(QMainWindow):
     skin_cycle_requested = Signal(str)
     settings_requested = Signal()
     history_requested = Signal()
+    riot_client_requested = Signal()
     stats_requested = Signal()
+    changelog_requested = Signal()
     close_requested = Signal()
     quit_requested = Signal()
 
@@ -278,6 +339,7 @@ class MainWindow(QMainWindow):
         self.task_runner = task_runner
         self.settings = dict(settings)
         self.automation_cards: dict[str, AutomationCard] = {}
+        self.home_automation_cards: dict[str, AutomationCard] = {}
         self.preset_rows: dict[str, PresetRow] = {}
         self.nav_buttons: dict[str, QPushButton] = {}
         self._page_indexes: dict[str, int] = {}
@@ -286,14 +348,16 @@ class MainWindow(QMainWindow):
         self._allow_close = False
         self._icon_generation = 0
         self._profile_generation = 0
+        self._rank_icon_generation = 0
+        self._rank_icon_tier: str | None = None
         self._profile_icon_id: int | None = None
         self._summoner_level: int | None = None
         self._ranked_entries: tuple[Any, ...] = ()
-        self._pulse_on = False
         self._connected = False
-        self._pulse_timer = QTimer(self)
-        self._pulse_timer.setInterval(850)
-        self._pulse_timer.timeout.connect(self._pulse_connection)
+        self._activity_generation = 0
+        self._activity_icon_labels: list[QLabel] = []
+        self._history_icon_labels: list[QLabel] = []
+        self._connection_pulse: QPropertyAnimation | None = None
         self.setStyleSheet(stylesheet_for(str(settings.get("theme") or "darkly")))
         self._build_shell()
         self.refresh_settings(settings)
@@ -337,10 +401,16 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 20, 18, 16)
         layout.setSpacing(8)
 
-        brand = QVBoxLayout()
-        brand.setSpacing(2)
-        brand.addWidget(_label("OTP LOL", "brandName"))
-        brand.addWidget(_label(f"v{CURRENT_VERSION}", "brandVersion", secondary=True))
+        brand = QHBoxLayout()
+        brand.setSpacing(10)
+        brand_logo = _icon_label(38, "brandLogo")
+        _set_icon_label(brand_logo, QIcon(resource_path(APP_IMAGE_FILES["logo_svg"])), 38)
+        brand.addWidget(brand_logo)
+        brand_copy = QVBoxLayout()
+        brand_copy.setSpacing(2)
+        brand_copy.addWidget(_label("OTP LOL", "brandName"))
+        brand_copy.addWidget(_label(f"v{CURRENT_VERSION}", "brandVersion", secondary=True))
+        brand.addLayout(brand_copy)
         layout.addLayout(brand)
         layout.addSpacing(22)
 
@@ -351,7 +421,7 @@ class MainWindow(QMainWindow):
             button.setIconSize(QSize(18, 18))
             button.setCheckable(True)
             button.setAccessibleName(f"Open {label} page")
-            button.clicked.connect(partial(self._show_page, key))
+            button.clicked.connect(partial(self._navigate_from_sidebar, key))
             self.nav_buttons[key] = button
             layout.addWidget(button)
         layout.addStretch(1)
@@ -395,6 +465,7 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
 
         rank_panel = Panel("rankPanel")
+        rank_panel.setFixedHeight(56)
         rank_layout = QHBoxLayout(rank_panel)
         rank_layout.setContentsMargins(10, 8, 10, 8)
         self.rank_icon = _icon_label(38)
@@ -408,16 +479,41 @@ class MainWindow(QMainWindow):
         rank_layout.addLayout(rank_text)
         layout.addWidget(rank_panel)
 
+        self.connection_panel = QFrame()
+        self.connection_panel.setObjectName("connectionPanel")
+        self.connection_panel.setFixedHeight(56)
+        connection_layout = QHBoxLayout(self.connection_panel)
+        connection_layout.setContentsMargins(10, 8, 12, 8)
+        connection_layout.setSpacing(8)
+        self.connection_dot = QLabel()
+        self.connection_dot.setObjectName("connectionDot")
+        self.connection_dot.setFixedSize(10, 10)
+        self.connection_dot.setProperty("connected", False)
+        connection_layout.addWidget(self.connection_dot)
         self.connection_chip = _label("Client offline", "connectionChip")
         self.connection_chip.setProperty("connected", False)
-        layout.addWidget(self.connection_chip)
-        self.stats_button = QPushButton("Open configured stats")
-        self.stats_button.setObjectName("secondaryButton")
-        self.stats_button.setIcon(_resource_icon(APP_ICON_FILES["external_link"]))
-        self.stats_button.setIconSize(QSize(16, 16))
-        self.stats_button.setAccessibleName("Open configured player stats website")
-        self.stats_button.clicked.connect(self.stats_requested.emit)
-        layout.addWidget(self.stats_button)
+        self.connection_chip.setFixedHeight(40)
+        self.connection_chip.setAccessibleName("League client connection status")
+        connection_layout.addWidget(self.connection_chip)
+        layout.addWidget(self.connection_panel)
+        self._connection_opacity = QGraphicsOpacityEffect(self.connection_dot)
+        self.connection_dot.setGraphicsEffect(self._connection_opacity)
+        self._connection_pulse = QPropertyAnimation(self._connection_opacity, b"opacity", self)
+        self._connection_pulse.setDuration(1400)
+        self._connection_pulse.setStartValue(1.0)
+        self._connection_pulse.setKeyValueAt(0.5, 0.35)
+        self._connection_pulse.setEndValue(1.0)
+        self._connection_pulse.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._connection_pulse.setLoopCount(-1)
+        self.riot_client_button = QPushButton("Open League Client")
+        self.riot_client_button.setObjectName("riotClientButton")
+        self.riot_client_button.setIcon(QIcon(resource_path(APP_IMAGE_FILES["league_client_logo"])))
+        self.riot_client_button.setIconSize(QSize(24, 24))
+        self.riot_client_button.setFixedHeight(56)
+        self.riot_client_button.setAccessibleName("Open League Client")
+        self.riot_client_button.setToolTip("Launch League of Legends")
+        self.riot_client_button.clicked.connect(self.riot_client_requested.emit)
+        layout.addWidget(self.riot_client_button)
         return header
 
     def _build_home_page(self) -> QWidget:
@@ -465,11 +561,11 @@ class MainWindow(QMainWindow):
         layout.addStretch(1)
         self.queue_hint = QPushButton("Open League Client")
         self.queue_hint.setObjectName("primaryButton")
-        self.queue_hint.setIcon(_resource_icon(APP_ICON_FILES["external_link"]))
-        self.queue_hint.setIconSize(QSize(16, 16))
+        self.queue_hint.setIcon(QIcon(resource_path(APP_IMAGE_FILES["league_client_logo"])))
+        self.queue_hint.setIconSize(QSize(24, 24))
         self.queue_hint.setAccessibleName("Open League Client")
-        self.queue_hint.setEnabled(False)
-        self.queue_hint.setToolTip("Queue actions are controlled by the League client.")
+        self.queue_hint.clicked.connect(self.riot_client_requested.emit)
+        self.queue_hint.setToolTip("Launch League of Legends to continue.")
         layout.addWidget(self.queue_hint, alignment=Qt.AlignmentFlag.AlignLeft)
         return panel
 
@@ -484,6 +580,7 @@ class MainWindow(QMainWindow):
         self.active_loadout_label = _label("Flash  +  Ignite", secondary=True)
         self.active_rune_label = _label("Rune page not selected", secondary=True)
         self.active_skin_label = _label("Skin not selected", secondary=True)
+        self.active_ban_label = _label("Ban  None", secondary=True)
         layout.addWidget(self.active_preset_title)
         champion_identity = QHBoxLayout()
         self.active_champion_icon = _icon_label(42)
@@ -492,24 +589,34 @@ class MainWindow(QMainWindow):
         champion_identity.addWidget(self.active_champion_label)
         champion_identity.addStretch()
         layout.addLayout(champion_identity)
-        asset_details = QHBoxLayout()
+        asset_details = QGridLayout()
+        asset_details.setHorizontalSpacing(10)
+        asset_details.setVerticalSpacing(7)
         self.active_spell_icons = [_icon_label(28), _icon_label(28)]
         self.active_rune_icon = _icon_label(30)
         self.active_skin_icon = _icon_label(42)
+        self.active_ban_icon = _icon_label(30)
         for icon_label, fallback_key in (
             (self.active_spell_icons[0], "spells"),
             (self.active_spell_icons[1], "spells"),
             (self.active_rune_icon, "runes"),
             (self.active_skin_icon, "skin"),
+            (self.active_ban_icon, "champion"),
         ):
             _set_icon_label(icon_label, _resource_icon(_VISUAL_ICON_PATHS[fallback_key]), icon_label.width())
-            asset_details.addWidget(icon_label)
-        asset_details.addSpacing(4)
-        asset_text = QVBoxLayout()
-        asset_text.addWidget(self.active_loadout_label)
-        asset_text.addWidget(self.active_rune_label)
-        asset_text.addWidget(self.active_skin_label)
-        asset_details.addLayout(asset_text, 1)
+        spells_visual = QHBoxLayout()
+        spells_visual.setSpacing(5)
+        for icon_label in self.active_spell_icons:
+            spells_visual.addWidget(icon_label)
+        asset_details.addLayout(spells_visual, 0, 0)
+        asset_details.addWidget(self.active_loadout_label, 0, 1)
+        asset_details.addWidget(self.active_rune_icon, 1, 0)
+        asset_details.addWidget(self.active_rune_label, 1, 1)
+        asset_details.addWidget(self.active_skin_icon, 2, 0)
+        asset_details.addWidget(self.active_skin_label, 2, 1)
+        asset_details.addWidget(self.active_ban_icon, 3, 0)
+        asset_details.addWidget(self.active_ban_label, 3, 1)
+        asset_details.setColumnStretch(1, 1)
         layout.addLayout(asset_details)
         layout.addStretch(1)
         edit = QPushButton("Edit presets")
@@ -526,20 +633,31 @@ class MainWindow(QMainWindow):
         panel = Panel("automationSummary")
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(20, 18, 20, 18)
-        layout.setSpacing(8)
+        layout.setSpacing(6)
         layout.addWidget(_label("AUTOMATION", "eyebrow"))
-        self.automation_summary = _label("5 controls enabled", "cardTitle")
-        self.automation_summary.setWordWrap(True)
+        self.automation_summary = _label("Automation controls", "cardTitle")
         layout.addWidget(self.automation_summary)
-        self.automation_summary_detail = _label("Open Automation to change behavior.", secondary=True)
+        self.automation_summary_detail = _label("Changes apply to the next champion select.", secondary=True)
         self.automation_summary_detail.setWordWrap(True)
         layout.addWidget(self.automation_summary_detail)
-        layout.addStretch(1)
+        definitions = (
+            ("auto_accept_enabled", "Auto Accept", "Accept ready checks automatically."),
+            ("auto_pick_enabled", "Auto Pick", "Pick the active preset champion."),
+            ("auto_ban_enabled", "Auto Ban", "Ban the configured champion."),
+            ("auto_summoners_enabled", "Apply Summoner Spells", "Apply the active spell pair."),
+            ("rune_auto_apply", "Apply Runes", "Apply the active rune page."),
+            ("auto_play_again_enabled", "Auto Play Again", "Return to the lobby after a game."),
+        )
+        for key, title, description in definitions:
+            card = AutomationCard(key, title, description, False, compact=True)
+            card.toggled.connect(self._forward_home_setting)
+            self.home_automation_cards[key] = card
+            layout.addWidget(card)
         open_page = QPushButton("Configure automation")
         open_page.setObjectName("secondaryButton")
         open_page.setAccessibleName("Configure automation")
         open_page.clicked.connect(partial(self._show_page, "automation"))
-        layout.addWidget(open_page)
+        layout.addWidget(open_page, alignment=Qt.AlignmentFlag.AlignTop)
         return panel
 
     def _build_quick_access_panel(self) -> QWidget:
@@ -567,11 +685,12 @@ class MainWindow(QMainWindow):
             self.quick_access_icons[key] = icon
             self.quick_access_labels.append(label)
             row.addWidget(item, 1)
-        open_button = QPushButton("Open configured")
+        open_button = QPushButton("Open selected website")
         open_button.setObjectName("secondaryButton")
         open_button.setIcon(_resource_icon(APP_ICON_FILES["external_link"]))
         open_button.setIconSize(QSize(16, 16))
-        open_button.setAccessibleName("Open configured stats website")
+        open_button.setAccessibleName("Open selected stats website")
+        self.open_stats_button = open_button
         open_button.clicked.connect(self.stats_requested.emit)
         row.addWidget(open_button)
         layout.addLayout(row)
@@ -619,7 +738,10 @@ class MainWindow(QMainWindow):
             icon = _icon_label(20)
             _set_icon_label(icon, _resource_icon(_VISUAL_ICON_PATHS[icon_key]), 20)
             row.addWidget(icon)
-            row.addWidget(_label(label, secondary=True))
+            text_label = _label(label, secondary=True)
+            if label == "Open stats website":
+                self.shortcut_site_label = text_label
+            row.addWidget(text_label)
             row.addStretch()
             row.addWidget(_label(shortcut, "shortcutKey"))
             layout.addLayout(row)
@@ -638,12 +760,16 @@ class MainWindow(QMainWindow):
         heading.addWidget(_label("NEWS", "sectionTitle"))
         heading.addStretch()
         layout.addLayout(heading)
-        layout.addWidget(_label(f"OTP LOL v{CURRENT_VERSION}", "cardTitle"))
-        layout.addWidget(_label("Local runtime and release checks are enabled.", secondary=True))
+        self.news_version_label = _label(f"OTP LOL v{CURRENT_VERSION}", "cardTitle")
+        self.news_highlights_label = _label("\n".join(f"• {item}" for item in _LOCAL_NEWS_HIGHLIGHTS), secondary=True)
+        self.news_highlights_label.setWordWrap(True)
+        layout.addWidget(self.news_version_label)
+        layout.addWidget(self.news_highlights_label)
         layout.addStretch(1)
-        updates = QPushButton("Check for updates")
+        updates = QPushButton("View Changelog")
         updates.setObjectName("linkButton")
-        updates.clicked.connect(lambda: self.statusBar().showMessage("Update checks run in the background."))
+        updates.setAccessibleName("View changelog")
+        updates.clicked.connect(self.changelog_requested.emit)
         layout.addWidget(updates)
         return panel
 
@@ -768,6 +894,13 @@ class MainWindow(QMainWindow):
         page.setObjectName("page")
         return page
 
+    def _navigate_from_sidebar(self, key: str) -> None:
+        if key == "settings":
+            self._show_page(key)
+            self.settings_requested.emit()
+            return
+        self._show_page(key)
+
     def _show_page(self, key: str) -> None:
         if key not in self._page_indexes:
             return
@@ -792,6 +925,16 @@ class MainWindow(QMainWindow):
         else:
             self.setting_changed.emit(key, enabled)
 
+    def _forward_home_setting(self, key: str, enabled: bool) -> None:
+        if key != "rune_auto_apply":
+            self.setting_changed.emit(key, enabled)
+            return
+        slots = dict(self.settings.get("pick_slots") or {})
+        active_slot = dict(slots.get(PICK_SLOT_ORDER[0]) or {})
+        active_slot["rune_auto_apply"] = enabled
+        slots[PICK_SLOT_ORDER[0]] = active_slot
+        self.setting_changed.emit("pick_slots", slots)
+
     def apply_theme(self, theme_name: str) -> None:
         self.setStyleSheet(stylesheet_for(theme_name))
 
@@ -814,6 +957,12 @@ class MainWindow(QMainWindow):
 
         active_slot = PICK_SLOT_ORDER[0]
         active_slot_data = slots.get(active_slot, {}) if isinstance(slots, Mapping) else {}
+        for key, card in self.home_automation_cards.items():
+            if key == "rune_auto_apply":
+                checked = bool(active_slot_data.get(key, True))
+            else:
+                checked = bool(settings.get(key, False))
+            card.set_checked(checked)
         active_champion = str(active_slot_data.get("champion") or settings.get("selected_pick_1") or "None")
         self.active_preset_title.setText(PICK_SLOT_LABELS.get(active_slot, "Preset 1"))
         self.active_champion_label.setText(active_champion)
@@ -824,10 +973,15 @@ class MainWindow(QMainWindow):
         skin_mode = get_effective_skin_mode_for_slot(active_slot, effective, overrides)
         skin_name = str(active_slot_data.get("skin_name") or "Skin not selected")
         self.active_skin_label.setText(skin_name if skin_mode == "fixed" else f"Skin mode: {skin_mode}")
-        self.ban_label.setText(f"Ban: {settings.get('selected_ban') or 'None'}")
+        selected_ban = str(effective.get("selected_ban") or settings.get("selected_ban") or "None")
+        self.active_ban_label.setText(f"Ban  {selected_ban}")
+        self.ban_label.setText(f"Ban: {selected_ban}")
 
         site = str(settings.get("preferred_stats_site") or "opgg")
-        self.stats_button.setText(f"Open {STATS_SITE_LABELS.get(site, 'stats')}")
+        self.open_stats_button.setText("Open selected website")
+        self.open_stats_button.setToolTip(f"Open {STATS_SITE_LABELS.get(site, site)}")
+        hotkey_site = str(settings.get("preferred_hotkey_site") or "porofessor")
+        self.shortcut_site_label.setText(f"Open {HOTKEY_SITE_LABELS.get(hotkey_site, hotkey_site)}")
         self._refresh_stats_enabled()
         riot_id = self._current_riot_id().strip()
         region = str(settings.get("auto_detected_region") or settings.get("manual_region") or "euw").upper()
@@ -838,7 +992,10 @@ class MainWindow(QMainWindow):
         self.settings_theme_value.setText("Light" if settings.get("theme") == "flatly" else "Dark")
         self.settings_account_value.setText("Auto detect" if settings.get("summoner_name_auto_detect", True) else "Manual")
         self.settings_sites_value.setText(STATS_SITE_LABELS.get(site, site))
-        active_count = sum(bool(settings.get(key, False)) for key in self.automation_cards)
+        active_count = sum(
+            bool(active_slot_data.get(key, True) if key == "rune_auto_apply" else settings.get(key, False))
+            for key in self.home_automation_cards
+        )
         self.automation_summary.setText(f"{active_count} controls enabled")
         self.automation_summary_detail.setText("All systems operational" if active_count else "Automation is disabled")
         self.apply_theme(str(settings.get("theme") or "darkly"))
@@ -861,6 +1018,7 @@ class MainWindow(QMainWindow):
             self.rank_detail.setText(
                 f"Level {level} · Ranked stats unavailable" if level else "Connect League client to refresh"
             )
+            self._reset_rank_icon()
             return
         queue_label = (
             "Ranked Solo/Duo"
@@ -880,6 +1038,36 @@ class MainWindow(QMainWindow):
         if wins is not None and losses is not None:
             detail_parts.append(f"{wins}W {losses}L")
         self.rank_detail.setText(" · ".join(detail_parts) or "Ranked stats available")
+        self._load_rank_icon(tier)
+
+    def _reset_rank_icon(self) -> None:
+        self._rank_icon_generation += 1
+        self._rank_icon_tier = None
+        _set_icon_label(self.rank_icon, _resource_icon(_VISUAL_ICON_PATHS["rank"]), 38)
+
+    def _load_rank_icon(self, tier: str) -> None:
+        tier_key = str(tier or "").strip().lower()
+        if not tier_key or self._rank_icon_tier == tier_key:
+            return
+        self._rank_icon_tier = tier_key
+        get_rank_icon = getattr(self.data_dragon, "get_rank_icon", None)
+        if self.task_runner is None or not callable(get_rank_icon):
+            return
+        self._rank_icon_generation += 1
+        generation = self._rank_icon_generation
+
+        def load() -> dict[str, Any]:
+            return {
+                "generation": generation,
+                "image": pil_to_qimage(get_rank_icon(tier_key), size=(38, 38)),
+            }
+
+        self.task_runner.submit(load, guarded_callback(self, "_apply_rank_icon"))
+
+    def _apply_rank_icon(self, payload: Mapping[str, Any]) -> None:
+        if payload.get("generation") != self._rank_icon_generation:
+            return
+        _set_qimage_label(self.rank_icon, payload.get("image"), 38, "rank")
 
     def _load_profile_icon(self) -> None:
         if self.data_dragon is None or self.task_runner is None or not self._profile_icon_id:
@@ -919,23 +1107,122 @@ class MainWindow(QMainWindow):
             entries = []
         if not entries:
             entries = [{"time": "--:--", "level_label": "INFO", "category": "No recent activity", "message": "Runtime events will appear here."}]
+        self._activity_generation += 1
+        generation = self._activity_generation
+        activity_labels: list[QLabel] = []
+        history_labels: list[QLabel] = []
         for entry in entries:
-            row = QFrame()
-            row.setObjectName("activityRow")
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(8, 6, 8, 6)
-            activity_icon = _icon_label(22)
-            _set_icon_label(activity_icon, _resource_icon(_VISUAL_ICON_PATHS[self._activity_icon_key(entry)]), 22)
-            row_layout.addWidget(activity_icon)
-            row_layout.addWidget(_label(str(entry.get("time") or "--:--"), "activityTime"))
-            row_layout.addWidget(_label(str(entry.get("level_label") or "INFO"), "activityLevel"))
-            detail = QVBoxLayout()
-            detail.addWidget(_label(str(entry.get("message") or entry.get("category") or "Event"), "cardTitle"))
-            detail.addWidget(_label(str(entry.get("category") or "Runtime"), secondary=True))
-            row_layout.addLayout(detail, 1)
-            for layout in (getattr(self, "activity_layout", None), getattr(self, "history_layout", None)):
-                if layout is not None:
-                    layout.addWidget(row if layout is getattr(self, "activity_layout", None) else self._clone_activity_row(entry))
+            row, icon = self._build_activity_row(entry, compact=True)
+            activity_labels.append(icon)
+            if self.activity_layout is not None:
+                self.activity_layout.addWidget(row)
+            history_row, history_icon = self._build_activity_row(entry)
+            history_labels.append(history_icon)
+            if self.history_layout is not None:
+                self.history_layout.addWidget(history_row)
+        self._activity_icon_labels = activity_labels
+        self._history_icon_labels = history_labels
+        self._load_activity_images(entries, activity_labels, history_labels, generation)
+
+    def _build_activity_row(self, entry: Mapping[str, Any], *, compact: bool = False) -> tuple[QFrame, QLabel]:
+        row = QFrame()
+        row.setObjectName("activityRow")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(8, 6 if compact else 8, 8, 6 if compact else 8)
+        activity_icon = _icon_label(28 if compact else 30)
+        icon_size = activity_icon.width()
+        _set_icon_label(activity_icon, _resource_icon(_VISUAL_ICON_PATHS[self._activity_icon_key(entry)]), icon_size)
+        row_layout.addWidget(activity_icon)
+        row_layout.addWidget(_label(str(entry.get("time") or "--:--"), "activityTime"))
+        activity_level = _label(self._activity_status_label(entry), "activityLevel")
+        activity_level.setProperty("level", str(entry.get("level") or "info"))
+        activity_level.setProperty("action", self._activity_action(entry))
+        self._repolish(activity_level)
+        row_layout.addWidget(activity_level)
+        detail = QVBoxLayout()
+        message = str(entry.get("message") or entry.get("category") or "Event")
+        if compact and len(message) > 52:
+            message = f"{message[:49].rstrip()}..."
+        detail.addWidget(_label(message, "cardTitle"))
+        detail.addWidget(_label(str(entry.get("category") or "Runtime"), secondary=True))
+        row_layout.addLayout(detail, 1)
+        return row, activity_icon
+
+    def _load_activity_images(
+        self,
+        entries: list[Mapping[str, Any]],
+        activity_labels: list[QLabel],
+        history_labels: list[QLabel],
+        generation: int,
+    ) -> None:
+        if self.data_dragon is None or self.task_runner is None:
+            return
+
+        def load() -> dict[str, Any]:
+            return {
+                "generation": generation,
+                "images": [self._activity_image(entry) for entry in entries],
+            }
+
+        self.task_runner.submit(
+            load,
+            lambda payload: self._apply_activity_images(payload, entries, activity_labels, history_labels),
+        )
+
+    def _apply_activity_images(
+        self,
+        payload: Mapping[str, Any],
+        entries: list[Mapping[str, Any]],
+        activity_labels: list[QLabel],
+        history_labels: list[QLabel],
+    ) -> None:
+        if payload.get("generation") != self._activity_generation:
+            return
+        images = payload.get("images", [])
+        if not isinstance(images, list):
+            return
+        for labels in (activity_labels, history_labels):
+            for entry, label, image in zip(entries, labels, images, strict=False):
+                _set_qimage_label(label, image, label.width(), self._activity_icon_key(entry))
+
+    def _activity_image(self, entry: Mapping[str, Any]) -> Any:
+        details = entry.get("details", {})
+        if not isinstance(details, Mapping):
+            details = {}
+        action = self._activity_action(entry)
+        if action in {"pick", "ban", "hover"}:
+            champion = str(details.get("champion") or details.get("champion_name") or "")
+            getter = getattr(self.data_dragon, "get_champion_icon", None)
+            if champion and callable(getter):
+                return pil_to_qimage(getter(champion), size=(30, 30))
+        if action == "skin":
+            champion = str(details.get("champion") or "")
+            get_url = getattr(self.data_dragon, "get_skin_preview_url", None)
+            get_image = getattr(self.data_dragon, "get_remote_image", None)
+            if champion and callable(get_url) and callable(get_image):
+                skin_url = get_url(
+                    champion,
+                    skin_name=details.get("skin_name"),
+                    skin_id=details.get("skin_id"),
+                    skin_num=details.get("skin_num"),
+                )
+                if skin_url:
+                    return pil_to_qimage(
+                        get_image(skin_url, cache_key=f"activity_skin_{details.get('skin_id')}_{details.get('skin_num')}"),
+                        size=(30, 30),
+                    )
+        if action == "spells":
+            spell = str(details.get("spell_1") or details.get("spell_2") or "")
+            getter = getattr(self.data_dragon, "get_summoner_icon", None)
+            if spell and callable(getter):
+                return pil_to_qimage(getter(spell), size=(30, 30))
+        if action == "runes":
+            keystone = str(details.get("rune_keystone_path") or "")
+            sub_style = str(details.get("rune_sub_style_icon_path") or "")
+            composer = getattr(self.data_dragon, "compose_rune_button_icon", None)
+            if keystone and callable(composer):
+                return pil_to_qimage(composer(keystone, sub_style, size=30), size=(30, 30))
+        return None
 
     @staticmethod
     def _activity_icon_key(entry: Mapping[str, Any]) -> str:
@@ -953,21 +1240,23 @@ class MainWindow(QMainWindow):
         return "activity"
 
     @staticmethod
-    def _clone_activity_row(entry: Mapping[str, Any]) -> QFrame:
-        row = QFrame()
-        row.setObjectName("activityRow")
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(8, 8, 8, 8)
-        activity_icon = _icon_label(22)
-        _set_icon_label(activity_icon, _resource_icon(_VISUAL_ICON_PATHS[MainWindow._activity_icon_key(entry)]), 22)
-        row_layout.addWidget(activity_icon)
-        row_layout.addWidget(_label(str(entry.get("time") or "--:--"), "activityTime"))
-        row_layout.addWidget(_label(str(entry.get("level_label") or "INFO"), "activityLevel"))
-        detail = QVBoxLayout()
-        detail.addWidget(_label(str(entry.get("message") or entry.get("category") or "Event"), "cardTitle"))
-        detail.addWidget(_label(str(entry.get("category") or "Runtime"), secondary=True))
-        row_layout.addLayout(detail, 1)
-        return row
+    def _activity_action(entry: Mapping[str, Any]) -> str:
+        action = str(entry.get("action") or entry.get("type") or "").strip().lower()
+        if action == "set" and str(entry.get("category") or "").lower() in {"summs", "spells"}:
+            return "spells"
+        return action
+
+    @classmethod
+    def _activity_status_label(cls, entry: Mapping[str, Any]) -> str:
+        labels = {
+            "ban": "BAN",
+            "pick": "PICK",
+            "skin": "SKIN",
+            "spells": "SUMMS",
+            "runes": "RUNES",
+        }
+        action = cls._activity_action(entry)
+        return labels.get(action, str(entry.get("level_label") or "INFO").upper())
 
     def _load_champion_icons(self) -> None:
         if self.data_dragon is None or self.task_runner is None:
@@ -978,6 +1267,7 @@ class MainWindow(QMainWindow):
             return
         self._icon_generation += 1
         generation = self._icon_generation
+        selected_ban = str(effective.get("selected_ban") or self.settings.get("selected_ban") or "")
 
         def load() -> dict[str, Any]:
             assets: dict[str, dict[str, Any]] = {}
@@ -1039,9 +1329,16 @@ class MainWindow(QMainWindow):
                     "rune": rune_image,
                     "skin": skin_image,
                 }
+            ban_image = None
+            if selected_ban and selected_ban != "(None)":
+                ban_image = pil_to_qimage(
+                    self.data_dragon.get_champion_icon(selected_ban),
+                    size=(30, 30),
+                )
             return {
                 "generation": generation,
                 "assets": assets,
+                "ban": ban_image,
             }
 
         self.task_runner.submit(load, guarded_callback(self, "_apply_champion_icons"))
@@ -1052,6 +1349,7 @@ class MainWindow(QMainWindow):
         assets = payload.get("assets", {})
         if not isinstance(assets, Mapping):
             return
+        _set_qimage_label(self.active_ban_icon, payload.get("ban"), 30, "champion")
         for slot_key, asset in assets.items():
             if not isinstance(asset, Mapping):
                 continue
@@ -1078,7 +1376,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_stats_enabled(self) -> None:
         riot_id = self._current_riot_id().strip()
-        self.stats_button.setEnabled("#" in riot_id and all(riot_id.split("#", 1)))
+        self.open_stats_button.setEnabled("#" in riot_id and all(riot_id.split("#", 1)))
 
     @Slot(object)
     def handle_runtime_event(self, event: RuntimeEvent) -> None:
@@ -1090,8 +1388,14 @@ class MainWindow(QMainWindow):
             self.status_label.setText(event.message)
             self.phase_label.setText(event.category or "League client connected and ready.")
             self.statusBar().showMessage(event.message)
+            if event.category.upper() in {
+                "BAN", "PICK", "SKIN", "RUNES", "SUMMS", "OK", "GAME_LOADING", "GAME_STARTED", "LOBBY"
+            }:
+                self._refresh_activity()
         elif isinstance(event, PhaseChanged):
-            self.phase_label.setText(event.phase)
+            self.phase_label.setText(PHASE_DISPLAY_MAP.get(event.phase, event.phase))
+            if event.phase in {"GameStart", "InProgress", "Lobby"}:
+                self._refresh_activity()
         elif isinstance(event, SummonerUpdated):
             self.settings["auto_detected_riot_id"] = event.riot_id or ""
             self.refresh_settings(self.settings)
@@ -1102,21 +1406,27 @@ class MainWindow(QMainWindow):
             self._ranked_entries = event.ranked_entries
             self.refresh_settings(self.settings)
         elif isinstance(event, ChampionPicked):
+            self._refresh_activity()
             self.enqueue_toast(f"Picked {event.champion}", 3000)
         elif isinstance(event, ChampionBanned):
+            self._refresh_activity()
             self.ban_label.setText(f"Ban: {event.champion}")
         elif isinstance(event, SpellsApplied):
+            self._refresh_activity()
             self.spells_label.setText(f"Spells: {event.first} + {event.second}")
             self.active_loadout_label.setText(f"{event.first}  +  {event.second}")
             self.enqueue_toast(f"Spells applied: {event.first} + {event.second}", 3000)
         elif isinstance(event, ReadyCheckAccepted):
+            self._refresh_activity()
             self.enqueue_toast("Match accepted", 3000)
         elif isinstance(event, PlayAgainSucceeded):
+            self._refresh_activity()
             self.enqueue_toast("Returned to lobby", 2500)
         elif isinstance(event, ToastRequested):
             self.enqueue_toast(event.message, event.duration_ms)
         elif isinstance(event, UpdateAvailable):
             self.statusBar().showMessage(f"Version {event.version} is available")
+            self._set_news(event.version, event.highlights)
 
     def enqueue_toast(self, message: str, duration_ms: int = 2000) -> None:
         self._toast_queue.append((message, duration_ms))
@@ -1134,26 +1444,42 @@ class MainWindow(QMainWindow):
 
     def _set_connected(self, connected: bool) -> None:
         self._connected = connected
-        self.connection_chip.setText("Client connected" if connected else "Client offline")
+        self.connection_chip.setText("League client connected" if connected else "League client offline")
         self.connection_chip.setProperty("connected", connected)
+        self.connection_panel.setProperty("connected", connected)
+        self.connection_dot.setProperty("connected", connected)
         self.account_status.setText("Connected" if connected else "Offline")
         if connected and self.status_label.text() == "Waiting for League client":
             self.status_label.setText("Ready for queue")
             self.phase_label.setText("League client connected and ready.")
+            self.statusBar().showMessage("League client connected")
         elif not connected:
             self.status_label.setText("Waiting for League client")
             self.phase_label.setText("Waiting for League client.")
-        if connected:
-            self._pulse_timer.start()
-        else:
-            self._pulse_timer.stop()
-            self.connection_chip.setProperty("pulsing", False)
+            self.statusBar().showMessage("Waiting for the League client")
         self._repolish(self.connection_chip)
+        self._repolish(self.connection_panel)
+        self._repolish(self.connection_dot)
+        if self._connection_pulse is not None:
+            if connected:
+                self._connection_pulse.start()
+            else:
+                self._connection_pulse.stop()
+                self._connection_opacity.setOpacity(0.65)
 
-    def _pulse_connection(self) -> None:
-        self._pulse_on = not self._pulse_on
-        self.connection_chip.setProperty("pulsing", self._pulse_on)
-        self._repolish(self.connection_chip)
+    def _set_news(self, version: str, highlights: Any) -> None:
+        if isinstance(highlights, (list, tuple)):
+            items = [str(item).strip() for item in highlights if str(item).strip()]
+        else:
+            items = []
+            for raw_line in str(highlights or "").splitlines():
+                line = raw_line.strip().lstrip("-*• ").strip()
+                if line:
+                    items.append(line)
+        if not items:
+            items = list(_LOCAL_NEWS_HIGHLIGHTS)
+        self.news_version_label.setText(f"OTP LOL v{version}")
+        self.news_highlights_label.setText("\n".join(f"• {item}" for item in items[:4]))
 
     @staticmethod
     def _repolish(widget: QWidget) -> None:

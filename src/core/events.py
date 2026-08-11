@@ -50,6 +50,21 @@ class PhaseChanged(CoreEvent):
 
 
 @dataclass(frozen=True, slots=True)
+class GameLoading(CoreEvent):
+    """The client started loading the match after champion select."""
+
+
+@dataclass(frozen=True, slots=True)
+class GameStarted(CoreEvent):
+    """The game reached the playable in-progress phase."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReturnedToLobby(CoreEvent):
+    """The client returned to the lobby after a completed match."""
+
+
+@dataclass(frozen=True, slots=True)
 class SummonerUpdated(CoreEvent):
     """The detected Riot ID changed."""
 

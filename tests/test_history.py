@@ -42,6 +42,17 @@ class HistoryFormattingTests(unittest.TestCase):
             ["Summs: Flash + Ignite", "Profile: MIDDLE"],
         )
 
+    def test_gameflow_events_have_stable_display_defaults(self):
+        for event_type, action in (
+            ("game_loading", "game_loading"),
+            ("game_started", "game_started"),
+            ("lobby_returned", "lobby_returned"),
+        ):
+            formatted = format_history_entry({"type": event_type, "message": "event"})
+            self.assertEqual(formatted["type"], event_type)
+            self.assertEqual(formatted["action"], action)
+            self.assertEqual(formatted["category"], "Game")
+
     def test_history_serialization_failure_keeps_previous_file_and_cleans_temp(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             history_path = Path(tmpdir) / "history.json"

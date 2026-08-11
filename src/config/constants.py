@@ -41,6 +41,10 @@ URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/s
 URL_DD_IMG_PROFILE_ICON: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/profileicon/{icon_id}.png"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
 URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
+URL_CDRAGON_RANK_EMBLEM: str = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/"
+    "ranked-emblem/emblem-{tier}.png"
+)
 URL_CDRAGON_CHAMPION_DETAIL: str = (
     "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champions/{champion_id}.json"
 )
@@ -89,6 +93,7 @@ PHASE_DISPLAY_MAP: Dict[str, str] = {
     "Matchmaking": "Searching for a match...",
     "ReadyCheck": "Match found!",
     "ChampSelect": "Champion select",
+    "GameStart": "Loading into game",
     "InProgress": "Game in progress",
     "EndOfGame": "End of game",
     "WaitingForStats": "Waiting for stats",
@@ -125,6 +130,9 @@ QUEUE_ID_LABELS: Dict[int, str] = {
 }
 
 APP_IMAGE_FILES: Dict[str, str] = {
+    "logo_svg": "config/images/app/otp-lol-logo.svg",
+    "riot_client_logo": "config/images/app/riot-client-logo.png",
+    "league_client_logo": "config/images/app/league-client-logo.png",
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",
     "gear": "config/images/app/gear.png",

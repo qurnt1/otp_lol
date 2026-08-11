@@ -45,6 +45,9 @@ EVENT_DEFAULTS: Dict[str, Dict[str, str]] = {
     "pick": {"level": "success", "category": "Champion Select", "action": "pick"},
     "spells": {"level": "success", "category": "Summs", "action": "set"},
     "play_again": {"level": "success", "category": "End game", "action": "play_again"},
+    "game_loading": {"level": "info", "category": "Game", "action": "game_loading"},
+    "game_started": {"level": "success", "category": "Game", "action": "game_started"},
+    "lobby_returned": {"level": "success", "category": "Game", "action": "lobby_returned"},
     "error": {"level": "error", "category": "Error", "action": "error"},
 }
 
@@ -199,9 +202,12 @@ def format_history_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     category = CATEGORY_LABELS.get(category, category)
     return {
         "time": _format_timestamp(entry.get("timestamp", "")),
+        "type": event_type,
+        "action": str(entry.get("action") or defaults.get("action", event_type)),
         "level": level,
         "level_label": LEVEL_LABELS.get(level, LEVEL_LABELS["info"]),
         "category": category,
         "message": entry.get("message", "Event"),
+        "details": entry.get("details", {}) if isinstance(entry.get("details", {}), dict) else {},
         "detail_lines": _build_detail_lines(entry.get("details", {})),
     }

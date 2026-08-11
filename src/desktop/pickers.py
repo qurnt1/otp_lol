@@ -54,6 +54,13 @@ def _guarded_callback(owner: QDialog, method_name: str):
     return callback
 
 
+def _websocket_is_active(websocket_manager: Any) -> bool:
+    if websocket_manager is None:
+        return False
+    active = getattr(websocket_manager, "is_active", False)
+    return bool(active() if callable(active) else active)
+
+
 class ChampionPickerDialog(QDialog):
     champion_selected = Signal(str)
 
@@ -408,7 +415,7 @@ class SkinPickerDialog(QDialog):
         self.champion_name = champion_name
         self.slot_data = dict(slot_data)
         self.skins: list[dict[str, Any]] = []
-        self.lcu_available = bool(websocket_manager and websocket_manager.is_active())
+        self.lcu_available = _websocket_is_active(websocket_manager)
         self._updating = False
 
         root = QVBoxLayout(self)

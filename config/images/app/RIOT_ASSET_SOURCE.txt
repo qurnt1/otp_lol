@@ -1,0 +1,4 @@
+riot-client-logo.png
+Source: Riot Games official web logo pack, Riot Games Assets press page.
+URL: https://www.riotgames.com/th/press/riot-games-assets
+Asset: 001.4_RG_2021_LOGOMARK_SQ_RED_OFFWHITE.png

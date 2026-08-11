@@ -6,8 +6,11 @@ from src.core.events import (
     Connected,
     CoreEvent,
     Disconnected,
+    GameLoading,
+    GameStarted,
     ProfileUpdated,
     RankedEntry,
+    ReturnedToLobby,
     RuntimeEvent,
     SpellsApplied,
 )
@@ -27,6 +30,11 @@ class CoreEventTests(unittest.TestCase):
     def test_spells_event_has_named_fields(self):
         event = SpellsApplied("Flash", "Teleport")
         self.assertEqual((event.first, event.second), ("Flash", "Teleport"))
+
+    def test_gameflow_events_are_core_runtime_events(self):
+        for event in (GameLoading(), GameStarted(), ReturnedToLobby()):
+            self.assertIsInstance(event, CoreEvent)
+            self.assertIsInstance(event, RuntimeEvent)
 
     def test_profile_event_carries_only_typed_lcu_values(self):
         ranked = RankedEntry("RANKED_SOLO_5x5", "GOLD", "II", 75, 20, 15, False)

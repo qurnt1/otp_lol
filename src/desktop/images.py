@@ -11,7 +11,7 @@ from src.config.constants import APP_ICON_FILES
 from src.config.paths import resource_path
 
 DEFAULT_APP_ICON_SIZE = 24
-DEFAULT_APP_ICON_COLOR = "#EEF3F8"
+DEFAULT_APP_ICON_COLOR = "#F2F5F8"
 
 
 def app_icon_path(name: str) -> str:

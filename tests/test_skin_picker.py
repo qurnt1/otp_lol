@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
+from src.desktop.pickers import _websocket_is_active
 from src.services.skin_catalog import (
     confirm_unowned_skin_selection,
     get_picker_image_url,
@@ -11,6 +12,11 @@ from src.services.skin_catalog import (
 
 
 class SkinCatalogTests(unittest.TestCase):
+    def test_websocket_active_supports_property_and_method_contracts(self):
+        self.assertTrue(_websocket_is_active(type("PropertyManager", (), {"is_active": True})()))
+        self.assertTrue(_websocket_is_active(type("MethodManager", (), {"is_active": lambda self: True})()))
+        self.assertFalse(_websocket_is_active(type("OfflineManager", (), {"is_active": False})()))
+
     def test_merge_catalog_and_owned_marks_unowned_entries(self):
         catalog = [
             {"skin_id": 1000, "skin_num": 0, "skin_name": "Default", "tile_url": "default"},

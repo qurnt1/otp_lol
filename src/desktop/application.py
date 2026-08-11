@@ -4,7 +4,7 @@ import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Slot
+from PySide6.QtCore import QObject, QPoint, QProcess, Qt, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
@@ -19,6 +19,7 @@ from src.core.events import (
     UpdateAvailable,
 )
 from src.services.profile_config import build_effective_profile_config
+from src.services.riot_client import find_riot_client
 from src.services.skin_modes import (
     build_main_skin_overrides,
     get_effective_skin_mode_for_slot,
@@ -59,6 +60,7 @@ class DesktopApplication(QObject):
         self.settings_dialog: SettingsDialog | None = None
         self.history_dialog: HistoryDialog | None = None
         self.update_dialog: UpdateDialog | None = None
+        self._latest_update_event: UpdateAvailable | None = None
         self._connected = False
         self._shutdown_started = False
 
@@ -86,6 +88,8 @@ class DesktopApplication(QObject):
         self.main_window.settings_requested.connect(self.open_settings)
         self.main_window.history_requested.connect(self.open_history)
         self.main_window.stats_requested.connect(self.open_stats_site)
+        self.main_window.changelog_requested.connect(self.open_changelog)
+        self.main_window.riot_client_requested.connect(self.open_riot_client)
         self.main_window.close_requested.connect(self._handle_main_close)
         self.main_window.quit_requested.connect(self.quit)
         self.hotkeys.toggle_requested.connect(self.toggle_main_window)
@@ -239,6 +243,19 @@ class DesktopApplication(QObject):
             QUrl(build_stats_site_url(str(settings.get("preferred_stats_site") or "opgg"), region, riot_id))
         )
 
+    def open_riot_client(self) -> None:
+        executable = find_riot_client()
+        if executable is None:
+            self.main_window.enqueue_toast("Riot Client introuvable sur ce PC.", 3200)
+            return
+        launch_result = QProcess.startDetached(
+            str(executable),
+            ["--launch-product=league_of_legends", "--launch-patchline=live"],
+        )
+        started = launch_result[0] if isinstance(launch_result, tuple) else launch_result
+        if not started:
+            self.main_window.enqueue_toast("Impossible de lancer Riot Client.", 3200)
+
     def open_hotkey_site(self) -> None:
         riot_id, region = self._account_for_websites()
         if not is_valid_riot_id(riot_id):
@@ -272,7 +289,14 @@ class DesktopApplication(QObject):
         elif isinstance(event, SummonerUpdated):
             self.main_window.refresh_settings(self.controller.settings_snapshot())
         elif isinstance(event, UpdateAvailable):
+            self._latest_update_event = event
             self._show_update(event)
+
+    def open_changelog(self) -> None:
+        if self._latest_update_event is None:
+            self.main_window.statusBar().showMessage("No remote changelog is available yet.")
+            return
+        self._show_update(self._latest_update_event)
 
     def _auto_hide_if_allowed(self) -> None:
         if self._connected and not (self.settings_dialog and self.settings_dialog.isVisible()):

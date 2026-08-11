@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Lang, SiteCopy } from "../content";
 import { REPOSITORY_URL } from "../githubRelease";
-import { BrandMark } from "./BrandMark";
 
 type SiteHeaderProps = { lang: Lang; copy: SiteCopy["nav"]; onLanguageChange: (lang: Lang) => void };
 const destinations = [["workflow", "workflow"], ["capabilities", "capabilities"], ["privacy", "privacy"], ["contact", "contact"]] as const;
@@ -20,7 +19,10 @@ export function SiteHeader({ lang, copy, onLanguageChange }: SiteHeaderProps) {
 
   return (
     <header className="site-header">
-      <a className="brand" href="#top" aria-label={copy.home}><BrandMark className="brand__mark" /><span>OTP LOL</span></a>
+      <a className="brand" href="#top" aria-label={copy.home}>
+        <img className="brand__mark" src="assets/app/garen.webp" alt="" width="40" height="40" />
+        <span translate="no">OTP LOL</span>
+      </a>
       <nav className="desktop-nav" aria-label={copy.label}>{navLinks}</nav>
       <div className="header-actions">
         <div className="language-switch" role="group" aria-label={copy.language}>

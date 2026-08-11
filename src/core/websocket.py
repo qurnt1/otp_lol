@@ -66,10 +66,13 @@ from .events import (
     Connected,
     CoreEvent,
     Disconnected,
+    GameLoading,
+    GameStarted,
     PhaseChanged,
     ProfileUpdated,
     RankedEntry,
     ReadyCheckAccepted,
+    ReturnedToLobby,
     SpellsApplied,
     StatusChanged,
     SummonerUpdated,
@@ -938,7 +941,8 @@ class WebSocketManager(ChampSelectMixin):
             return
 
         previous_phase = self.state.current_phase
-        if phase != previous_phase:
+        phase_changed = phase != previous_phase
+        if phase_changed:
             logging.info("[PHASE] %s -> %s", previous_phase, phase)
         self.state.current_phase = phase
 
@@ -947,6 +951,8 @@ class WebSocketManager(ChampSelectMixin):
 
         friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
         self._emit(PhaseChanged(phase))
+        if phase_changed:
+            self._emit_gameflow_transition(previous_phase, phase)
         self._emit_status(f"Status: {friendly_phase}", "INFO")
 
         if phase in {"Lobby", "Matchmaking", "ChampSelect"}:
@@ -958,6 +964,49 @@ class WebSocketManager(ChampSelectMixin):
             await self._champ_select_tick()
         if phase in {"EndOfGame", "WaitingForStats"}:
             await self._handle_post_game()
+
+    def _emit_gameflow_transition(self, previous_phase: str, phase: str) -> None:
+        """Emit one typed lifecycle event and persist its user-visible history entry."""
+        details = {"from_phase": previous_phase, "to_phase": phase}
+        if phase == "GameStart":
+            self._log_history(
+                "game_loading",
+                "Loading into game...",
+                details,
+                level="info",
+                category="Game",
+                action="game_loading",
+            )
+            self._emit(GameLoading())
+            return
+
+        if phase == "InProgress":
+            self._log_history(
+                "game_started",
+                "Game started, good luck!",
+                details,
+                level="success",
+                category="Game",
+                action="game_started",
+            )
+            self._emit(GameStarted())
+            return
+
+        if phase == "Lobby" and previous_phase in {
+            "GameStart",
+            "InProgress",
+            "EndOfGame",
+            "WaitingForStats",
+        }:
+            self._log_history(
+                "lobby_returned",
+                "Returned to lobby.",
+                details,
+                level="success",
+                category="Game",
+                action="lobby_returned",
+            )
+            self._emit(ReturnedToLobby())
 
     def _ws_loop(self) -> None:
         """Run the LCU connector in its own asyncio loop and forward LCU events to the UI thread."""
