@@ -17,7 +17,7 @@ Developers working on filesystem access, caching, packaging, or resource loading
 
 DEPENDENCIES:
 Used by:
-- src.config, src.core, src.services, and src.ui modules that read files or write caches.
+- src.config, src.core, src.services, and src.desktop modules that read files or write caches.
 Uses:
 - Standard library: os, sys, tempfile
 """

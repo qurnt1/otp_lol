@@ -100,10 +100,10 @@ class UtilsTests(unittest.TestCase):
             build_hotkey_site_url("dpm", "euw", "MonCompte#EUW"),
             "https://dpm.lol/MonCompte-EUW/live",
         )
-        self.assertEqual(
-            build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
-        )
+        self.assertEqual(build_hotkey_site_url("porofessor", "", ""), "https://porofessor.gg/")
+        self.assertEqual(build_hotkey_site_url("opgg", "", "invalid"), "https://op.gg/")
+        self.assertEqual(build_hotkey_site_url("deeplol", "invalid", "Player#TAG"), "https://www.deeplol.gg/")
+        self.assertIsNone(build_hotkey_site_url("unknown", "euw", "Player#TAG"))
 
     def test_riot_id_validation(self):
         self.assertTrue(is_valid_riot_id("MonCompte#EUW"))
@@ -147,8 +147,12 @@ class UtilsTests(unittest.TestCase):
             "html_url": "https://github.com/qurnt1/otp_lol/releases/tag/v12.0",
             "assets": [
                 {
-                    "name": "OTP-LOL-12.0.exe",
-                    "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-12.0.exe",
+            "name": "OTP-LOL-Setup.exe",
+            "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-Setup.exe",
+                },
+                {
+            "name": "OTP-LOL-Setup.exe.sha256",
+            "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-Setup.exe.sha256",
                 }
             ],
         }
@@ -160,6 +164,8 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(update_info["version"], normalize_version("12.0"))
         self.assertEqual(update_info["release_url"], response.json.return_value["html_url"])
         self.assertEqual(update_info["asset_url"], response.json.return_value["assets"][0]["browser_download_url"])
+        self.assertEqual(update_info["checksum_name"], "OTP-LOL-Setup.exe.sha256")
+        self.assertEqual(update_info["checksum_url"], response.json.return_value["assets"][1]["browser_download_url"])
         self.assertIn("`Feature A`", update_info["highlights"])
         self.assertIn("Description A.", update_info["highlights"])
 

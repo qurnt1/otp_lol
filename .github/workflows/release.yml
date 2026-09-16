@@ -16,6 +16,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test
+          npm run build
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -29,18 +43,54 @@ jobs:
         run: python -m pip install -c requirements-constraints.txt -r requirements.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q launcher.py src tests create_exe.py
+        run: python -m compileall -q launcher_web.py src tests create_exe.py
 
       - name: Run unittest suite
         run: python -m unittest discover -s tests -v
+
+      - name: Check generated API types
+        working-directory: frontend
+        run: npm run api:check
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install chromium
+
+      - name: Run browser smoke tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          $version = python -c "from src.config import CURRENT_VERSION; print(CURRENT_VERSION)"
+          $expected = "${{ github.ref_name }}".Substring(1)
+          if ($version.Trim() -ne $expected) {
+            throw "Application version $($version.Trim()) does not match tag $expected."
+          }
 
   package:
     name: Package Windows executable
     needs: validate
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -54,21 +104,54 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -c requirements-constraints.txt -r requirements-build.txt
 
-      - name: Build executable without desktop side effects
+      - name: Build onedir distribution without desktop side effects
         shell: pwsh
         run: |
-          "n" | python create_exe.py
+          python create_exe.py --mode onedir --no-shortcut
 
-      - name: Verify executable
+      - name: Verify onedir distribution
         shell: pwsh
         run: |
-          if (-not (Test-Path -LiteralPath "OTP LOL.exe" -PathType Leaf)) {
-            throw "Expected OTP LOL.exe was not produced."
+          if (-not (Test-Path -LiteralPath "OTP LOL\OTP LOL.exe" -PathType Leaf)) {
+            throw "Expected onedir executable was not produced."
           }
+
+      - name: Run packaged onedir self-test
+        shell: pwsh
+        run: |
+          & ".\OTP LOL\OTP LOL.exe" --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed." }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "Inno Setup compiler was not found." }
+          $version = python -c "from src.config import CURRENT_VERSION; print(CURRENT_VERSION)"
+          & $iscc "/DAppVersion=$($version.Trim())" "/DBuildRoot=$(Get-Location)" "installer\OTP-LOL.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "release\OTP-LOL-Setup.exe").Hash.ToLowerInvariant()
+          "$hash  OTP-LOL-Setup.exe" | Set-Content -LiteralPath "release\OTP-LOL-Setup.exe.sha256" -Encoding ascii
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" "release/OTP-LOL-Setup.exe" "release/OTP-LOL-Setup.exe.sha256" --verify-tag --generate-notes
 
       - name: Upload release candidate artifact
         uses: actions/upload-artifact@v4
         with:
           name: OTP-LOL-${{ github.ref_name }}
-          path: OTP LOL.exe
+          path: release
           if-no-files-found: error

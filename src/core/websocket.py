@@ -19,7 +19,7 @@ Developers maintaining the live client integration, reconnect behavior, and runt
 
 DEPENDENCIES:
 Used by:
-- launcher.py and src/ui/main_window.py through OtpLolApplication wiring.
+- src.lcu.runtime and desktop application wiring.
 Uses:
 - Standard library: asyncio, logging, threading, time, typing
 - Optional third-party libraries: lcu_driver, psutil
@@ -54,7 +54,6 @@ from ..config import (
     EP_READY_CHECK,
     EP_SESSION,
     EP_SESSION_TIMER,
-    PHASE_DISPLAY_MAP,
     PLATFORM_TO_REGION,
     PRACTICE_TOOL_GAME_MODE,
     PRESET_ENABLED_QUEUE_IDS,
@@ -83,13 +82,13 @@ class WebSocketManager(ChampSelectMixin):
 
     def __init__(
         self,
-        ui_callback: Callable[[str, Any], None],
+        event_callback: Callable[[str, Any], None],
         dd,
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
     ):
         """Store shared collaborators and initialize per-run websocket state."""
-        self.ui_callback = ui_callback
+        self.event_callback = event_callback
         self.dd = dd
         self.get_params = get_params
         self.update_param = update_param
@@ -103,8 +102,14 @@ class WebSocketManager(ChampSelectMixin):
         self._cs_tick_lock = asyncio.Lock()
         self.game_start_cooldown: float = 12.0
 
-    def _notify_ui(self, event_type: str, data: Any = None) -> None:
-        self.ui_callback(event_type, data)
+    def _notify_event(self, event_type: str, data: Any = None) -> None:
+        self.event_callback(event_type, data)
+
+    def _notify_status(self, action: str, *, level: str = "INFO", **params: Any) -> None:
+        self._notify_event(
+            self.EVENT_STATUS,
+            {"action": action, "level": level, "params": params},
+        )
 
     def _log_history(
         self,
@@ -121,7 +126,7 @@ class WebSocketManager(ChampSelectMixin):
     def start(self) -> None:
         """Start the background LCU loop if the connector is available."""
         if Connector is None:
-            self._notify_ui(self.EVENT_STATUS, ("Error: 'lcu_driver' is missing.", "ERROR"))
+            self._notify_status("lcu_missing", level="ERROR")
             return
         if self.thread and self.thread.is_alive():
             return
@@ -155,10 +160,10 @@ class WebSocketManager(ChampSelectMixin):
         params = self.get_params()
         if not params.get("summoner_name_auto_detect", True):
             return params.get("manual_region", "euw").lower()
-        return (
-            params.get("auto_detected_region")
-            or PLATFORM_TO_REGION.get((self.state.platform_routing or "").lower(), "euw")
-        ).lower()
+        detected_region = params.get("auto_detected_region") or PLATFORM_TO_REGION.get(
+            (self.state.platform_routing or "").lower()
+        )
+        return str(detected_region or "").strip().lower()
 
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
         effective = self.get_effective_profile_config(params=params)
@@ -285,28 +290,6 @@ class WebSocketManager(ChampSelectMixin):
                 )
         return perks
 
-    def fetch_rune_pages(self) -> List[Dict[str, Any]]:
-        """Synchronous wrapper to fetch rune pages from the LCU."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return []
-        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_pages_async(), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: rune pages fetch failed - %s", e)
-            return []
-
-    def fetch_rune_styles(self) -> Dict[int, Dict[str, Any]]:
-        """Synchronous wrapper to fetch rune style metadata from the LCU."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return {}
-        future = asyncio.run_coroutine_threadsafe(self._fetch_rune_styles_async(), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: rune styles fetch failed - %s", e)
-            return {}
-
     async def _fetch_current_rune_page_async(self) -> Optional[Dict[str, Any]]:
         """GET /lol-perks/v1/currentpage — return the currently active rune page or None."""
         if not self.connection:
@@ -374,68 +357,6 @@ class WebSocketManager(ChampSelectMixin):
         except Exception as e:
             logging.warning("[RUNES] DELETE /lol-perks/v1/pages/%s failed: %s", page_id, e)
             return False
-
-    def fetch_current_rune_page(self) -> Optional[Dict[str, Any]]:
-        """Sync wrapper: get the current active rune page."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return None
-        future = asyncio.run_coroutine_threadsafe(self._fetch_current_rune_page_async(), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: current rune page fetch failed - %s", e)
-            return None
-
-    def set_rune_page_via_perks(self, page_data: Dict[str, Any]) -> bool:
-        """Sync wrapper: set a rune page as current via PUT."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return False
-        future = asyncio.run_coroutine_threadsafe(self._set_rune_page_via_perks_async(page_data), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: set rune page via perks failed - %s", e)
-            return False
-
-    def create_rune_page(self, page_data: Dict[str, Any]) -> Optional[int]:
-        """Sync wrapper: create a new rune page with current: true, return its id."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return None
-        future = asyncio.run_coroutine_threadsafe(self._create_rune_page_async(page_data), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: create rune page failed - %s", e)
-            return None
-
-    def delete_rune_page(self, page_id: int) -> bool:
-        """Sync wrapper: delete a rune page by id."""
-        if not self.ws_active or not self.connection or not self.loop:
-            return False
-        future = asyncio.run_coroutine_threadsafe(self._delete_rune_page_async(page_id), self.loop)
-        try:
-            return future.result(timeout=5)
-        except Exception as e:
-            logging.debug("WebSocket: delete rune page failed - %s", e)
-            return False
-
-    def fetch_owned_skins_for_champion(self, champion_id: int) -> Dict[str, Any]:
-        if not self.ws_active or not self.connection or not self.loop:
-            return {
-                "ok": False,
-                "message": "Unable to fetch skins. Check your League of Legends connection.",
-                "owned_skins": [],
-            }
-        future = asyncio.run_coroutine_threadsafe(self._fetch_owned_skins_for_champion(champion_id), self.loop)
-        try:
-            return future.result(timeout=8)
-        except Exception as e:
-            logging.debug("WebSocket: owned skins fetch failed - %s", e)
-            return {
-                "ok": False,
-                "message": "Unable to fetch skins. Check your League of Legends connection.",
-                "owned_skins": [],
-            }
 
     @staticmethod
     def _inventory_skin_is_owned(item: Dict[str, Any]) -> bool:
@@ -720,13 +641,13 @@ class WebSocketManager(ChampSelectMixin):
         self.state.current_queue_id = 0
         self.state.reset_between_games()
 
-    def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_message: Optional[str] = None) -> None:
+    def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_action: Optional[str] = None) -> None:
         """Emit a structured disconnect event unless shutdown was explicitly requested."""
         if self._stop_event.is_set():
             return
-        self._notify_ui(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
-        if status_message:
-            self._notify_ui(self.EVENT_STATUS, (status_message, "WARN"))
+        self._notify_event(self.EVENT_DISCONNECTED, {"transient": transient, "reason": reason})
+        if status_action:
+            self._notify_status(status_action, level="WARN")
 
     def _is_transient_ws_scan_error(self, exc: BaseException) -> bool:
         transient_types: tuple[type[BaseException], ...] = (ProcessLookupError,)
@@ -770,8 +691,8 @@ class WebSocketManager(ChampSelectMixin):
                         category="Connection",
                         action="connected",
                     )
-                    self._notify_ui(self.EVENT_CONNECTED, None)
-                    self._notify_ui(self.EVENT_STATUS, ("LoL client detected! Ready to help.", "WS"))
+                    self._notify_event(self.EVENT_CONNECTED, None)
+                    self._notify_status("client_connected", level="WS")
                     logging.info("[WS] Connected to the LCU client.")
                     await self._refresh_player_and_region()
 
@@ -790,7 +711,7 @@ class WebSocketManager(ChampSelectMixin):
                         self._notify_ws_disconnected(
                             transient=False,
                             reason="client_disconnected",
-                            status_message="LoL client disconnected. Trying to reconnect...",
+                            status_action="client_disconnected",
                         )
                         logging.info("[WS] Disconnected.")
                     else:
@@ -808,7 +729,7 @@ class WebSocketManager(ChampSelectMixin):
                 async def _ws_login_session(connection, event):
                     data = event.data or {}
                     if data.get("status") == "SUCCEEDED":
-                        self._notify_ui(self.EVENT_STATUS, ("Login detected...", "INFO"))
+                        self._notify_status("login_detected")
                         await self._refresh_player_and_region()
 
                 @connector.ws.register(EP_GAMEFLOW)
@@ -822,9 +743,7 @@ class WebSocketManager(ChampSelectMixin):
                         logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
                     self.state.current_phase = phase
 
-                    friendly_phase = PHASE_DISPLAY_MAP.get(phase, phase)
-                    self._notify_ui(self.EVENT_PHASE_CHANGE, phase)
-                    self._notify_ui(self.EVENT_STATUS, (f"Status: {friendly_phase}", "INFO"))
+                    self._notify_event(self.EVENT_PHASE_CHANGE, phase)
 
                     if phase in ("Lobby", "Matchmaking", "ChampSelect"):
                         await self._refresh_current_queue_id()
@@ -857,10 +776,10 @@ class WebSocketManager(ChampSelectMixin):
                                 category="Match found",
                                 action="accepted",
                             )
-                            self._notify_ui(self.EVENT_STATUS, ("Match accepted!", "OK"))
+                            self._notify_status("match_accepted", level="OK")
                             if not self.state.has_played_accept_sound:
                                 self.state.has_played_accept_sound = True
-                                self._notify_ui(self.EVENT_READY_CHECK_ACCEPTED, None)
+                                self._notify_event(self.EVENT_READY_CHECK_ACCEPTED, None)
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):
@@ -899,14 +818,14 @@ class WebSocketManager(ChampSelectMixin):
                         self._notify_ws_disconnected(
                             transient=True,
                             reason="lcu_process_scan_failed",
-                            status_message="Temporary LCU detection failure. Waiting for League of Legends...",
+                            status_action="client_detection_retry",
                         )
                     else:
                         logging.critical("[WS] Critical error in the WebSocket loop: %s", e, exc_info=True)
                         self._notify_ws_disconnected(
                             transient=True,
                             reason="ws_loop_error",
-                            status_message="LCU connection error. Trying to reconnect...",
+                            status_action="connection_retry",
                         )
                 finally:
                     self.connector = None
@@ -948,8 +867,8 @@ class WebSocketManager(ChampSelectMixin):
                 self.state.summoner = me.get("displayName", "Unknown")
 
         if self.state.summoner != self.state.last_reported_summoner:
-            self._notify_ui(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
-            self._notify_ui(self.EVENT_STATUS, (f"Connected: {self.get_riot_id()}", "USER"))
+            self._notify_event(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
+            self._notify_status("account_connected", level="USER", riot_id=self.get_riot_id())
             self.state.last_reported_summoner = self.state.summoner
         self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
 
@@ -989,10 +908,7 @@ class WebSocketManager(ChampSelectMixin):
                 return
             self.state.current_queue_id = queue_id
             if queue_id not in PRESET_ENABLED_QUEUE_IDS:
-                self._notify_ui(
-                    self.EVENT_STATUS,
-                    ("Presets disabled — unsupported lobby type", "GAMEMODE"),
-                )
+                self._notify_status("presets_disabled", level="GAMEMODE")
                 logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
         except Exception as e:
             logging.debug("Error polling lobby for queue id: %s", e)

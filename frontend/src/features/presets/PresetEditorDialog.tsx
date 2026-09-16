@@ -1,0 +1,135 @@
+import type { ReactNode, RefObject } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { ChevronRight, Dices, Sparkles, Swords, X } from "lucide-react";
+
+import { AssetImage } from "../../components/game/AssetImage";
+import { Select } from "../../components/ui/Select";
+import { fr } from "../../content/fr";
+import { runeAssetUrl } from "../../domain/assets";
+import type { Champion, PresetSlot, SummonerSpell } from "../../types/api";
+import type { PresetSlotKey } from "./PresetCard";
+
+export function PresetEditorDialog({
+  open,
+  slotKey,
+  slot,
+  priority,
+  champion,
+  spells,
+  pending,
+  feedback,
+  leagueConnected,
+  returnFocusRef,
+  onClose,
+  onOpenPicker,
+  onUpdate,
+  children,
+}: {
+  open: boolean;
+  slotKey: PresetSlotKey | null;
+  slot?: PresetSlot;
+  priority: number;
+  champion?: Champion;
+  spells: SummonerSpell[];
+  pending: boolean;
+  feedback: string;
+  leagueConnected: boolean;
+  returnFocusRef: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+  onOpenPicker: (kind: "champion" | "skin" | "runes", trigger: HTMLButtonElement) => void;
+  onUpdate: (values: Partial<PresetSlot>) => void;
+  children: ReactNode;
+}) {
+  if (!slotKey || !slot) return null;
+
+  const runeIcon = runeAssetUrl(slot.rune_keystone_path, "perk");
+  const skinName = getSkinName(slot);
+  const spellOptions = spells.map((spell) => ({
+    id: spell.name,
+    label: spell.name === "(None)" ? fr.common.none : spell.name,
+  }));
+
+  return (
+    <Dialog.Root open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="drawer preset-editor-overlay">
+          <Dialog.Content
+            className="preset-editor-dialog"
+            aria-describedby="preset-editor-description"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              returnFocusRef.current?.focus();
+            }}
+          >
+          <header className="preset-editor-header">
+            <div>
+              <span className="eyebrow">{fr.presets.priority} {priority}</span>
+              <Dialog.Title>{fr.presets.editPreset} {priority}</Dialog.Title>
+              <Dialog.Description id="preset-editor-description">{fr.presets.editPresetHint}</Dialog.Description>
+            </div>
+            <Dialog.Close asChild><button className="icon-button" type="button" aria-label={fr.common.close}><X size={16} aria-hidden="true" /></button></Dialog.Close>
+          </header>
+
+          <div className="preset-editor-body">
+            <section className="preset-editor-section">
+              <h3>{fr.presets.championLabel}</h3>
+              <button className="champion-choice" type="button" disabled={pending} onClick={(event) => onOpenPicker("champion", event.currentTarget)}>
+                <AssetImage src={champion?.icon_url ?? undefined} alt="" width="42" height="42" fallback={<Swords size={18} aria-hidden="true" />} />
+                <span><strong>{slot.champion || fr.presets.selectChampion}</strong><small>{champion?.title || fr.presets.chooseChampionHint}</small></span>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+            </section>
+
+            <section className="preset-editor-section" aria-labelledby="preset-spells-heading">
+              <h3 id="preset-spells-heading">{fr.dashboard.spells}</h3>
+              <div className="preset-editor-spells">
+                <label className="editor-spell"><span>{fr.presets.spellOne}</span><Select label={fr.presets.spellOne} value={slot.spell_1 || "(None)"} options={spellOptions} disabled={pending} onChange={(value) => onUpdate({ spell_1: value })} /></label>
+                <label className="editor-spell"><span>{fr.presets.spellTwo}</span><Select label={fr.presets.spellTwo} value={slot.spell_2 || "(None)"} options={spellOptions} disabled={pending} onChange={(value) => onUpdate({ spell_2: value })} /></label>
+              </div>
+            </section>
+
+            <section className="preset-editor-section">
+              <h3>{fr.dashboard.runes}</h3>
+              <div className="preset-editor-runes">
+                <button className="editor-choice" type="button" disabled={pending} onClick={(event) => onOpenPicker("runes", event.currentTarget)}>
+                  <AssetImage src={runeIcon ?? undefined} alt="" width="28" height="28" fallback={<Sparkles size={16} aria-hidden="true" />} />
+                  <span className="editor-choice-copy"><small>{fr.presets.runePage}</small><strong>{slot.rune_page_name || fr.common.default}</strong></span>
+                  <ChevronRight size={15} aria-hidden="true" />
+                </button>
+                <div className="editor-switch-row"><span>{fr.presets.runeAuto}</span><button className="switch" type="button" role="switch" aria-label={fr.presets.runeAuto} aria-checked={slot.rune_auto_apply} aria-busy={pending} disabled={pending} onClick={() => onUpdate({ rune_auto_apply: !slot.rune_auto_apply })}><span aria-hidden="true" /></button></div>
+              </div>
+              {!leagueConnected && <p className="preset-editor-note">{fr.presets.runesUnavailableHint} {fr.presets.savedRunePageHint}</p>}
+            </section>
+
+            <section className="preset-editor-section">
+              <h3>{fr.dashboard.skin}</h3>
+              <fieldset className="skin-mode-options" disabled={pending} aria-label={fr.presets.skinMode}>
+                <label className="skin-mode-option"><input type="radio" name={`skin-mode-${slotKey}`} value="none" checked={slot.skin_mode === "none"} onChange={() => onUpdate({ skin_mode: "none" })} />{fr.presets.skinNone}</label>
+                <label className="skin-mode-option"><input type="radio" name={`skin-mode-${slotKey}`} value="fixed" checked={slot.skin_mode === "fixed"} onChange={() => onUpdate({ skin_mode: "fixed" })} />{fr.presets.skinFixed}</label>
+                <label className="skin-mode-option"><input type="radio" name={`skin-mode-${slotKey}`} value="random" checked={slot.skin_mode === "random"} onChange={() => onUpdate({ skin_mode: "random" })} />{fr.presets.skinRandom}</label>
+              </fieldset>
+              <button className="editor-choice" type="button" disabled={pending || slot.skin_mode === "none"} onClick={(event) => onOpenPicker("skin", event.currentTarget)}>
+                {slot.skin_mode === "random" ? <Dices size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
+                <span className="editor-choice-copy"><small>{slot.skin_mode === "random" ? fr.presets.randomPool : fr.presets.skinGallery}</small><strong>{skinName}</strong></span>
+                <ChevronRight size={15} aria-hidden="true" />
+              </button>
+            </section>
+          </div>
+
+          <footer className="preset-editor-footer">
+            <span className="feedback" role="status" aria-live="polite">{pending ? fr.presets.saving : feedback}</span>
+            <Dialog.Close asChild><button className="button button-primary" type="button">{fr.common.close}</button></Dialog.Close>
+          </footer>
+            {children}
+          </Dialog.Content>
+        </Dialog.Overlay>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function getSkinName(slot: PresetSlot): string {
+  if (slot.skin_mode === "none") return fr.presets.skinNone;
+  if (slot.skin_mode === "fixed") return slot.skin_name || fr.presets.skinFixed;
+  return slot.random_skin_name || slot.random_skin_pool[0]?.skin_name || fr.presets.skinRandom;
+}

@@ -19,7 +19,7 @@ Developers maintaining champion metadata, image caches, and Riot data integratio
 
 DEPENDENCIES:
 Used by:
-- launcher.py, src.core.websocket, and multiple UI modules.
+- src.lcu.runtime, src.core.websocket, and the desktop frontend.
 Uses:
 - Standard library: io, json, logging, os, re, threading, typing, unicodedata
 - Third-party libraries: Pillow, requests
@@ -56,6 +56,7 @@ from ..config import (
     URL_PERK_ICON_PREFIX,
     get_cache_dirs,
 )
+from ..integrations.communitydragon import CommunityDragonClient
 
 
 class DataDragon:
@@ -78,6 +79,23 @@ class DataDragon:
         self._rune_perk_icon_path_by_id: Optional[Dict[int, str]] = None
         self._rune_perk_name_by_id: Optional[Dict[int, str]] = None
         self._cache_lock = Lock()
+        self._communitydragon = CommunityDragonClient()
+
+    @staticmethod
+    def _decode_image_response(response: Any) -> Optional[Image.Image]:
+        """Decode a bounded image response and reject non-image payloads."""
+        content = getattr(response, "content", b"")
+        if len(content) > 8 * 1024 * 1024:
+            return None
+        headers = getattr(response, "headers", {})
+        content_type = str(headers.get("Content-Type") or headers.get("content-type") or "")
+        if content_type and not content_type.lower().startswith("image/"):
+            return None
+        image = Image.open(BytesIO(content))
+        if image.format not in {"PNG", "JPEG", "WEBP", "GIF"}:
+            return None
+        image.load()
+        return image
 
     def _cache_get(self, key: str) -> Optional[Image.Image]:
         with self._cache_lock:
@@ -164,6 +182,16 @@ class DataDragon:
         except Exception as e:
             logging.warning("DataDragon: Cache save error - %s", e)
 
+    def load_cached(self) -> bool:
+        """Load local champion metadata without performing a network request."""
+        if self.loaded:
+            return True
+        get_cache_dirs()
+        loaded = self._load_from_cache()
+        if loaded:
+            logging.info("DataDragon: Loaded local cache (version %s)", self.version)
+        return loaded
+
     def load(self) -> None:
         """Load champion metadata, preferring fresh Data Dragon data, then cache, then fallback."""
         if self.loaded:
@@ -171,7 +199,9 @@ class DataDragon:
 
         # Cache directories are prepared up front because both metadata and image
         # fetches rely on them later in the session.
-        get_cache_dirs()
+        self.load_cached()
+        if self.loaded:
+            return
         online_version = self._fetch_latest_version()
         if self._load_from_cache(target_version=online_version):
             logging.info("DataDragon: Loaded from cache (version %s)", self.version)
@@ -182,24 +212,41 @@ class DataDragon:
             self._load_fallback_data()
             return
 
+        self._load_remote_version(online_version)
+
+    def refresh(self) -> None:
+        """Refresh an already cached catalog after the first UI paint."""
+        if not self.loaded:
+            self.load()
+            return
+        online_version = self._fetch_latest_version()
+        if not online_version or online_version == self.version:
+            return
+        self._load_remote_version(online_version)
+
+    def _load_remote_version(self, online_version: str) -> None:
+        """Fetch and install one catalog version while preserving a usable cache on failure."""
         try:
             url_champs = URL_DD_CHAMPIONS.format(version=online_version)
             response = requests.get(url_champs, timeout=10)
             response.raise_for_status()
             champions_data = response.json().get("data", {})
 
-            self.by_id = {}
-            self.name_by_id = {}
-            self.by_norm_name = {}
+            by_id: Dict[int, Dict[str, Any]] = {}
+            name_by_id: Dict[int, str] = {}
+            by_norm_name: Dict[str, int] = {}
 
             for champ_slug, info in champions_data.items():
                 champ_name = info.get("name") or champ_slug
                 champion_id = int(info.get("key"))
-                self.by_id[champion_id] = info
-                self.name_by_id[champion_id] = champ_name
-                self.by_norm_name[self._normalize(champ_name)] = champion_id
-                self.by_norm_name[self._normalize(info.get("id", champ_slug))] = champion_id
+                by_id[champion_id] = info
+                name_by_id[champion_id] = champ_name
+                by_norm_name[self._normalize(champ_name)] = champion_id
+                by_norm_name[self._normalize(info.get("id", champ_slug))] = champion_id
 
+            self.by_id = by_id
+            self.name_by_id = name_by_id
+            self.by_norm_name = by_norm_name
             self._add_champion_aliases()
             self.version = online_version
             self.all_names = sorted(list(self.name_by_id.values()))
@@ -210,10 +257,12 @@ class DataDragon:
             )
         except requests.RequestException as e:
             logging.error("DataDragon: Network error while loading - %s", e)
-            self._load_fallback_data()
+            if not self.loaded:
+                self._load_fallback_data()
         except Exception as e:
             logging.error("DataDragon: Unexpected error - %s", e)
-            self._load_fallback_data()
+            if not self.loaded:
+                self._load_fallback_data()
 
     def _fetch_latest_version(self) -> Optional[str]:
         """Return the latest online Data Dragon version when the network is reachable."""
@@ -319,7 +368,9 @@ class DataDragon:
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
+                img = self._decode_image_response(response)
+                if img is None:
+                    return None
                 os.makedirs(ICONS_CACHE_DIR, exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(response.content)
@@ -329,6 +380,39 @@ class DataDragon:
         except Exception as e:
             logging.warning("DataDragon: Champion icon download error - %s", e)
         return None
+
+    def get_champion_splash(self, name_or_id: Any) -> Optional[Image.Image]:
+        """Return the base splash art for a champion, using the shared image cache."""
+        champion_id = self.resolve_champion(name_or_id)
+        if not champion_id:
+            return None
+
+        detail = self.get_champion_detail(champion_id)
+        champion_slug = (detail or {}).get("id") or (self.by_id.get(champion_id) or {}).get("id")
+        if not champion_slug:
+            return None
+
+        return self.get_remote_image(
+            URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=0),
+            cache_key=f"champion_splash_{champion_id}",
+        )
+
+    def get_skin_preview(self, champion_id: Any, skin_num: Any) -> Optional[Image.Image]:
+        """Fetch a known skin splash directly without loading the skin catalogue."""
+        try:
+            normalized_champion_id = int(champion_id)
+            normalized_skin_num = int(skin_num)
+        except (TypeError, ValueError):
+            return None
+        if normalized_champion_id <= 0 or normalized_skin_num < 0:
+            return None
+        champion_slug = str((self.by_id.get(normalized_champion_id) or {}).get("id") or "").strip()
+        if not champion_slug:
+            return None
+        return self.get_remote_image(
+            URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=normalized_skin_num),
+            cache_key=f"skin_preview_{normalized_champion_id}_{normalized_skin_num}",
+        )
 
     def load_summoners(self) -> None:
         if self.summoner_loaded:
@@ -377,7 +461,9 @@ class DataDragon:
         try:
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
+                img = self._decode_image_response(response)
+                if img is None:
+                    return None
                 os.makedirs(SPELLS_CACHE_DIR, exist_ok=True)
                 with open(local_path, "wb") as f:
                     f.write(response.content)
@@ -430,11 +516,17 @@ class DataDragon:
         normalized = raw_path.replace("\\", "/")
         prefix = "/lol-game-data/assets/"
         lowered = normalized.lower()
+        if "://" in lowered or lowered.startswith("//") or "?" in lowered or "#" in lowered:
+            return None
+        if ".." in lowered.split("/"):
+            return None
         if lowered.startswith(prefix):
             relative = lowered[len(prefix):]
         else:
             relative = lowered.lstrip("/")
-        if not relative.startswith("assets/"):
+            if not relative.startswith("assets/"):
+                return None
+        if not relative:
             return None
         return f"{URL_CDRAGON_ASSET_PREFIX}{relative}"
 
@@ -598,19 +690,7 @@ class DataDragon:
 
     @staticmethod
     def _communitydragon_asset_url(asset_path: str) -> Optional[str]:
-        normalized_path = str(asset_path or "").strip().replace("\\", "/")
-        if not normalized_path:
-            return None
-        if normalized_path.startswith(("http://", "https://")):
-            return normalized_path
-        normalized_path = normalized_path.lstrip("/")
-        lcu_prefix = "lol-game-data/assets/"
-        if normalized_path.startswith(lcu_prefix):
-            normalized_path = normalized_path[len(lcu_prefix):]
-        normalized_path = normalized_path.lower().lstrip("/")
-        if not normalized_path:
-            return None
-        return f"{URL_PERK_ICON_PREFIX}/{normalized_path}"
+        return CommunityDragonClient.asset_url(asset_path)
 
     def _get_communitydragon_image(self, asset_path: str, *, cache_prefix: str) -> Optional[Image.Image]:
         url = self._communitydragon_asset_url(asset_path)
@@ -621,14 +701,10 @@ class DataDragon:
         if cached:
             return cached
 
-        try:
-            response = requests.get(url, timeout=8)
-            if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
-                self._cache_put(cache_key, img)
-                return img
-        except Exception as e:
-            logging.warning("DataDragon: CommunityDragon rune icon download error for %s: %s", url, e)
+        img = self._communitydragon.fetch_image(asset_path)
+        if img is not None:
+            self._cache_put(cache_key, img)
+            return img
         return None
 
     def get_rune_perk_icon(self, perk_icon_path: str) -> Optional[Image.Image]:
@@ -773,7 +849,9 @@ class DataDragon:
             os.makedirs(SKINS_CACHE_DIR, exist_ok=True)
             response = requests.get(url, stream=True, timeout=8)
             if response.status_code == 200:
-                img = Image.open(BytesIO(response.content))
+                img = self._decode_image_response(response)
+                if img is None:
+                    return None
                 with open(cache_path, "wb") as f:
                     f.write(response.content)
                 self._cache_put(cache_key, img)

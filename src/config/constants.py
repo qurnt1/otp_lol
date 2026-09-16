@@ -16,7 +16,7 @@ Developers maintaining shared constants for networking, UI labels, assets, and s
 
 DEPENDENCIES:
 Used by:
-- Most modules under `src.config`, `src.core`, `src.services`, and `src.ui`.
+- Most modules under `src.config`, `src.core`, `src.services`, and `src.desktop`.
 Uses:
 - Standard library typing helpers.
 """
@@ -28,7 +28,7 @@ APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
 APP_VERSION: str = "11.0"
 CURRENT_VERSION: str = APP_VERSION
-CONFIG_SCHEMA_VERSION: int = 3
+CONFIG_SCHEMA_VERSION: int = 5
 # Backwards-compatible name used by earlier schema work.
 SETTINGS_SCHEMA_VERSION: int = CONFIG_SCHEMA_VERSION
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
@@ -72,6 +72,9 @@ EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
 EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
 REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
+SUPPORTED_REGIONS: tuple[str, ...] = tuple(REGION_LIST)
+STATS_PROVIDERS: tuple[str, ...] = ("opgg", "deeplol", "dpm", "leagueofgraphs")
+HOTKEY_PROVIDERS: tuple[str, ...] = ("porofessor", "deeplol", "dpm", "opgg")
 
 SUMMONER_SPELL_MAP: Dict[str, int] = {
     "Barrier": 21, "Cleanse": 1, "Exhaust": 3, "Flash": 4, "Ghost": 6,
@@ -129,19 +132,6 @@ QUEUE_ID_LABELS: Dict[int, str] = {
 APP_IMAGE_FILES: Dict[str, str] = {
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",
-    "gear": "config/images/app/gear.png",
-    "gear_light": "config/images/app/gear_light.png",
-    "gear_dark": "config/images/app/gear_dark.png",
-    "question_mark_white_mode": "config/images/app/question-mark-white_mode.png",
-    "question_mark_black_mode": "config/images/app/question-mark-black_mode.png",
-}
-
-WEBSITE_LOGO_FILES: Dict[str, str] = {
-    "opgg": "config/images/websites/opgg.png",
-    "deeplol": "config/images/websites/deeplol.png",
-    "dpm": "config/images/websites/dpm-lol.png",
-    "porofessor": "config/images/websites/porofessor.png",
-    "leagueofgraphs": "config/images/websites/leagueofgraphs.png",
 }
 
 STATS_SITE_LABELS: Dict[str, str] = {

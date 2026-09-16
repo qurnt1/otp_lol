@@ -33,6 +33,7 @@ Current project version: `11.0`
 - [Shortcuts](#shortcuts)
 - [Project Architecture](#project-architecture)
 - [Tests And Verification](#tests-and-verification)
+- [Documentation](#documentation)
 - [Troubleshooting](#troubleshooting)
 - [Possible Roadmap](#possible-roadmap)
 
@@ -51,7 +52,7 @@ It connects to the LoL client through the LCU, detects important phases, then au
 
 The application is designed to work as a lightweight desktop tool:
 
-- Tkinter graphical interface through `ttkbootstrap`
+- React graphical interface hosted in a native `pywebview` window
 - local asset management
 - system tray support
 - keyboard shortcuts
@@ -59,7 +60,7 @@ The application is designed to work as a lightweight desktop tool:
 
 ## Version 11.0 Highlights
 
-Version `11.0` focuses on preset completeness: skins, summoner spells, rune pages, role profiles, and release/update behavior now work together more reliably.
+Version `11.0` focuses on preset completeness: skins, summoner spells, rune pages, and release/update behavior now work together more reliably.
 
 - `Rune page automation`
   Presets can now store a League rune page and apply it automatically during champion select. The app confirms the selected rune page through the LCU and retries when the client overwrites state.
@@ -77,7 +78,7 @@ Version `11.0` focuses on preset completeness: skins, summoner spells, rune page
   The settings window now exposes a cleaner skin picker with direct `fixed` or `random list` selection, centered skin art in the picker, tile previews in settings, and confirmation when a skin is not detected on the current account.
 
 - `Global skin fallback that really works`
-  Global skin configuration now correctly falls back when the detected role profile does not override skins, so a skin configured in `Global` can still apply in `Top`, `Jungle`, `Mid`, `ADC`, or `Support`.
+  Global skin configuration remains available when the detected role is not known, so the configured global skin can still apply during champion select.
 
 - `Main window skin mode control`
   The main interface now includes a dedicated `Skin` control that cycles between `OFF`, `FIXED`, and `RANDOM`, and shows slot-by-slot skin previews directly from the home screen.
@@ -114,7 +115,7 @@ Version `11.0` focuses on preset completeness: skins, summoner spells, rune page
 - automatic account detection
 - automatic client region detection
 - quick links to several player and in-game stats websites
-- per-role preset profiles
+- ordered preset slots shared by the desktop workflow
 - direct preset buttons with champion and summoner icons
 - compact rune and skin previews in preset rows
 - rune picker with full rune, secondary tree, and shard previews
@@ -131,31 +132,30 @@ The project now includes several useful safeguards:
 
 - separation between `manual_*` and `auto_detected_*` values
 - cleaner application shutdown
-- safer tray callbacks that are marshalled back to the Tk UI thread
+- native tray callbacks that are marshalled back to the WebView2 window lifecycle
 - safer shortcut capture that temporarily disables existing global hotkeys
 - semantic version comparison for update detection
 
 ## Screenshots
 
-### Main Window
+### Web Command Center
 
-![Main window](./docs/images/main-window.png)
+![Web command center](./docs/images/dashboard-web.png)
 
-### Settings Window
+### Web Settings
 
-![Settings](./docs/images/settings-window.png)
+![Web settings](./docs/images/settings-web.png)
 
-### During Champion Select
-
-![Champion select](./docs/images/champ-select.png)
+The older native picker captures remain in [`docs/images/`](./docs/images/) as historical references.
 
 ## Technologies
 
 The project mainly uses:
 
 - `Python 3.13`
-- `ttkbootstrap` for the interface
-- `tkinter` for the UI base
+- `FastAPI` and `Uvicorn` for the local API boundary
+- `React`, `TypeScript`, `Vite`, `Lucide`, `TanStack Query`, and `Zustand` for the desktop interface in `frontend/`
+- `pywebview` with WebView2 for the new desktop shell
 - `lcu-driver` to communicate with the League of Legends client
 - `Pillow` for images
 - `pygame` for sound effects
@@ -191,8 +191,14 @@ pip install -r requirements.txt
 To run the application locally:
 
 ```bash
-python launcher.py
+cd frontend
+npm ci
+npm run build
+cd ..
+python launcher_web.py
 ```
+
+The desktop shell serves the compiled React interface through a local FastAPI server and WebView2.
 
 On startup, the application:
 
@@ -208,18 +214,25 @@ On startup, the application:
 The project provides a PyInstaller build script:
 
 ```bash
+cd frontend
+npm ci
+npm run build
+cd ..
 pip install -r requirements-build.txt
 python create_exe.py
 ```
 
-This script generates a portable executable:
+This script generates a portable onedir distribution:
 
-- binary name: `OTP LOL.exe`
+- binary location: `OTP LOL/OTP LOL.exe`
 - final location: project root
+
+The tagged release workflow embeds this distribution in the `OTP-LOL-Setup.exe` Windows installer.
 
 The script also handles:
 
 - asset inclusion
+- compiled `frontend/dist` inclusion for the embedded WebView
 - `src` package inclusion
 - several hidden imports for PyInstaller
 - cleanup of temporary build folders
@@ -252,7 +265,7 @@ The application stores, among other things:
 - presets `1 / 2 / 3`
 - configured ban
 - one champion plus two summs for each preset
-- selected role profile and per-role profile data
+- ordered preset slots and their skin, spell, and rune settings
 - automatic detection mode
 - manual account and region values
 - auto-detected account and region values
@@ -332,8 +345,12 @@ Default values:
 
 ```text
 otp_lol/
-|-- launcher.py
+|-- launcher_web.py
 |-- create_exe.py
+|-- frontend/
+|   |-- src/
+|   |-- package.json
+|   `-- vite.config.ts
 |-- requirements.txt
 |-- requirements-build.txt
 |-- readme.md
@@ -341,8 +358,11 @@ otp_lol/
 |   |-- __init__.py
 |   |-- config/
 |   |-- core/
+|   |-- api/
+|   |-- domain/
+|   |-- lcu/
+|   |-- desktop/
 |   |-- services/
-|   |-- ui/
 |   `-- utils.py
 |-- config/
 |   |-- son.wav
@@ -353,24 +373,30 @@ otp_lol/
     |-- test_config.py
     |-- test_core_champ_select.py
     |-- test_history.py
-    |-- test_main_window.py
-    |-- test_release_metadata.py
-    |-- test_ui_settings.py
+    |-- test_api.py
+    |-- test_lcu_runtime.py
+    |-- test_desktop.py
     `-- test_utils.py
 ```
 
 ### Role Of Main Files
 
-- `launcher.py`
-  Main entry point and lifecycle orchestration.
+- `launcher_web.py`
+  FastAPI + React + pywebview entry point.
+- `frontend/`
+  Desktop React interface. It is intentionally separate from the public `website/` project.
+- `src/api/`, `src/domain/`, and `src/lcu/`
+  UI-independent runtime boundary, HTTP/WebSocket API, and event broker.
 - `src/config/`
   Constants, paths, version, default settings, and config file handling.
 - `src/core/`
   Business logic, Data Dragon, WebSocket / LCU, and game automations.
+- `src/integrations/`
+  Validated external asset providers such as CommunityDragon.
 - `src/services/`
   External URLs, history, updates, role data, skin modes, and single-instance handling.
-- `src/ui/`
-  Graphical interface, system tray, toasts, shortcuts, and user interaction handling.
+- `src/desktop/`
+  Native window, system tray, audio, shortcuts, and embedded API lifecycle.
 - `create_exe.py`
   Windows build through PyInstaller.
 
@@ -382,9 +408,8 @@ The project contains regression tests for:
 - utilities
 - champion select automation logic
 - history formatting
-- main window preview logic
-- settings window behavior
-- release metadata consistency
+- API boundaries, runtime events, settings and preset validation
+- desktop lifecycle and release metadata consistency
 
 To run the tests:
 
@@ -395,8 +420,28 @@ python -m unittest discover -s tests -v
 To quickly verify that the code compiles:
 
 ```bash
-python -m compileall launcher.py src create_exe.py tests
+python -m compileall launcher_web.py src create_exe.py tests
 ```
+
+For the React desktop interface:
+
+```bash
+cd frontend
+npm ci
+npm run api:check
+npm run typecheck
+npm run test
+npm run build
+npm run test:e2e
+```
+
+## Documentation
+
+- [Architecture](./docs/architecture.md)
+- [Security model](./docs/security.md)
+- [Development checks](./docs/development.md)
+- [Release process](./docs/release.md)
+- [Screenshots](./docs/screenshots/README.md)
 
 ## Troubleshooting
 

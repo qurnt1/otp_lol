@@ -18,7 +18,7 @@ Developers maintaining action history, event labeling, and history display behav
 
 DEPENDENCIES:
 Used by:
-- src.core.websocket, src.core.champ_select, and src.ui.main_window.
+- src.core.websocket and src.core.champ_select.
 Uses:
 - Standard library: datetime, json, logging, os, typing
 - Local modules: src.config
@@ -144,6 +144,8 @@ def log_history_event(
 
 def get_history_entries(limit: int = 100) -> List[Dict[str, Any]]:
     """Return the newest history entries first, limited to the requested count."""
+    if limit <= 0:
+        return []
     with _HISTORY_LOCK:
         entries = _read_history()
         return list(reversed(entries[-limit:]))

@@ -24,27 +24,19 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
 
-    def test_first_launch_defaults_include_demo_spells_and_skins(self):
+    def test_demo_presets_are_separate_from_blank_first_launch(self):
         slots = config.FIRST_LAUNCH_PARAMS["pick_slots"]
 
-        self.assertEqual(slots["pick_1"]["spell_1"], "Flash")
-        self.assertEqual(slots["pick_1"]["spell_2"], "Ignite")
-        self.assertEqual(slots["pick_1"]["skin_mode"], "fixed")
-        self.assertEqual(slots["pick_1"]["skin_name"], "God-King Garen")
-
-        self.assertEqual(slots["pick_2"]["spell_1"], "Flash")
-        self.assertEqual(slots["pick_2"]["spell_2"], "Teleport")
-        self.assertEqual(slots["pick_2"]["skin_mode"], "random")
-        self.assertEqual(slots["pick_2"]["random_skin_name"], "Star Guardian Lux")
-        self.assertEqual(
-            [skin["skin_name"] for skin in slots["pick_2"]["random_skin_pool"]],
-            ["Star Guardian Lux", "Battle Academia Lux"],
-        )
-
-        self.assertEqual(slots["pick_3"]["spell_1"], "Flash")
-        self.assertEqual(slots["pick_3"]["spell_2"], "Barrier")
-        self.assertEqual(slots["pick_3"]["skin_mode"], "fixed")
-        self.assertEqual(slots["pick_3"]["skin_name"], "Queen Ashe")
+        self.assertEqual(config.DEMO_PRESETS["selected_pick_1"], "Garen")
+        self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_1"]["spell_1"], "Flash")
+        self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_2"]["skin_mode"], "random")
+        self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_3"]["skin_name"], "Queen Ashe")
+        self.assertEqual(slots["pick_1"]["spell_1"], "")
+        self.assertEqual(slots["pick_1"]["spell_2"], "")
+        self.assertEqual(slots["pick_1"]["skin_mode"], "none")
+        self.assertEqual(slots["pick_1"]["skin_name"], "")
+        self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_pick_1"], "")
+        self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_ban"], "")
 
     def test_pick_slot_defaults_include_rune_fields(self):
         from src.config.settings import build_pick_slot_defaults
@@ -60,6 +52,34 @@ class ConfigTests(unittest.TestCase):
     def test_default_params_no_longer_has_global_auto_runes_enabled(self):
         self.assertNotIn("auto_runes_enabled", config.DEFAULT_PARAMS)
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
+        self.assertTrue(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
+
+    def test_window_geometry_has_desktop_defaults_and_migrates_from_schema_three(self):
+        self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)
+        self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_height"], 760)
+        self.assertFalse(config.FIRST_LAUNCH_PARAMS["window_maximized"])
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            payload = {
+                "config_schema_version": 3,
+                "window_x": 80,
+                "window_y": 120,
+                "window_width": 1440,
+                "window_height": 900,
+                "window_maximized": True,
+            }
+            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+        self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(loaded["window_x"], 80)
+        self.assertEqual(loaded["window_y"], 120)
+        self.assertEqual(loaded["window_width"], 1440)
+        self.assertEqual(loaded["window_height"], 900)
+        self.assertTrue(loaded["window_maximized"])
 
     def test_load_parameters_backs_up_invalid_toml_before_reset(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -174,6 +194,20 @@ class ConfigTests(unittest.TestCase):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, payload)
+
+    def test_normalize_parameters_recovers_from_invalid_or_duplicate_hotkeys(self):
+        invalid = copy.deepcopy(config.DEMO_PARAMS)
+        invalid["hotkey_toggle_window"] = "ctrl"
+        invalid["hotkey_open_site"] = "alt+alt+p"
+
+        normalized = config.normalize_parameters(invalid)
+
+        self.assertEqual(normalized["hotkey_toggle_window"], "alt+c")
+        self.assertEqual(normalized["hotkey_open_site"], "alt+p")
+
+        duplicate = copy.deepcopy(config.DEMO_PARAMS)
+        duplicate["hotkey_open_site"] = "alt+c"
+        self.assertEqual(config.normalize_parameters(duplicate)["hotkey_open_site"], "alt+p")
 
     def test_save_parameters_filters_unknown_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:

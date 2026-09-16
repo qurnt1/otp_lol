@@ -3,7 +3,7 @@ FILE NAME: create_exe.py
 GLOBAL PURPOSE:
 - Build the Windows executable distribution with PyInstaller.
 - Make packaging rules explicit for assets, hidden imports, and entry-point resolution.
-- Produce a single executable, optionally create a desktop shortcut, and clean temporary artifacts.
+- Produce an onedir distribution by default, optionally create a desktop shortcut, and clean temporary artifacts.
 
 KEY FUNCTIONS:
 - _prompt_yes_no: Normalize an interactive yes or no answer from the console.
@@ -29,6 +29,7 @@ import os
 import subprocess
 import sys
 import shutil
+import argparse
 
 from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
@@ -87,14 +88,20 @@ $shortcut.Save()
         print(f"   ⚠️  Desktop shortcut creation failed: {e}")
         return False
 
-def main():
+def main(argv=None):
     """Run the end-to-end executable build workflow for the current project root."""
+    parser = argparse.ArgumentParser(description="Build OTP LOL for Windows.")
+    parser.add_argument("--mode", choices=("onefile", "onedir"), default="onedir")
+    parser.add_argument("--no-shortcut", action="store_true")
+    parser.add_argument("--console", action="store_true", help="Keep a console for packaging diagnostics.")
+    args = parser.parse_args(argv)
+
     print("=" * 60)
     print(f"   {APP_NAME} - Script de Creation EXE (v{CURRENT_VERSION})")
     print("   Architecture Modulaire (src/)")
     print("=" * 60)
 
-    create_shortcut = _prompt_yes_no("Create a desktop shortcut after build?", default=True)
+    create_shortcut = False if args.no_shortcut else _prompt_yes_no("Create a desktop shortcut after build?", default=True)
     
     # Resolve the repository root from the script location so every relative
     # build path stays stable no matter where the command is launched from.
@@ -105,50 +112,58 @@ def main():
         
     root_dir = os.path.dirname(script_path)
     os.chdir(root_dir)
+    frontend_dist = os.path.join(root_dir, "frontend", "dist")
+    if not os.path.isdir(frontend_dist):
+        print(f"\nFrontend build missing: {frontend_dist}")
+        print("Run `npm ci` and `npm run build` from the frontend directory first.")
+        sys.exit(1)
 
     # Keep packaging rules in one place so PyInstaller behavior stays predictable
     # across local environments and future refactors.
     raw_args = [
-        '--onefile',      # Produce one portable executable.
-        '--windowed',     # Hide the extra console window for the desktop app.
+        f'--{args.mode}', # Select the distribution shape explicitly for startup measurements.
+        '--console' if args.console else '--windowed',
         '--noconfirm',    # Allow rebuilds without an extra prompt.
         '--name', APP_BUILD_NAME,
         '--icon', r'.\config\images\app\garen.ico',
         
         # Ship runtime assets explicitly because they are loaded from disk at runtime.
         '--add-data', r'.\config;config',
+
+        # Serve the compiled React application from the embedded FastAPI server.
+        '--add-data', r'.\frontend\dist;frontend\dist',
         
-        # Include the source tree as data as an extra safety net for modules and
-        # resources that are resolved dynamically at runtime.
-        '--add-data', r'.\src;src',
-        
-        # ttkbootstrap bundles theme assets that are easier to keep intact via collect-all.
-        '--collect-all', 'ttkbootstrap',
+        # pywebview supports several optional GUI backends. Keep the Windows
+        # WebView2 path and exclude unrelated Qt bindings that can coexist in
+        # a developer environment but cannot be frozen together by PyInstaller.
+        '--exclude-module=PyQt6',
+        '--exclude-module=PySide6',
+        '--exclude-module=PyQt5',
+        '--exclude-module=PySide2',
+        '--exclude-module=tkinter',
+        '--exclude-module=_tkinter',
+        '--exclude-module=webview.platforms.qt',
         
         # Hidden imports document packaging assumptions for modules that may be
         # missed when imports are optional, indirect, or environment-dependent.
-        '--hidden-import=src',
-        '--hidden-import=src.config',
-        '--hidden-import=src.core',
-        '--hidden-import=src.ui',
-        
         # Third-party modules referenced through dynamic code paths.
         '--hidden-import=keyboard',
         '--hidden-import=pygame',
         '--hidden-import=pygame.mixer',
-        '--hidden-import=pygame.sndarray',
         '--hidden-import=psutil',
-        '--hidden-import=urllib3',
         '--hidden-import=pystray',
         '--hidden-import=PIL.Image',
-        '--hidden-import=PIL.ImageTk',
-        '--hidden-import=PIL.ImageEnhance',
         '--hidden-import=lcu_driver',
         '--hidden-import=packaging',
         '--hidden-import=requests',
+        '--hidden-import=webview',
+        '--hidden-import=webview.platforms.edgechromium',
+        '--hidden-import=webview.platforms.winforms',
+        '--hidden-import=fastapi',
+        '--hidden-import=uvicorn',
         
         # Application entry point.
-        'launcher.py'
+        'launcher_web.py'
     ]
     
     # Convert file-based options to absolute paths before invoking PyInstaller.
@@ -212,21 +227,30 @@ def main():
         print(f"\n❌ ERREUR COMPILATION: {e}")
         sys.exit(1)
 
-    # Move the final executable to the repository root so the output path stays
-    # stable for release usage and shortcut creation.
+    # Move the final artifact to the repository root so local and release paths stay stable.
     exe_name = f"{app_name}.exe"
     source = os.path.join(dist_path, exe_name)
     target = os.path.join(root_dir, exe_name)
+    if args.mode == "onedir":
+        source = os.path.join(dist_path, app_name)
+        target = os.path.join(root_dir, app_name)
     
-    print(f"\n📁 Déplacement de l'exécutable...")
+    print("\n📁 Déplacement de l'exécutable...")
     
     if os.path.exists(source):
         if os.path.exists(target):
-            os.remove(target)
-        
+            if os.path.isdir(target):
+                shutil.rmtree(target)
+            else:
+                os.remove(target)
+
         shutil.move(source, target)
         print(f"\n✅ SUCCÈS : {target}")
-        print(f"   Taille : {os.path.getsize(target) / (1024*1024):.1f} Mo")
+        if args.mode == "onedir":
+            size = sum(path.stat().st_size for path in os.scandir(target) if path.is_file())
+        else:
+            size = os.path.getsize(target)
+        print(f"   Taille : {size / (1024*1024):.1f} Mo")
 
         if create_shortcut:
             print("\n🔗 Creating desktop shortcut...")
@@ -247,7 +271,7 @@ def main():
                 os.remove(spec_file)
             # Remove the old one-dir folder if a previous build left it behind.
             old_dir = os.path.join(root_dir, app_name)
-            if os.path.exists(old_dir):
+            if args.mode == "onefile" and os.path.exists(old_dir):
                 shutil.rmtree(old_dir)
             print("   ✓ Nettoyage terminé")
         except Exception as e:

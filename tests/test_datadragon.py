@@ -1,10 +1,13 @@
 import unittest
 import json
-from unittest.mock import patch
+from io import BytesIO
+from types import SimpleNamespace
+from unittest.mock import mock_open, patch
 
 from PIL import Image
 
 from src.core.datadragon import DataDragon
+from src.integrations.communitydragon import CommunityDragonClient
 
 
 class FakeResponse:
@@ -23,6 +26,41 @@ class FakeResponse:
 
 
 class DataDragonSkinCatalogTests(unittest.TestCase):
+    @patch("src.core.datadragon.get_cache_dirs")
+    def test_load_cached_reads_metadata_without_network(self, _get_cache_dirs):
+        dd = DataDragon()
+        payload = {
+            "version": "15.1.1",
+            "by_norm_name": {"garen": 86},
+            "by_id": {"86": {"id": "Garen", "name": "Garen", "key": "86"}},
+            "name_by_id": {"86": "Garen"},
+        }
+        with patch("src.core.datadragon.DDRAGON_CACHE_FILE") as cache_file:
+            cache_file = str(cache_file)
+            with patch("builtins.open", mock_open(read_data=json.dumps(payload))), patch(
+                "src.core.datadragon.os.path.exists", return_value=True
+            ):
+                self.assertTrue(dd.load_cached())
+
+        self.assertTrue(dd.loaded)
+        self.assertEqual(dd.resolve_champion("Garen"), 86)
+
+    @patch("src.integrations.communitydragon.requests.get")
+    def test_communitydragon_rejects_non_image_content_type_with_lowercase_header(self, mock_get):
+        payload = BytesIO()
+        Image.new("RGBA", (2, 2), (255, 0, 0, 255)).save(payload, format="PNG")
+        mock_get.return_value = SimpleNamespace(
+            status_code=200,
+            headers={"content-type": "text/html"},
+            content=payload.getvalue(),
+        )
+
+        self.assertIsNone(
+            CommunityDragonClient.fetch_image(
+                "lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"
+            )
+        )
+
     def test_rune_asset_path_is_converted_to_communitydragon_url(self):
         url = DataDragon._communitydragon_asset_url(
             "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"
@@ -90,6 +128,36 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
             (
                 "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
                 "assets/characters/garen/skins/skin13/images/garen_splash_tile_13.jpg"
+            ),
+        )
+
+    def test_rune_asset_url_rejects_absolute_and_traversal_paths(self):
+        for path in (
+            "https://example.com/foo.png",
+            "http://127.0.0.1:1234/foo",
+            "http://169.254.169.254/latest/meta-data",
+            "//attacker.example/foo",
+            "file:///C:/Windows/win.ini",
+            "../../../foo",
+        ):
+            self.assertIsNone(DataDragon._communitydragon_asset_url(path), path)
+
+        self.assertIsNotNone(
+            DataDragon._communitydragon_asset_url(
+                "lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"
+            )
+        )
+
+    def test_cdragon_rune_asset_path_is_converted_to_raw_url(self):
+        url = DataDragon.cdragon_url_from_asset_path(
+            "/lol-game-data/assets/v1/perk-images/Styles/7204_Resolve.png"
+        )
+
+        self.assertEqual(
+            url,
+            (
+                "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
+                "v1/perk-images/styles/7204_resolve.png"
             ),
         )
 

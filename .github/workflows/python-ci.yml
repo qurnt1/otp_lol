@@ -37,7 +37,7 @@ jobs:
         run: python -m pip install -c requirements-constraints.txt -r requirements.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q launcher.py src tests create_exe.py
+        run: python -m compileall -q launcher_web.py src tests create_exe.py
 
       - name: Run unittest suite
         run: python -m unittest discover -s tests -v
@@ -46,4 +46,15 @@ jobs:
         run: python -m pip install -c requirements-constraints.txt ruff
 
       - name: Ruff audit
-        run: python -m ruff check launcher.py src tests create_exe.py --select E9,F --ignore F401,F541,F841 --output-format=github
+        run: python -m ruff check launcher_web.py src tests create_exe.py --select E9,F --ignore F401,F541,F841 --output-format=github
+
+      - name: Ruff progressive audit for new layers
+        run: >-
+          python -m ruff check launcher_web.py src/api/schemas.py
+          src/desktop/self_test.py src/integrations/communitydragon.py src/lcu/runtime.py
+          --select E,F,I,UP,B,SIM --ignore E501 --output-format=github
+
+      - name: Ruff format check for new layers
+        run: >-
+          python -m ruff format --check launcher_web.py src/api/schemas.py
+          src/desktop/self_test.py src/integrations/communitydragon.py src/lcu/runtime.py

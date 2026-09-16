@@ -156,7 +156,7 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         params = _fake_get_params()
         params.update(overrides)
         mgr = WebSocketManager(
-            ui_callback=_collect_event,
+            event_callback=_collect_event,
             dd=FakeDataDragon(),
             get_params=lambda: dict(params),
             update_param=lambda k, v: None,
@@ -213,6 +213,13 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr = self._make_manager()
         await mgr._refresh_player_and_region()
         self.assertEqual(mgr.get_platform_for_websites(), "euw")
+
+    async def test_get_platform_for_websites_does_not_fabricate_euw_for_unknown_platform(self):
+        mgr = self._make_manager()
+        mgr.state.platform_routing = "unknown-platform"
+        mgr.state.region_routing = ""
+
+        self.assertEqual(mgr.get_platform_for_websites(), "")
 
     # ------------------------------------------------------------
     # Rune pages and styles

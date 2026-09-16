@@ -18,7 +18,7 @@ Developers importing configuration values, settings helpers, or resource paths.
 
 DEPENDENCIES:
 Used by:
-- launcher.py and most runtime modules under `src`.
+- launcher_web.py and most runtime modules under `src`.
 Uses:
 - Local modules: src.config.constants, src.config.logging_config, src.config.paths, src.config.settings
 """
@@ -66,7 +66,6 @@ from .constants import (
     THEME_LABELS,
     THEME_ORDER,
     THEME_PALETTE,
-    WEBSITE_LOGO_FILES,
     SUMMONER_SPELL_LIST,
     SETTINGS_SCHEMA_VERSION,
     SUMMONER_SPELL_MAP,
@@ -95,7 +94,7 @@ from .paths import (
     get_appdata_path,
     resource_path,
 )
-from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
+from .settings import DEFAULT_PARAMS, DEMO_PARAMS, DEMO_PRESETS, FIRST_LAUNCH_PARAMS
 
 
 def load_parameters():
@@ -106,6 +105,11 @@ def load_parameters():
 def save_parameters(params):
     """Persist application parameters to the TOML settings file."""
     return _settings.save_parameters(params)
+
+
+def normalize_parameters(params):
+    """Return normalized application parameters without persisting them."""
+    return _settings.normalize_parameters(params)
 
 
 def export_parameters_to_file(path, params):
@@ -131,6 +135,7 @@ __all__ = [
     "CURRENT_VERSION",
     "APP_VERSION",
     "CONFIG_SCHEMA_VERSION",
+    "normalize_parameters",
     "SETTINGS_SCHEMA_VERSION",
     "GITHUB_REPO_URL",
     "GITHUB_REPO_API",
@@ -172,7 +177,6 @@ __all__ = [
     "PRACTICE_TOOL_GAME_MODE",
     "QUEUE_ID_LABELS",
     "PHASE_DISPLAY_MAP",
-    "WEBSITE_LOGO_FILES",
     "STATS_SITE_LABELS",
     "STATS_SITE_ORDER",
     "HOTKEY_SITE_LABELS",
@@ -191,6 +195,8 @@ __all__ = [
     "SKINS_CACHE_DIR",
     "RUNES_CACHE_DIR",
     "DEFAULT_PARAMS",
+    "DEMO_PARAMS",
+    "DEMO_PRESETS",
     "FIRST_LAUNCH_PARAMS",
     "load_parameters",
     "save_parameters",

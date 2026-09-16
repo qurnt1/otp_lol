@@ -17,7 +17,7 @@ Developers maintaining skin selection, main preview toggles, and champion-select
 
 DEPENDENCIES:
 Used by:
-- src.core.champ_select, src.ui.main_preview, and src.ui.main_skin_overrides
+- src.core.champ_select and the desktop frontend.
 Uses:
 - Standard library: typing
 - Local modules: src.config.constants
@@ -61,6 +61,8 @@ def has_random_skin(slot_data: Mapping[str, Any]) -> bool:
 
 def build_main_skin_overrides(params: Mapping[str, Any]) -> dict[str, str]:
     """Normalize global and slot-specific main-window skin overrides."""
+    if not bool(params.get("skin_automation_enabled", True)):
+        return {slot: "none" for slot in PICK_SLOT_ORDER}
     raw_overrides = params.get("main_skin_mode_overrides", {})
     legacy_mode = normalize_skin_override(params.get("main_skin_mode_override", "inherit"))
     overrides = {slot: "inherit" for slot in PICK_SLOT_ORDER}

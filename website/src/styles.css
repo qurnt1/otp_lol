@@ -246,6 +246,25 @@ h2 {
   overflow-wrap: break-word;
 }
 
+.release-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.release-meta a {
+  color: var(--gold-bright);
+}
+
+.release-meta code {
+  overflow-wrap: anywhere;
+  color: var(--muted-strong);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
 .author-note {
   color: var(--muted) !important;
 }

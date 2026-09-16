@@ -1,0 +1,74 @@
+"""FastAPI application factory used by the desktop shell and tests."""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+import os
+from pathlib import Path
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
+from ..config import CURRENT_VERSION
+from .context import ApplicationContext
+from .routes import catalog, history, runtime, settings
+
+
+def create_default_context() -> ApplicationContext:
+    return ApplicationContext.from_system()
+
+
+def create_app(
+    context: ApplicationContext | None = None,
+    *,
+    frontend_dir: str | Path | None = None,
+) -> FastAPI:
+    app_context = context or create_default_context()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        await app_context.start()
+        try:
+            yield
+        finally:
+            await app_context.stop()
+
+    app = FastAPI(title="OTP LOL", version=CURRENT_VERSION, lifespan=lifespan)
+    app.state.context = app_context
+    allow_dev_origins = frontend_dir is None or os.environ.get("OTP_LOL_ALLOW_DEV_ORIGINS") == "1"
+    dev_origins = ["http://127.0.0.1:5173", "http://localhost:5173"] if allow_dev_origins else []
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=dev_origins,
+        allow_credentials=False,
+        allow_methods=["GET", "PATCH", "PUT", "DELETE"],
+        allow_headers=["*"],
+    )
+
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; connect-src 'self' http://127.0.0.1:5173 http://localhost:5173 ws://127.0.0.1:5173 ws://localhost:5173; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'",
+        )
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
+    app.include_router(runtime.router)
+    app.include_router(settings.router)
+    app.include_router(catalog.router)
+    app.include_router(history.router)
+
+    if frontend_dir:
+        static_dir = Path(frontend_dir)
+        if static_dir.is_dir():
+            app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+    return app
+
+
+app = create_app()
+
+__all__ = ["ApplicationContext", "app", "create_app", "create_default_context"]

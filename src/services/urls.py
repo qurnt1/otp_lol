@@ -19,12 +19,49 @@ Developers maintaining external website integration and Riot ID normalization.
 
 DEPENDENCIES:
 Used by:
-- src.ui.main_window and tests.
+- src.desktop.webview and tests.
 Uses:
 - Standard library: urllib.parse
 """
 
 import urllib.parse
+
+from ..config.constants import REGION_LIST
+
+ALLOWED_EXTERNAL_HOSTS = frozenset({
+    "github.com",
+    "op.gg",
+    "porofessor.gg",
+    "deeplol.gg",
+    "www.deeplol.gg",
+    "dpm.lol",
+    "leagueofgraphs.com",
+    "www.leagueofgraphs.com",
+})
+
+STATS_PROVIDERS = {
+    "opgg": lambda region, riot_id: build_opgg_url(region, riot_id),
+    "deeplol": lambda region, riot_id: build_deeplol_url(region, riot_id),
+    "dpm": lambda region, riot_id: build_dpm_url(region, riot_id),
+    "leagueofgraphs": lambda region, riot_id: build_leagueofgraphs_url(region, riot_id),
+}
+
+HOTKEY_PROVIDERS = {
+    "porofessor": (lambda region, riot_id: build_porofessor_url(region, riot_id), "https://porofessor.gg/"),
+    "deeplol": (lambda region, riot_id: build_deeplol_url(region, riot_id, ingame=True), "https://www.deeplol.gg/"),
+    "dpm": (lambda region, riot_id: build_dpm_url(region, riot_id, ingame=True), "https://dpm.lol/"),
+    "opgg": (lambda region, riot_id: build_opgg_url(region, riot_id, ingame=True), "https://op.gg/"),
+}
+
+
+def is_allowed_external_url(url: str) -> bool:
+    """Allow only HTTPS links to providers intentionally exposed by the app."""
+    try:
+        parsed = urllib.parse.urlparse(str(url or "").strip())
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    return parsed.scheme == "https" and host in ALLOWED_EXTERNAL_HOSTS
 
 
 def is_valid_riot_id(riot_id: str) -> bool:
@@ -32,7 +69,7 @@ def is_valid_riot_id(riot_id: str) -> bool:
     if not riot_id:
         return False
     value = str(riot_id).strip()
-    if "#" not in value:
+    if len(value) > 64 or value.count("#") != 1:
         return False
     left, right = value.split("#", 1)
     return bool(left.strip() and right.strip())
@@ -41,60 +78,54 @@ def is_valid_riot_id(riot_id: str) -> bool:
 def build_opgg_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
     """Build the OP.GG URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://op.gg/fr/lol/summoners/{region}/{urllib.parse.quote(url_name)}"
+    base = f"https://op.gg/fr/lol/summoners/{region}/{urllib.parse.quote(url_name, safe='')}"
     return f"{base}/ingame" if ingame else base
 
 
 def build_porofessor_url(region: str, riot_id: str) -> str:
     """Build the Porofessor in-game URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name)}/ranked-only"
+    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name, safe='')}/ranked-only"
 
 
 def build_leagueofgraphs_url(region: str, riot_id: str) -> str:
     """Build the League of Graphs URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    return f"https://www.leagueofgraphs.com/fr/summoner/{region}/{urllib.parse.quote(url_name)}"
+    return f"https://www.leagueofgraphs.com/fr/summoner/{region}/{urllib.parse.quote(url_name, safe='')}"
 
 
 def build_deeplol_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
     """Build the DeepLOL URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://www.deeplol.gg/summoner/{region}/{urllib.parse.quote(url_name)}"
+    base = f"https://www.deeplol.gg/summoner/{region}/{urllib.parse.quote(url_name, safe='')}"
     return f"{base}/ingame" if ingame else base
 
 
 def build_dpm_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
     """Build the DPM.LOL URL for a player."""
     url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://dpm.lol/{urllib.parse.quote(url_name)}"
+    base = f"https://dpm.lol/{urllib.parse.quote(url_name, safe='')}"
     return f"{base}/live" if ingame else f"{base}/"
 
 
 def build_stats_site_url(site: str, region: str, riot_id: str) -> str:
     """Build the configured profile stats URL."""
     normalized_site = (site or "opgg").lower().strip()
-    builders = {
-        "opgg": lambda reg, rid: build_opgg_url(reg, rid, ingame=False),
-        "deeplol": lambda reg, rid: build_deeplol_url(reg, rid, ingame=False),
-        "dpm": lambda reg, rid: build_dpm_url(reg, rid, ingame=False),
-        "leagueofgraphs": build_leagueofgraphs_url,
-    }
-    builder = builders.get(normalized_site, builders["opgg"])
+    builder = STATS_PROVIDERS.get(normalized_site, STATS_PROVIDERS["opgg"])
     return builder(region, riot_id)
 
 
-def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str:
-    """Build the configured in-game stats URL opened by the hotkey."""
+def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str | None:
+    """Build a profile or safe provider-home URL for the configured stats hotkey."""
     normalized_site = (site or "porofessor").lower().strip()
-    builders = {
-        "porofessor": build_porofessor_url,
-        "deeplol": lambda reg, rid: build_deeplol_url(reg, rid, ingame=True),
-        "dpm": lambda reg, rid: build_dpm_url(reg, rid, ingame=True),
-        "opgg": lambda reg, rid: build_opgg_url(reg, rid, ingame=True),
-    }
-    builder = builders.get(normalized_site, builders["porofessor"])
-    return builder(region, riot_id)
+    provider = HOTKEY_PROVIDERS.get(normalized_site)
+    if provider is None:
+        return None
+    builder, homepage = provider
+    normalized_region = str(region or "").strip().lower()
+    if is_valid_riot_id(riot_id) and normalized_region in REGION_LIST:
+        return builder(normalized_region, riot_id)
+    return homepage
 
 
 def _normalize_riot_id_for_url(riot_id: str) -> str:

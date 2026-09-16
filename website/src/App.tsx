@@ -24,7 +24,7 @@ const repoUrl = `https://github.com/${repo}`;
 const releasesUrl = `${repoUrl}/releases`;
 const latestReleaseApi = `https://api.github.com/repos/${repo}/releases/latest`;
 const latestReleaseUrl = `${repoUrl}/releases/latest`;
-const windowsAssetName = "OTP LOL.exe";
+const windowsAssetName = "OTP-LOL-Setup.exe";
 const feedbackMailto =
   "mailto:chbtquentin@gmail.com?subject=feedback%20OTP%20LOL";
 const ideasMailto =
@@ -32,6 +32,18 @@ const ideasMailto =
 
 type DownloadState = "idle" | "loading" | "fallback";
 type Lang = "en" | "fr";
+
+type ReleaseMetadata = {
+  version: string;
+  publishedAt: string;
+  releaseUrl: string;
+  downloadUrl: string;
+  checksumUrl: string;
+  sha256: string | null;
+};
+
+type GitHubAsset = { name?: string; browser_download_url?: string };
+type GitHubRelease = { tag_name?: string; name?: string; html_url?: string; published_at?: string; assets?: GitHubAsset[] };
 
 const copy = {
   en: {
@@ -43,9 +55,16 @@ const copy = {
     },
     download: {
       idle: "Download Latest Version",
-      loading: "Finding latest .exe…",
+      loading: "Finding latest installer…",
       fallback: "Opening releases…",
       other: "Other Versions",
+    },
+    release: {
+      loading: "Checking the latest release…",
+      version: (version: string) => `Version ${version}`,
+      published: (date: string) => `Published ${date}`,
+      checksum: "SHA-256",
+      checksumUnavailable: "Checksum available on GitHub",
     },
     accessibility: {
       skipToContent: "Skip to content",
@@ -92,7 +111,7 @@ const copy = {
     screenshots: {
       kicker: "Screenshots",
       title: "Small interface, quick configuration.",
-      labels: ["Main Window", "Settings", "Champion Select"],
+      labels: ["Command Center", "Settings"],
     },
     privacy: {
       kicker: "Privacy",
@@ -149,6 +168,13 @@ const copy = {
       fallback: "Ouverture des releases…",
       other: "Autres versions",
     },
+    release: {
+      loading: "Vérification de la dernière release…",
+      version: (version: string) => `Version ${version}`,
+      published: (date: string) => `Publiée le ${date}`,
+      checksum: "SHA-256",
+      checksumUnavailable: "Checksum disponible sur GitHub",
+    },
     accessibility: {
       skipToContent: "Aller au contenu",
       mainNavigation: "Navigation principale",
@@ -194,7 +220,7 @@ const copy = {
     screenshots: {
       kicker: "Captures",
       title: "Une interface compacte, une configuration rapide.",
-      labels: ["Fenêtre principale", "Paramètres", "Champion Select"],
+      labels: ["Centre de contrôle", "Paramètres"],
     },
     privacy: {
       kicker: "Vie privée",
@@ -241,20 +267,64 @@ const copy = {
 };
 
 const screenshotSources = [
-  { src: "assets/screenshots/main-window.png", width: 420, height: 283 },
-  { src: "assets/screenshots/settings-window.png", width: 982, height: 850 },
-  { src: "assets/screenshots/champ-select.png", width: 758, height: 736 },
+  { src: "assets/screenshots/dashboard-web.png", width: 1100, height: 760 },
+  { src: "assets/screenshots/settings-web.png", width: 1100, height: 760 },
 ];
+
+async function fetchLatestRelease(): Promise<ReleaseMetadata | null> {
+  const response = await fetch(latestReleaseApi, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) throw new Error("GitHub release unavailable");
+
+  const release = (await response.json()) as GitHubRelease;
+  const windowsAsset = release.assets?.find((asset) => asset.name === windowsAssetName);
+  const checksumAsset = release.assets?.find((asset) => asset.name === `${windowsAssetName}.sha256`);
+  if (!windowsAsset?.browser_download_url || !checksumAsset?.browser_download_url) return null;
+
+  let sha256: string | null = null;
+  try {
+    const checksumResponse = await fetch(checksumAsset.browser_download_url);
+    if (checksumResponse.ok) {
+      const checksumText = await checksumResponse.text();
+      sha256 = checksumText.match(/[a-f0-9]{64}/i)?.[0]?.toLowerCase() ?? null;
+    }
+  } catch {
+    // The linked checksum remains available on GitHub if the browser blocks the raw fetch.
+  }
+
+  return {
+    version: String(release.tag_name || release.name || "").replace(/^v/i, "") || "latest",
+    publishedAt: String(release.published_at || ""),
+    releaseUrl: String(release.html_url || latestReleaseUrl),
+    downloadUrl: windowsAsset.browser_download_url,
+    checksumUrl: checksumAsset.browser_download_url,
+    sha256,
+  };
+}
 
 function App() {
   const [downloadState, setDownloadState] = useState<DownloadState>("idle");
-  const [lang, setLang] = useState<Lang>("en");
+  const [lang, setLang] = useState<Lang>(() => {
+    const stored = window.localStorage.getItem("otp-lol-language");
+    return stored === "fr" ? "fr" : "en";
+  });
+  const [release, setRelease] = useState<ReleaseMetadata | null>(null);
   const shouldReduceMotion = useReducedMotion();
   const t = copy[lang];
 
   useEffect(() => {
     document.documentElement.lang = lang;
+    window.localStorage.setItem("otp-lol-language", lang);
   }, [lang]);
+
+  useEffect(() => {
+    let disposed = false;
+    void fetchLatestRelease().then((latest) => {
+      if (!disposed) setRelease(latest);
+    }).catch(() => undefined);
+    return () => { disposed = true; };
+  }, []);
 
   const releaseLabel = useMemo(() => {
     if (downloadState === "loading") return t.download.loading;
@@ -266,19 +336,10 @@ function App() {
     setDownloadState("loading");
 
     try {
-      const response = await fetch(latestReleaseApi, {
-        headers: { Accept: "application/vnd.github+json" },
-      });
-
-      if (!response.ok) throw new Error("GitHub release unavailable");
-
-      const release = await response.json();
-      const windowsAsset = release.assets?.find(
-        (asset: { name?: string }) => asset.name === windowsAssetName,
-      );
-
-      if (windowsAsset?.browser_download_url) {
-        window.location.href = windowsAsset.browser_download_url;
+      const latest = release ?? await fetchLatestRelease();
+      if (latest) {
+        setRelease(latest);
+        window.location.href = latest.downloadUrl;
         setDownloadState("idle");
         return;
       }
@@ -362,6 +423,15 @@ function App() {
               <MonitorDown size={20} aria-hidden="true" />
               {t.download.other}
             </a>
+          </div>
+          <div className="release-meta" aria-live="polite">
+            {release ? (
+              <>
+                <span>{t.release.version(release.version)}</span>
+                {release.publishedAt && <span>{t.release.published(new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(new Date(release.publishedAt)))}</span>}
+                <a href={release.checksumUrl}>{t.release.checksum}: <code>{release.sha256 ?? t.release.checksumUnavailable}</code></a>
+              </>
+            ) : <span>{t.release.loading}</span>}
           </div>
         </div>
       </section>

@@ -62,12 +62,13 @@ def _setup_logging() -> str:
         logging.Formatter("%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s")
     )
 
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S"))
-
     root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
+    console_stream = sys.stdout or sys.stderr
+    if console_stream is not None:
+        console_handler = logging.StreamHandler(console_stream)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s", datefmt="%H:%M:%S"))
+        root_logger.addHandler(console_handler)
 
     return log_path
 

@@ -37,6 +37,7 @@ from typing import Any, Dict
 import tomli_w
 
 from .constants import APP_VERSION, CONFIG_SCHEMA_VERSION, CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
+from ..domain.hotkeys import normalize_hotkey, validate_hotkey_pair
 from .paths import (
     ICONS_CACHE_DIR,
     PARAMETERS_PATH,
@@ -77,7 +78,7 @@ def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str
 
 
 def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
-    """Return first-launch preset slots with visible spell and skin examples."""
+    """Return optional preview slots with visible spell and skin examples."""
     slots = build_pick_slot_defaults()
     slots["pick_1"].update(
         {
@@ -116,22 +117,31 @@ def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
     return slots
 
 
-DEFAULT_PARAMS: Dict[str, Any] = {
-    "config_version": CURRENT_VERSION,
-    "config_schema_version": CONFIG_SCHEMA_VERSION,
-    "auto_accept_enabled": True,
-    "auto_pick_enabled": True,
-    "auto_ban_enabled": True,
-    "auto_summoners_enabled": True,
-    "presets_enabled": True,
+DEMO_PRESETS: Dict[str, Any] = {
     "selected_pick_1": "Garen",
     "selected_pick_2": "Lux",
     "selected_pick_3": "Ashe",
     "selected_ban": "Teemo",
     "pick_slots": build_demo_pick_slots(),
+}
+
+
+DEFAULT_PARAMS: Dict[str, Any] = {
+    "config_version": CURRENT_VERSION,
+    "config_schema_version": CONFIG_SCHEMA_VERSION,
+    "auto_accept_enabled": False,
+    "auto_pick_enabled": False,
+    "auto_ban_enabled": False,
+    "auto_summoners_enabled": False,
+    "presets_enabled": False,
+    "selected_pick_1": "",
+    "selected_pick_2": "",
+    "selected_pick_3": "",
+    "selected_ban": "",
+    "pick_slots": build_pick_slot_defaults(),
     "theme": "darkly",
     "summoner_name_auto_detect": True,
-    "manual_summoner_name": "VotrePseudo#VotreTag",
+    "manual_summoner_name": "",
     "manual_region": "euw",
     "auto_detected_riot_id": "",
     "auto_detected_region": "",
@@ -146,21 +156,26 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "ignored_update_version": "",
     "main_skin_mode_override": "inherit",
     "main_skin_mode_overrides": build_main_skin_mode_overrides(),
+    "skin_automation_enabled": True,
     "window_x": 0,
     "window_y": 0,
+    "window_width": 1100,
+    "window_height": 760,
+    "window_maximized": False,
 }
 
-FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
-FIRST_LAUNCH_PARAMS.update(
+DEMO_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
+DEMO_PARAMS.update(
     {
-        "auto_accept_enabled": False,
-        "auto_pick_enabled": False,
-        "auto_ban_enabled": False,
-        "auto_summoners_enabled": False,
-        "presets_enabled": False,
-        "auto_play_again_enabled": False,
+        "auto_accept_enabled": True,
+        "auto_pick_enabled": True,
+        "auto_ban_enabled": True,
+        "auto_summoners_enabled": True,
+        **copy.deepcopy(DEMO_PRESETS),
     }
 )
+
+FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
 
 
 def _build_first_launch_payload() -> Dict[str, Any]:
@@ -298,10 +313,31 @@ def _migrate_schema_2_to_3(config: Dict[str, Any]) -> Dict[str, Any]:
     return migrated
 
 
+def _migrate_schema_3_to_4(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist the native window geometry introduced by the WebView shell."""
+    migrated = copy.deepcopy(config)
+    migrated.setdefault("window_width", DEFAULT_PARAMS["window_width"])
+    migrated.setdefault("window_height", DEFAULT_PARAMS["window_height"])
+    migrated.setdefault("window_maximized", DEFAULT_PARAMS["window_maximized"])
+    migrated["config_schema_version"] = 4
+    return migrated
+
+
+def _migrate_schema_4_to_5(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Separate the global skin automation switch from per-slot skin modes."""
+    migrated = copy.deepcopy(config)
+    legacy_mode = _normalize_main_skin_mode_override(migrated.get("main_skin_mode_override", "inherit"))
+    migrated.setdefault("skin_automation_enabled", legacy_mode != "none")
+    migrated["config_schema_version"] = 5
+    return migrated
+
+
 _SCHEMA_MIGRATIONS = {
     0: _migrate_schema_0_to_1,
     1: _migrate_schema_1_to_2,
     2: _migrate_schema_2_to_3,
+    3: _migrate_schema_3_to_4,
+    4: _migrate_schema_4_to_5,
 }
 
 
@@ -385,6 +421,13 @@ def save_parameters(params: Dict[str, Any]) -> bool:
         return False
 
 
+def normalize_parameters(params: Dict[str, Any]) -> Dict[str, Any]:
+    """Return a defensive, current-schema settings snapshot without writing it."""
+    if not isinstance(params, dict):
+        raise TypeError("params must be a dictionary")
+    return _normalize_parameters(copy.deepcopy(params))
+
+
 def export_parameters_to_file(path: str, params: Dict[str, Any]) -> bool:
     """Export sanitized parameters to a chosen TOML or JSON file (detected from extension)."""
     try:
@@ -418,7 +461,7 @@ def _normalize_spell_value(value: Any) -> str:
     spell_name = str(value or "")
     if spell_name == "(Aucun)":
         return "(None)"
-    return spell_name if spell_name in SUMMONER_SPELL_MAP or not spell_name else spell_name
+    return spell_name if spell_name in SUMMONER_SPELL_MAP else ""
 
 
 def _normalize_skin_mode(value: Any) -> str:
@@ -559,6 +602,13 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         config.get("main_skin_mode_overrides"),
         legacy_value=config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"]),
     )
+    legacy_skin_mode = _normalize_main_skin_mode_override(
+        config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"])
+    )
+    raw_skin_automation = config.get("skin_automation_enabled", legacy_skin_mode != "none")
+    if isinstance(raw_skin_automation, str):
+        raw_skin_automation = raw_skin_automation.strip().lower() in {"1", "true", "yes", "on"}
+    merged["skin_automation_enabled"] = bool(raw_skin_automation)
     merged["pick_slots"] = _build_normalized_pick_slots(
         config.get("pick_slots"),
         fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
@@ -575,10 +625,25 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         preferred_hotkey_site = DEFAULT_PARAMS["preferred_hotkey_site"]
     merged["preferred_hotkey_site"] = preferred_hotkey_site
 
-    hotkey_toggle_window = str(config.get("hotkey_toggle_window", DEFAULT_PARAMS["hotkey_toggle_window"])).strip().lower()
-    hotkey_open_site = str(config.get("hotkey_open_site", DEFAULT_PARAMS["hotkey_open_site"])).strip().lower()
-    merged["hotkey_toggle_window"] = hotkey_toggle_window or DEFAULT_PARAMS["hotkey_toggle_window"]
-    merged["hotkey_open_site"] = hotkey_open_site or DEFAULT_PARAMS["hotkey_open_site"]
+    default_toggle = DEFAULT_PARAMS["hotkey_toggle_window"]
+    default_open_site = DEFAULT_PARAMS["hotkey_open_site"]
+    try:
+        hotkey_toggle_window = normalize_hotkey(config.get("hotkey_toggle_window", default_toggle))
+    except (TypeError, ValueError) as error:
+        logging.warning("Invalid window hotkey; using %s: %s", default_toggle, error)
+        hotkey_toggle_window = default_toggle
+    try:
+        hotkey_open_site = normalize_hotkey(config.get("hotkey_open_site", default_open_site))
+    except (TypeError, ValueError) as error:
+        logging.warning("Invalid stats hotkey; using %s: %s", default_open_site, error)
+        hotkey_open_site = default_open_site
+    try:
+        hotkey_toggle_window, hotkey_open_site = validate_hotkey_pair(hotkey_toggle_window, hotkey_open_site)
+    except ValueError as error:
+        logging.warning("Duplicate global hotkeys; using %s for the stats shortcut: %s", default_open_site, error)
+        hotkey_open_site = default_toggle if hotkey_toggle_window == default_open_site else default_open_site
+    merged["hotkey_toggle_window"] = hotkey_toggle_window
+    merged["hotkey_open_site"] = hotkey_open_site
     merged["ignored_update_version"] = str(
         config.get("ignored_update_version", DEFAULT_PARAMS["ignored_update_version"])
     ).strip()
@@ -588,7 +653,29 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
         theme = DEFAULT_PARAMS["theme"]
     merged["theme"] = theme
 
+    for key, minimum, maximum in (
+        ("window_width", 800, 7680),
+        ("window_height", 540, 4320),
+    ):
+        try:
+            value = int(config.get(key, DEFAULT_PARAMS[key]))
+        except (TypeError, ValueError, OverflowError):
+            value = DEFAULT_PARAMS[key]
+        merged[key] = min(max(value, minimum), maximum)
+    merged["window_x"] = _normalize_window_position(config.get("window_x", DEFAULT_PARAMS["window_x"]))
+    merged["window_y"] = _normalize_window_position(config.get("window_y", DEFAULT_PARAMS["window_y"]))
+    merged["window_maximized"] = bool(config.get("window_maximized", DEFAULT_PARAMS["window_maximized"]))
+
     return {key: copy.deepcopy(merged[key]) for key in DEFAULT_PARAMS}
+
+
+def _normalize_window_position(value: Any) -> int:
+    """Keep persisted coordinates finite without rejecting an otherwise valid config."""
+    try:
+        position = int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    return min(max(position, -10000), 10000)
 
 
 def get_cache_dirs() -> None:

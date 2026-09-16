@@ -16,7 +16,7 @@ Developers importing the main core runtime classes.
 
 DEPENDENCIES:
 Used by:
-- launcher.py and modules importing core classes from `src.core`.
+- src.lcu.runtime and modules importing core classes from `src.core`.
 Uses:
 - Local modules: src.core.datadragon, src.core.game_state, src.core.websocket
 """

@@ -82,7 +82,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         self.manager = WebSocketManager(
-            ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
+            event_callback=lambda event_type, data=None: self.events.append((event_type, data)),
             dd=DummyDataDragon(
                 {
                     "Garen": 86,
@@ -93,6 +93,14 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             ),
             get_params=lambda: self.params.copy(),
         )
+
+    def test_status_events_have_a_localizable_action_payload(self):
+        self.manager._notify_status("ban_confirmed", level="BAN", champion="Teemo")
+
+        self.assertEqual(self.events[-1], (
+            "status",
+            {"action": "ban_confirmed", "level": "BAN", "params": {"champion": "Teemo"}},
+        ))
 
     async def test_inventory_skin_is_owned_uses_explicit_fields(self):
         self.assertTrue(self.manager._inventory_skin_is_owned({"ownershipType": "OWNED"}))
@@ -278,6 +286,19 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolve_skin_selection_returns_none_when_override_is_none(self):
         self.manager.state.assigned_position = "TOP"
         self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "inherit", "pick_3": "inherit"}
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_returns_none_when_automation_is_disabled(self):
+        self.manager.state.assigned_position = "TOP"
+        self.params["skin_automation_enabled"] = False
+        self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "random", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_1"].update(
             {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
         )

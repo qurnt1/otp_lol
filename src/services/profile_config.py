@@ -15,7 +15,7 @@ Developers maintaining profile settings, champion-select automation, and main-wi
 
 DEPENDENCIES:
 Used by:
-- src.core.websocket and src.ui.main_preview
+- src.core.websocket and the desktop frontend.
 Uses:
 - Standard library: typing
 - Local modules: src.config.constants

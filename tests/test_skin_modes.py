@@ -48,6 +48,17 @@ class SkinModesTests(unittest.TestCase):
 
         self.assertEqual(overrides, {"pick_1": "inherit", "pick_2": "random", "pick_3": "inherit"})
 
+    def test_build_main_skin_overrides_disables_every_slot_when_automation_is_off(self):
+        overrides = build_main_skin_overrides(
+            {
+                "skin_automation_enabled": False,
+                "main_skin_mode_override": "inherit",
+                "main_skin_mode_overrides": {"pick_1": "fixed", "pick_2": "random"},
+            }
+        )
+
+        self.assertEqual(overrides, {"pick_1": "none", "pick_2": "none", "pick_3": "none"})
+
     def test_get_effective_skin_mode_for_slot_uses_override_before_slot_mode(self):
         effective = {
             "pick_slots": {

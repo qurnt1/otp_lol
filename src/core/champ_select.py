@@ -235,7 +235,7 @@ class ChampSelectMixin:
             if not self.state.non_preset_mode_notified:
                 self.state.non_preset_mode_notified = True
                 logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
-                self._notify_ui(self.EVENT_STATUS, ("Presets disabled — unsupported lobby type", "GAMEMODE"))
+                self._notify_status("presets_disabled", level="GAMEMODE")
             return
 
         local_id = session.get("localPlayerCellId")
@@ -253,7 +253,7 @@ class ChampSelectMixin:
                 pos = (my_player_obj.get("assignedPosition") or "").upper()
                 if pos:
                     self.state.assigned_position = pos
-                    self._notify_ui(self.EVENT_STATUS, (f"Assigned role detected: {pos}", "ROLE"))
+                    self._notify_status("role_detected", level="ROLE", role=pos)
 
         actions_groups = session.get("actions", [])
         my_actions = []
@@ -324,8 +324,6 @@ class ChampSelectMixin:
                                     asyncio.create_task(self._set_spells(params, slot_key=prepick_slot))
                                 asyncio.create_task(self._set_rune_page(params, slot_key=prepick_slot))
                                 asyncio.create_task(self._set_skin(params, slot_key=prepick_slot))
-                        else:
-                            self._log_flow_once("Pre-pick hover was not confirmed; retry will stay active.")
 
         prepick_required = (
             params.get("auto_pick_enabled")
@@ -339,9 +337,15 @@ class ChampSelectMixin:
                 self.state.prepick_wait_started_ts = time()
             wait_elapsed = time() - self.state.prepick_wait_started_ts
             if wait_elapsed < self.PREPICK_SOFT_TIMEOUT_S:
-                self._log_flow_once("Waiting for pre-pick confirmation before ban/pick actions.")
+                message = "Waiting for pre-pick confirmation before ban/pick actions."
+                if self.state.last_flow_note != message:
+                    self._log_flow_once(message)
+                    self._notify_status("prepick_waiting", level="INFO")
                 return
-            self._log_flow_once("Pre-pick confirmation timed out; continuing with ban/pick flow.")
+            message = "Pre-pick confirmation timed out; continuing with ban/pick flow."
+            if self.state.last_flow_note != message:
+                self._log_flow_once(message)
+                self._notify_status("prepick_timed_out", level="WARN")
 
         # Reconcile spells, runes, and skin before the ban action so patches
         # that failed on the first attempt get a second chance early.
@@ -384,8 +388,13 @@ class ChampSelectMixin:
                 category="Champion Select",
                 action="hover",
             )
+            self._notify_status("prepick_confirmed", level="PREPICK", champion=champion_name)
         else:
             logging.warning("[PREPICK] Hover request was rejected for %s (%s).", champion_name, champion_id)
+            message = f"Pre-pick not confirmed for {champion_name}; retry scheduled."
+            if self.state.last_flow_note != message:
+                self._log_flow_once(message)
+                self._notify_status("prepick_failed", level="WARN", champion=champion_name)
         return success
 
     async def _logic_do_ban(self: "WebSocketManager", action: Dict[str, Any], effective: Dict[str, Any]) -> None:
@@ -420,8 +429,8 @@ class ChampSelectMixin:
                 category="Champion Select",
                 action="ban",
             )
-            self._notify_ui(self.EVENT_CHAMPION_BANNED, selected_ban)
-            self._notify_ui(self.EVENT_STATUS, (f"Ban confirmed: {selected_ban}.", "BAN"))
+            self._notify_event(self.EVENT_CHAMPION_BANNED, selected_ban)
+            self._notify_status("ban_confirmed", level="BAN", champion=selected_ban)
             return
 
         self._log_flow_once(f"Ban was not confirmed for {selected_ban}; retry will continue while the action stays active.")
@@ -441,12 +450,9 @@ class ChampSelectMixin:
         viable_picks = self._get_viable_pick_candidates(params, pickable_set, banned_ids)
         if not viable_picks:
             if pickable_set is None:
-                self._notify_ui(self.EVENT_STATUS, ("Unable to check pickable champions right now.", "WARN"))
+                self._notify_status("pickable_unavailable", level="WARN")
             else:
-                self._notify_ui(
-                    self.EVENT_STATUS,
-                    ("No configured champion is available (or all are banned).", "WARN"),
-                )
+                self._notify_status("no_champion_available", level="WARN")
             return
 
         for slot_key, champion_name, champion_id in viable_picks:
@@ -464,8 +470,8 @@ class ChampSelectMixin:
                     category="Champion Select",
                     action="pick",
                 )
-                self._notify_ui(self.EVENT_CHAMPION_PICKED, champion_name)
-                self._notify_ui(self.EVENT_STATUS, (f"{champion_name} locked in. Ready to play.", "PICK"))
+                self._notify_event(self.EVENT_CHAMPION_PICKED, champion_name)
+                self._notify_status("pick_confirmed", level="PICK", champion=champion_name)
                 if params.get("auto_summoners_enabled"):
                     asyncio.create_task(self._set_spells(params, slot_key=slot_key))
                 asyncio.create_task(self._set_skin(params, slot_key=slot_key))
@@ -479,10 +485,7 @@ class ChampSelectMixin:
                 slot_key,
             )
 
-        self._notify_ui(
-            self.EVENT_STATUS,
-            ("No configured champion could be confirmed on this pick action; retry scheduled.", "WARN"),
-        )
+        self._notify_status("pick_unconfirmed", level="WARN")
         self._log_flow_once("Pick action failed for all viable presets; retries will continue while the action stays active.")
 
     def _resolve_spell_selection(
@@ -517,6 +520,9 @@ class ChampSelectMixin:
         fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
         champion_name = slot_data.get("champion") or fallback_slot.get("champion") or effective.get("selected_pick_1", "")
         if not champion_name:
+            return None, chosen_slot
+
+        if not params.get("skin_automation_enabled", True):
             return None, chosen_slot
 
         skin_mode = get_effective_skin_mode_for_slot(
@@ -1168,11 +1174,8 @@ class ChampSelectMixin:
                             category="Summs",
                             action="set",
                         )
-                        self._notify_ui(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
-                        self._notify_ui(
-                            self.EVENT_STATUS,
-                            (f"Summs auto-selected: {spell1_name} + {spell2_name}.", "SUMMS"),
-                        )
+                        self._notify_event(self.EVENT_SPELLS_SET, (spell1_name, spell2_name))
+                        self._notify_status("summoners_applied", level="SUMMS", spell_1=spell1_name, spell_2=spell2_name)
                     logging.info("[SPELLS] Confirmed on %s for %s.", endpoint, chosen_slot)
                     return
 
@@ -1182,10 +1185,7 @@ class ChampSelectMixin:
                 spell1_id,
                 spell2_id,
             )
-            self._notify_ui(
-                self.EVENT_STATUS,
-                (f"Summs not confirmed yet for {chosen_slot}; retry will continue if possible.", "WARN"),
-            )
+            self._notify_status("summoners_unconfirmed", level="WARN", pick_slot=chosen_slot)
         finally:
             self.state.spell_apply_in_progress = False
 
@@ -1296,10 +1296,7 @@ class ChampSelectMixin:
                             category="Champion Select",
                             action="skin",
                         )
-                        self._notify_ui(
-                            self.EVENT_STATUS,
-                            (f"Skin selected: {selected_skin.get('skin_name') or skin_id}.", "SKIN"),
-                        )
+                        self._notify_status("skin_selected", level="SKIN", skin=str(selected_skin.get("skin_name") or skin_id))
 
                     if selected_skin.get("mode") == "random":
                         if not pickable_skins:
@@ -1474,7 +1471,7 @@ class ChampSelectMixin:
                         category="Champion Select",
                         action="runes",
                     )
-                    self._notify_ui(self.EVENT_STATUS, (f"Runes set: {rune_page_name}.", "RUNES"))
+                    self._notify_status("runes_applied", level="RUNES", page=rune_page_name)
                 return
 
             logging.warning("[RUNES] Unable to confirm rune page %s for %s after PUT attempt.", rune_page_id, chosen_slot)
@@ -1500,6 +1497,6 @@ class ChampSelectMixin:
                     category="End game",
                     action="play_again",
                 )
-                self._notify_ui(self.EVENT_PLAY_AGAIN, None)
-                self._notify_ui(self.EVENT_STATUS, ("Auto play again succeeded.", "OK"))
+                self._notify_event(self.EVENT_PLAY_AGAIN, None)
+                self._notify_status("play_again_succeeded", level="OK")
                 break
