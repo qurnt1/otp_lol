@@ -36,7 +36,15 @@ from typing import Any, Dict
 
 import tomli_w
 
-from .constants import APP_VERSION, CONFIG_SCHEMA_VERSION, CURRENT_VERSION, PICK_SLOT_ORDER, SUMMONER_SPELL_MAP
+from .constants import (
+    APP_VERSION,
+    CONFIG_SCHEMA_VERSION,
+    CURRENT_VERSION,
+    HOTKEY_PROVIDERS,
+    PICK_SLOT_ORDER,
+    STATS_PROVIDERS,
+    SUMMONER_SPELL_MAP,
+)
 from ..domain.hotkeys import normalize_hotkey, validate_hotkey_pair
 from .paths import (
     ICONS_CACHE_DIR,
@@ -270,10 +278,38 @@ def _read_schema_version(config: Dict[str, Any]) -> int:
     return schema_version
 
 
+def _migrate_schema_5_to_6(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Move schema 5's effective dashboard skin modes into each preset slot."""
+    migrated = copy.deepcopy(config)
+    raw_overrides = migrated.get("main_skin_mode_overrides")
+    legacy_mode = str(migrated.get("main_skin_mode_override") or "inherit").strip().lower()
+    if legacy_mode not in {"inherit", "none", "fixed", "random"}:
+        legacy_mode = "inherit"
+
+    slots = migrated.get("pick_slots")
+    for slot in PICK_SLOT_ORDER:
+        override = legacy_mode
+        if isinstance(raw_overrides, dict):
+            override = str(raw_overrides.get(slot, override) or "inherit").strip().lower()
+            if override not in {"inherit", "none", "fixed", "random"}:
+                override = "inherit"
+        if override != "inherit":
+            slot_data = slots.get(slot) if isinstance(slots, dict) else None
+            if isinstance(slot_data, dict):
+                slot_data["skin_mode"] = override
+
+    migrated.pop("main_skin_mode_override", None)
+    migrated.pop("main_skin_mode_overrides", None)
+    migrated["config_schema_version"] = CONFIG_SCHEMA_VERSION
+    return migrated
+
+
 def _normalize_current_schema(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Accept only the current settings format; older formats are not migrated."""
+    """Migrate the previous supported format, then normalize current settings."""
     schema_version = _read_schema_version(config)
-    if schema_version != CONFIG_SCHEMA_VERSION:
+    if schema_version == 5 and CONFIG_SCHEMA_VERSION == 6:
+        config = _migrate_schema_5_to_6(config)
+    elif schema_version != CONFIG_SCHEMA_VERSION:
         raise ValueError(
             f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})"
         )
@@ -465,12 +501,12 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["pick_slots"] = _build_normalized_pick_slots(config.get("pick_slots"))
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
-    if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:
+    if preferred_stats_site not in STATS_PROVIDERS:
         preferred_stats_site = DEFAULT_PARAMS["preferred_stats_site"]
     merged["preferred_stats_site"] = preferred_stats_site
 
     preferred_hotkey_site = str(config.get("preferred_hotkey_site", DEFAULT_PARAMS["preferred_hotkey_site"])).lower().strip()
-    if preferred_hotkey_site not in {"porofessor", "deeplol", "dpm", "opgg"}:
+    if preferred_hotkey_site not in HOTKEY_PROVIDERS:
         preferred_hotkey_site = DEFAULT_PARAMS["preferred_hotkey_site"]
     merged["preferred_hotkey_site"] = preferred_hotkey_site
 

@@ -23,6 +23,15 @@ Uses:
 
 from typing import Dict
 
+from ..domain.providers import (
+    HOTKEY_SITE_LABELS,
+    HOTKEY_SITE_ORDER,
+    LIVE_PROVIDER_IDS as HOTKEY_PROVIDERS,
+    STATS_PROVIDER_IDS as STATS_PROVIDERS,
+    STATS_SITE_LABELS,
+    STATS_SITE_ORDER,
+)
+
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
@@ -71,8 +80,6 @@ EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
 REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
 SUPPORTED_REGIONS: tuple[str, ...] = tuple(REGION_LIST)
-STATS_PROVIDERS: tuple[str, ...] = ("opgg", "deeplol", "dpm", "leagueofgraphs")
-HOTKEY_PROVIDERS: tuple[str, ...] = ("porofessor", "deeplol", "dpm", "opgg")
 
 SUMMONER_SPELL_MAP: Dict[str, int] = {
     "Barrier": 21, "Cleanse": 1, "Exhaust": 3, "Flash": 4, "Ghost": 6,
@@ -131,24 +138,6 @@ APP_IMAGE_FILES: Dict[str, str] = {
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",
 }
-
-STATS_SITE_LABELS: Dict[str, str] = {
-    "opgg": "OP.GG",
-    "deeplol": "DeepLOL",
-    "dpm": "DPM.LOL",
-    "leagueofgraphs": "League of Graphs",
-}
-
-STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "dpm", "leagueofgraphs"]
-
-HOTKEY_SITE_LABELS: Dict[str, str] = {
-    "porofessor": "Porofessor",
-    "deeplol": "DeepLOL",
-    "dpm": "DPM.LOL",
-    "opgg": "OP.GG",
-}
-
-HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "dpm", "opgg"]
 
 THEME_LABELS: Dict[str, str] = {
     "darkly": "Dark",

@@ -27,41 +27,25 @@ Uses:
 import urllib.parse
 
 from ..config.constants import REGION_LIST
-
-ALLOWED_EXTERNAL_HOSTS = frozenset({
-    "github.com",
-    "op.gg",
-    "porofessor.gg",
-    "deeplol.gg",
-    "www.deeplol.gg",
-    "dpm.lol",
-    "leagueofgraphs.com",
-    "www.leagueofgraphs.com",
-})
-
-STATS_PROVIDERS = {
-    "opgg": lambda region, riot_id: build_opgg_url(region, riot_id),
-    "deeplol": lambda region, riot_id: build_deeplol_url(region, riot_id),
-    "dpm": lambda region, riot_id: build_dpm_url(region, riot_id),
-    "leagueofgraphs": lambda region, riot_id: build_leagueofgraphs_url(region, riot_id),
-}
-STATS_PROVIDER_HOME_URLS = {
-    "opgg": "https://op.gg/",
-    "deeplol": "https://www.deeplol.gg/",
-    "dpm": "https://dpm.lol/",
-    "leagueofgraphs": "https://www.leagueofgraphs.com/",
-}
-STATS_FRAME_ORIGINS = {
-    "deeplol": "https://www.deeplol.gg",
-}
-LIVE_FRAME_ORIGINS: dict[str, str] = {}
-
-HOTKEY_PROVIDERS = {
-    "porofessor": (lambda region, riot_id: build_porofessor_url(region, riot_id), "https://porofessor.gg/"),
-    "deeplol": (lambda region, riot_id: build_deeplol_url(region, riot_id, ingame=True), "https://www.deeplol.gg/"),
-    "dpm": (lambda region, riot_id: build_dpm_url(region, riot_id, ingame=True), "https://dpm.lol/"),
-    "opgg": (lambda region, riot_id: build_opgg_url(region, riot_id, ingame=True), "https://op.gg/"),
-}
+from ..domain.providers import (
+    ALLOWED_EXTERNAL_HOSTS,
+    HOTKEY_PROVIDERS,
+    LIVE_FRAME_ORIGINS,
+    LIVE_PROVIDER_IDS,
+    PROVIDER_LOGO_FILES,
+    PROVIDER_REGISTRY,
+    STATS_FRAME_ORIGINS,
+    STATS_PROVIDER_HOME_URLS,
+    STATS_PROVIDER_IDS,
+    STATS_PROVIDERS,
+    ProviderDefinition,
+    _normalize_riot_id_for_url,
+    build_deeplol_url,
+    build_dpm_url,
+    build_leagueofgraphs_url,
+    build_opgg_url,
+    build_porofessor_url,
+)
 
 
 def is_allowed_external_url(url: str) -> bool:
@@ -90,39 +74,6 @@ def is_valid_riot_id(riot_id: str) -> bool:
         return False
     left, right = value.split("#", 1)
     return bool(left.strip() and right.strip())
-
-
-def build_opgg_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
-    """Build the OP.GG URL for a player."""
-    url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://op.gg/fr/lol/summoners/{region}/{urllib.parse.quote(url_name, safe='')}"
-    return f"{base}/ingame" if ingame else base
-
-
-def build_porofessor_url(region: str, riot_id: str) -> str:
-    """Build the Porofessor in-game URL for a player."""
-    url_name = _normalize_riot_id_for_url(riot_id)
-    return f"https://porofessor.gg/fr/live/{region}/{urllib.parse.quote(url_name, safe='')}/ranked-only"
-
-
-def build_leagueofgraphs_url(region: str, riot_id: str) -> str:
-    """Build the League of Graphs URL for a player."""
-    url_name = _normalize_riot_id_for_url(riot_id)
-    return f"https://www.leagueofgraphs.com/fr/summoner/{region}/{urllib.parse.quote(url_name, safe='')}"
-
-
-def build_deeplol_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
-    """Build the DeepLOL URL for a player."""
-    url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://www.deeplol.gg/summoner/{region}/{urllib.parse.quote(url_name, safe='')}"
-    return f"{base}/ingame" if ingame else base
-
-
-def build_dpm_url(region: str, riot_id: str, *, ingame: bool = False) -> str:
-    """Build the DPM.LOL URL for a player."""
-    url_name = _normalize_riot_id_for_url(riot_id)
-    base = f"https://dpm.lol/{urllib.parse.quote(url_name, safe='')}"
-    return f"{base}/live" if ingame else f"{base}/"
 
 
 def build_stats_site_url(site: str, region: str, riot_id: str) -> str:
@@ -158,11 +109,46 @@ def build_hotkey_provider_home_url(site: str) -> str:
     return provider[1] if provider else HOTKEY_PROVIDERS["porofessor"][1]
 
 
-def _normalize_riot_id_for_url(riot_id: str) -> str:
-    """Convert GameName#Tag into GameName-Tag for external URLs."""
-    riot_id = str(riot_id or "").strip()
-    if "#" in riot_id:
-        left, right = riot_id.split("#", 1)
-        if left and right:
-            return f"{left}-{right}"
-    return riot_id
+def get_provider(provider_id: str) -> ProviderDefinition | None:
+    return PROVIDER_REGISTRY.get(str(provider_id or "").strip().lower())
+
+
+def build_provider_url(provider_id: str, kind: str, region: str, riot_id: str) -> str | None:
+    provider = get_provider(provider_id)
+    normalized_region = str(region or "").strip().lower()
+    if provider is None or normalized_region not in REGION_LIST or not is_valid_riot_id(riot_id):
+        return None
+    builder = provider.profile_builder if kind == "stats" else provider.live_builder if kind == "live" else None
+    return builder(normalized_region, riot_id) if builder else None
+
+
+def resolve_provider_account(params: dict, runtime) -> tuple[str, str]:
+    if not params.get("summoner_name_auto_detect", True):
+        return (
+            str(params.get("manual_summoner_name") or "").strip(),
+            str(params.get("manual_region") or "").strip().lower(),
+        )
+    snapshot = runtime.snapshot(params)
+    if not snapshot.connected:
+        return "", ""
+    return str(snapshot.riot_id or "").strip(), str(snapshot.region or "").strip().lower()
+
+
+def is_allowed_provider_url(provider_id: str, url: str) -> bool:
+    provider = get_provider(provider_id)
+    if provider is None or not is_allowed_external_url(url):
+        return False
+    host = urllib.parse.urlparse(url).hostname
+    return bool(host and host.lower().rstrip(".") in provider.allowed_hosts)
+
+
+def provider_catalog_options(kind: str) -> list[dict[str, str]]:
+    provider_ids = STATS_PROVIDER_IDS if kind == "stats" else LIVE_PROVIDER_IDS if kind == "live" else ()
+    return [
+        {
+            "id": provider_id,
+            "label": PROVIDER_REGISTRY[provider_id].label,
+            "logo_url": f"/api/assets/providers/{provider_id}",
+        }
+        for provider_id in provider_ids
+    ]

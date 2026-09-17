@@ -1,6 +1,15 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from src.config.constants import (
+    HOTKEY_PROVIDERS,
+    HOTKEY_SITE_LABELS,
+    HOTKEY_SITE_ORDER,
+    STATS_PROVIDERS,
+    STATS_SITE_LABELS,
+    STATS_SITE_ORDER,
+)
+from src.domain.providers import LIVE_PROVIDER_IDS, PROVIDER_REGISTRY, STATS_PROVIDER_IDS
 from src.services.updates import (
     check_for_updates,
     extract_highlights_section,
@@ -19,10 +28,33 @@ from src.services.urls import (
     build_porofessor_url,
     build_stats_site_url,
     is_valid_riot_id,
+    provider_catalog_options,
 )
 
 
 class UtilsTests(unittest.TestCase):
+    def test_provider_settings_and_catalog_views_derive_from_the_registry(self):
+        self.assertEqual(tuple(STATS_PROVIDERS), STATS_PROVIDER_IDS)
+        self.assertEqual(tuple(STATS_SITE_ORDER), STATS_PROVIDER_IDS)
+        self.assertEqual(tuple(HOTKEY_PROVIDERS), LIVE_PROVIDER_IDS)
+        self.assertEqual(tuple(HOTKEY_SITE_ORDER), LIVE_PROVIDER_IDS)
+        self.assertEqual(
+            STATS_SITE_LABELS,
+            {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in STATS_PROVIDER_IDS},
+        )
+        self.assertEqual(
+            HOTKEY_SITE_LABELS,
+            {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in LIVE_PROVIDER_IDS},
+        )
+        self.assertEqual(
+            [option["id"] for option in provider_catalog_options("stats")],
+            list(STATS_PROVIDER_IDS),
+        )
+        self.assertEqual(
+            [option["id"] for option in provider_catalog_options("live")],
+            list(LIVE_PROVIDER_IDS),
+        )
+
     def test_semantic_version_comparison(self):
         self.assertFalse(is_newer_version("6.1.0", "6.1"))
         self.assertFalse(is_newer_version("v6.1", "6.1.0"))
@@ -32,6 +64,10 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(
             build_opgg_url("euw", "MonCompte#EUW"),
             "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW",
+        )
+        self.assertEqual(
+            build_opgg_url("euw", " Mon Compte # EUW "),
+            "https://op.gg/fr/lol/summoners/euw/Mon%20Compte-EUW",
         )
         self.assertEqual(
             build_porofessor_url("euw", "MonCompte#EUW"),
