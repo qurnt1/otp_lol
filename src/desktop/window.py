@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import sys
+from dataclasses import dataclass
 from typing import Any
-
 
 _WEBVIEW2_CLIENT_GUIDS = (
     "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -13,6 +12,22 @@ _WEBVIEW2_CLIENT_GUIDS = (
     "{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}",
     "{65C35B14-6C1D-4122-AC46-7148CC9D6497}",
 )
+_APP_ROUTES = frozenset({
+    "dashboard",
+    "presets",
+    "statistics",
+    "live",
+    "history",
+    *(f"settings/{section}" for section in (
+        "general",
+        "automations",
+        "account",
+        "links",
+        "shortcuts",
+        "appearance",
+        "advanced",
+    )),
+})
 
 
 def has_webview2_runtime() -> bool:
@@ -194,12 +209,23 @@ class WebViewWindow:
         if self.window is not None:
             self.window.resize(max(width, self.config.min_width), max(height, self.config.min_height))
 
+    def open_route(self, route: str) -> bool:
+        """Show the native window and navigate to a known frontend route."""
+        if self.window is None or route not in _APP_ROUTES:
+            return False
+        if getattr(self.window, "minimized", False):
+            restore = getattr(self.window, "restore", None)
+            if callable(restore):
+                restore()
+        self.window.show()
+        self._visible = True
+        base_url = self.config.url.split("#", 1)[0]
+        self.window.load_url(f"{base_url}#{route}")
+        return True
+
     def open_settings(self) -> None:
-        """Navigate the frontend to its settings page and make it visible."""
-        if self.window is None:
-            return
-        self.window.load_url(f"{self.config.url}#settings")
-        self.show()
+        """Navigate the frontend to its default settings section."""
+        self.open_route("settings/general")
 
 
 def _valid_window_position(x: int, y: int) -> bool:

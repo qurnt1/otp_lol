@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import sys
 import time
-import asyncio
-import webbrowser
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Event, Thread
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -18,7 +17,6 @@ from ..api.app import create_app
 from ..api.context import ApplicationContext
 from ..config import APP_IMAGE_FILES, APP_NAME, CURRENT_VERSION, resource_path
 from ..services.single_instance import check_single_instance, remove_lockfile
-from ..services.urls import build_hotkey_site_url, is_allowed_external_url
 from .audio import AudioManager
 from .bridge import DesktopBridge
 from .hotkeys import HotkeyManager
@@ -99,7 +97,7 @@ def _configure_hotkeys(context: ApplicationContext, hotkeys: HotkeyManager, wind
     params = context.get_params()
     return hotkeys.setup(
         toggle_window=lambda: _toggle_window(window),
-        open_hotkey_site=lambda: _open_hotkey_site(context),
+        open_hotkey_site=lambda: window.open_route("live"),
         toggle_hotkey=str(params.get("hotkey_toggle_window") or "alt+c"),
         stats_hotkey=str(params.get("hotkey_open_site") or "alt+p"),
     )
@@ -142,24 +140,6 @@ def _settings_update_changes_hotkeys(event) -> bool:
     if not isinstance(keys, (list, tuple, set, frozenset)):
         return False
     return bool(_HOTKEY_SETTING_KEYS.intersection(keys))
-
-
-def _open_hotkey_site(context: ApplicationContext) -> None:
-    params = context.get_params()
-    snapshot = context.runtime.snapshot(params)
-    if params.get("summoner_name_auto_detect", True):
-        riot_id = snapshot.riot_id if snapshot.connected else ""
-        region = snapshot.region if snapshot.connected else ""
-    else:
-        riot_id = params.get("manual_summoner_name") or ""
-        region = params.get("manual_region") or ""
-    url = build_hotkey_site_url(
-        str(params.get("preferred_hotkey_site") or "porofessor"),
-        str(region),
-        str(riot_id),
-    )
-    if url and is_allowed_external_url(url):
-        webbrowser.open(url)
 
 
 def run_webview() -> None:

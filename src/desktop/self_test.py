@@ -28,20 +28,13 @@ def run_self_test() -> int:
     }
     with tempfile.TemporaryDirectory(prefix="otp-lol-self-test-") as temp_dir:
         temp_path = Path(temp_dir) / "parameters.toml"
-        json_path = Path(temp_dir) / "parameters.json"
-        previous = (
-            settings_module.PARAMETERS_PATH,
-            settings_module.PARAMETERS_JSON_PATH,
-        )
+        previous_path = settings_module.PARAMETERS_PATH
         settings_module.PARAMETERS_PATH = str(temp_path)
-        settings_module.PARAMETERS_JSON_PATH = str(json_path)
         try:
             checks["settings_write"] = save_parameters(FIRST_LAUNCH_PARAMS)
             checks["settings_read"] = load_parameters() == FIRST_LAUNCH_PARAMS
         finally:
-            settings_module.PARAMETERS_PATH, settings_module.PARAMETERS_JSON_PATH = (
-                previous
-            )
+            settings_module.PARAMETERS_PATH = previous_path
     for name, passed in checks.items():
         logger.info("%s%s", "PASS " if passed else "FAIL ", name)
     return 0 if all(checks.values()) else 1

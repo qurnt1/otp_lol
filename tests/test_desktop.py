@@ -1,25 +1,39 @@
-import unittest
-import time
-import sys
 import ctypes
+import sys
+import time
+import unittest
 from ctypes import wintypes
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from src.desktop.server import EmbeddedApiServer
 from src.desktop.bridge import DesktopBridge
-from src.desktop.hotkeys import HotkeyManager, _WindowsHotkeyBackend, parse_windows_hotkey
-from src.desktop.webview import _open_hotkey_site, _settings_update_changes_hotkeys
-from src.desktop.window import WebViewWindow, WebViewWindowConfig, _valid_window_position, has_webview2_runtime
+from src.desktop.hotkeys import (
+    HotkeyManager,
+    _WindowsHotkeyBackend,
+    parse_windows_hotkey,
+)
+from src.desktop.server import EmbeddedApiServer
+from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
+from src.desktop.window import (
+    WebViewWindow,
+    WebViewWindowConfig,
+    _valid_window_position,
+    has_webview2_runtime,
+)
 
 
 class FakeNativeWindow:
     def __init__(self):
         self.calls = []
+        self.minimized = False
 
     def show(self):
         self.calls.append("show")
+
+    def restore(self):
+        self.calls.append("restore")
+        self.minimized = False
 
     def hide(self):
         self.calls.append("hide")
@@ -133,50 +147,36 @@ class DesktopWindowTests(unittest.TestCase):
             type="settings_updated", data={"keys": ["presets_enabled"]}
         )))
 
-    def test_stats_hotkey_opens_configured_profile_when_league_is_connected(self):
-        params = {"preferred_hotkey_site": "opgg", "summoner_name_auto_detect": True}
-        snapshot = SimpleNamespace(connected=True, riot_id="Player#EUW", region="euw")
-        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=lambda _params: snapshot))
+    def test_live_stats_hotkey_shows_window_and_routes_internally_without_lcu_lookup(self):
+        params = {"preferred_hotkey_site": "porofessor"}
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock(side_effect=AssertionError("LCU must not be queried"))),
+        )
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        native = FakeNativeWindow()
+        native.minimized = True
+        window.window = native
 
-        with patch("src.desktop.webview.webbrowser.open") as open_url:
-            _open_hotkey_site(context)
+        class Hotkeys:
+            def setup(self, **callbacks):
+                self.callbacks = callbacks
+                return True
 
-        open_url.assert_called_once_with("https://op.gg/fr/lol/summoners/euw/Player-EUW/ingame")
+        hotkeys = Hotkeys()
+        self.assertTrue(_configure_hotkeys(context, hotkeys, window))
+        hotkeys.callbacks["open_hotkey_site"]()
 
-    def test_stats_hotkey_uses_manual_account_without_league(self):
-        params = {
-            "preferred_hotkey_site": "deeplol",
-            "summoner_name_auto_detect": False,
-            "manual_summoner_name": "Player#TAG",
-            "manual_region": "na",
-        }
-        snapshot = SimpleNamespace(connected=False, riot_id="", region="")
-        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=lambda _params: snapshot))
+        self.assertEqual(native.calls, ["restore", "show", ("load_url", "http://127.0.0.1:1234/#live")])
+        self.assertTrue(window.visible)
 
-        with patch("src.desktop.webview.webbrowser.open") as open_url:
-            _open_hotkey_site(context)
+    def test_native_route_rejects_unknown_route(self):
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        native = FakeNativeWindow()
+        window.window = native
 
-        open_url.assert_called_once_with("https://www.deeplol.gg/summoner/na/Player-TAG/ingame")
-
-    def test_stats_hotkey_opens_provider_homepage_without_account(self):
-        params = {"preferred_hotkey_site": "dpm", "summoner_name_auto_detect": True}
-        snapshot = SimpleNamespace(connected=False, riot_id="", region="")
-        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=lambda _params: snapshot))
-
-        with patch("src.desktop.webview.webbrowser.open") as open_url:
-            _open_hotkey_site(context)
-
-        open_url.assert_called_once_with("https://dpm.lol/")
-
-    def test_stats_hotkey_refuses_unknown_provider(self):
-        params = {"preferred_hotkey_site": "unknown", "summoner_name_auto_detect": True}
-        snapshot = SimpleNamespace(connected=False, riot_id="", region="")
-        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=lambda _params: snapshot))
-
-        with patch("src.desktop.webview.webbrowser.open") as open_url:
-            _open_hotkey_site(context)
-
-        open_url.assert_not_called()
+        self.assertFalse(window.open_route("https://example.com"))
+        self.assertEqual(native.calls, [])
 
     def test_visibility_and_settings_navigation_delegate_to_native_window(self):
         window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
@@ -191,7 +191,7 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertTrue(window.visible)
         window.destroy()
 
-        self.assertEqual(native.calls, ["hide", "show", ("load_url", "http://127.0.0.1:1234/#settings"), "show", "destroy"])
+        self.assertEqual(native.calls, ["hide", "show", "show", ("load_url", "http://127.0.0.1:1234/#settings/general"), "destroy"])
 
     def test_native_bridge_resizes_with_the_window_minimum(self):
         window = WebViewWindow(WebViewWindowConfig(
@@ -301,11 +301,12 @@ class DesktopWindowTests(unittest.TestCase):
         bridge = DesktopBridge()
 
         self.assertTrue(bridge.open_external_url("https://op.gg/fr/summoners/euw/Test-Tag"))
+        self.assertTrue(bridge.open_external_url("https://porofessor.gg/fr/live/euw/Test-Tag/ranked-only"))
         self.assertTrue(bridge.open_external_url("https://www.deeplol.gg/summoner/euw/Test-Tag"))
         self.assertTrue(bridge.open_external_url("https://www.leagueofgraphs.com/fr/summoner/euw/Test-Tag"))
         self.assertFalse(bridge.open_external_url("https://evil.example/"))
         self.assertFalse(bridge.open_external_url("http://op.gg/"))
-        self.assertEqual(open_browser.call_count, 3)
+        self.assertEqual(open_browser.call_count, 4)
 
     @patch("src.desktop.window.has_webview2_runtime", return_value=True)
     def test_start_passes_the_configured_icon_to_pywebview(self, _runtime):
