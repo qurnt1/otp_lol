@@ -97,6 +97,7 @@ class TrayController:
         except Exception as e:
             self.available = False
             logging.warning("Unable to create system tray: %s", e)
+            on_failure()
         return self.available
 
     def shutdown(self) -> None:

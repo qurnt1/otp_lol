@@ -76,6 +76,8 @@ class WebViewWindow:
         self.window = None
         self._visible = True
         self._maximized = config.maximized
+        self._close_to_tray = False
+        self._allow_close = False
 
     def create(self) -> None:
         import webview
@@ -98,8 +100,11 @@ class WebViewWindow:
         self.window = webview.create_window(self.config.title, **create_kwargs)
         events = getattr(self.window, "events", None)
         if events is not None:
+            closing = getattr(events, "closing", None)
             maximized = getattr(events, "maximized", None)
             restored = getattr(events, "restored", None)
+            if closing is not None:
+                closing += self._on_closing
             if maximized is not None:
                 maximized += lambda: setattr(self, "_maximized", True)
             if restored is not None:
@@ -194,6 +199,17 @@ class WebViewWindow:
             self.window.hide()
             self._visible = False
 
+    def set_close_to_tray(self, enabled: bool) -> None:
+        """Keep the native close button reversible only while the tray is available."""
+        self._close_to_tray = bool(enabled)
+
+    def _on_closing(self) -> bool:
+        """Hide on a user close request when the tray can restore the window."""
+        if self._allow_close or not self._close_to_tray:
+            return True
+        self.hide()
+        return False
+
     @property
     def visible(self) -> bool:
         return self._visible
@@ -201,6 +217,7 @@ class WebViewWindow:
     def destroy(self) -> None:
         """Close the native window and let the shell finish its shutdown path."""
         if self.window is not None:
+            self._allow_close = True
             self.window.destroy()
         self._visible = False
 

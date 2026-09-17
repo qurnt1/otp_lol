@@ -73,6 +73,68 @@ test("statistics without a usable account links directly to account settings", a
   await expect(page.getByRole("link", { name: "Configurer le compte" })).toHaveAttribute("href", "#settings/account");
 });
 
+test("an iframe-incompatible provider offers an in-app window without accepting a frontend URL", async ({ page }) => {
+  await mockLocalApi(page, {
+    connected: true,
+    statsLink: {
+      available: true,
+      site: "opgg",
+      url: "https://op.gg/fr/lol/summoners/euw/Player-EUW",
+      homepage_url: "https://op.gg/",
+      riot_id: "Player#EUW",
+      region: "euw",
+      embed_allowed: false,
+    },
+  });
+  await page.addInitScript(() => {
+    const current = window as Window & {
+      __providerWindowCalls?: Array<[string, "stats" | "live"]>;
+      pywebview?: { api?: { open_provider_window?: (provider: string, kind: "stats" | "live") => Promise<boolean> } };
+    };
+    current.__providerWindowCalls = [];
+    current.pywebview = {
+      api: {
+        open_provider_window: async (provider, kind) => {
+          current.__providerWindowCalls?.push([provider, kind]);
+          return true;
+        },
+      },
+    };
+  });
+  await page.goto("/#statistics");
+
+  await page.getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __providerWindowCalls?: unknown[] }).__providerWindowCalls)).toEqual([["opgg", "stats"]]);
+  await expect(page.locator(".statistics-frame")).toHaveCount(0);
+  await expect(page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
+});
+
+test("a rejected in-app provider window shows a retryable error", async ({ page }) => {
+  await mockLocalApi(page, {
+    connected: true,
+    statsLink: {
+      available: true,
+      site: "opgg",
+      url: "https://op.gg/fr/lol/summoners/euw/Player-EUW",
+      homepage_url: "https://op.gg/",
+      riot_id: "Player#EUW",
+      region: "euw",
+      embed_allowed: false,
+    },
+  });
+  await page.addInitScript(() => {
+    const current = window as Window & {
+      pywebview?: { api?: { open_provider_window?: () => Promise<boolean> } };
+    };
+    current.pywebview = { api: { open_provider_window: async () => { throw new Error("window failed"); } } };
+  });
+  await page.goto("/#statistics");
+
+  await page.getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
+  await expect(page.getByRole("alert")).toContainText("Impossible d’ouvrir la fenêtre du fournisseur dans OTP LOL.");
+  await expect(page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
+});
+
 test("live statistics use a distinct route, provider URL and safe external fallback", async ({ page }) => {
   let liveRequests = 0;
   page.on("request", (request) => {

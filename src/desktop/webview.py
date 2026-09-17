@@ -174,7 +174,7 @@ def run_webview() -> None:
         _wait_for_server(port)
         logging.info("[STARTUP] T2 FastAPI ready=%.0fms", (time.perf_counter() - startup_started) * 1000)
 
-        bridge = DesktopBridge()
+        bridge = DesktopBridge(context)
         params = context.get_params()
         window = WebViewWindow(
             WebViewWindowConfig(
@@ -204,6 +204,13 @@ def run_webview() -> None:
         _configure_hotkeys(context, hotkeys, window)
         hotkey_stop, hotkey_thread = _start_hotkey_listener(context, hotkeys, window)
         tray = TrayController()
+
+        def tray_unavailable() -> None:
+            logging.info("System tray unavailable; continuing without tray integration.")
+            window.set_close_to_tray(False)
+            if not window.visible:
+                window.show()
+
         tray.setup(
             executor=services_executor,
             toggle_window=lambda: _toggle_window(window),
@@ -213,8 +220,9 @@ def run_webview() -> None:
             is_presets_automation_enabled=lambda: bool(context.get_params().get("presets_enabled", True)),
             is_auto_ban_enabled=lambda: bool(context.get_params().get("auto_ban_enabled", True)),
             quit_callback=window.destroy,
-            on_failure=lambda: logging.info("System tray unavailable; continuing without tray integration."),
+            on_failure=tray_unavailable,
         )
+        window.set_close_to_tray(tray.available)
         window.start()
     finally:
         if tray is not None:

@@ -5,7 +5,7 @@ import { ExternalLink, RefreshCw, Settings2 } from "lucide-react";
 import { api } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
-import { openExternalUrl } from "../../domain/external";
+import { openExternalUrl, openProviderWindow } from "../../domain/external";
 
 export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const copy = kind === "stats" ? fr.statistics : fr.live;
@@ -19,6 +19,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const [frameStatus, setFrameStatus] = useState<"waiting" | "blocked" | "unconfirmed">("waiting");
   const [frameNonce, setFrameNonce] = useState(0);
   const [externalFailed, setExternalFailed] = useState(false);
+  const [providerWindowFailed, setProviderWindowFailed] = useState(false);
   const providerOptions = kind === "stats" ? providers.data?.stats : providers.data?.live;
   const providerInfo = providerOptions?.find((option) => option.id === link.data?.site);
   const provider = providerInfo?.label ?? link.data?.site ?? "";
@@ -44,7 +45,12 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
 
   const openExternal = async () => {
     setExternalFailed(false);
-    if (externalUrl && !await openExternalUrl(externalUrl)) setExternalFailed(true);
+    if (externalUrl && link.data?.homepage_url && !await openExternalUrl(externalUrl, link.data.homepage_url)) setExternalFailed(true);
+  };
+
+  const openInApp = async () => {
+    setProviderWindowFailed(false);
+    if (!link.data?.site || !await openProviderWindow(link.data.site, kind)) setProviderWindowFailed(true);
   };
 
   return <div className="statistics-page provider-web-page">
@@ -79,6 +85,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
       </section>
 
       {externalFailed && <p className="inline-error" role="alert">{copy.externalFailed}</p>}
+      {providerWindowFailed && <p className="inline-error" role="alert">{fr.provider.providerWindowFailed}</p>}
 
       {link.data.available && iframeUrl && <section className="statistics-embed surface" aria-label={provider}>
         <iframe
@@ -95,12 +102,14 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
         {frameStatus === "waiting" && <p className="statistics-frame-message" role="status">{copy.frameHint}</p>}
         {frameStatus !== "waiting" && <div className="statistics-runtime-fallback" role="alert">
           <p>{copy.frameFailed}</p>
+          {link.data.site && <Button variant="primary" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
           {externalUrl && <Button variant="quiet" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>}
         </div>}
       </section>}
 
       {link.data.available && linkUrl && !link.data.embed_allowed && <section className="surface statistics-fallback" role="status">
         <p>{copy.blocked}</p>
+        {link.data.site && <Button variant="primary" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
         <Button variant="quiet" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>
       </section>}
 

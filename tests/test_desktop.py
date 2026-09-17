@@ -14,6 +14,8 @@ from src.desktop.hotkeys import (
     parse_windows_hotkey,
 )
 from src.desktop.server import EmbeddedApiServer
+from src.desktop.provider_browser import ProviderBrowserWindow
+from src.desktop.tray import TrayController
 from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
 from src.desktop.window import (
     WebViewWindow,
@@ -46,6 +48,18 @@ class FakeNativeWindow:
 
     def resize(self, width, height):
         self.calls.append(("resize", width, height))
+
+
+class FakeEventSignal:
+    def __init__(self):
+        self.handlers = []
+
+    def __iadd__(self, handler):
+        self.handlers.append(handler)
+        return self
+
+    def fire(self):
+        return [handler() for handler in self.handlers]
 
 
 class DesktopWindowTests(unittest.TestCase):
@@ -193,6 +207,28 @@ class DesktopWindowTests(unittest.TestCase):
 
         self.assertEqual(native.calls, ["hide", "show", "show", ("load_url", "http://127.0.0.1:1234/#settings/general"), "destroy"])
 
+    def test_user_close_hides_to_tray_and_explicit_destroy_still_quits(self):
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        native = FakeNativeWindow()
+        window.window = native
+        window.set_close_to_tray(True)
+
+        self.assertFalse(window._on_closing())
+        self.assertFalse(window.visible)
+        self.assertEqual(native.calls, ["hide"])
+
+        window.destroy()
+        self.assertTrue(window._on_closing())
+        self.assertEqual(native.calls, ["hide", "destroy"])
+
+    def test_user_close_is_a_normal_quit_when_tray_is_unavailable(self):
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        native = FakeNativeWindow()
+        window.window = native
+
+        self.assertTrue(window._on_closing())
+        self.assertEqual(native.calls, [])
+
     def test_native_bridge_resizes_with_the_window_minimum(self):
         window = WebViewWindow(WebViewWindowConfig(
             title="OTP LOL",
@@ -237,7 +273,12 @@ class DesktopWindowTests(unittest.TestCase):
 
     def test_create_passes_saved_geometry_to_pywebview_before_start(self):
         calls = []
-        fake_window = SimpleNamespace(events=SimpleNamespace(maximized=None, restored=None))
+        native = FakeNativeWindow()
+        closing = FakeEventSignal()
+        fake_window = SimpleNamespace(
+            events=SimpleNamespace(closing=closing, maximized=None, restored=None),
+            hide=native.hide,
+        )
         fake_webview = SimpleNamespace(
             create_window=lambda *args, **kwargs: calls.append((args, kwargs)) or fake_window
         )
@@ -254,6 +295,10 @@ class DesktopWindowTests(unittest.TestCase):
 
         with patch.dict(sys.modules, {"webview": fake_webview}):
             window.create()
+
+        window.set_close_to_tray(True)
+        self.assertEqual(closing.fire(), [False])
+        self.assertEqual(native.calls, ["hide"])
 
         self.assertEqual(calls, [(
             ("OTP LOL",),
@@ -307,6 +352,73 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertFalse(bridge.open_external_url("https://evil.example/"))
         self.assertFalse(bridge.open_external_url("http://op.gg/"))
         self.assertEqual(open_browser.call_count, 4)
+
+    def test_provider_window_uses_an_allowlisted_top_level_url_without_the_app_bridge(self):
+        created = []
+        closed = Mock()
+        close_event = FakeEventSignal()
+        native = FakeNativeWindow()
+        fake_window = SimpleNamespace(events=SimpleNamespace(closed=close_event), show=native.show)
+        fake_webview = SimpleNamespace(
+            settings={},
+            create_window=lambda *args, **kwargs: created.append((args, kwargs)) or fake_window,
+        )
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW/ingame",
+            closed,
+        )
+
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            self.assertTrue(provider_window.open())
+
+        self.assertEqual(created[0][1]["url"], "https://www.deeplol.gg/summoner/euw/Player-EUW/ingame")
+        self.assertIsNone(created[0][1]["js_api"])
+        self.assertTrue(fake_webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"])
+        close_event.fire()
+        closed.assert_called_once_with()
+
+    def test_provider_bridge_builds_url_from_configured_account_and_rejects_other_provider(self):
+        params = {
+            "preferred_stats_site": "deeplol",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock(side_effect=AssertionError("manual account must not query LCU"))),
+        )
+        bridge = DesktopBridge(context)
+        with patch("src.desktop.provider_browser.ProviderBrowserWindow.open", return_value=True):
+            self.assertTrue(bridge.open_provider_window("deeplol", "stats"))
+            self.assertFalse(bridge.open_provider_window("opgg", "stats"))
+
+        self.assertEqual(
+            bridge._provider_windows[("deeplol", "stats")].url,
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+        )
+
+    def test_tray_setup_failure_disables_close_to_tray_fallback(self):
+        failed = Mock()
+        tray = TrayController()
+
+        with patch("src.desktop.tray.Image.open", side_effect=OSError("missing icon")):
+            with self.assertLogs(level="WARNING"):
+                available = tray.setup(
+                    executor=Mock(),
+                    toggle_window=Mock(),
+                    open_settings=Mock(),
+                    toggle_presets_automation=Mock(),
+                    toggle_auto_ban=Mock(),
+                    is_presets_automation_enabled=Mock(return_value=False),
+                    is_auto_ban_enabled=Mock(return_value=False),
+                    quit_callback=Mock(),
+                    on_failure=failed,
+                )
+
+        self.assertFalse(available)
+        failed.assert_called_once_with()
 
     @patch("src.desktop.window.has_webview2_runtime", return_value=True)
     def test_start_passes_the_configured_icon_to_pywebview(self, _runtime):

@@ -7,6 +7,7 @@ import os
 import webbrowser
 
 from ..services.urls import is_allowed_external_url
+from ..services.urls import build_provider_url, is_allowed_provider_url, resolve_provider_account
 
 if TYPE_CHECKING:
     from .window import WebViewWindow
@@ -15,8 +16,10 @@ if TYPE_CHECKING:
 class DesktopBridge:
     """Expose the small set of native window operations used by the React shell."""
 
-    def __init__(self) -> None:
+    def __init__(self, context=None) -> None:
         self._window: WebViewWindow | None = None
+        self._context = context
+        self._provider_windows = {}
 
     def attach(self, window: WebViewWindow) -> None:
         self._window = window
@@ -41,6 +44,37 @@ class DesktopBridge:
         if not is_allowed_external_url(url):
             return False
         return bool(webbrowser.open(url))
+
+    def open_provider_window(self, provider_id: str, kind: str) -> bool:
+        """Open a selected account provider without accepting frontend-supplied URLs."""
+        if self._context is None or kind not in {"stats", "live"}:
+            return False
+        params = self._context.get_params()
+        setting = "preferred_stats_site" if kind == "stats" else "preferred_hotkey_site"
+        if str(params.get(setting) or "").strip().lower() != str(provider_id or "").strip().lower():
+            return False
+        riot_id, region = resolve_provider_account(params, self._context.runtime)
+        url = build_provider_url(provider_id, kind, region, riot_id)
+        if not url or not is_allowed_provider_url(provider_id, url):
+            return False
+
+        key = (provider_id, kind)
+        existing = self._provider_windows.get(key)
+        if existing is not None and existing.window is not None:
+            existing.window.show()
+            return True
+
+        from .provider_browser import ProviderBrowserWindow
+
+        provider_window = ProviderBrowserWindow(
+            provider_id,
+            url,
+            on_closed=lambda: self._provider_windows.pop(key, None),
+        )
+        if not provider_window.open():
+            return False
+        self._provider_windows[key] = provider_window
+        return True
 
     def open_local_folder(self, folder: str) -> bool:
         """Open only application-owned folders from the Advanced settings page."""
