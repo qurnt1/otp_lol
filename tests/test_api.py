@@ -68,7 +68,19 @@ class ApiBoundaryTests(unittest.TestCase):
         self.context.data_dragon.summoner_loaded = True
         self.context.data_dragon.summoner_data = {"Flash": "SummonerFlash.png"}
         self.context.save = lambda: True
-        self.client = TestClient(create_app(self.context))
+        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+
+    def test_cross_origin_cannot_trigger_settings_reset(self):
+        before = self.context.get_params()
+
+        response = self.client.post(
+            "/api/settings/reset",
+            headers={"Origin": "https://provider.example"},
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json(), {"detail": "Untrusted request origin"})
+        self.assertEqual(self.context.get_params(), before)
 
     def test_health_and_runtime_do_not_expose_lcu_credentials(self):
         health = self.client.get("/api/health")
@@ -88,8 +100,23 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(set(response.json()), {"runtime", "settings", "presets", "preset_previews", "ban_preview"})
         self.assertEqual(response.json()["presets"]["slots"]["pick_1"]["champion"], "Garen")
         self.assertEqual(response.json()["preset_previews"]["pick_1"]["champion_id"], 86)
-        self.assertEqual(response.json()["preset_previews"]["pick_1"]["skin_preview_url"], "/api/assets/skins/86/86013/splash?skin_num=13")
+        self.assertEqual(response.json()["preset_previews"]["pick_1"]["skin_preview_url"], "/api/assets/skins/86/86013/splash?skin_num=13&v=16.18.1")
         self.assertNotIn('"catalog"', response.text)
+
+    def test_metadata_reports_loaded_data_dragon_version(self):
+        response = self.client.get("/api/metadata")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data_dragon_version"], "16.18.1")
+
+    def test_catalog_asset_urls_are_versioned(self):
+        champions = self.client.get("/api/champions")
+        spells = self.client.get("/api/spells")
+        flash = next(item for item in spells.json()["items"] if item["name"] == "Flash")
+
+        self.assertEqual(champions.json()["items"][0]["icon_url"], "/api/assets/champions/86.png?v=16.18.1")
+        self.assertEqual(champions.json()["items"][0]["splash_url"], "/api/assets/champions/86/splash?v=16.18.1")
+        self.assertEqual(flash["icon_url"], "/api/assets/spells?name=Flash&v=16.18.1")
 
     def test_bootstrap_preview_does_not_load_skin_catalogue(self):
         with patch.object(self.context.data_dragon, "get_skin_catalog", side_effect=AssertionError("catalogue loaded")):
@@ -110,6 +137,7 @@ class ApiBoundaryTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"], "image/png")
+        self.assertEqual(response.headers["cache-control"], "no-cache")
         ensure.assert_awaited_once()
         get_skin_preview.assert_called_once_with(86, 13)
 
@@ -510,8 +538,8 @@ class ApiBoundaryTests(unittest.TestCase):
             champions = self.client.get("/api/champions?q=garen")
             image = self.client.get("/api/assets/champions/86.png")
 
-        self.assertEqual(champions.json()["items"][0]["icon_url"], "/api/assets/champions/86.png")
-        self.assertEqual(champions.json()["items"][0]["splash_url"], "/api/assets/champions/86/splash")
+        self.assertEqual(champions.json()["items"][0]["icon_url"], "/api/assets/champions/86.png?v=16.18.1")
+        self.assertEqual(champions.json()["items"][0]["splash_url"], "/api/assets/champions/86/splash?v=16.18.1")
         self.assertEqual(image.status_code, 200)
         self.assertEqual(image.headers["content-type"], "image/png")
         self.assertTrue(image.content.startswith(b"\x89PNG"))
@@ -560,7 +588,7 @@ class ApiBoundaryTests(unittest.TestCase):
         response = self.client.get("/api/skins/86")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["catalog"][0]["tile_url"], "/api/assets/skins/86/86013.png")
+        self.assertEqual(response.json()["catalog"][0]["tile_url"], "/api/assets/skins/86/86013.png?v=16.18.1")
 
     def test_rune_catalog_uses_local_style_and_perk_asset_urls(self):
         with patch.object(type(self.context.runtime), "is_active", new_callable=PropertyMock, return_value=True):

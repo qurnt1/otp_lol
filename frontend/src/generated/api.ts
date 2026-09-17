@@ -575,6 +575,8 @@ export interface components {
             loaded: boolean;
             /** Champion Count */
             champion_count: number;
+            /** Data Dragon Version */
+            data_dragon_version?: string | null;
         };
         /**
          * PresetPreview

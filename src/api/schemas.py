@@ -145,6 +145,7 @@ class MetadataResponse(BaseModel):
     version: str
     loaded: bool
     champion_count: int
+    data_dragon_version: str | None = None
 
 
 class UpdateMetadata(BaseModel):

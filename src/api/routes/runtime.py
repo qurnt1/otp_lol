@@ -23,7 +23,9 @@ from ...services.urls import (
     build_stats_provider_home_url,
     build_stats_site_url,
     is_valid_riot_id,
+    resolve_provider_account,
 )
+from ..asset_urls import versioned_asset_url
 from ..schemas import (
     BootstrapResponse,
     HealthResponse,
@@ -68,8 +70,12 @@ def _preview_for_champion(data_dragon: Any, champion_name: Any) -> PresetPreview
     return PresetPreview(
         champion_id=champion_id,
         champion_name=str(champion.get("name") or name),
-        champion_icon_url=f"/api/assets/champions/{champion_id}.png" if has_image else None,
-        champion_splash_url=f"/api/assets/champions/{champion_id}/splash" if has_image else None,
+        champion_icon_url=versioned_asset_url(
+            f"/api/assets/champions/{champion_id}.png", data_dragon.version
+        ) if has_image else None,
+        champion_splash_url=versioned_asset_url(
+            f"/api/assets/champions/{champion_id}/splash", data_dragon.version
+        ) if has_image else None,
     )
 
 
@@ -85,9 +91,13 @@ def _build_preset_previews(context: Any, params: dict[str, Any], effective: dict
             spell_2 = str(slot.get("spell_2") or "")
             if context.data_dragon.summoner_loaded:
                 if spell_1 in context.data_dragon.summoner_data:
-                    preview.spell_1_url = f"/api/assets/spells?name={quote(spell_1)}"
+                    preview.spell_1_url = versioned_asset_url(
+                        f"/api/assets/spells?name={quote(spell_1)}", context.data_dragon.version
+                    )
                 if spell_2 in context.data_dragon.summoner_data:
-                    preview.spell_2_url = f"/api/assets/spells?name={quote(spell_2)}"
+                    preview.spell_2_url = versioned_asset_url(
+                        f"/api/assets/spells?name={quote(spell_2)}", context.data_dragon.version
+                    )
             mode = get_effective_skin_mode_for_slot(slot_key, effective)
             if mode == "fixed":
                 skin_id = int(slot.get("skin_id") or 0)
@@ -104,7 +114,10 @@ def _build_preset_previews(context: Any, params: dict[str, Any], effective: dict
                 skin_name = ""
             preview.skin_name = skin_name or None
             if skin_num > 0:
-                preview.skin_preview_url = f"/api/assets/skins/{preview.champion_id}/{skin_id}/splash?skin_num={skin_num}"
+                preview.skin_preview_url = versioned_asset_url(
+                    f"/api/assets/skins/{preview.champion_id}/{skin_id}/splash?skin_num={skin_num}",
+                    context.data_dragon.version,
+                )
         previews[slot_key] = preview
     return previews
 
@@ -166,7 +179,7 @@ async def updates(request: Request) -> UpdatesResponse:
 def stats_link(request: Request) -> StatsLinkResponse:
     context = _context(request)
     params = context.get_params()
-    riot_id, region = _resolve_account_link(context, params)
+    riot_id, region = resolve_provider_account(params, context.runtime)
     site = str(params.get("preferred_stats_site") or "opgg").strip().lower()
     if site not in STATS_PROVIDERS:
         site = "opgg"
@@ -186,7 +199,7 @@ def stats_link(request: Request) -> StatsLinkResponse:
 def live_link(request: Request) -> LiveLinkResponse:
     context = _context(request)
     params = context.get_params()
-    riot_id, region = _resolve_account_link(context, params)
+    riot_id, region = resolve_provider_account(params, context.runtime)
     site = str(params.get("preferred_hotkey_site") or "porofessor").strip().lower()
     if site not in HOTKEY_PROVIDERS:
         site = "porofessor"
@@ -200,18 +213,6 @@ def live_link(request: Request) -> LiveLinkResponse:
         "region": region if available else None,
         "embed_allowed": site in LIVE_FRAME_ORIGINS,
     }
-
-
-def _resolve_account_link(context: Any, params: dict[str, Any]) -> tuple[str, str]:
-    if not params.get("summoner_name_auto_detect", True):
-        return (
-            str(params.get("manual_summoner_name") or "").strip(),
-            str(params.get("manual_region") or "").strip().lower(),
-        )
-    snapshot = context.runtime.snapshot(params)
-    if not snapshot.connected:
-        return "", ""
-    return str(snapshot.riot_id or "").strip(), str(snapshot.region or "").strip().lower()
 
 
 @router.websocket("/events")

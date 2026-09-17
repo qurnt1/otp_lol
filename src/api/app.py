@@ -9,6 +9,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import CURRENT_VERSION
@@ -40,6 +41,16 @@ def create_app(
     app.state.context = app_context
     allow_dev_origins = frontend_dir is None or os.environ.get("OTP_LOL_ALLOW_DEV_ORIGINS") == "1"
     dev_origins = ["http://127.0.0.1:5173", "http://localhost:5173"] if allow_dev_origins else []
+
+    @app.middleware("http")
+    async def validate_mutation_origin(request, call_next):
+        if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+            origin = request.headers.get("origin")
+            local_origin = f"{request.url.scheme}://{request.url.netloc}"
+            if not origin or origin not in {local_origin, *dev_origins}:
+                return JSONResponse(status_code=403, content={"detail": "Untrusted request origin"})
+        return await call_next(request)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=dev_origins,

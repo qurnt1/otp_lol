@@ -16,27 +16,11 @@ from ...config.paths import resource_path
 from ...integrations.communitydragon import CommunityDragonClient
 from ...lcu.runtime import RuntimeUnavailable
 from ...services.champion_roles import get_champion_positions
+from ...services.urls import PROVIDER_LOGO_FILES, provider_catalog_options
+from ..asset_urls import versioned_asset_url
 from ..schemas import ProviderCatalog
 
 router = APIRouter(prefix="/api")
-PROVIDER_LABELS = {
-    "opgg": "OP.GG",
-    "deeplol": "DeepLOL",
-    "dpm": "DPM.LOL",
-    "leagueofgraphs": "League of Graphs",
-    "porofessor": "Porofessor",
-}
-PROVIDER_LOGO_FILES = {
-    "opgg": "opgg.png",
-    "deeplol": "deeplol.png",
-    "dpm": "dpm-lol.png",
-    "leagueofgraphs": "leagueofgraphs.png",
-    "porofessor": "porofessor.png",
-}
-STATS_PROVIDER_IDS = ("opgg", "deeplol", "dpm", "leagueofgraphs")
-LIVE_PROVIDER_IDS = ("porofessor", "deeplol", "dpm", "opgg")
-
-
 def _context(request: Request) -> Any:
     return request.app.state.context
 
@@ -49,7 +33,7 @@ def _png_response(image: Any) -> Response:
     return Response(
         content=buffer.getvalue(),
         media_type="image/png",
-        headers={"Cache-Control": "public, max-age=86400"},
+        headers={"Cache-Control": "no-cache"},
     )
 
 
@@ -73,8 +57,8 @@ async def champions(request: Request, q: str = "") -> dict[str, Any]:
                 "title": str(info.get("title") or ""),
                 "tags": context.data_dragon.get_champion_tags(champion_id),
                 "roles": sorted(get_champion_positions(context.data_dragon, name)),
-                "icon_url": f"/api/assets/champions/{champion_id}.png" if image_name else None,
-                "splash_url": f"/api/assets/champions/{champion_id}/splash" if image_name else None,
+                "icon_url": versioned_asset_url(f"/api/assets/champions/{champion_id}.png", context.data_dragon.version) if image_name else None,
+                "splash_url": versioned_asset_url(f"/api/assets/champions/{champion_id}/splash", context.data_dragon.version) if image_name else None,
             }
         )
     items.sort(key=lambda item: item["name"].lower())
@@ -83,15 +67,9 @@ async def champions(request: Request, q: str = "") -> dict[str, Any]:
 
 @router.get("/catalog/providers", response_model=ProviderCatalog)
 def providers() -> ProviderCatalog:
-    def options(provider_ids: tuple[str, ...]) -> list[dict[str, str]]:
-        return [
-            {"id": provider, "label": PROVIDER_LABELS[provider], "logo_url": f"/api/assets/providers/{provider}"}
-            for provider in provider_ids
-        ]
-
     return {
-        "stats": options(STATS_PROVIDER_IDS),
-        "live": options(LIVE_PROVIDER_IDS),
+        "stats": provider_catalog_options("stats"),
+        "live": provider_catalog_options("live"),
         "regions": [{"id": region, "label": region.upper()} for region in REGION_LIST],
     }
 
@@ -118,7 +96,7 @@ async def spells(request: Request) -> dict[str, Any]:
         items.append(
             {
                 "name": name,
-                "icon_url": f"/api/assets/spells?name={quote(name)}" if image_name else None,
+                "icon_url": versioned_asset_url(f"/api/assets/spells?name={quote(name)}", context.data_dragon.version) if image_name else None,
             }
         )
     return {"items": items}
@@ -135,7 +113,9 @@ async def skins(request: Request, champion_id: int) -> dict[str, Any]:
             or skin.get("uncentered_splash_url")
             or skin.get("splash_url")
         ):
-            skin["tile_url"] = f"/api/assets/skins/{champion_id}/{skin['skin_id']}.png"
+            skin["tile_url"] = versioned_asset_url(
+                f"/api/assets/skins/{champion_id}/{skin['skin_id']}.png", context.data_dragon.version
+            )
     owned: dict[str, Any] = {"ok": False, "owned_skins": [], "message": "League client is not connected."}
     if context.runtime.is_active:
         try:

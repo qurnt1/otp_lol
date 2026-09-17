@@ -175,4 +175,5 @@ class LcuRuntime:
             "version": CURRENT_VERSION,
             "loaded": bool(self.data_dragon.loaded),
             "champion_count": len(self.data_dragon.all_names),
+            "data_dragon_version": self.data_dragon.version,
         }
