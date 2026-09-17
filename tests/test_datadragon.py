@@ -10,6 +10,7 @@ from unittest.mock import mock_open, patch
 import requests
 from PIL import Image
 
+from src.config.constants import SUMMONER_SPELL_MAP
 from src.core.datadragon import DataDragon
 from src.integrations.communitydragon import CommunityDragonClient
 
@@ -46,7 +47,7 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
         dd.loaded = True
         dd.version = "16.18.1"
         dd.by_norm_name = {"garen": 86}
-        dd.by_id = {86: {"id": "Garen", "name": "Garen", "key": "86"}}
+        dd.by_id = {86: {"id": "Garen", "name": "Garen", "key": "86", "image": {"full": "Garen.png"}}}
         dd.name_by_id = {86: "Garen"}
         return dd
 
@@ -95,6 +96,27 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
         get.assert_called_once()
         self.assertEqual(len(logs.records), 1)
         self.assertIn("Network unavailable", logs.records[0].getMessage())
+
+    def test_refresh_loads_the_matching_versioned_catalogue_before_requesting_network(self):
+        dd = self._loaded_garen()
+        replacement = {
+            "version": "16.18.2",
+            "by_norm_name": {"lux": 99},
+            "by_id": {"99": {"id": "Lux", "name": "Lux", "key": "99"}},
+            "name_by_id": {"99": "Lux"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            cache_file = Path(directory, "ddragon.json")
+            Path(f"{cache_file}.16.18.2.json").write_text(json.dumps(replacement), encoding="utf-8")
+            with (
+                patch("src.core.datadragon.DDRAGON_CACHE_FILE", str(cache_file)),
+                patch.object(dd, "_fetch_latest_version", return_value="16.18.2"),
+                patch.object(dd, "_load_remote_version", side_effect=AssertionError("cache should be used")),
+            ):
+                dd.refresh()
+
+        self.assertEqual(dd.version, "16.18.2")
+        self.assertEqual(dd.id_to_name(99), "Lux")
 
     def test_champion_splash_uses_catalog_slug_without_fetching_champion_detail(self):
         dd = self._loaded_garen()
@@ -217,25 +239,117 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
 
         self.assertEqual(get.call_count, 2)
 
-    def test_stale_local_image_is_returned_before_background_refresh(self):
+    def test_current_version_image_cache_is_reused_without_network(self):
         dd = self._loaded_garen()
         image_bytes = BytesIO()
         Image.new("RGBA", (3, 2), (20, 40, 60, 255)).save(image_bytes, format="PNG")
         with tempfile.TemporaryDirectory() as directory:
-            cache_path = Path(directory, "skin_86_13.img")
+            cache_path = Path(directory, dd.version, "skin_86_13.img")
+            cache_path.parent.mkdir()
             cache_path.write_bytes(image_bytes.getvalue())
             with (
                 patch("src.core.datadragon.SKINS_CACHE_DIR", directory),
-                patch.object(dd, "_is_cache_fresh", return_value=False),
-                patch.object(dd, "_schedule_image_refresh") as refresh,
                 patch("src.core.datadragon.requests.get") as get,
             ):
                 image = dd.get_remote_image("https://ddragon.example/skin.png", cache_key="skin_86_13")
 
         self.assertIsNotNone(image)
         self.assertEqual(image.getpixel((0, 0)), (20, 40, 60, 255))
-        refresh.assert_called_once()
         get.assert_not_called()
+
+    def test_new_version_download_does_not_reuse_previous_version_as_fresh(self):
+        dd = self._loaded_garen()
+        dd.version = "16.18.2"
+        old_png = BytesIO()
+        Image.new("RGBA", (2, 2), (200, 0, 0, 255)).save(old_png, format="PNG")
+        new_png = BytesIO()
+        Image.new("RGBA", (2, 2), (0, 0, 200, 255)).save(new_png, format="PNG")
+        response = SimpleNamespace(
+            status_code=200,
+            headers={"Content-Type": "image/png"},
+            content=new_png.getvalue(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            old_path = Path(directory, "16.18.1", "skin_86_13.img")
+            old_path.parent.mkdir()
+            old_path.write_bytes(old_png.getvalue())
+            with (
+                patch("src.core.datadragon.SKINS_CACHE_DIR", directory),
+                patch("src.core.datadragon.requests.get", return_value=response) as get,
+            ):
+                image = dd.get_remote_image(
+                    "https://ddragon.example/cdn/16.18.2/skin.png", cache_key="skin_86_13"
+                )
+                new_path = Path(directory, "16.18.2", "skin_86_13.img")
+                new_exists = new_path.exists()
+                with Image.open(new_path) as cached:
+                    cached_pixel = cached.getpixel((0, 0))
+
+        self.assertEqual(image.getpixel((0, 0)), (0, 0, 200, 255))
+        self.assertEqual(get.call_args.args[0], "https://ddragon.example/cdn/16.18.2/skin.png")
+        self.assertTrue(new_exists)
+        self.assertEqual(cached_pixel, (0, 0, 200, 255))
+
+    def test_previous_version_image_is_used_only_after_network_failure(self):
+        dd = self._loaded_garen()
+        dd.version = "16.18.2"
+        dd._network_cooldown_until = 10**9
+        old_png = BytesIO()
+        Image.new("RGBA", (2, 2), (200, 0, 0, 255)).save(old_png, format="PNG")
+
+        with tempfile.TemporaryDirectory() as directory:
+            old_path = Path(directory, "16.18.1", "skin_86_13.img")
+            old_path.parent.mkdir()
+            old_path.write_bytes(old_png.getvalue())
+            with patch("src.core.datadragon.SKINS_CACHE_DIR", directory):
+                image = dd.get_remote_image("https://ddragon.example/cdn/16.18.2/skin.png", cache_key="skin_86_13")
+                current_path = Path(directory, "16.18.2", "skin_86_13.img")
+                current_exists = current_path.exists()
+
+        self.assertEqual(image.getpixel((0, 0)), (200, 0, 0, 255))
+        self.assertFalse(current_exists)
+
+    def test_downloading_one_champion_does_not_mark_sibling_images_fresh(self):
+        dd = self._loaded_garen()
+        payload = BytesIO()
+        Image.new("RGBA", (2, 2), (0, 100, 20, 255)).save(payload, format="PNG")
+        response = SimpleNamespace(
+            status_code=200,
+            headers={"Content-Type": "image/png"},
+            content=payload.getvalue(),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch("src.core.datadragon.ICONS_CACHE_DIR", directory),
+                patch("src.core.datadragon.requests.get", return_value=response),
+            ):
+                self.assertIsNotNone(dd.get_champion_icon(86))
+
+            version_dir = Path(directory, dd.version)
+            versioned_files = list(version_dir.iterdir())
+            legacy_marker_exists = (Path(directory) / "dd_version.txt").exists()
+
+        self.assertEqual(versioned_files, [version_dir / "Garen.png"])
+        self.assertFalse(legacy_marker_exists)
+
+    def test_summoner_spell_data_is_mapped_by_numeric_key(self):
+        dd = self._loaded_garen()
+        spells = {
+            "SummonerFlash": {"name": "Flash", "key": 4, "image": {"full": "SummonerFlash.png"}},
+            "SummonerBarrier": {"name": "Barrier", "key": "21", "image": {"full": "SummonerBarrier.png"}},
+            "SummonerNew": {"name": "New Spell", "key": 999, "image": {"full": "New.png"}},
+            "SummonerNone": {"name": "None", "key": 0, "image": {"full": "None.png"}},
+        }
+        with patch("src.core.datadragon.requests.get", return_value=FakeResponse({"data": spells})):
+            dd.load_summoners()
+
+        self.assertEqual(
+            dd.summoner_data,
+            {"Flash": "SummonerFlash.png", "Barrier": "SummonerBarrier.png"},
+        )
+        self.assertEqual(set(dd.summoner_data), {name for name, spell_id in SUMMONER_SPELL_MAP.items() if spell_id in {4, 21}})
 
     def test_corrupt_cached_image_is_ignored(self):
         with tempfile.TemporaryDirectory() as directory:

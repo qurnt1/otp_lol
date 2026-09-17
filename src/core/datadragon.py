@@ -26,6 +26,7 @@ Uses:
 - Local modules: src.config
 """
 
+import glob
 import json
 import logging
 import os
@@ -33,7 +34,7 @@ import re
 import unicodedata
 from collections import OrderedDict
 from io import BytesIO
-from threading import Event, Lock, Thread
+from threading import Event, Lock
 from time import monotonic
 from typing import Any, Dict, List, Optional
 
@@ -55,6 +56,7 @@ from ..config import (
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
     URL_PERK_ICON_PREFIX,
+    SUMMONER_SPELL_MAP,
     get_cache_dirs,
 )
 from ..integrations.communitydragon import CommunityDragonClient
@@ -84,7 +86,6 @@ class DataDragon:
         self._champion_detail_inflight: Dict[tuple[str, int], Event] = {}
         self._cdragon_detail_failures: Dict[tuple[str, int], float] = {}
         self._cdragon_detail_inflight: Dict[tuple[str, int], Event] = {}
-        self._image_refresh_inflight: set[str] = set()
         self._rune_perk_icon_path_by_id: Optional[Dict[int, str]] = None
         self._rune_perk_name_by_id: Optional[Dict[int, str]] = None
         self._cache_lock = Lock()
@@ -210,62 +211,42 @@ class DataDragon:
             image = self._decode_image_response(response)
             if image is None:
                 return None
-            os.makedirs(cache_dir, exist_ok=True)
+            os.makedirs(os.path.dirname(cache_path) or cache_dir, exist_ok=True)
             with open(cache_path, "wb") as file:
                 file.write(response.content)
             self._cache_put(cache_key, image)
-            self._mark_cache_fresh(cache_dir)
             return image.copy()
         except Exception as error:
             logging.warning("DataDragon: Remote image error for %s - %s", url, error)
             return None
 
-    def _schedule_image_refresh(
-        self,
-        url: str,
-        cache_key: str,
-        cache_path: str,
-        cache_dir: str,
-    ) -> None:
-        refresh_key = f"{cache_dir}:{cache_key}"
-        with self._cache_lock:
-            if refresh_key in self._image_refresh_inflight:
-                return
-            self._image_refresh_inflight.add(refresh_key)
-
-        def refresh() -> None:
-            try:
-                self._download_image(url, cache_key, cache_path, cache_dir)
-            finally:
-                with self._cache_lock:
-                    self._image_refresh_inflight.discard(refresh_key)
-
-        Thread(target=refresh, name="otp-lol-image-refresh", daemon=True).start()
-
     @staticmethod
-    def _cache_version_path(cache_dir: str) -> str:
-        return os.path.join(cache_dir, "dd_version.txt")
+    def _safe_cache_component(value: str) -> str:
+        return re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "offline"))
 
-    def _is_cache_fresh(self, cache_dir: str) -> bool:
-        if not self.version:
-            return False
-        version_file = self._cache_version_path(cache_dir)
-        if not os.path.exists(version_file):
-            return False
-        try:
-            with open(version_file, "r", encoding="utf-8") as f:
-                return f.read().strip() == self.version
-        except Exception:
-            return False
+    def _versioned_image_path(self, cache_dir: str, filename: str) -> str:
+        return os.path.join(cache_dir, self._safe_cache_component(self.version or "offline"), filename)
 
-    def _mark_cache_fresh(self, cache_dir: str) -> None:
-        if not self.version:
-            return
+    def _read_older_cached_image(self, cache_dir: str, filename: str) -> Optional[Image.Image]:
+        """Use an older image only when the current Data Dragon version is offline."""
+        current_version = self._safe_cache_component(self.version or "offline")
         try:
-            with open(self._cache_version_path(cache_dir), "w", encoding="utf-8") as f:
-                f.write(self.version)
-        except Exception:
-            pass
+            with os.scandir(cache_dir) as entries:
+                version_dirs = [
+                    (entry.path, entry.stat().st_mtime)
+                    for entry in entries
+                    if entry.is_dir(follow_symlinks=False) and entry.name != current_version
+                ]
+        except OSError:
+            version_dirs = []
+        version_dirs.sort(key=lambda item: item[1], reverse=True)
+        candidates = [os.path.join(directory, filename) for directory, _ in version_dirs]
+        candidates.append(os.path.join(cache_dir, filename))
+        for path in candidates:
+            image = self._read_cached_image(path)
+            if image is not None:
+                return image
+        return None
 
     @staticmethod
     def _normalize(s: str) -> str:
@@ -278,13 +259,23 @@ class DataDragon:
 
     def _load_from_cache(self, target_version: Optional[str] = None) -> bool:
         """Load cached champion metadata when the cache matches the requested version."""
-        try:
-            if os.path.exists(DDRAGON_CACHE_FILE):
-                with open(DDRAGON_CACHE_FILE, "r", encoding="utf-8") as f:
+        if target_version:
+            version_path = f"{DDRAGON_CACHE_FILE}.{self._safe_cache_component(target_version)}.json"
+            cache_paths = [version_path, DDRAGON_CACHE_FILE]
+        else:
+            versioned_paths = glob.glob(f"{DDRAGON_CACHE_FILE}.*.json")
+            versioned_paths.sort(key=os.path.getmtime, reverse=True)
+            cache_paths = [*versioned_paths, DDRAGON_CACHE_FILE]
+
+        for cache_path in cache_paths:
+            try:
+                if not os.path.exists(cache_path):
+                    continue
+                with open(cache_path, "r", encoding="utf-8") as f:
                     payload = json.load(f)
                 cached_version = payload.get("version")
                 if target_version and cached_version != target_version:
-                    return False
+                    continue
                 self.version = cached_version
                 self.by_norm_name = {k: int(v) for k, v in payload.get("by_norm_name", {}).items()}
                 self.by_id = {int(k): v for k, v in payload.get("by_id", {}).items()}
@@ -292,14 +283,18 @@ class DataDragon:
                 self.all_names = sorted(list(self.name_by_id.values()))
                 self.loaded = True
                 return True
-        except Exception as e:
-            logging.warning("DataDragon: Cache error - %s", e)
+            except Exception as e:
+                logging.warning("DataDragon: Cache error for %s - %s", cache_path, e)
         return False
 
     def _save_cache(self) -> None:
         """Persist the current champion metadata cache to disk."""
+        if not self.version:
+            return
+        cache_path = f"{DDRAGON_CACHE_FILE}.{self._safe_cache_component(self.version)}.json"
         try:
-            with open(DDRAGON_CACHE_FILE, "w", encoding="utf-8") as f:
+            os.makedirs(os.path.dirname(cache_path) or ".", exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
                 json.dump(
                     {
                         "version": self.version,
@@ -352,6 +347,9 @@ class DataDragon:
         online_version = self._fetch_latest_version()
         if not online_version or online_version == self.version:
             return
+        if self._load_from_cache(target_version=online_version):
+            logging.info("DataDragon: Refreshed from versioned cache (version %s)", self.version)
+            return
         self._load_remote_version(online_version)
 
     def _load_remote_version(self, online_version: str) -> None:
@@ -390,6 +388,8 @@ class DataDragon:
                     self._cdragon_champion_detail_cache.clear()
                     self._champion_detail_failures.clear()
                     self._cdragon_detail_failures.clear()
+                    self.summoner_data.clear()
+                    self.summoner_loaded = False
             self.all_names = sorted(list(self.name_by_id.values()))
             self.loaded = True
             self._save_cache()
@@ -485,7 +485,7 @@ class DataDragon:
         if not champion_id:
             return None
 
-        cache_key = f"champ_{champion_id}"
+        cache_key = f"dd:{self.version}:champion:{champion_id}"
         champ_data = self.by_id.get(champion_id)
         if not champ_data:
             return None
@@ -494,21 +494,19 @@ class DataDragon:
         if not image_filename:
             return None
 
-        local_path = os.path.join(ICONS_CACHE_DIR, image_filename)
+        local_path = self._versioned_image_path(ICONS_CACHE_DIR, image_filename)
         url = URL_DD_IMG_CHAMP.format(version=self.version, filename=image_filename)
-        cache_fresh = self._is_cache_fresh(ICONS_CACHE_DIR)
         cached = self._cache_get(cache_key)
-        if cached:
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, local_path, ICONS_CACHE_DIR)
+        if cached is not None:
             return cached
         cached_image = self._read_cached_image(local_path) if os.path.exists(local_path) else None
         if cached_image is not None:
             self._cache_put(cache_key, cached_image)
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, local_path, ICONS_CACHE_DIR)
             return cached_image
-        return self._download_image(url, cache_key, local_path, ICONS_CACHE_DIR)
+        image = self._download_image(url, cache_key, local_path, ICONS_CACHE_DIR)
+        if image is not None or self._network_available():
+            return image
+        return self._read_older_cached_image(ICONS_CACHE_DIR, image_filename)
 
     def get_champion_splash(self, name_or_id: Any) -> Optional[Image.Image]:
         """Return the base splash art for a champion, using the shared image cache."""
@@ -558,8 +556,13 @@ class DataDragon:
                 return
             if response.status_code == 200:
                 data = response.json().get("data", {})
-                for _, info in data.items():
-                    name = info.get("name")
+                supported_spells = {spell_id: name for name, spell_id in SUMMONER_SPELL_MAP.items() if spell_id}
+                for info in data.values():
+                    try:
+                        spell_id = int(info.get("key"))
+                    except (AttributeError, TypeError, ValueError):
+                        continue
+                    name = supported_spells.get(spell_id)
                     image_full = info.get("image", {}).get("full")
                     if name and image_full:
                         self.summoner_data[name] = image_full
@@ -571,27 +574,25 @@ class DataDragon:
         if spell_name in {"(None)", "(Aucun)"} or not spell_name:
             return None
 
-        cache_key = f"spell_{spell_name}"
+        cache_key = f"dd:{self.version}:spell:{spell_name}"
         self.load_summoners()
         image_filename = self.summoner_data.get(spell_name)
         if not image_filename:
             return None
 
-        local_path = os.path.join(SPELLS_CACHE_DIR, image_filename)
+        local_path = self._versioned_image_path(SPELLS_CACHE_DIR, image_filename)
         url = URL_DD_IMG_SPELL.format(version=self.version, filename=image_filename)
-        cache_fresh = self._is_cache_fresh(SPELLS_CACHE_DIR)
         cached = self._cache_get(cache_key)
-        if cached:
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, local_path, SPELLS_CACHE_DIR)
+        if cached is not None:
             return cached
         cached_image = self._read_cached_image(local_path) if os.path.exists(local_path) else None
         if cached_image is not None:
             self._cache_put(cache_key, cached_image)
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, local_path, SPELLS_CACHE_DIR)
             return cached_image
-        return self._download_image(url, cache_key, local_path, SPELLS_CACHE_DIR)
+        image = self._download_image(url, cache_key, local_path, SPELLS_CACHE_DIR)
+        if image is not None or self._network_available():
+            return image
+        return self._read_older_cached_image(SPELLS_CACHE_DIR, image_filename)
 
     def get_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)
@@ -1066,19 +1067,19 @@ class DataDragon:
 
     def get_remote_image(self, url: str, *, cache_key: str) -> Optional[Image.Image]:
         cache_filename = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in cache_key)
-        cache_path = os.path.join(SKINS_CACHE_DIR, f"{cache_filename}.img")
-        cache_fresh = self._is_cache_fresh(SKINS_CACHE_DIR)
+        cache_filename = f"{cache_filename}.img"
+        cache_path = self._versioned_image_path(SKINS_CACHE_DIR, cache_filename)
+        cache_key = f"dd:{self.version}:{cache_key}"
         cached = self._cache_get(cache_key)
-        if cached:
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, cache_path, SKINS_CACHE_DIR)
+        if cached is not None:
             return cached
 
         cached_image = self._read_cached_image(cache_path) if os.path.exists(cache_path) else None
         if cached_image is not None:
             self._cache_put(cache_key, cached_image)
-            if not cache_fresh and self._network_available():
-                self._schedule_image_refresh(url, cache_key, cache_path, SKINS_CACHE_DIR)
             return cached_image
 
-        return self._download_image(url, cache_key, cache_path, SKINS_CACHE_DIR)
+        image = self._download_image(url, cache_key, cache_path, SKINS_CACHE_DIR)
+        if image is not None or self._network_available():
+            return image
+        return self._read_older_cached_image(SKINS_CACHE_DIR, cache_filename)

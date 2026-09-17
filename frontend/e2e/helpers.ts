@@ -1,6 +1,8 @@
 import type { Page } from "@playwright/test";
 import { fileURLToPath } from "node:url";
 
+const DATA_DRAGON_VERSION = "test-version";
+
 export const blankSlot = {
   champion: "", spell_1: "", spell_2: "", skin_mode: "none", skin_id: 0, skin_name: "", skin_num: 0,
   random_skin_id: 0, random_skin_name: "", random_skin_num: 0, random_skin_pool: [], rune_page_id: 0,
@@ -21,7 +23,7 @@ export function createState(connected = false, configured = false) {
     theme: "darkly", summoner_name_auto_detect: true, manual_summoner_name: "", manual_region: "euw", auto_detected_riot_id: "", auto_detected_region: "", auto_detected_platform: "", preferred_stats_site: "opgg", preferred_hotkey_site: "porofessor", hotkey_toggle_window: "alt+c", hotkey_open_site: "alt+p", auto_play_again_enabled: false, auto_hide_on_connect: true, close_app_on_lol_exit: true, ignored_update_version: "", skin_automation_enabled: true, window_x: 0, window_y: 0, window_width: 1100, window_height: 760, window_maximized: false,
   };
   const runtime = { version: "11.0", connected, phase: connected ? "Lobby" : "None", riot_id: connected ? "Player#EUW" : "", region: connected ? "euw" : "", queue_id: 0, assigned_position: "", presets_enabled: configured, auto_accept_enabled: false, auto_pick_enabled: false, auto_ban_enabled: false, auto_summoners_enabled: false };
-  const preview = (id: number, name: string, skinName: string, skinId: number, skinNum: number) => ({ champion_id: id, champion_name: name, champion_icon_url: demoAsset, champion_splash_url: demoAsset, spell_1_url: demoAsset, spell_2_url: demoAsset, skin_name: skinName, skin_preview_url: skinNum > 0 ? "/api/assets/skins/" + id + "/" + skinId + "/splash?skin_num=" + skinNum : null });
+  const preview = (id: number, name: string, skinName: string, skinId: number, skinNum: number) => ({ champion_id: id, champion_name: name, champion_icon_url: demoAsset, champion_splash_url: demoAsset, spell_1_url: demoAsset, spell_2_url: demoAsset, skin_name: skinName, skin_preview_url: skinNum > 0 ? "/api/assets/skins/" + id + "/" + skinId + "/splash?skin_num=" + skinNum + "&v=" + DATA_DRAGON_VERSION : null });
   return { settings, runtime, presets: { presets_enabled: configured, selected_ban: settings.selected_ban, slots: settings.pick_slots }, preset_previews: configured ? { pick_1: preview(86, "Garen", "God-King Garen", 86013, 13), pick_2: preview(99, "Lux", "Battle Academia Lux", 99010, 10), pick_3: preview(22, "Ashe", "PROJECT: Ashe", 22013, 13) } : {}, ban_preview: configured ? preview(17, "Teemo", "", 0, 0) : null };
 }
 
@@ -155,7 +157,7 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
         if (preview) {
           preview.skin_name = String(changes.skin_name ?? "") || null;
           preview.skin_preview_url = Number(changes.skin_num) > 0
-            ? `/api/assets/skins/${preview.champion_id}/${changes.skin_id}/splash?skin_num=${changes.skin_num}`
+            ? `/api/assets/skins/${preview.champion_id}/${changes.skin_id}/splash?skin_num=${changes.skin_num}&v=${DATA_DRAGON_VERSION}`
             : null;
         }
       }

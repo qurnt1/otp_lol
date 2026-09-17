@@ -113,7 +113,7 @@ test("skin selection uses a splash preview and retains a base-splash fallback", 
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   const skinChoice = editor.getByRole("button", { name: /Galerie des skins/ });
-  await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+  await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13&v=test-version");
   const bootstrapRefresh = page.waitForRequest((request) => request.url().endsWith("/api/bootstrap"));
   await editor.getByRole("radio", { name: "Aucun" }).click();
   await bootstrapRefresh;
@@ -136,7 +136,7 @@ test("random skin preview is shown in the editor without loading another catalog
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor.getByRole("button", { name: /Pool aléatoire/ }).locator(".editor-skin-preview"))
-    .toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+    .toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13&v=test-version");
   expect(requests.some((url) => /\/api\/skins\//.test(url))).toBe(false);
 });
 
@@ -153,7 +153,7 @@ test("the editor skin thumbnail refreshes after selecting another fixed skin", a
   await page.keyboard.press("Escape");
 
   await expect(editor.getByRole("button", { name: /Galerie des skins/ }).locator(".editor-skin-preview"))
-    .toHaveAttribute("src", "/api/assets/skins/86/86014/splash?skin_num=14");
+    .toHaveAttribute("src", "/api/assets/skins/86/86014/splash?skin_num=14&v=test-version");
 });
 
 test("spell Select shows option and selected icons while preserving Radix keyboard behavior", async ({ page }) => {

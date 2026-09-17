@@ -32,8 +32,11 @@ export function PresetCard({
 }) {
   const championName = slot.champion.trim();
   const skin = getSelectedSkin(slot);
+  const dataDragonVersion = champion?.icon_url
+    ? new URL(champion.icon_url, "http://localhost").searchParams.get("v")
+    : null;
   const generatedSkinSplash = skin && skin.id > 0 && skin.num > 0 && champion?.id
-    ? `/api/assets/skins/${champion.id}/${skin.id}/splash?skin_num=${skin.num}`
+    ? `/api/assets/skins/${champion.id}/${skin.id}/splash?skin_num=${skin.num}${dataDragonVersion ? `&v=${encodeURIComponent(dataDragonVersion)}` : ""}`
     : undefined;
   const matchingPreview = preview && skin && preview.skin_name?.toLocaleLowerCase() === skin.name.toLocaleLowerCase()
     ? preview.skin_preview_url
