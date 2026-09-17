@@ -85,33 +85,44 @@ test("dashboard uses the selected skin splash and falls back to the champion spl
 
   const card = page.locator(".priority-card").first();
   const splash = card.locator(".priority-art img");
-  await expect(splash).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+  await expect(splash).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13&v=test-version");
 
   await page.getByRole("combobox", { name: "Mode de skin du slot 1" }).click();
   await page.getByRole("option", { name: "Aucun" }).click();
   await expect(splash).toHaveAttribute("src", "/assets/app/garen.webp");
 });
 
-test("la carte complète ouvre directement l’éditeur du preset 3 et focalise la recherche", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
-  await page.goto("/#dashboard");
+for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
+  const priority = index + 1;
+  test(`la carte Dashboard ouvre le preset ${priority} sans ouvrir le sélecteur`, async ({ page }) => {
+    await mockLocalApi(page, { connected: true, configured: true });
+    await page.goto("/#dashboard");
 
-  await page.locator(".priority-card").nth(2).locator(".priority-details").click();
+    const card = page.locator(".priority-card").nth(index);
+    await card.click();
 
-  await expect(page).toHaveURL(/#presets\/pick_3$/);
-  await expect(page.getByRole("dialog", { name: "Modifier la priorité 3" })).toBeVisible();
-  await expect(page.locator("#champion-search")).toBeFocused();
-  await page.locator('.drawer-card button[aria-label="Fermer"]').click();
-  await expect(page.locator(".champion-choice")).toBeFocused();
-  await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
-  await expect(page).toHaveURL(/#presets$/);
-});
+    await expect(page).toHaveURL(new RegExp(`#presets/${slot}$`));
+    const editor = page.getByRole("dialog", { name: `Modifier la priorité ${priority}` });
+    await expect(editor).toBeVisible();
+    await expect(page.locator(".picker-drawer")).toHaveCount(0);
+    await expect(page.locator("#champion-search")).toHaveCount(0);
+
+    await page.locator(".champion-choice").click();
+    await expect(page.locator(".picker-drawer")).toBeVisible();
+    await expect(page.locator("#champion-search")).toBeFocused();
+    await page.locator('.drawer-card button[aria-label="Fermer"]').click();
+    await expect(page.locator(".champion-choice")).toBeFocused();
+    await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
+    await expect(page).toHaveURL(/#presets$/);
+    await expect(page.locator(".preset-card").nth(index)).toBeFocused();
+  });
+}
 
 test("modifier le ban ouvre son sélecteur directement et revient au Dashboard après validation", async ({ page }) => {
   await mockLocalApi(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
 
-  await page.locator("#dashboard-edit-ban").click();
+  await page.locator(".ban-panel").click();
   await expect(page).toHaveURL(/#presets\/ban\?return=dashboard$/);
   await expect(page.locator("#champion-search")).toBeFocused();
   await page.locator("#champion-search").fill("Teemo");
@@ -126,7 +137,7 @@ test("annuler la sélection du ban ramène au Dashboard et rend le focus au déc
   await mockLocalApi(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
 
-  await page.locator("#dashboard-edit-ban").click();
+  await page.locator(".ban-panel").click();
   await page.getByRole("button", { name: "Fermer" }).click();
 
   await expect(page).toHaveURL(/#dashboard$/);

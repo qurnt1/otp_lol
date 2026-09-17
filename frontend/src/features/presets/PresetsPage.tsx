@@ -66,7 +66,7 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
       cardFocusRef.current = cardTriggerRefs.current[action];
       pickerFocusRef.current = championChoiceFocusRef.current;
       setEditingSlot(action);
-      setPicker({ kind: "champion", slot: action });
+      setPicker(null);
     }
   }, [action]);
 

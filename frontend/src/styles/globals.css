@@ -157,6 +157,8 @@ img { display: block; }
 .mode-select .priority-mode-trigger { width: 84px; min-width: 84px; min-height: 25px; gap: 5px; padding: 0 6px; border-color: var(--line); border-radius: 5px; color: var(--primary); background: var(--surface-3); font-size: 8px; font-weight: 800; letter-spacing: .04em; }
 .mode-select .priority-mode-trigger svg { flex: 0 0 auto; color: var(--primary); }
 .ban-panel, .quick-panel { padding: 14px; }
+.ban-panel-link { display: block; color: inherit; text-decoration: none; transition: border-color 150ms ease, background-color 150ms ease; }
+.ban-panel-link:hover { border-color: var(--line-strong); }
 .ban-panel h2 { margin: 0; color: var(--text); font-size: 14px; }
 .ban-visual { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
 .ban-visual > img, .ban-visual > .asset-fallback { width: 60px; height: 60px; border-radius: 7px; }
