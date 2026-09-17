@@ -4,7 +4,7 @@
 
 `launcher_web.py` starts the native desktop shell and the local FastAPI application. `pywebview` hosts the compiled `frontend/dist` output in WebView2. The Python runtime owns LCU communication, automation, settings persistence, history, and asset retrieval.
 
-The React application talks to the backend through typed HTTP endpoints and a WebSocket event stream. Runtime status events carry an action key, parameters, and severity; the frontend owns their localized presentation in `fr.ts`. Phase changes update the runtime snapshot and top bar rather than duplicating phase copy in the dashboard activity strip. `useHashRoute` owns the current view, while `runtimeStore` owns the live runtime snapshot and latest activity.
+The React application talks to the backend through typed HTTP endpoints and a WebSocket event stream. Runtime status events carry an action key, parameters, and severity; the frontend owns their localized presentation in `fr.ts`. The sidebar shows League connection, account, and version; the Dashboard phase strip reflects the current runtime phase. `useHashRoute` owns page and settings-section routes (including browser history), while `runtimeStore` owns the live runtime snapshot and latest status. `#statistics` and `/api/links/stats` use `preferred_stats_site` for account profiles; `#live` and `/api/links/live` use `preferred_hotkey_site` for in-game links. Account and live iframe origins have separate allowlists.
 
 ## Main layers
 
@@ -16,7 +16,7 @@ The React application talks to the backend through typed HTTP endpoints and a We
 - `src/desktop/`: pywebview bridge, native links, self-tests, and window lifecycle.
 - `frontend/src/api/`: HTTP client, generated OpenAPI types, and WebSocket event handling.
 - `frontend/src/components/`: shared shell and UI primitives.
-- `frontend/src/features/`: the four application views and their feature-local components.
+- `frontend/src/features/`: the dashboard, presets, statistics, history, and settings views with feature-local components.
 - `website/`: separate public Vite site. It is not the desktop frontend.
 
 ## Data flow

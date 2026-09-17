@@ -6,13 +6,15 @@ La matrice couvre les réglages éditables par l’interface. Le test API vérif
 |---|---|---|---|
 | Général | `auto_hide_on_connect`, `close_app_on_lol_exit` | `test_settings_matrix_persists_every_frontend_editable_setting`, `test_runtime_transition_hides_once_and_closes_only_after_a_real_connection` | Transition déconnecté → connecté, puis fermeture uniquement après une connexion réelle |
 | Automatisations | `auto_accept_enabled`, `auto_pick_enabled`, `auto_ban_enabled`, `auto_summoners_enabled`, `auto_play_again_enabled` | matrice API, tests LCU existants | Accept, pick/ban, sorts/runes et retour lobby restent branchés au runtime |
-| Compte | `summoner_name_auto_detect`, `manual_summoner_name`, `manual_region` | matrice API, validation Riot ID | RuntimeTopBar utilise la valeur manuelle quand la détection est désactivée |
-| Liens | `preferred_stats_site`, `preferred_hotkey_site` | matrice API, tests URLs/API existants | URLs allowlistées et fournisseur choisi |
+| Compte | `summoner_name_auto_detect`, `manual_summoner_name`, `manual_region` | matrice API, `frontend/e2e/settings.spec.ts` | Riot ID LCU affiché en lecture seule en mode auto, saisie manuelle conservée, mode auto sans compte de secours quand League est fermé |
+| Liens | `preferred_stats_site`, `preferred_hotkey_site` | matrice API, tests URLs/API, `frontend/e2e/statistics.spec.ts` | `preferred_stats_site` ne rafraîchit que `#statistics`; `preferred_hotkey_site` ne rafraîchit que `#live`; reset/import invalident les deux |
 | Raccourcis | `hotkey_toggle_window`, `hotkey_open_site` | matrice API, tests hotkeys desktop | Reconfiguration après l’événement `settings_updated` |
 | Apparence | `theme` | matrice API, E2E Settings | Tokens sombre/clair appliqués immédiatement |
-| Skin principal | `main_skin_mode_override`, `main_skin_mode_overrides` | matrice API, tests skin modes/core | Modes `INHERIT`, `OFF`, `FIXED`, `RANDOM`, sans modifier le preset |
+| Skin | `pick_slots[slot].skin_mode`, `skin_automation_enabled` | `test_skin_modes`, matrice API, tests core et E2E Dashboard | Modes `none`, `fixed`, `random` identiques entre Dashboard et Presets; aucun mode `inherit` ni fallback de mode vers le slot 1 |
 | Fenêtre | `window_x`, `window_y`, `window_width`, `window_height`, `window_maximized` | matrice API, tests desktop geometry | Taille, position valide, maximisation et sauvegarde à la fermeture |
 | Presets | `presets_enabled`, `selected_pick_1..3`, `selected_ban`, `pick_slots` | tests preset/API/core dédiés | Parité des trois slots, fallback et invariants pick/ban |
 | Maintenance | `ignored_update_version` | matrice API, test updates | Version ignorée respectée et vérification GitHub différée côté frontend |
 
 Validation UI de référence : `npm run test:e2e`, dont `settings.spec.ts` vérifie un toggle immédiat et les scénarios de navigation/layout vérifient le shell. Les tests locaux ne prouvent pas la disponibilité réelle du client League ni le comportement de chaque backend WebView2.
+
+Le fichier de réglages utilise le schéma 6. Le premier lancement crée les valeurs par défaut; un schéma différent n'est pas migré, il est sauvegardé puis réinitialisé. L'import exige aussi la version courante.

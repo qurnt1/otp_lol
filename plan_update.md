@@ -1,904 +1,542 @@
-Tu reprends le projet OTP LOL dans son ÉTAT ACTUEL.
+Tu reprends le working tree ACTUEL après la dernière implémentation.
+NE repars PAS du plan précédent et NE réimplémente PAS ce qui fonctionne déjà.
 
-IMPORTANT :
-- lis la codebase actuelle avant de modifier quoi que ce soit ;
-- lis intégralement `plan_update.md` ;
-- considère `plan_update.md` comme un contrat d'implémentation ;
-- compare CHAQUE exigence du plan au code actuel et aux tests actuels ;
-- ne te fie pas à un ancien compte-rendu ou à une conversation précédente.
-
-L'objectif de cette passe est :
-1. corriger les bugs réels encore présents ;
-2. terminer à 100 % `plan_update.md` ;
-3. ajouter proprement la nouvelle page Statistiques ;
-4. ne pas casser la logique métier LCU existante.
+Avant toute modification :
+- lis entièrement le diff actuel ;
+- relis les fichiers concernés ;
+- considère les constats ci-dessous comme des bugs/régressions à corriger ;
+- ne valide pas une fonctionnalité uniquement parce qu'un test existant est vert :
+  plusieurs tests actuels codifient eux-mêmes un mauvais comportement.
 
 ==================================================
-MODE DE TRAVAIL OBLIGATOIRE : SOUS-AGENTS + REVIEW
+P0 — DASHBOARD CARD : OUVRIR LE PRESET, PAS LE CHAMPION PICKER
 ==================================================
 
-Utilise des sous-agents lorsque l'environnement le permet.
+Bug actuel confirmé.
 
-Découpe au minimum le travail en workstreams indépendants :
+ChampionPriorityCard navigue vers :
 
-SOUS-AGENT A — Data Dragon / offline / cache
-Responsable principalement de :
-- src/core/datadragon.py
-- routes/assets concernées
-- tests Data Dragon/API.
+#presets/pick_1
+#presets/pick_2
+#presets/pick_3
 
-SOUS-AGENT B — Presets / images / sorts
-Responsable principalement de :
-- PresetEditorDialog
-- PresetCard
-- SkinPicker
-- Select si nécessaire
-- tests Presets.
+C'est correct.
 
-SOUS-AGENT C — Navigation / Statistiques / Topbar / hotkey
-Responsable principalement de :
-- AppShell
-- routes/useHashRoute
-- RuntimeTopBar
-- QuickActions
-- nouvelle StatisticsPage
-- desktop window/hotkey
-- CSP.
+Mais PresetsPage interprète actuellement cette action en faisant à la fois :
 
-SOUS-AGENT D — Vérification du plan et tests
-Responsable de :
-- comparer les 20 sections de plan_update.md au résultat final ;
-- identifier toute exigence encore incomplète ;
-- renforcer Vitest/Playwright/Python ;
-- vérifier parité V2.
+setEditingSlot(action)
+setPicker({ kind: "champion", slot: action })
 
-RÈGLE CRITIQUE :
-ne considère JAMAIS le résultat d'un sous-agent comme validé automatiquement.
+C'est incorrect.
 
-Après chaque sous-agent :
-1. lis son diff ;
-2. vérifie que sa solution respecte l'architecture actuelle ;
-3. recherche les régressions ;
-4. exécute ses tests ciblés ;
-5. corrige toi-même les erreurs avant intégration.
+COMPORTEMENT ATTENDU :
 
-Le main agent reste responsable du résultat global.
+Clic card Dashboard slot 1
+→ navigation #presets/pick_1
+→ ouverture du PresetEditorDialog "Modifier la priorité 1"
+→ NE PAS ouvrir ChampionPicker
+→ aucun drawer supplémentaire
+→ aucun focus sur #champion-search
 
-Les sous-agents ne doivent pas effectuer simultanément des modifications contradictoires sur les mêmes fichiers.
+Le sélecteur Champion doit s'ouvrir UNIQUEMENT lorsque l'utilisateur
+clique ensuite sur le contrôle Champion dans PresetEditorDialog.
 
-==================================================
-CHECKLIST PLAN_UPDATE OBLIGATOIRE
-==================================================
+Même comportement pour pick_2 et pick_3.
 
-Avant le développement, transforme les 20 sections de `plan_update.md` en checklist.
+Modifier le useEffect de PresetsPage :
 
-Pour chacune :
+pour action pick_N :
+- setEditingSlot(action)
+- setPicker(null)
 
-[ ] implémentée
-[ ] testée
-[ ] validée visuellement si UI
+Conserver le deep-link.
 
-Ne t'arrête pas tant que toutes les exigences encore pertinentes du plan sont à 100 %.
+CORRIGER LE TEST EXISTANT.
 
-ATTENTION :
-la nouvelle exigence Statistiques ci-dessous REMPLACE le comportement historique de la section 1 concernant l'ouverture directe du site par le hotkey.
+Le test actuel :
 
-Le principe reste :
-le raccourci doit fonctionner même sans League.
+"la carte complète ouvre directement l’éditeur du preset 3 et focalise la recherche"
 
-Mais désormais :
+encode le mauvais comportement.
 
-HOTKEY STATS
-→ ouvre OTP LOL
-→ ouvre l'onglet Statistiques
+Le remplacer par :
 
-et NON plus :
-→ ouvre directement le navigateur système.
+"la carte Dashboard ouvre le preset sans ouvrir le sélecteur de champion"
 
-Toutes les autres exigences de plan_update.md restent à vérifier et à terminer.
+Assertions :
+- URL #presets/pick_3
+- PresetEditorDialog visible
+- titre "Modifier la priorité 3"
+- aucun ChampionPicker ouvert
+- #champion-search absent/non visible
+- puis clic sur le contrôle Champion
+- alors seulement ChampionPicker apparaît
+- alors seulement #champion-search reçoit le focus
 
 ==================================================
-P0 — CORRIGER DATADRAGON HORS LIGNE
+P0 — NE PAS PERDRE LES SETTINGS LORS DU PASSAGE SCHEMA 5 → 6
 ==================================================
 
-Bug observé :
+Audit obligatoire de src/config/settings.py.
 
-DataDragon charge correctement :
+Le diff actuel :
+- passe CONFIG_SCHEMA_VERSION de 5 à 6 ;
+- supprime les migrations ;
+- rejette tout fichier dont schema != 6 ;
+- sauvegarde puis reset un fichier schema 5.
 
-DataDragon: Loaded local cache (version 16.18.1)
+C'est une régression.
 
-puis lorsque le DNS / Internet est indisponible :
+Une mise à jour OTP LOL ne doit PAS effacer :
+- presets ;
+- champions ;
+- sorts ;
+- runes ;
+- skins ;
+- providers ;
+- Riot ID manuel ;
+- région ;
+- hotkeys ;
+- automatisations ;
+- thème ;
+- géométrie de fenêtre.
 
-Unable to fetch online version
-Champion detail download error ... Garen.json
-Champion detail download error ... Garen.json
-Champion detail download error ... Lux.json
-etc.
+Restaurer une migration explicite :
 
-Le problème n'est PAS qu'une vérification réseau échoue.
+schema 5 → schema 6
 
-Le problème est que plusieurs composants/endpoints refont des requêtes distantes inutiles alors qu'un cache local exploitable existe.
+La migration doit :
+- conserver toutes les valeurs encore supportées ;
+- convertir/supprimer seulement les anciennes clés devenues inutiles ;
+- notamment traiter proprement main_skin_mode_override /
+  main_skin_mode_overrides ;
+- conserver les skin_mode des pick_slots ;
+- fixer config_schema_version = 6.
 
-Audite précisément tous les chemins réseau de DataDragon.
+Ajouter test réel :
 
-CORRECTIONS OBLIGATOIRES :
+schema 5 complet
+→ load_parameters()
+→ schema 6
+→ mêmes presets et préférences importantes.
 
-1. `get_champion_splash()`
-
-Il ne doit PAS télécharger `champion/{champion}.json` simplement pour connaître le slug.
-
-Utiliser d'abord :
-
-self.by_id[champion_id]["id"]
-
-qui est déjà présent dans le catalogue champion en cache.
-
-Uniquement si le slug est réellement absent, envisager un fallback.
-
-Une simple demande d'image ne doit pas déclencher le téléchargement du détail complet du champion.
-
-2. Endpoint skin splash
-
-Actuellement `/api/assets/skins/{champion_id}/{skin_id}/splash`
-appelle d'abord `get_skin_catalog()`.
-
-Cela peut déclencher :
-- champion detail Data Dragon ;
-- CommunityDragon detail ;
-- puis seulement l'image.
-
-Refactoriser.
-
-Principe :
-
-UN ENDPOINT D'IMAGE NE DOIT PAS DÉCLENCHER UN CATALOGUE DISTANT COMPLET.
-
-Si les métadonnées skin sont déjà en cache :
-- centered splash
-- uncentered splash
-- DataDragon splash
-- tile fallback
-
-Sinon et si `skin_num` est connu :
-- utiliser immédiatement `get_skin_preview(champion_id, skin_num)`.
-
-Ne télécharger le catalogue complet que lorsque l'utilisateur ouvre réellement le Skin Picker.
-
-3. Ajouter un backoff réseau.
-
-Lorsqu'une erreur réseau de type :
-- DNS ;
-- ConnectionError ;
-- Timeout ;
-
-est détectée, définir un cooldown global Data Dragon.
-
-Exemple :
-30 à 60 secondes.
-
-Pendant ce cooldown :
-- ne pas refaire immédiatement `versions.json` ;
-- ne pas spammer les champion detail ;
-- servir cache/fallback local.
-
-4. Negative cache.
-
-Mémoriser temporairement l'échec d'une récupération de champion detail.
-
-Exemple :
-champion 86 inaccessible à T0
-→ ne pas retenter son détail pendant 30–60 s.
-
-5. Dédupliquer les téléchargements concurrents.
-
-Si deux requêtes demandent Garen au même moment :
-→ un seul fetch distant doit être réalisé.
-
-6. Stale-while-revalidate.
-
-Si une image locale existe mais que son marqueur de version n'est plus considéré frais :
-- utiliser quand même l'image locale immédiatement ;
-- tenter éventuellement sa mise à jour en arrière-plan.
-
-Ne pas transformer un cache légèrement ancien en écran sans image simplement parce qu'Internet est coupé.
-
-7. Cache catalogues skin/detail.
-
-Quand un catalogue/détail a déjà été récupéré avec succès, envisager sa persistence locale par version/champion afin que le Skin Picker reste exploitable hors connexion lors d'un lancement ultérieur.
-
-8. Logs.
-
-Une panne Internet ne doit pas générer 20 warnings identiques.
-
-Premier échec :
-WARNING lisible.
-
-Échecs identiques pendant le cooldown :
-DEBUG ou silencieux.
-
-TESTS :
-- cache valide + DNS indisponible ;
-- splash champion sans appel champion detail ;
-- splash skin avec skin_num sans appel catalogue ;
-- deux appels concurrents même champion → un seul fetch ;
-- negative cache ;
-- expiration du cooldown ;
-- stale image locale utilisée hors ligne.
+Ne considère PAS "backup + reset" comme une migration acceptable.
 
 ==================================================
-P0 — IMAGE DU SKIN FIXE DANS L'ÉDITEUR PRESET
+P0 — AUDIT DATADRAGON / IMAGES OBSOLÈTES
 ==================================================
 
-Bug actuel :
+Symptôme réel :
+les champions et Summoner Spells affichent parfois d'anciens artworks.
 
-dans le Dialog d'édition du preset :
+Les URLs Riot de base sont correctes.
 
-SKIN
-Aucun | Fixe | Aléatoire
+La version actuelle doit être obtenue dynamiquement via :
 
-puis le bouton en dessous affiche actuellement seulement :
-- Sparkles/Dices ;
-- texte God-King Garen.
+https://ddragon.leagueoflegends.com/api/versions.json
 
-Lorsque `skin_mode === "fixed"` et qu'un skin est sélectionné, je veux voir sa vraie image.
+Ne hardcode PAS 16.18.1.
+
+AUDITER LE CACHE.
+
+Problèmes identifiés :
+
+1.
+Les fichiers images sont stockés sous des chemins non versionnés :
+
+ICONS_CACHE_DIR/<filename>
+SPELLS_CACHE_DIR/<filename>
+
+2.
+Les clés mémoire ne contiennent pas la version :
+
+champ_<id>
+spell_<name>
+
+3.
+Un unique :
+
+dd_version.txt
+
+marque actuellement tout un dossier comme frais.
+
+Une seule image téléchargée peut donc marquer tout le répertoire
+comme appartenant à la nouvelle version alors que d'autres PNG sont anciens.
+
+4.
+Les routes locales renvoient :
+
+Cache-Control: public, max-age=86400
+
+avec des URLs stables comme :
+
+/api/assets/champions/86.png
+/api/assets/spells?name=Flash
+
+WebView2 peut donc garder un ancien asset pendant 24 h.
+
+CORRECTION RECOMMANDÉE :
+
+Versionner le cache disque :
+
+cache/icons/<dd_version>/<filename>
+cache/spells/<dd_version>/<filename>
+
+et si pertinent les autres assets Data Dragon.
+
+Versionner aussi les clés mémoire :
+
+champ:<version>:<champion_id>
+spell:<version>:<spell_name>
+champion_splash:<version>:<id>
+skin_preview:<version>:<id>:<skin_num>
+
+Quand Data Dragon passe de version A à B :
+- ne jamais considérer les fichiers de A comme frais pour B ;
+- ne jamais utiliser une clé mémoire de A comme celle de B ;
+- conserver A comme fallback offline éventuel ;
+- tenter B normalement.
+
+SUPPRIMER ou revoir la logique directory-wide dd_version.txt.
+Le téléchargement d'une seule image ne doit jamais valider toutes les autres.
+
+VERSIONNER AUSSI LES URLs FRONTEND/API.
 
 Exemple :
 
-[IMAGE GOD-KING GAREN]  God-King Garen      >
+/api/assets/champions/86.png?v=16.18.1
+/api/assets/champions/86/splash?v=16.18.1
+/api/assets/spells?name=Flash&v=16.18.1
 
-Pour RANDOM :
-[IMAGE DU RANDOM PREVIEW] Pool aléatoire     >
+ou intégrer la version directement dans le path.
 
-Pour NONE :
-fallback visuel propre.
+Ensuite le navigateur peut recevoir :
 
-NE recharge pas le catalogue simplement pour cette image.
+Cache-Control: public, max-age=31536000, immutable
 
-Passe au `PresetEditorDialog` le `PresetPreview` correspondant déjà présent dans `/api/bootstrap`.
+SI l'URL elle-même contient la version.
 
-Utiliser :
-preview.skin_preview_url
+Sinon conserver un cache court/no-cache.
 
-fallback :
-champion image / icône appropriée.
+Ne garde PAS max-age=86400 sur une URL non versionnée.
 
-Après changement de skin :
-- invalider/rafraîchir bootstrap correctement ;
-- la miniature doit changer immédiatement ou dès la réponse serveur.
-
-Ajouter test E2E.
+Ajouter `data_dragon_version` dans /api/metadata ou diagnostics
+afin de pouvoir vérifier visuellement quelle version est chargée.
 
 ==================================================
-P0 — SORTS AVEC IMAGES DANS L'ÉDITEUR
+AUDIT NOMS CHAMPIONS / SUMMONER SPELLS
 ==================================================
 
-Bug actuel :
+Créer un test qui charge le Data Dragon courant et vérifie :
 
-les deux sélecteurs de sorts affichent uniquement :
+Champion :
+- id ;
+- name ;
+- slug ;
+- image.full ;
+- icon URL ;
+- splash URL.
 
-Flash
-Ignite
+Summoner Spells :
+- comparer SUMMONER_SPELL_MAP au summoner.json courant ;
+- vérifier le numeric key ;
+- vérifier image.full ;
+- vérifier que chaque sort réellement supporté possède un asset.
 
-Je veux :
+Ne remplace pas aveuglément la logique métier par toutes les entrées
+summoner.json :
+certains spells Riot ne doivent probablement pas être proposés
+dans les presets normaux.
 
-[icône Flash] Flash
-[icône Ignite] Ignite
+Mais détecter automatiquement en test :
+- ID incorrect ;
+- nom supprimé/renommé ;
+- fichier d'image manquant.
 
-dans :
-- le contrôle actuellement sélectionné ;
-- chaque item du dropdown.
+Ajouter un test de changement de version :
 
-Ne reviens PAS à un `<select>` natif.
+version A en cache
+→ version B disponible
+→ première réponse B ne doit pas renvoyer silencieusement une image A
+  marquée fraîche.
 
-Conserver Radix.
+Ajouter un test :
 
-Étendre le composant générique `Select` proprement, par exemple avec :
-- `iconUrl?`
-ou
-- un mécanisme générique `renderOption/renderValue`.
-
-Évite de rendre le composant UI dépendant directement du domaine League si possible.
-
-Pour `(None)` :
-fallback/icône neutre.
-
-Navigation clavier, focus, Escape et Enter doivent rester corrects.
-
-Ajouter tests.
-
-==================================================
-P0 — DASHBOARD : SPLASH DU SKIN SÉLECTIONNÉ
-==================================================
-
-Bug confirmé :
-
-la page Presets utilise bien le skin sélectionné en grande image.
-
-Le Dashboard utilise encore :
-
-champion_splash_url
-
-comme image principale.
-
-Corriger `ChampionPriorityCard`.
-
-Ordre attendu :
-
-preview.skin_preview_url
-→ preview.champion_splash_url
-→ champion.splash_url
-→ fallback
-
-Le bootstrap connaît déjà le skin sélectionné.
-
-NE charge aucun catalogue supplémentaire.
-
-Cas :
-FIXED → splash du skin fixe.
-RANDOM → splash du random preview.
-NONE / pas de skin → splash du champion de base.
-
-Ajouter un E2E Dashboard vérifiant précisément le `src` du splash.
+rafraîchir Garen en version B
+→ ne doit PAS considérer automatiquement Flash/Lux/etc. comme frais en B.
 
 ==================================================
-P1 — DEEP LINKS SETTINGS
+P0/P1 — NAVIGATEURS INTÉGRÉS : AUDIT RÉEL
 ==================================================
 
-Actuellement QuickActions contient :
+CONSTAt ACTUEL :
 
-Raccourcis clavier → #settings
+STATS_FRAME_ORIGINS contient uniquement DeepLOL.
 
-Je veux :
+LIVE_FRAME_ORIGINS est VIDE.
 
-Raccourcis clavier → #settings/shortcuts
+Donc actuellement :
+- DeepLOL profil peut être intégré ;
+- OP.GG / DPM / LeagueOfGraphs profil → fallback ;
+- aucun fournisseur Live ne peut être intégré, par définition.
 
-Et :
-
-Choisir/modifier le site de statistiques → #settings/links
-
-Refactoriser le hash router pour supporter des sous-routes propres.
-
-Exemples :
-
-#dashboard
-#presets
-#statistics
-#history
-#settings/general
-#settings/automations
-#settings/account
-#settings/links
-#settings/shortcuts
-#settings/appearance
-#settings/advanced
-
-Ne duplique pas un deuxième router.
-
-Créer un parser de route correctement typé.
-
-`SettingsPage` doit ouvrir directement la section demandée.
-
-Back/forward navigateur doit rester cohérent.
+Ce n'est pas un bug React :
+le backend renvoie embed_allowed=false pour TOUS les providers Live.
 
 ==================================================
-P1 — RUNTIME TOP BAR
+NE PAS UTILISER LE TEST FAKE RIOT ID COMME PREUVE
 ==================================================
 
-Refaire uniquement son layout, pas toute l'UI.
+Le précédent audit Live a utilisé un Riot ID inexistant.
 
-Problème :
+Ce test ne permet PAS de savoir si une vraie page in-game est intégrable.
 
-la largeur de la phase varie et comprime/décale les informations vers la droite.
+Le test frontend qui mock :
 
-Je veux approximativement :
+embed_allowed: true
 
-[Compte........................] [Région] [Phase.............................] [● Client connecté] [⚙]
+pour DeepLOL prouve uniquement que ProviderWebPanel sait afficher une iframe.
+Il ne valide PAS DeepLOL réel.
 
-Le statut de connexion doit être TOUT À DROITE, juste avant Settings.
+Utilise des sous-agents pour cette investigation.
 
-Le bloc Phase doit disposer d'un espace flexible important.
+SOUS-AGENT A — URLS FOURNISSEURS
 
-Proposition :
+Pour chacun :
+- DeepLOL
+- Porofessor
+- DPM.LOL
+- OP.GG
 
-runtime-topbar
-  left/facts → flex:1 / grid
-  right-actions → auto
+Vérifier les URL builders actuels.
 
-runtime-facts :
-  account : minmax(...)
-  region  : compact
-  phase   : minmax(200px, 1fr)
+Pendant qu'un vrai compte est réellement en partie :
+- générer l'URL live exacte ;
+- tester dans navigateur normal ;
+- tester en navigation WebView2 top-level ;
+- tester en iframe dans OTP LOL ;
+- relever redirect final ;
+- relever status ;
+- relever X-Frame-Options ;
+- relever CSP frame-ancestors ;
+- noter Cloudflare/challenge éventuel.
 
-Utiliser :
-min-width: 0
-overflow
-text-overflow: ellipsis
-white-space: nowrap
+Ne faire aucune conclusion à partir d'un Riot ID inexistant.
 
-si nécessaire.
+Si aucun compte en partie n'est disponible au moment du test :
+NE PAS INVENTER LE RÉSULTAT.
+Préparer le harness automatisé et indiquer précisément le test humain restant.
 
-Mais les textes doivent utiliser l'espace disponible avant d'être tronqués.
+SOUS-AGENT B — DEEPLOL LIVE
 
-Tester notamment :
-- "Dans le lobby"
-- "Sélection des champions"
-- "Récupération des statistiques"
-- client non détecté
-- Riot ID long.
+Tester particulièrement :
 
-Tester 800×540, 1100×760, 1440×900 et 1920×1080.
+https://www.deeplol.gg/summoner/<region>/<riot-id>/ingame
 
-==================================================
-P1 — SELECT NATIF RESTANT SUR LE DASHBOARD
-==================================================
+avec un joueur réellement en game.
 
-Settings utilise maintenant Radix correctement.
+Si la vraie page fonctionne dans l'iframe WebView2
+et ne pose pas de nouvelle contrainte de sécurité :
 
-Mais le contrôle INHERIT / OFF / FIXED / RANDOM de ChampionPriorityCard utilise encore un `<select>` HTML.
+ajouter seulement :
 
-Le remplacer lui aussi par le composant `Select` moderne.
+LIVE_FRAME_ORIGINS["deeplol"] = "https://www.deeplol.gg"
 
-Pas de popup Windows rectangulaire.
+Puis effectuer le test WebView2 final.
 
-==================================================
-NOUVELLE FEATURE — ONGLET STATISTIQUES
-==================================================
-
-Ajouter dans la sidebar, JUSTE SOUS Presets :
-
-Dashboard
-Presets
-Statistiques
-Historique
-Réglages
-
-Utiliser une icône cohérente de type :
-ChartNoAxesCombined / BarChart3.
-
-Ajouter :
-
-frontend/src/features/statistics/StatisticsPage.tsx
-
-et intégrer la nouvelle route au lazy loading actuel.
+Ne l'ajoute PAS uniquement parce que le frontend mock passe.
 
 ==================================================
-STATISTICS PAGE — UX
+ALTERNATIVE SÛRE POUR LES SITES QUI REFUSENT LES IFRAMES
 ==================================================
 
-Objectif :
+Ne reverse-proxy pas les sites.
+Ne retire pas leurs headers.
+Ne modifie pas leur CSP.
 
-ne plus ouvrir le site de statistiques dans le navigateur système par défaut.
+Implémenter/prototyper plutôt un :
 
-Afficher le site préféré directement dans OTP LOL.
+ProviderBrowserWindow
 
-Layout :
+Il s'agit d'une SECONDE fenêtre pywebview/WebView2.
 
-STATISTIQUES
+Elle charge l'URL fournisseur directement en TOP-LEVEL,
+pas dans une iframe.
 
-[OP.GG] [Player#EUW] [EUW]
+Architecture :
 
-[Modifier le site préféré] [Rafraîchir] [Ouvrir dans le navigateur]
+OTP LOL React
+    ↓
+bridge.open_provider_window(provider/kind)
+    ↓
+backend génère lui-même l'URL allowlistée
+    ↓
+webview.create_window(...)
+    ↓
+page OP.GG / Porofessor / DPM / DeepLOL
 
-┌──────────────────────────────────────────────┐
-│                                              │
-│      CONTENU DU SITE DE STATISTIQUES         │
-│                                              │
-└──────────────────────────────────────────────┘
+EXIGENCES SÉCURITÉ :
 
-"Modifier le site préféré"
-→ #settings/links
+- js_api=None
+- aucune méthode DesktopBridge exposée
+- ne jamais appeler window.expose() sur cette fenêtre
+- URL calculée côté Python depuis provider + Riot ID + région
+- aucun URL arbitraire fourni par le frontend
+- HTTPS uniquement
+- host allowlisté
+- bloquer ou externaliser les navigations vers hosts non approuvés si faisable
+- fenêtre séparée du WebView principal
+- aucune connexion à l'API native privilégiée OTP LOL
 
-La source de vérité doit être :
-preferred_stats_site
+UX :
 
-et `/api/links/stats`.
+Pour provider iframe-compatible :
+→ afficher directement dans l'onglet.
 
-Ne construis pas l'URL manuellement dans plusieurs composants.
+Pour provider iframe-incompatible :
+→ afficher dans l'onglet un bouton principal :
 
-Lorsque Riot ID/région/site changent :
-→ la page doit rafraîchir son URL.
+"Ouvrir dans OTP LOL"
 
-Lorsque League n'est pas connecté mais qu'un compte manuel est configuré :
-→ utiliser le compte manuel.
+qui ouvre ProviderBrowserWindow.
 
-Lorsque ni compte auto ni compte manuel exploitable n'existe :
-→ afficher un empty state clair ;
-→ proposer d'aller dans Réglages > Compte ;
-→ éventuellement afficher la homepage du fournisseur si cela est cohérent.
+Conserver aussi :
 
-==================================================
-IMPORTANT — IFRAME / WEBVIEW / SÉCURITÉ
-==================================================
+"Ouvrir dans le navigateur"
 
-Avant de considérer l'intégration terminée, vérifie réellement si les fournisseurs supportés autorisent l'affichage dans une iframe WebView2.
+comme fallback secondaire.
 
-Les fournisseurs peuvent utiliser :
-- X-Frame-Options ;
-- CSP frame-ancestors.
-
-NE CONTOURNE PAS ces protections.
-
-INTERDIT :
-- reverse proxy destiné à supprimer les headers X-Frame-Options ;
-- réécriture du site distant ;
-- bypass CSP.
-
-Si un fournisseur refuse l'intégration :
-afficher dans StatisticsPage :
-
-"Ce fournisseur ne permet pas l'affichage intégré."
-
-et proposer :
-[Ouvrir dans le navigateur]
-
-L'application doit rester fonctionnelle.
+Cela permet de garder une expérience intégrée à l'application
+sans contourner X-Frame-Options.
 
 ==================================================
-CSP
+NE PAS UTILISER AdditionalAllowedFrameAncestors PAR DÉFAUT
 ==================================================
 
-Le CSP actuel possède :
+WebView2 possède une API nommée :
 
-default-src 'self'
+AdditionalAllowedFrameAncestors
 
-et ne possède pas `frame-src`.
+Elle peut permettre d'afficher un site malgré X-Frame-Options /
+frame-ancestors.
 
-Une iframe externe sera donc bloquée par notre propre CSP.
+NE L'UTILISE PAS dans l'implémentation normale.
 
-Ajouter un `frame-src` EXPLICITE limité aux fournisseurs de statistiques autorisés.
+Microsoft prévient que ce mécanisme peut exposer le site à du clickjacking
+et il revient à outrepasser la politique d'embedding du fournisseur.
 
-Ne mets jamais :
+On conserve donc la politique OTP LOL :
 
-frame-src *
-
-Réutiliser la source de vérité des hosts/provider autant que raisonnablement possible.
-
-Exemples d'origines autorisées selon les URLs réellement utilisées :
-https://op.gg
-https://www.op.gg
-https://www.deeplol.gg
-https://dpm.lol
-https://www.leagueofgraphs.com
-
-Vérifier les redirects réels.
+- iframe seulement si naturellement autorisée ;
+- sinon top-level ProviderBrowserWindow ;
+- sinon navigateur système.
 
 ==================================================
-BRIDGE PYWEBVIEW — TEST DE SÉCURITÉ OBLIGATOIRE
+SI JE VEUX ABSOLUMENT LE SITE DANS LE MÊME ONGLET
 ==================================================
 
-Nous allons maintenant charger une page tierce à l'intérieur du WebView OTP LOL.
+Lance un sous-agent architecture pour déterminer si un SECOND contrôle
+WebView2 natif peut être hébergé dans la zone de contenu de la fenêtre
+actuelle sans réécrire entièrement l'application.
 
-Vérifie sur un vrai WebView2 si un document cross-origin chargé dans l'iframe peut accéder à :
+Comparer :
+A. architecture pywebview actuelle ;
+B. WebView2 natif WinForms/WPF/WinUI ;
+C. autre mécanisme raisonnable.
 
-window.pywebview
-window.pywebview.api
-
-Le site externe NE DOIT JAMAIS pouvoir appeler :
-- open_local_folder ;
-- toggle_fullscreen ;
-- open_external_url ;
-- resize_window ;
-- ou toute autre API native.
-
-Si le bridge est injecté dans les sous-frames :
-STOPPE l'intégration iframe telle quelle
-et isole d'abord le bridge.
-
-Ne livre pas une iframe externe ayant accès aux API natives.
-
-Utiliser également un iframe avec restrictions raisonnables :
-
-- pas de top-navigation ;
-- referrerPolicy no-referrer ;
-- sandbox minimal compatible avec le fournisseur.
-
-Tester le comportement réel dans WebView2.
+Ne migre rien avant d'avoir produit :
+- complexité ;
+- implications packaging ;
+- bridge/security ;
+- maintenance ;
+- gain UX.
 
 ==================================================
-RACCOURCI STATS : NOUVEAU COMPORTEMENT
+P1 — PROVIDER REGISTRY
 ==================================================
 
-Le comportement actuel appelle `webbrowser.open()`.
+Le diff actuel redéfinit :
+- labels providers ;
+- fichiers logos ;
+- listes Stats/Live
 
-Le supprimer pour le raccourci principal.
+dans catalog.py,
+alors que les URLs/providers sont définis dans services/urls.py.
 
-Nouveau comportement Alt+P :
+Éviter deux sources de vérité.
 
-1. si OTP LOL est caché :
-   → afficher/restaurer la fenêtre ;
-2. naviguer vers :
-   #statistics
-3. donner le focus à l'application.
+Créer une registry cohérente ou au minimum centraliser :
+- id ;
+- label ;
+- logo filename ;
+- homepage ;
+- support profile/live ;
+- iframe account/live.
 
-Cela doit fonctionner :
-- League connecté ;
-- League fermé ;
-- compte manuel ;
-- aucun compte.
-
-Créer une méthode native générique :
-
-WebViewWindow.open_route(route)
-
-par exemple.
-
-`open_settings()` peut éventuellement déléguer à cette méthode.
-
-Ne pas multiplier les `load_url` codés en dur.
+Ne laisse pas deux fichiers pouvoir diverger silencieusement.
 
 ==================================================
-SIMPLIFIER LES SETTINGS STATS
+P1 — VÉRIFIER LE CHANGEMENT SKIN MODE
 ==================================================
 
-Puisque le hotkey ouvre désormais l'onglet Statistiques :
+Le diff a également changé la sémantique Dashboard :
 
-`preferred_stats_site`
-devient la source unique du fournisseur affiché.
+avant :
+mode d'affichage/override
 
-`preferred_hotkey_site` n'a plus de vraie utilité utilisateur.
+maintenant :
+le Select du Dashboard modifie directement
+`pick_slots[pick_N].skin_mode` via PUT /api/presets/pick_N.
 
-Ne casse PAS les anciennes configurations.
+Confirme que ce changement est volontaire.
 
-Approche recommandée :
+Si oui :
+- documenter ;
+- garder les tests.
 
-- conserver `preferred_hotkey_site` dans le schéma/persistence pour compatibilité durant cette version ;
-- retirer son contrôle de l'interface Settings ;
-- ne plus l'utiliser pour le nouveau hotkey ;
-- documenter qu'il s'agit d'une clé legacy ;
-- éventuellement prévoir sa suppression lors d'une future migration de schéma.
+Sinon :
+- restaurer la distinction entre preview Dashboard et config du preset.
 
-Conserver la clé technique :
-
-hotkey_open_site
-
-si la renommer impose une migration inutile.
-
-Mais changer son libellé UI en :
-
-"Ouvrir Statistiques"
-
-La combinaison configurée continue de fonctionner.
+Ne laisse pas ce changement fonctionnel passer comme simple refactor UI.
 
 ==================================================
-DASHBOARD QUICK ACTIONS
+VALIDATION FINALE
 ==================================================
 
-Modifier :
+Une fois les corrections réalisées :
 
-"Ouvrir les statistiques"
+1. exécuter tous les tests Python ;
+2. typecheck ;
+3. Vitest ;
+4. build ;
+5. Playwright ;
+6. lancer réellement launcher_web.py ;
+7. vérifier un vrai client League ;
+8. tester images champions/sorts ;
+9. comparer la version affichée à la dernière version Data Dragon ;
+10. tester Dashboard → preset ;
+11. tester ChampionPicker uniquement après clic Champion ;
+12. tester #statistics ;
+13. tester #live ;
+14. tester ProviderBrowserWindow ;
+15. tester Alt+P ;
+16. tester upgrade d'un vrai parameters.toml schema 5 vers 6.
 
-Actuellement :
-→ navigateur externe.
+Ne termine PAS avec uniquement "tests verts".
 
-Nouveau comportement :
-→ #statistics.
+Rapport final attendu :
 
-Cela permet également de supprimer la requête `/api/links/stats` du critical path Dashboard si elle n'est plus nécessaire à cet écran.
+- cause racine card Dashboard ;
+- cause racine images obsolètes ;
+- version Data Dragon réellement chargée ;
+- résultat audit noms/spells ;
+- résultat réel de chaque provider account/live ;
+- headers XFO/CSP observés ;
+- providers iframe-compatible ;
+- providers nécessitant ProviderBrowserWindow ;
+- résultat migration schema 5→6 ;
+- commandes/tests exacts.
 
-Résultat :
-Dashboard plus rapide et responsabilité mieux séparée.
-
-"Raccourcis clavier"
-→ #settings/shortcuts
-
-"Modifier le site de statistiques"
-→ #settings/links.
-
-==================================================
-API STATS
-==================================================
-
-Auditer `/api/links/stats`.
-
-Le résultat devrait fournir suffisamment d'information pour StatisticsPage, par exemple :
-
-{
-  available: true/false,
-  site: "opgg",
-  url: "...",
-  homepage_url: "..."
-}
-
-Si nécessaire, étendre proprement `StatsLinkResponse`.
-
-Ne jamais accepter une URL arbitraire fournie par le frontend.
-
-Toutes les URLs statistiques doivent être produites côté backend à partir :
-- d'un provider connu ;
-- d'une région valide ;
-- d'un Riot ID validé.
-
-Conserver l'allowlist HTTPS actuelle.
-
-==================================================
-P0/P1 — TESTS MANQUANTS À AJOUTER
-==================================================
-
-Ajouter au minimum :
-
-DATADRAGON
-- offline cache ;
-- no duplicate remote champion details ;
-- splash champion sans champion-detail fetch ;
-- splash skin fast path avec skin_num ;
-- backoff réseau.
-
-PRESETS
-- fixed skin → miniature présente dans le bouton Skin ;
-- random → preview présente ;
-- spell dropdown affiche les icônes ;
-- selected spell affiche son icône.
-
-DASHBOARD
-- selected fixed skin utilisé comme grand splash ;
-- fallback base splash ;
-- quick stats → #statistics ;
-- shortcuts → #settings/shortcuts.
-
-SETTINGS
-- #settings/shortcuts ouvre directement Raccourcis ;
-- #settings/links ouvre directement Liens.
-
-TOPBAR
-- phase longue ne provoque pas overflow ;
-- connexion située dans le groupe droit.
-
-STATISTICS
-- route #statistics ;
-- sidebar active ;
-- preferred provider utilisé ;
-- URL valide rendue ;
-- no account state ;
-- settings link ;
-- reload ;
-- external fallback ;
-- CSP only allows known provider origins.
-
-DESKTOP
-- hotkey stats montre la fenêtre ;
-- hotkey stats charge #statistics ;
-- fonctionne sans LCU.
-
-==================================================
-PLAN_UPDATE — 100 % OBLIGATOIRE
-==================================================
-
-Après toutes les modifications :
-
-RELIRE `plan_update.md` DEPUIS LE DÉBUT.
-
-Pour CHACUNE des 20 sections :
-- retrouver le code correspondant ;
-- retrouver au moins un test lorsque demandé ;
-- vérifier le comportement.
-
-Ne te contente pas d'un document déclarant "Couvert".
-
-Une fonctionnalité n'est couverte que si le code réel correspond.
-
-Mettre à jour :
-- docs/V2_PARITY.md
-- docs/architecture.md
-- docs/performance.md si nécessaire
-- plan_update.md uniquement si le nouveau comportement Statistiques rend une ancienne exigence obsolète.
-
-Le nouveau hotkey interne `#statistics` remplace explicitement l'ancienne exigence d'ouverture externe.
-
-==================================================
-REVUE FINALE DES SOUS-AGENTS
-==================================================
-
-Une fois tous les sous-agents terminés :
-
-1. le main agent relit TOUS leurs changements ;
-2. recherche les duplications ;
-3. recherche les appels réseau ajoutés ;
-4. vérifie que le cache/offline fonctionne ;
-5. vérifie la sécurité de l'iframe ;
-6. vérifie les types OpenAPI ;
-7. vérifie les imports morts ;
-8. vérifie console React ;
-9. vérifie les warnings Python ;
-10. corrige directement tout problème trouvé.
-
-Ne t'arrête PAS au rapport des sous-agents.
-
-==================================================
-VALIDATION OBLIGATOIRE
-==================================================
-
-Backend :
-
-python -m unittest discover -s tests -p "test_*.py"
-python -m compileall -q launcher_web.py src tests create_exe.py
-
-Ruff sur tous les fichiers modifiés.
-
-Frontend :
-
-cd frontend
-npm run api:generate
-npm run api:check
-npm run typecheck
-npm run test
-npm run build
-npm run test:e2e
-
-Puis test réel source :
-
-python launcher_web.py
-
-Vérifier les logs pendant au moins une minute :
-- aucun spam Data Dragon ;
-- pas de répétition de champion detail ;
-- pas d'exception WebView ;
-- hotkeys actifs.
-
-Test WebView2 réel :
-- Dashboard ;
-- Presets ;
-- éditeur Preset ;
-- skin fixe ;
-- spell dropdown ;
-- Dashboard skin splash ;
-- #settings/shortcuts ;
-- #settings/links ;
-- Statistiques ;
-- hotkey stats fenêtre cachée ;
-- mode League fermé.
-
-==================================================
-DEFINITION OF DONE
-==================================================
-
-Ne termine PAS tant que :
-
-[ ] 100 % du plan_update encore pertinent est implémenté
-[ ] DataDragon offline ne spamme plus le réseau
-[ ] aucune demande de splash base ne télécharge champion detail
-[ ] skin fixe visible dans le bouton de l'éditeur
-[ ] sorts visibles avec leurs icônes
-[ ] Dashboard utilise le skin sélectionné
-[ ] Quick Action raccourcis ouvre directement Raccourcis
-[ ] topbar ne saute plus selon la phase
-[ ] indicateur client est à droite
-[ ] Select natif Dashboard supprimé
-[ ] onglet Statistiques existe sous Presets
-[ ] site préféré est affiché dans cet onglet lorsqu'autorisé
-[ ] iframe n'expose pas le bridge natif
-[ ] CSP frame-src est strict
-[ ] fallback propre si fournisseur refuse iframe
-[ ] Alt+P ouvre OTP LOL sur Statistiques
-[ ] Alt+P fonctionne sans League
-[ ] Dashboard n'ouvre plus automatiquement le navigateur stats
-[ ] API/types OpenAPI synchronisés
-[ ] tests Python verts
-[ ] tests frontend verts
-[ ] Playwright vert
-[ ] build vert
-[ ] test réel WebView2 effectué
-
-Si une contrainte EXTERNE empêche réellement l'intégration d'un fournisseur
-(X-Frame-Options / frame-ancestors),
-ce n'est pas une raison pour bricoler un bypass.
-
-Implémente le fallback sécurisé,
-documente précisément quel fournisseur bloque,
-puis continue tous les autres points.
-
-==================================================
-RAPPORT FINAL
-==================================================
-
-À la fin seulement, donne :
-
-- checklist plan_update 20/20 avec preuve fichier/test ;
-- bugs utilisateur corrigés ;
-- changements Statistiques ;
-- résultats des sous-agents + review effectuée ;
-- résultats exacts des commandes de test ;
-- résultat du test WebView2 réel ;
-- fournisseurs stats intégrables/non intégrables ;
-- éventuelles limitations strictement externes restantes.
-
-Aucun "reste à faire" pour une tâche raisonnablement corrigeable dans ce périmètre.
+Si l'intégration Live ne peut toujours pas être déterminée automatiquement,
+utilise plusieurs sous-agents pour la recherche et fournis le harness de test
+au lieu de conclure sans preuve.
