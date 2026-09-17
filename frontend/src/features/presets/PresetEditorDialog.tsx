@@ -1,12 +1,12 @@
 import type { ReactNode, RefObject } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { ChevronRight, Dices, Sparkles, Swords, X } from "lucide-react";
+import { ChevronRight, CircleOff, Sparkles, Swords, X } from "lucide-react";
 
 import { AssetImage } from "../../components/game/AssetImage";
 import { Select } from "../../components/ui/Select";
 import { fr } from "../../content/fr";
-import { runeAssetUrl } from "../../domain/assets";
-import type { Champion, PresetSlot, SummonerSpell } from "../../types/api";
+import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
+import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
 import type { PresetSlotKey } from "./PresetCard";
 
 export function PresetEditorDialog({
@@ -15,11 +15,13 @@ export function PresetEditorDialog({
   slot,
   priority,
   champion,
+  preview,
   spells,
   pending,
   feedback,
   leagueConnected,
   returnFocusRef,
+  championChoiceRef,
   onClose,
   onOpenPicker,
   onUpdate,
@@ -30,11 +32,13 @@ export function PresetEditorDialog({
   slot?: PresetSlot;
   priority: number;
   champion?: Champion;
+  preview?: PresetPreview;
   spells: SummonerSpell[];
   pending: boolean;
   feedback: string;
   leagueConnected: boolean;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
+  championChoiceRef?: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onOpenPicker: (kind: "champion" | "skin" | "runes", trigger: HTMLButtonElement) => void;
   onUpdate: (values: Partial<PresetSlot>) => void;
@@ -44,10 +48,19 @@ export function PresetEditorDialog({
 
   const runeIcon = runeAssetUrl(slot.rune_keystone_path, "perk");
   const skinName = getSkinName(slot);
+  const skinPreview = getSkinPreviewUrl(slot, preview);
+  const championIcon = safeImageUrl(champion?.icon_url ?? preview?.champion_icon_url);
   const spellOptions = spells.map((spell) => ({
     id: spell.name,
     label: spell.name === "(None)" ? fr.common.none : spell.name,
   }));
+  const renderSpell = (option: (typeof spellOptions)[number]) => {
+    const spell = spells.find((item) => item.name === option.id);
+    return <span className="spell-select-option">
+      <AssetImage className="spell-select-icon" src={safeImageUrl(spell?.icon_url) ?? undefined} alt="" width="22" height="22" fallback={<CircleOff size={14} aria-hidden="true" />} />
+      <span>{option.label}</span>
+    </span>;
+  };
 
   return (
     <Dialog.Root open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
@@ -73,7 +86,7 @@ export function PresetEditorDialog({
           <div className="preset-editor-body">
             <section className="preset-editor-section">
               <h3>{fr.presets.championLabel}</h3>
-              <button className="champion-choice" type="button" disabled={pending} onClick={(event) => onOpenPicker("champion", event.currentTarget)}>
+              <button ref={championChoiceRef} className="champion-choice" type="button" disabled={pending} onClick={(event) => onOpenPicker("champion", event.currentTarget)}>
                 <AssetImage src={champion?.icon_url ?? undefined} alt="" width="42" height="42" fallback={<Swords size={18} aria-hidden="true" />} />
                 <span><strong>{slot.champion || fr.presets.selectChampion}</strong><small>{champion?.title || fr.presets.chooseChampionHint}</small></span>
                 <ChevronRight size={15} aria-hidden="true" />
@@ -83,8 +96,8 @@ export function PresetEditorDialog({
             <section className="preset-editor-section" aria-labelledby="preset-spells-heading">
               <h3 id="preset-spells-heading">{fr.dashboard.spells}</h3>
               <div className="preset-editor-spells">
-                <label className="editor-spell"><span>{fr.presets.spellOne}</span><Select label={fr.presets.spellOne} value={slot.spell_1 || "(None)"} options={spellOptions} disabled={pending} onChange={(value) => onUpdate({ spell_1: value })} /></label>
-                <label className="editor-spell"><span>{fr.presets.spellTwo}</span><Select label={fr.presets.spellTwo} value={slot.spell_2 || "(None)"} options={spellOptions} disabled={pending} onChange={(value) => onUpdate({ spell_2: value })} /></label>
+                <label className="editor-spell"><span>{fr.presets.spellOne}</span><Select label={fr.presets.spellOne} value={slot.spell_1 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_1: value })} /></label>
+                <label className="editor-spell"><span>{fr.presets.spellTwo}</span><Select label={fr.presets.spellTwo} value={slot.spell_2 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_2: value })} /></label>
               </div>
             </section>
 
@@ -109,7 +122,7 @@ export function PresetEditorDialog({
                 <label className="skin-mode-option"><input type="radio" name={`skin-mode-${slotKey}`} value="random" checked={slot.skin_mode === "random"} onChange={() => onUpdate({ skin_mode: "random" })} />{fr.presets.skinRandom}</label>
               </fieldset>
               <button className="editor-choice" type="button" disabled={pending || slot.skin_mode === "none"} onClick={(event) => onOpenPicker("skin", event.currentTarget)}>
-                {slot.skin_mode === "random" ? <Dices size={17} aria-hidden="true" /> : <Sparkles size={17} aria-hidden="true" />}
+                <AssetImage className="editor-skin-preview" src={safeImageUrl(skinPreview) ?? championIcon ?? undefined} alt="" width="62" height="36" fallback={<Swords size={17} aria-hidden="true" />} />
                 <span className="editor-choice-copy"><small>{slot.skin_mode === "random" ? fr.presets.randomPool : fr.presets.skinGallery}</small><strong>{skinName}</strong></span>
                 <ChevronRight size={15} aria-hidden="true" />
               </button>
@@ -132,4 +145,20 @@ function getSkinName(slot: PresetSlot): string {
   if (slot.skin_mode === "none") return fr.presets.skinNone;
   if (slot.skin_mode === "fixed") return slot.skin_name || fr.presets.skinFixed;
   return slot.random_skin_name || slot.random_skin_pool[0]?.skin_name || fr.presets.skinRandom;
+}
+
+function getSkinPreviewUrl(slot: PresetSlot, preview?: PresetPreview): string | null {
+  if (!preview?.skin_preview_url || slot.skin_mode === "none") return null;
+  if (slot.skin_mode === "fixed") {
+    return preview.skin_name?.toLocaleLowerCase() === slot.skin_name.toLocaleLowerCase()
+      ? preview.skin_preview_url
+      : null;
+  }
+
+  const selectedNames = [slot.random_skin_name, ...slot.random_skin_pool.map((skin) => skin.skin_name)]
+    .filter(Boolean)
+    .map((name) => name.toLocaleLowerCase());
+  return selectedNames.length === 0 || selectedNames.includes(preview.skin_name?.toLocaleLowerCase() ?? "")
+    ? preview.skin_preview_url
+    : null;
 }

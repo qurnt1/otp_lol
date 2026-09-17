@@ -1,16 +1,136 @@
 import { expect, test } from "@playwright/test";
 import { mockLocalApi } from "./helpers";
 
-test("dashboard connecté concentre l’identité et la phase dans la barre supérieure", async ({ page }) => {
+test("dashboard connecté affiche l’identité dans la sidebar et la phase dans le dashboard", async ({ page }) => {
   await mockLocalApi(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
-  await expect(page.getByText("Player#EUW")).toBeVisible();
-  await expect(page.getByText("Dans le lobby")).toBeVisible();
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
+  await expect(page.locator(".sidebar-account")).toHaveAttribute("title", "Player#EUW");
+  await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
   await expect(page.getByRole("heading", { name: "Garen" })).toBeVisible();
 
-  const request = page.waitForRequest((candidate) => candidate.url().endsWith("/api/settings") && candidate.method() === "PATCH");
-  await page.getByRole("combobox", { name: "Mode de skin du slot 1" }).selectOption("random");
-  expect((await request).postDataJSON().main_skin_mode_overrides.pick_1).toBe("random");
+  const request = page.waitForRequest((candidate) => candidate.url().endsWith("/api/presets/pick_1") && candidate.method() === "PUT");
+  const skinMode = page.getByRole("combobox", { name: "Mode de skin du slot 1" });
+  await expect(page.locator(".mode-select select")).toHaveCount(0);
+  await skinMode.click();
+  await page.getByRole("option", { name: "Aléatoire" }).click();
+  expect((await request).postDataJSON().skin_mode).toBe("random");
+
+  await page.getByRole("link", { name: "Presets", exact: true }).click();
+  await expect(page.locator(".preset-summary-skin").first()).toContainText("Aléatoire");
+
+  const presetUpdate = page.waitForRequest((candidate) => candidate.url().endsWith("/api/presets/pick_1") && candidate.method() === "PUT");
+  await page.locator(".preset-card").first().click();
+  await page.getByRole("radio", { name: "Aucun" }).click();
+  expect((await presetUpdate).postDataJSON().skin_mode).toBe("none");
+  await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "Mode de skin du slot 1" })).toContainText("Aucun");
+});
+
+test("sidebar keeps long account identifiers contained and the phase row never shows account-sync status", async ({ page }) => {
+  await mockLocalApi(page, {
+    connected: true,
+    riotId: "A-Very-Long-Player-Name-That-Must-Be-Clipped#TAG",
+    phase: "WaitingForStats",
+  });
+  await page.goto("/#dashboard");
+
+  for (const viewport of [{ width: 800, height: 540 }, { width: 1100, height: 760 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await page.locator(".sidebar-account").evaluate((account) => {
+      const sidebar = account.closest(".app-sidebar")!;
+      return { accountRight: account.getBoundingClientRect().right, sidebarRight: sidebar.getBoundingClientRect().right, textOverflow: getComputedStyle(account.querySelector("span")!).textOverflow };
+    });
+    expect(bounds.accountRight).toBeLessThanOrEqual(bounds.sidebarRight);
+    expect(bounds.textOverflow).toBe("ellipsis");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.locator(".phase-strip strong")).toHaveText("Récupération des stats");
+    await expect(page.getByText(/Compte synchronisé/)).toHaveCount(0);
+    await expect(page.locator(".runtime-topbar")).toHaveCount(0);
+  }
+});
+
+test("dashboard phase strip localizes every runtime phase and disconnected state", async ({ page }) => {
+  const state = await mockLocalApi(page, { connected: true });
+  await page.goto("/#dashboard");
+
+  for (const [phase, label] of [
+    ["Lobby", "Dans le lobby"],
+    ["Matchmaking", "Recherche de partie"],
+    ["ReadyCheck", "Partie trouvée"],
+    ["ChampSelect", "Sélection des champions"],
+    ["InProgress", "En partie"],
+    ["WaitingForStats", "Récupération des stats"],
+    ["EndOfGame", "Fin de partie"],
+  ]) {
+    state.runtime.phase = phase;
+    await page.evaluate((runtime) => {
+      (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-17T12:00:00Z" });
+    }, state.runtime);
+    await expect(page.locator(".phase-strip strong")).toHaveText(label);
+  }
+
+  state.runtime.connected = false;
+  await page.evaluate((runtime) => {
+    (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-17T12:01:00Z" });
+  }, state.runtime);
+  await expect(page.locator(".phase-strip strong")).toHaveText("Client non détecté");
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client déconnecté");
+});
+
+test("dashboard uses the selected skin splash and falls back to the champion splash when skin mode is off", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.goto("/#dashboard");
+
+  const card = page.locator(".priority-card").first();
+  const splash = card.locator(".priority-art img");
+  await expect(splash).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+
+  await page.getByRole("combobox", { name: "Mode de skin du slot 1" }).click();
+  await page.getByRole("option", { name: "Aucun" }).click();
+  await expect(splash).toHaveAttribute("src", "/assets/app/garen.webp");
+});
+
+test("la carte complète ouvre directement l’éditeur du preset 3 et focalise la recherche", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.goto("/#dashboard");
+
+  await page.locator(".priority-card").nth(2).locator(".priority-details").click();
+
+  await expect(page).toHaveURL(/#presets\/pick_3$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 3" })).toBeVisible();
+  await expect(page.locator("#champion-search")).toBeFocused();
+  await page.locator('.drawer-card button[aria-label="Fermer"]').click();
+  await expect(page.locator(".champion-choice")).toBeFocused();
+  await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
+  await expect(page).toHaveURL(/#presets$/);
+});
+
+test("modifier le ban ouvre son sélecteur directement et revient au Dashboard après validation", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.goto("/#dashboard");
+
+  await page.locator("#dashboard-edit-ban").click();
+  await expect(page).toHaveURL(/#presets\/ban\?return=dashboard$/);
+  await expect(page.locator("#champion-search")).toBeFocused();
+  await page.locator("#champion-search").fill("Teemo");
+  await page.getByRole("option", { name: /Teemo/ }).click();
+
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.getByRole("heading", { name: "Teemo" })).toBeVisible();
+  await expect(page.locator("#dashboard-edit-ban")).toBeFocused();
+});
+
+test("annuler la sélection du ban ramène au Dashboard et rend le focus au déclencheur", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.goto("/#dashboard");
+
+  await page.locator("#dashboard-edit-ban").click();
+  await page.getByRole("button", { name: "Fermer" }).click();
+
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.locator("#dashboard-edit-ban")).toBeFocused();
 });
 
 test("dashboard uses bootstrap previews instead of per-champion catalogs", async ({ page }) => {

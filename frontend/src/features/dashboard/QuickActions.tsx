@@ -1,12 +1,13 @@
-import { ExternalLink, ListChecks, WandSparkles } from "lucide-react";
+import { Activity, BarChart3, ListChecks, Settings2, WandSparkles } from "lucide-react";
 
 import { fr } from "../../content/fr";
-import { openExternalUrl } from "../../domain/external";
 
-export function QuickActions({ statsUrl }: { statsUrl: string | null | undefined }) {
+export function QuickActions() {
   return <section className="surface quick-panel" aria-labelledby="quick-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.quickActions}</div><h2 id="quick-heading">{fr.dashboard.quickActions}</h2></div><WandSparkles size={17} aria-hidden="true" /></div><div className="quick-list">
-    {statsUrl ? <a className="quick-link" href={statsUrl} onClick={(event) => { event.preventDefault(); void openExternalUrl(statsUrl); }}>{fr.dashboard.stats}<ExternalLink size={13} aria-hidden="true" /></a> : <a className="quick-link" href="#settings">{fr.dashboard.chooseStats}<ExternalLink size={13} aria-hidden="true" /></a>}
+    <a className="quick-link" href="#statistics">{fr.dashboard.stats}<BarChart3 size={13} aria-hidden="true" /></a>
+    <a className="quick-link" href="#live">{fr.dashboard.liveStats}<Activity size={13} aria-hidden="true" /></a>
+    <a className="quick-link" href="#settings/links">{fr.dashboard.chooseStats}<Settings2 size={13} aria-hidden="true" /></a>
     <a className="quick-link" href="#presets">{fr.dashboard.reviewSequence}<ListChecks size={13} aria-hidden="true" /></a>
-    <a className="quick-link" href="#settings">{fr.dashboard.keyboardShortcuts}<span className="key-hint">Alt+C</span></a>
+    <a className="quick-link" href="#settings/shortcuts">{fr.dashboard.keyboardShortcuts}<span className="key-hint">Alt+C</span></a>
   </div></section>;
 }

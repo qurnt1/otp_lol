@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ban, Check, LoaderCircle, Swords } from "lucide-react";
 
@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
 import { safeImageUrl } from "../../domain/assets";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { BootstrapResponse, Champion, PresetSlot, PresetsResponse, Settings, SettingsPatch } from "../../types/api";
+import type { BootstrapResponse, Champion, PresetsAction, PresetSlot, PresetsResponse, Settings, SettingsPatch } from "../../types/api";
 import { ChampionPicker } from "./ChampionPicker";
 import { PickerDialog, type Picker } from "./PickerDialog";
 import { PresetCard, type PresetSlotKey } from "./PresetCard";
@@ -18,7 +18,7 @@ import { SkinPicker } from "./SkinPicker";
 
 const slotKeys: readonly PresetSlotKey[] = ["pick_1", "pick_2", "pick_3"];
 
-export function PresetsPage() {
+export function PresetsPage({ action, onActionClose }: { action?: PresetsAction; onActionClose?: () => void }) {
   const queryClient = useQueryClient();
   const runtime = useRuntimeStore((state) => state.runtime);
   const [editingSlot, setEditingSlot] = useState<PresetSlotKey | null>(null);
@@ -26,6 +26,9 @@ export function PresetsPage() {
   const [feedback, setFeedback] = useState("");
   const [feedbackIsError, setFeedbackIsError] = useState(false);
   const cardFocusRef = useRef<HTMLButtonElement | null>(null);
+  const championChoiceFocusRef = useRef<HTMLButtonElement | null>(null);
+  const cardTriggerRefs = useRef<Record<PresetSlotKey, HTMLButtonElement | null>>({ pick_1: null, pick_2: null, pick_3: null });
+  const appliedActionRef = useRef<PresetsAction | null>(null);
   const pickerFocusRef = useRef<HTMLButtonElement | null>(null);
   const banFocusRef = useRef<HTMLButtonElement | null>(null);
   const presets = useQuery({ queryKey: ["presets"], queryFn: api.getPresets, staleTime: Infinity });
@@ -42,6 +45,41 @@ export function PresetsPage() {
     ?? (editingSlot ? bootstrap.data?.preset_previews?.[editingSlot]?.champion_id ?? undefined : undefined);
   const skins = useQuery({ queryKey: ["skins", championId], queryFn: () => api.getSkins(championId ?? 0), enabled: picker?.kind === "skin" && Boolean(championId), staleTime: 3_600_000 });
   const runes = useQuery({ queryKey: ["runes"], queryFn: api.getRunes, enabled: picker?.kind === "runes", staleTime: 3_600_000 });
+
+  useEffect(() => {
+    if (!action) {
+      if (appliedActionRef.current === "ban") setPicker(null);
+      if (appliedActionRef.current && appliedActionRef.current !== "ban") {
+        setEditingSlot(null);
+        setPicker(null);
+      }
+      appliedActionRef.current = null;
+      return;
+    }
+    if (appliedActionRef.current === action) return;
+    appliedActionRef.current = action;
+    if (action === "ban") {
+      setEditingSlot(null);
+      pickerFocusRef.current = banFocusRef.current;
+      setPicker({ kind: "ban" });
+    } else {
+      cardFocusRef.current = cardTriggerRefs.current[action];
+      pickerFocusRef.current = championChoiceFocusRef.current;
+      setEditingSlot(action);
+      setPicker({ kind: "champion", slot: action });
+    }
+  }, [action]);
+
+  useEffect(() => {
+    if (action === "ban" && !pickerFocusRef.current) {
+      pickerFocusRef.current = banFocusRef.current;
+    } else if (action && action !== "ban" && !cardFocusRef.current) {
+      cardFocusRef.current = cardTriggerRefs.current[action];
+    }
+    if (action && action !== "ban" && !pickerFocusRef.current) {
+      pickerFocusRef.current = championChoiceFocusRef.current;
+    }
+  }, [action, editingSlot, presets.data]);
 
   const showFeedback = (message: string, isError = false) => {
     setFeedback(message);
@@ -132,13 +170,30 @@ export function PresetsPage() {
     pickerFocusRef.current = banFocusRef.current;
     setPicker({ kind: "ban" });
   };
+  const closeCardPicker = () => {
+    setPicker(null);
+    window.requestAnimationFrame(() => {
+      const fallbackFocusTarget = action && action !== "ban" ? championChoiceFocusRef.current : null;
+      (pickerFocusRef.current?.isConnected ? pickerFocusRef.current : fallbackFocusTarget)?.focus();
+    });
+  };
   const updateEditingPreset = (values: Partial<PresetSlot>) => {
     if (editingSlot && !updatePreset.isPending) updatePreset.mutate({ slot: editingSlot, values });
   };
-  const setChampion = (champion: Champion) => {
-    if (picker?.kind === "ban") updateSettings.mutate({ selected_ban: champion.name });
-    else if (picker?.slot) updatePreset.mutate({ slot: picker.slot, values: { champion: champion.name } });
-    setPicker(null);
+  const setChampion = async (champion: Champion) => {
+    if (!picker || updatePreset.isPending || updateSettings.isPending) return;
+    try {
+      if (picker.kind === "ban") {
+        await updateSettings.mutateAsync({ selected_ban: champion.name });
+        setPicker(null);
+        if (action === "ban") onActionClose?.();
+      } else if (picker.slot) {
+        await updatePreset.mutateAsync({ slot: picker.slot, values: { champion: champion.name } });
+        setPicker(null);
+      }
+    } catch {
+      // The mutation exposes the failure in the page feedback and keeps the picker open.
+    }
   };
 
   if (presets.isPending && !presets.data) return <div className="page-loading">{fr.common.loading}</div>;
@@ -167,7 +222,7 @@ export function PresetsPage() {
         onRetryRunes={() => void runes.refetch()}
       />
     : null;
-  const cardPicker = <PickerDialog picker={editingSlot ? picker : null} onClose={() => setPicker(null)} returnFocusRef={pickerFocusRef}>{pickerContent}</PickerDialog>;
+  const cardPicker = <PickerDialog picker={editingSlot ? picker : null} onClose={closeCardPicker} returnFocusRef={pickerFocusRef}>{pickerContent}</PickerDialog>;
 
   return <div className="presets-page">
     <div className="page-heading">
@@ -190,6 +245,7 @@ export function PresetsPage() {
         champion={champion}
         preview={bootstrap.data?.preset_previews?.[key]}
         spells={spells.data?.items ?? []}
+        triggerRef={(node) => { cardTriggerRefs.current[key] = node; }}
         isOpen={editingSlot === key}
         onOpen={(slotKey, trigger) => { cardFocusRef.current = trigger; setEditingSlot(slotKey); setPicker(null); }}
       />;
@@ -211,17 +267,19 @@ export function PresetsPage() {
       slot={editingData}
       priority={slotKeys.indexOf(editingSlot) + 1}
       champion={editingChampion}
+      preview={bootstrap.data?.preset_previews?.[editingSlot]}
       spells={spells.data?.items ?? [{ name: "(None)", icon_url: null }]}
       pending={updatePreset.isPending || spells.isPending}
       feedback={feedbackIsError ? "" : feedback}
       leagueConnected={Boolean(runtime?.connected)}
       returnFocusRef={cardFocusRef}
-      onClose={() => { setEditingSlot(null); setPicker(null); }}
+      championChoiceRef={championChoiceFocusRef}
+      onClose={() => { setEditingSlot(null); setPicker(null); if (action && action !== "ban") onActionClose?.(); }}
       onOpenPicker={openPicker}
       onUpdate={updateEditingPreset}
     >{cardPicker}</PresetEditorDialog>}
 
-    {!editingSlot && picker?.kind === "ban" && <PickerDialog picker={picker} onClose={() => setPicker(null)} returnFocusRef={pickerFocusRef}>{pickerContent}</PickerDialog>}
+    {!editingSlot && picker?.kind === "ban" && <PickerDialog picker={picker} onClose={() => { setPicker(null); if (action === "ban") onActionClose?.(); }} returnFocusRef={pickerFocusRef}>{pickerContent}</PickerDialog>}
   </div>;
 }
 

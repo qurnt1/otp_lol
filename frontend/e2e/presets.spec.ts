@@ -112,12 +112,80 @@ test("skin selection uses a splash preview and retains a base-splash fallback", 
   await card.click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  const skinChoice = editor.getByRole("button", { name: /Galerie des skins/ });
+  await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+  const bootstrapRefresh = page.waitForRequest((request) => request.url().endsWith("/api/bootstrap"));
   await editor.getByRole("radio", { name: "Aucun" }).click();
+  await bootstrapRefresh;
+  await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", "/assets/app/garen.webp");
   await expect(card.locator(".preset-card-art img")).toHaveAttribute("src", "/assets/app/garen.webp");
-  await expect(editor.getByRole("button", { name: /Galerie des skins/ })).toBeDisabled();
+  await expect(skinChoice).toBeDisabled();
 
   await editor.getByRole("radio", { name: "Fixe" }).click();
   await editor.getByRole("button", { name: /God-King Garen/ }).click();
   const skinPicker = page.getByRole("dialog", { name: "Galerie des skins" });
   await expect(skinPicker.getByText("God-King Garen").first()).toBeVisible();
+});
+
+test("random skin preview is shown in the editor without loading another catalog", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(request.url()));
+  await mockLocalApi(page, { configured: true, randomSkinPreview: true });
+  await page.goto("/#presets");
+  await page.locator(".preset-card").first().click();
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await expect(editor.getByRole("button", { name: /Pool aléatoire/ }).locator(".editor-skin-preview"))
+    .toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13");
+  expect(requests.some((url) => /\/api\/skins\//.test(url))).toBe(false);
+});
+
+test("the editor skin thumbnail refreshes after selecting another fixed skin", async ({ page }) => {
+  await mockLocalApi(page, { configured: true, alternateSkin: true });
+  await page.goto("/#presets");
+  await page.locator(".preset-card").first().click();
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("button", { name: /Galerie des skins/ }).click();
+  const picker = page.getByRole("dialog", { name: "Galerie des skins" });
+  const alternateSkin = picker.locator(".skin-option").filter({ hasText: "Steel Legion Garen" });
+  await alternateSkin.getByRole("button", { name: "Choisir" }).click();
+  await page.keyboard.press("Escape");
+
+  await expect(editor.getByRole("button", { name: /Galerie des skins/ }).locator(".editor-skin-preview"))
+    .toHaveAttribute("src", "/api/assets/skins/86/86014/splash?skin_num=14");
+});
+
+test("spell Select shows option and selected icons while preserving Radix keyboard behavior", async ({ page }) => {
+  await mockLocalApi(page, { configured: true });
+  await page.goto("/#presets");
+  await page.locator(".preset-card").first().click();
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  const spellSelect = editor.getByRole("combobox", { name: "Sort 1" });
+  await expect(spellSelect.locator(".spell-select-icon")).toHaveAttribute("src", "/assets/app/garen.webp");
+
+  await spellSelect.focus();
+  await page.keyboard.press("Enter");
+  const flashOption = page.getByRole("option", { name: "Flash" });
+  await expect(flashOption).toBeVisible();
+  await expect(flashOption).toHaveText("Flash");
+  await expect(flashOption.locator(".spell-select-icon")).toHaveAttribute("src", "/assets/app/garen.webp");
+  const igniteOption = page.getByRole("option", { name: "Ignite" });
+  await expect(igniteOption).toHaveText("Ignite");
+  await expect(igniteOption.locator(".spell-select-icon"))
+    .toHaveAttribute("src", "/assets/app/garen.webp");
+  await expect(page.getByRole("option", { name: "Aucun" }).locator(".spell-select-icon svg")).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(flashOption).toBeHidden();
+  await expect(spellSelect).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(igniteOption).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await expect(igniteOption).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(spellSelect).toContainText("Ignite");
+  await expect(spellSelect.locator(".spell-select-icon")).toHaveAttribute("src", "/assets/app/garen.webp");
 });

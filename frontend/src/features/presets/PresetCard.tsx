@@ -1,4 +1,5 @@
 import { Dices, Sparkles, Swords } from "lucide-react";
+import type { Ref } from "react";
 
 import { AssetImage } from "../../components/game/AssetImage";
 import { fr } from "../../content/fr";
@@ -17,6 +18,7 @@ export function PresetCard({
   spells,
   isOpen,
   onOpen,
+  triggerRef,
 }: {
   slotKey: PresetSlotKey;
   slot: PresetSlot;
@@ -26,6 +28,7 @@ export function PresetCard({
   spells: SummonerSpell[];
   isOpen: boolean;
   onOpen: (slotKey: PresetSlotKey, trigger: HTMLButtonElement) => void;
+  triggerRef?: Ref<HTMLButtonElement>;
 }) {
   const championName = slot.champion.trim();
   const skin = getSelectedSkin(slot);
@@ -45,6 +48,7 @@ export function PresetCard({
 
   return (
     <button
+      ref={triggerRef}
       className={cn("preset-card", !championName && "is-empty")}
       type="button"
       aria-haspopup="dialog"
