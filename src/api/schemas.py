@@ -6,11 +6,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from ..config.constants import SUMMONER_SPELL_MAP
+from ..config.constants import CONFIG_SCHEMA_VERSION, SUMMONER_SPELL_MAP
 from ..domain.hotkeys import normalize_hotkey
 
 SkinMode = Literal["none", "fixed", "random"]
-MainSkinMode = Literal["inherit", "none", "fixed", "random"]
 Theme = Literal["darkly", "flatly"]
 Region = Literal["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
 StatsProvider = Literal["opgg", "deeplol", "dpm", "leagueofgraphs"]
@@ -80,8 +79,6 @@ class SettingsPatch(BaseModel):
     auto_hide_on_connect: bool | None = None
     close_app_on_lol_exit: bool | None = None
     ignored_update_version: str | None = None
-    main_skin_mode_override: MainSkinMode | None = None
-    main_skin_mode_overrides: dict[str, MainSkinMode] | None = None
     skin_automation_enabled: bool | None = None
     window_x: int | None = None
     window_y: int | None = None
@@ -169,6 +166,14 @@ class StatsLinkResponse(BaseModel):
     available: bool
     site: str
     url: str | None
+    homepage_url: str
+    riot_id: str | None
+    region: str | None
+    embed_allowed: bool
+
+
+class LiveLinkResponse(StatsLinkResponse):
+    """Validated provider link for live-game statistics."""
 
 
 class SettingsResponse(BaseModel):
@@ -199,8 +204,6 @@ class SettingsResponse(BaseModel):
     auto_hide_on_connect: bool
     close_app_on_lol_exit: bool
     ignored_update_version: str
-    main_skin_mode_override: MainSkinMode
-    main_skin_mode_overrides: dict[str, MainSkinMode]
     skin_automation_enabled: bool
     window_x: int
     window_y: int
@@ -216,13 +219,20 @@ class PresetsResponse(BaseModel):
 
 
 class SettingsImport(SettingsPatch):
-    """Typed portable settings payload accepted by the import endpoint."""
+    """Typed current-format settings payload accepted by the import endpoint."""
 
     config_version: str | None = None
-    config_schema_version: int | None = Field(default=None, ge=0)
+    config_schema_version: int = Field(ge=0)
     auto_detected_riot_id: str | None = None
     auto_detected_region: str | None = None
     auto_detected_platform: str | None = None
+
+    @field_validator("config_schema_version")
+    @classmethod
+    def validate_current_schema(cls, value: int) -> int:
+        if value != CONFIG_SCHEMA_VERSION:
+            raise ValueError(f"unsupported settings schema (found={value}, expected={CONFIG_SCHEMA_VERSION})")
+        return value
 
 
 class PresetPreview(BaseModel):
@@ -251,12 +261,18 @@ class BootstrapResponse(BaseModel):
 class ProviderOption(BaseModel):
     id: str
     label: str
+    logo_url: str
+
+
+class RegionOption(BaseModel):
+    id: str
+    label: str
 
 
 class ProviderCatalog(BaseModel):
     stats: list[ProviderOption]
-    hotkey: list[ProviderOption]
-    regions: list[ProviderOption]
+    live: list[ProviderOption]
+    regions: list[RegionOption]
 
 
 class HistoryEntry(BaseModel):
@@ -275,17 +291,18 @@ class HistoryResponse(BaseModel):
 
 
 __all__ = [
-    "HistoryResponse",
     "BootstrapResponse",
     "HealthResponse",
+    "HistoryResponse",
+    "LiveLinkResponse",
     "MetadataResponse",
-    "PresetSlotPatch",
     "PresetPreview",
+    "PresetSlotPatch",
     "PresetsResponse",
     "ProviderCatalog",
     "RuntimeSnapshotResponse",
-    "SettingsPatch",
     "SettingsImport",
+    "SettingsPatch",
     "SettingsResponse",
     "StatsLinkResponse",
     "UpdatesResponse",

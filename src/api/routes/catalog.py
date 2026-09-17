@@ -4,18 +4,37 @@ from __future__ import annotations
 
 import asyncio
 from io import BytesIO
+import os
 from typing import Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi.responses import FileResponse
 
 from ...config import REGION_LIST, SUMMONER_SPELL_LIST
+from ...config.paths import resource_path
 from ...integrations.communitydragon import CommunityDragonClient
 from ...lcu.runtime import RuntimeUnavailable
 from ...services.champion_roles import get_champion_positions
 from ..schemas import ProviderCatalog
 
 router = APIRouter(prefix="/api")
+PROVIDER_LABELS = {
+    "opgg": "OP.GG",
+    "deeplol": "DeepLOL",
+    "dpm": "DPM.LOL",
+    "leagueofgraphs": "League of Graphs",
+    "porofessor": "Porofessor",
+}
+PROVIDER_LOGO_FILES = {
+    "opgg": "opgg.png",
+    "deeplol": "deeplol.png",
+    "dpm": "dpm-lol.png",
+    "leagueofgraphs": "leagueofgraphs.png",
+    "porofessor": "porofessor.png",
+}
+STATS_PROVIDER_IDS = ("opgg", "deeplol", "dpm", "leagueofgraphs")
+LIVE_PROVIDER_IDS = ("porofessor", "deeplol", "dpm", "opgg")
 
 
 def _context(request: Request) -> Any:
@@ -64,18 +83,28 @@ async def champions(request: Request, q: str = "") -> dict[str, Any]:
 
 @router.get("/catalog/providers", response_model=ProviderCatalog)
 def providers() -> ProviderCatalog:
-    labels = {
-        "opgg": "OP.GG",
-        "deeplol": "DeepLOL",
-        "dpm": "DPM.LOL",
-        "leagueofgraphs": "League of Graphs",
-        "porofessor": "Porofessor",
-    }
+    def options(provider_ids: tuple[str, ...]) -> list[dict[str, str]]:
+        return [
+            {"id": provider, "label": PROVIDER_LABELS[provider], "logo_url": f"/api/assets/providers/{provider}"}
+            for provider in provider_ids
+        ]
+
     return {
-        "stats": [{"id": provider, "label": labels[provider]} for provider in ("opgg", "deeplol", "dpm", "leagueofgraphs")],
-        "hotkey": [{"id": provider, "label": labels[provider]} for provider in ("porofessor", "deeplol", "dpm", "opgg")],
+        "stats": options(STATS_PROVIDER_IDS),
+        "live": options(LIVE_PROVIDER_IDS),
         "regions": [{"id": region, "label": region.upper()} for region in REGION_LIST],
     }
+
+
+@router.get("/assets/providers/{provider_id}")
+def provider_logo(provider_id: str) -> FileResponse:
+    filename = PROVIDER_LOGO_FILES.get(provider_id)
+    if filename is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    path = resource_path(os.path.join("config", "images", "websites", filename))
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Asset not found")
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @router.get("/spells")
@@ -202,16 +231,15 @@ async def rune_style_asset(request: Request, path: str) -> Response:
 
 
 @router.get("/assets/skins/{champion_id}/{skin_id}.png")
-async def skin_asset(request: Request, champion_id: int, skin_id: int, skin_num: int = 0) -> Response:
+async def skin_asset(request: Request, champion_id: int, skin_id: int, skin_num: int | None = None) -> Response:
     context = _context(request)
+    await context.ensure_data_dragon()
 
     def load_image() -> Any:
-        if skin_num > 0:
-            return context.data_dragon.get_skin_preview(champion_id, skin_num)
-        catalog = context.data_dragon.get_skin_catalog(champion_id)
+        catalog = context.data_dragon.get_cached_skin_catalog(champion_id)
         skin = next((item for item in catalog if int(item.get("skin_id") or 0) == skin_id), None)
         if not skin:
-            return None
+            return context.data_dragon.get_skin_preview(champion_id, skin_num) if skin_num is not None else None
         preview_url = (
             skin.get("tile_url")
             or skin.get("centered_splash_url")
@@ -219,30 +247,37 @@ async def skin_asset(request: Request, champion_id: int, skin_id: int, skin_num:
             or skin.get("splash_url")
         )
         if not preview_url:
-            return None
-        return context.data_dragon.get_remote_image(
-            preview_url,
-            cache_key=f"frontend_skin_{champion_id}_{skin_id}",
+            return context.data_dragon.get_skin_preview(champion_id, skin_num) if skin_num is not None else None
+        image = context.data_dragon.get_remote_image(
+            preview_url, cache_key=f"frontend_skin_{champion_id}_{skin_id}"
         )
+        if image is None and skin_num is not None:
+            return context.data_dragon.get_skin_preview(champion_id, skin_num)
+        return image
 
     return _png_response(await asyncio.to_thread(load_image))
 
 
 @router.get("/assets/skins/{champion_id}/{skin_id}/splash")
-async def skin_splash_asset(request: Request, champion_id: int, skin_id: int, skin_num: int = 0) -> Response:
+async def skin_splash_asset(
+    request: Request,
+    champion_id: int,
+    skin_id: int,
+    skin_num: int | None = None,
+) -> Response:
     context = _context(request)
-    await context.runtime.load_data_dragon_if_needed()
+    await context.ensure_data_dragon()
 
     def load_image() -> Any:
         skin = next(
             (
                 item
-                for item in context.data_dragon.get_skin_catalog(champion_id)
+                for item in context.data_dragon.get_cached_skin_catalog(champion_id)
                 if int(item.get("skin_id") or 0) == skin_id
             ),
             None,
         )
-        if skin is None and skin_num > 0:
+        if skin is None and skin_num is not None:
             return context.data_dragon.get_skin_preview(champion_id, skin_num)
         if skin is None:
             return None

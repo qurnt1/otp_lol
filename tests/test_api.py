@@ -3,16 +3,21 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, PropertyMock, patch
 
 from fastapi.testclient import TestClient
 from PIL import Image
 from starlette.websockets import WebSocketDisconnect
 
-from src.api.app import create_app
-from src.api.context import ApplicationContext
-from src.config import CURRENT_VERSION, DEMO_PARAMS
+from src.config import CONFIG_SCHEMA_VERSION, CURRENT_VERSION, DEMO_PARAMS, FIRST_LAUNCH_PARAMS
+from src.config import settings as settings_module
 from src.domain.events import EventBroker
+
+with tempfile.TemporaryDirectory(prefix="otp-lol-api-import-") as api_import_dir:
+    with patch.object(settings_module, "PARAMETERS_PATH", str(Path(api_import_dir) / "parameters.toml")):
+        from src.api.context import ApplicationContext
+        from src.api.app import create_app
 
 
 class EventBrokerTests(unittest.IsolatedAsyncioTestCase):
@@ -96,13 +101,16 @@ class ApiBoundaryTests(unittest.TestCase):
     def test_skin_preview_asset_does_not_load_skin_catalogue(self):
         preview = Image.new("RGBA", (4, 4))
         with (
+            patch.object(self.context, "ensure_data_dragon", new_callable=AsyncMock) as ensure,
             patch.object(self.context.data_dragon, "get_skin_catalog", side_effect=AssertionError("catalogue loaded")),
+            patch.object(self.context.data_dragon, "get_cached_skin_catalog", return_value=[]),
             patch.object(self.context.data_dragon, "get_skin_preview", return_value=preview) as get_skin_preview,
         ):
             response = self.client.get("/api/assets/skins/86/86013.png?skin_num=13")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"], "image/png")
+        ensure.assert_awaited_once()
         get_skin_preview.assert_called_once_with(86, 13)
 
     def test_skin_splash_asset_prefers_centered_splash_and_falls_back_in_order(self):
@@ -115,22 +123,61 @@ class ApiBoundaryTests(unittest.TestCase):
             "tile_url": "https://cdn.example/tile.jpg",
         }
         with (
-            patch.object(self.context.data_dragon, "get_skin_catalog", return_value=[skin]),
-            patch.object(self.context.data_dragon, "get_remote_image", side_effect=[None, preview]) as get_remote_image,
+            patch.object(self.context, "ensure_data_dragon", new_callable=AsyncMock) as ensure,
+            patch.object(self.context.data_dragon, "get_skin_catalog", side_effect=AssertionError("catalogue loaded")),
+            patch.object(self.context.data_dragon, "get_cached_skin_catalog", return_value=[skin]),
+            patch.object(
+                self.context.data_dragon,
+                "get_remote_image",
+                side_effect=[None, None, None, preview],
+            ) as get_remote_image,
         ):
             response = self.client.get("/api/assets/skins/86/86013/splash?skin_num=13")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["content-type"], "image/png")
+        ensure.assert_awaited_once()
         self.assertEqual(
             [call.args[0] for call in get_remote_image.call_args_list],
-            ["https://cdn.example/centered.jpg", "https://cdn.example/uncentered.jpg"],
+            [
+                "https://cdn.example/centered.jpg",
+                "https://cdn.example/uncentered.jpg",
+                "https://cdn.example/splash.jpg",
+                "https://cdn.example/tile.jpg",
+            ],
         )
+
+    def test_skin_splash_asset_uses_skin_number_without_loading_catalogue(self):
+        preview = Image.new("RGBA", (4, 4))
+        with (
+            patch.object(self.context, "ensure_data_dragon", new_callable=AsyncMock) as ensure,
+            patch.object(self.context.data_dragon, "get_skin_catalog", side_effect=AssertionError("catalogue loaded")),
+            patch.object(self.context.data_dragon, "get_cached_skin_catalog", return_value=[]),
+            patch.object(self.context.data_dragon, "get_skin_preview", return_value=preview) as get_skin_preview,
+        ):
+            response = self.client.get("/api/assets/skins/86/86013/splash?skin_num=13")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["content-type"], "image/png")
+        ensure.assert_awaited_once()
+        get_skin_preview.assert_called_once_with(86, 13)
 
     def test_settings_import_rejects_unknown_fields(self):
         response = self.client.post("/api/settings/import", json={"not_a_setting": True})
 
         self.assertEqual(response.status_code, 422)
+
+    def test_settings_import_requires_the_current_schema(self):
+        missing_version = self.client.post("/api/settings/import", json={"theme": "flatly"})
+        old_version = self.client.post("/api/settings/import", json={"config_schema_version": 5, "theme": "flatly"})
+        current_version = self.client.post("/api/settings/import", json={
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+            "theme": "flatly",
+        })
+
+        self.assertEqual(missing_version.status_code, 422)
+        self.assertEqual(old_version.status_code, 422)
+        self.assertEqual(current_version.status_code, 200)
 
     def test_settings_export_import_and_reset_are_real_persistent_operations(self):
         exported = self.client.get("/api/settings/export")
@@ -138,7 +185,10 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(exported.headers["content-disposition"], 'attachment; filename="otp-lol-settings.json"')
 
         self.assertEqual(self.client.patch("/api/settings", json={"theme": "flatly"}).status_code, 200)
-        imported = self.client.post("/api/settings/import", json={"theme": "darkly"})
+        imported = self.client.post("/api/settings/import", json={
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+            "theme": "darkly",
+        })
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.json()["theme"], "darkly")
 
@@ -178,8 +228,7 @@ class ApiBoundaryTests(unittest.TestCase):
             "auto_hide_on_connect": False,
             "close_app_on_lol_exit": False,
             "ignored_update_version": "11.0",
-            "main_skin_mode_override": "random",
-            "main_skin_mode_overrides": {"pick_1": "none", "pick_2": "fixed", "pick_3": "random"},
+            "skin_automation_enabled": False,
             "window_x": 24,
             "window_y": 48,
             "window_width": 1440,
@@ -197,8 +246,10 @@ class ApiBoundaryTests(unittest.TestCase):
 
     def test_unknown_settings_are_rejected(self):
         response = self.client.patch("/api/settings", json={"unknown_setting": True})
+        old_skin_modes = self.client.patch("/api/settings", json={"main_skin_mode_override": "inherit"})
 
         self.assertEqual(response.status_code, 422)
+        self.assertEqual(old_skin_modes.status_code, 422)
 
     def test_settings_patch_rejects_invalid_or_duplicate_hotkeys(self):
         invalid = self.client.patch("/api/settings", json={"hotkey_toggle_window": "ctrl"})
@@ -294,14 +345,152 @@ class ApiBoundaryTests(unittest.TestCase):
         response = self.client.get("/api/health")
         self.assertEqual(response.headers["x-content-type-options"], "nosniff")
         self.assertEqual(response.headers["referrer-policy"], "no-referrer")
-        self.assertIn("default-src 'self'", response.headers["content-security-policy"])
+        policy = response.headers["content-security-policy"]
+        self.assertIn("default-src 'self'", policy)
+        frame_src = next(directive for directive in policy.split("; ") if directive.startswith("frame-src "))
+        self.assertEqual(frame_src, "frame-src 'self' https://www.deeplol.gg")
+        self.assertNotIn("frame-src *", policy)
+        self.assertNotIn("op.gg", frame_src)
+        self.assertNotIn("leagueofgraphs", frame_src)
+
+    def test_auto_detection_does_not_use_manual_account_when_league_is_closed(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": True,
+            "manual_summoner_name": "Player#TAG",
+            "manual_region": "na",
+            "preferred_stats_site": "deeplol",
+        })
+        snapshot = SimpleNamespace(connected=False, riot_id="", region="")
+        with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            response = self.client.get("/api/links/stats")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "available": False,
+            "site": "deeplol",
+            "url": None,
+            "homepage_url": "https://www.deeplol.gg/",
+            "riot_id": None,
+            "region": None,
+            "embed_allowed": True,
+        })
+
+    def test_stats_link_uses_manual_account_only_when_manual_mode_is_enabled(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#TAG",
+            "manual_region": "na",
+            "preferred_stats_site": "deeplol",
+        })
+
+        response = self.client.get("/api/links/stats")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["url"], "https://www.deeplol.gg/summoner/na/Player-TAG")
+        self.assertEqual(response.json()["riot_id"], "Player#TAG")
+
+    def test_stats_link_uses_connected_auto_detected_account_over_manual_fallback(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": True,
+            "manual_summoner_name": "Saved#Manual",
+            "manual_region": "na",
+            "preferred_stats_site": "dpm",
+        })
+        snapshot = SimpleNamespace(connected=True, riot_id="Live#EUW", region="euw")
+        with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            response = self.client.get("/api/links/stats")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "available": True,
+            "site": "dpm",
+            "url": "https://dpm.lol/Live-EUW/",
+            "homepage_url": "https://dpm.lol/",
+            "riot_id": "Live#EUW",
+            "region": "euw",
+            "embed_allowed": False,
+        })
+
+    def test_stats_link_does_not_use_stale_detected_account_when_disconnected(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": True,
+            "auto_detected_riot_id": "Stale#TAG",
+            "manual_summoner_name": "",
+            "preferred_stats_site": "leagueofgraphs",
+        })
+        snapshot = SimpleNamespace(connected=False, riot_id="", region="")
+        with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            response = self.client.get("/api/links/stats")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "available": False,
+            "site": "leagueofgraphs",
+            "url": None,
+            "homepage_url": "https://www.leagueofgraphs.com/",
+            "riot_id": None,
+            "region": None,
+            "embed_allowed": False,
+        })
 
     def test_provider_catalog_is_the_single_source_for_frontend_options(self):
         response = self.client.get("/api/catalog/providers")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["stats"][0], {"id": "opgg", "label": "OP.GG"})
+        self.assertEqual(response.json()["stats"][0], {
+            "id": "opgg",
+            "label": "OP.GG",
+            "logo_url": "/api/assets/providers/opgg",
+        })
+        self.assertEqual([provider["id"] for provider in response.json()["live"]], ["porofessor", "deeplol", "dpm", "opgg"])
         self.assertIn({"id": "euw", "label": "EUW"}, response.json()["regions"])
+
+    def test_provider_logo_endpoint_only_serves_known_local_assets(self):
+        logo = self.client.get("/api/assets/providers/opgg")
+        unknown = self.client.get("/api/assets/providers/unknown")
+
+        self.assertEqual(logo.status_code, 200)
+        self.assertEqual(logo.headers["content-type"], "image/png")
+        self.assertTrue(logo.content.startswith(b"\x89PNG"))
+        self.assertEqual(unknown.status_code, 404)
+
+    def test_live_link_uses_configured_live_provider_and_auto_detected_account(self):
+        self.context.params.update({"summoner_name_auto_detect": True, "preferred_hotkey_site": "deeplol"})
+        snapshot = SimpleNamespace(connected=True, riot_id="Live#EUW", region="euw")
+        with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            response = self.client.get("/api/links/live")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "available": True,
+            "site": "deeplol",
+            "url": "https://www.deeplol.gg/summoner/euw/Live-EUW/ingame",
+            "homepage_url": "https://www.deeplol.gg/",
+            "riot_id": "Live#EUW",
+            "region": "euw",
+            "embed_allowed": False,
+        })
+
+    def test_live_link_uses_manual_account_and_safe_homepage_without_an_account(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "",
+            "manual_region": "euw",
+            "preferred_hotkey_site": "dpm",
+        })
+
+        response = self.client.get("/api/links/live")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "available": False,
+            "site": "dpm",
+            "url": None,
+            "homepage_url": "https://dpm.lol/",
+            "riot_id": None,
+            "region": None,
+            "embed_allowed": False,
+        })
 
     def test_catalog_routes_use_loaded_metadata_and_report_lcu_absence(self):
         champions = self.client.get("/api/champions?q=garen")

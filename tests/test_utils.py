@@ -13,6 +13,7 @@ from src.services.urls import (
     build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
+    build_hotkey_provider_home_url,
     build_leagueofgraphs_url,
     build_opgg_url,
     build_porofessor_url,

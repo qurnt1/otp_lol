@@ -45,6 +45,16 @@ STATS_PROVIDERS = {
     "dpm": lambda region, riot_id: build_dpm_url(region, riot_id),
     "leagueofgraphs": lambda region, riot_id: build_leagueofgraphs_url(region, riot_id),
 }
+STATS_PROVIDER_HOME_URLS = {
+    "opgg": "https://op.gg/",
+    "deeplol": "https://www.deeplol.gg/",
+    "dpm": "https://dpm.lol/",
+    "leagueofgraphs": "https://www.leagueofgraphs.com/",
+}
+STATS_FRAME_ORIGINS = {
+    "deeplol": "https://www.deeplol.gg",
+}
+LIVE_FRAME_ORIGINS: dict[str, str] = {}
 
 HOTKEY_PROVIDERS = {
     "porofessor": (lambda region, riot_id: build_porofessor_url(region, riot_id), "https://porofessor.gg/"),
@@ -58,10 +68,17 @@ def is_allowed_external_url(url: str) -> bool:
     """Allow only HTTPS links to providers intentionally exposed by the app."""
     try:
         parsed = urllib.parse.urlparse(str(url or "").strip())
+        port = parsed.port
     except ValueError:
         return False
     host = (parsed.hostname or "").lower().rstrip(".")
-    return parsed.scheme == "https" and host in ALLOWED_EXTERNAL_HOSTS
+    return (
+        parsed.scheme == "https"
+        and host in ALLOWED_EXTERNAL_HOSTS
+        and not parsed.username
+        and not parsed.password
+        and port in (None, 443)
+    )
 
 
 def is_valid_riot_id(riot_id: str) -> bool:
@@ -115,6 +132,12 @@ def build_stats_site_url(site: str, region: str, riot_id: str) -> str:
     return builder(region, riot_id)
 
 
+def build_stats_provider_home_url(site: str) -> str:
+    """Return the fixed HTTPS homepage for a supported statistics provider."""
+    normalized_site = (site or "opgg").lower().strip()
+    return STATS_PROVIDER_HOME_URLS.get(normalized_site, STATS_PROVIDER_HOME_URLS["opgg"])
+
+
 def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str | None:
     """Build a profile or safe provider-home URL for the configured stats hotkey."""
     normalized_site = (site or "porofessor").lower().strip()
@@ -126,6 +149,13 @@ def build_hotkey_site_url(site: str, region: str, riot_id: str) -> str | None:
     if is_valid_riot_id(riot_id) and normalized_region in REGION_LIST:
         return builder(normalized_region, riot_id)
     return homepage
+
+
+def build_hotkey_provider_home_url(site: str) -> str:
+    """Return the fixed HTTPS homepage for a supported live-statistics provider."""
+    normalized_site = (site or "porofessor").lower().strip()
+    provider = HOTKEY_PROVIDERS.get(normalized_site)
+    return provider[1] if provider else HOTKEY_PROVIDERS["porofessor"][1]
 
 
 def _normalize_riot_id_for_url(riot_id: str) -> str:

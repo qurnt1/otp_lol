@@ -3,26 +3,37 @@
 from __future__ import annotations
 
 import asyncio
-from urllib.parse import quote
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from ...config import CURRENT_VERSION
+from ...config import CURRENT_VERSION, REGION_LIST
 from ...domain.events import RuntimeEvent
-from ...services.urls import build_stats_site_url, is_valid_riot_id
+from ...services.profile_config import build_effective_profile_config
+from ...services.skin_modes import get_effective_skin_mode_for_slot
 from ...services.updates import check_for_updates
+from ...services.urls import (
+    HOTKEY_PROVIDERS,
+    LIVE_FRAME_ORIGINS,
+    STATS_FRAME_ORIGINS,
+    STATS_PROVIDERS,
+    build_hotkey_provider_home_url,
+    build_hotkey_site_url,
+    build_stats_provider_home_url,
+    build_stats_site_url,
+    is_valid_riot_id,
+)
 from ..schemas import (
     BootstrapResponse,
     HealthResponse,
+    LiveLinkResponse,
     MetadataResponse,
     PresetPreview,
     RuntimeSnapshotResponse,
     StatsLinkResponse,
     UpdatesResponse,
 )
-from ...services.profile_config import build_effective_profile_config
-from ...services.skin_modes import build_main_skin_overrides, get_effective_skin_mode_for_slot
 
 router = APIRouter(prefix="/api")
 
@@ -64,7 +75,6 @@ def _preview_for_champion(data_dragon: Any, champion_name: Any) -> PresetPreview
 
 def _build_preset_previews(context: Any, params: dict[str, Any], effective: dict[str, Any]) -> dict[str, PresetPreview]:
     previews: dict[str, PresetPreview] = {}
-    overrides = build_main_skin_overrides(params)
     slots = effective.get("pick_slots") if isinstance(effective.get("pick_slots"), dict) else {}
     for slot_key in ("pick_1", "pick_2", "pick_3"):
         slot = slots.get(slot_key) if isinstance(slots.get(slot_key), dict) else {}
@@ -78,7 +88,7 @@ def _build_preset_previews(context: Any, params: dict[str, Any], effective: dict
                     preview.spell_1_url = f"/api/assets/spells?name={quote(spell_1)}"
                 if spell_2 in context.data_dragon.summoner_data:
                     preview.spell_2_url = f"/api/assets/spells?name={quote(spell_2)}"
-            mode = get_effective_skin_mode_for_slot(slot_key, effective, overrides, fallback_slot_key="pick_1")
+            mode = get_effective_skin_mode_for_slot(slot_key, effective)
             if mode == "fixed":
                 skin_id = int(slot.get("skin_id") or 0)
                 skin_name = str(slot.get("skin_name") or "").strip()
@@ -156,18 +166,52 @@ async def updates(request: Request) -> UpdatesResponse:
 def stats_link(request: Request) -> StatsLinkResponse:
     context = _context(request)
     params = context.get_params()
-    snapshot = context.runtime.snapshot(params)
-    riot_id = str(params.get("auto_detected_riot_id") or snapshot.riot_id or "").strip()
-    if not params.get("summoner_name_auto_detect", True):
-        riot_id = str(params.get("manual_summoner_name") or "").strip()
+    riot_id, region = _resolve_account_link(context, params)
     site = str(params.get("preferred_stats_site") or "opgg").strip().lower()
-    if not is_valid_riot_id(riot_id) or not snapshot.region:
-        return {"available": False, "site": site, "url": None}
+    if site not in STATS_PROVIDERS:
+        site = "opgg"
+    available = is_valid_riot_id(riot_id) and region in REGION_LIST
     return {
-        "available": True,
+        "available": available,
         "site": site,
-        "url": build_stats_site_url(site, snapshot.region, riot_id),
+        "url": build_stats_site_url(site, region, riot_id) if available else None,
+        "homepage_url": build_stats_provider_home_url(site),
+        "riot_id": riot_id if available else None,
+        "region": region if available else None,
+        "embed_allowed": site in STATS_FRAME_ORIGINS,
     }
+
+
+@router.get("/links/live", response_model=LiveLinkResponse)
+def live_link(request: Request) -> LiveLinkResponse:
+    context = _context(request)
+    params = context.get_params()
+    riot_id, region = _resolve_account_link(context, params)
+    site = str(params.get("preferred_hotkey_site") or "porofessor").strip().lower()
+    if site not in HOTKEY_PROVIDERS:
+        site = "porofessor"
+    available = is_valid_riot_id(riot_id) and region in REGION_LIST
+    return {
+        "available": available,
+        "site": site,
+        "url": build_hotkey_site_url(site, region, riot_id) if available else None,
+        "homepage_url": build_hotkey_provider_home_url(site),
+        "riot_id": riot_id if available else None,
+        "region": region if available else None,
+        "embed_allowed": site in LIVE_FRAME_ORIGINS,
+    }
+
+
+def _resolve_account_link(context: Any, params: dict[str, Any]) -> tuple[str, str]:
+    if not params.get("summoner_name_auto_detect", True):
+        return (
+            str(params.get("manual_summoner_name") or "").strip(),
+            str(params.get("manual_region") or "").strip().lower(),
+        )
+    snapshot = context.runtime.snapshot(params)
+    if not snapshot.connected:
+        return "", ""
+    return str(snapshot.riot_id or "").strip(), str(snapshot.region or "").strip().lower()
 
 
 @router.websocket("/events")

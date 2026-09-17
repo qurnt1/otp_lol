@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from ..config import CURRENT_VERSION
+from ..services.urls import LIVE_FRAME_ORIGINS, STATS_FRAME_ORIGINS
 from .context import ApplicationContext
 from .routes import catalog, history, runtime, settings
 
@@ -50,9 +51,10 @@ def create_app(
     @app.middleware("http")
     async def add_security_headers(request, call_next):
         response = await call_next(request)
+        frame_sources = " ".join(sorted(set(STATS_FRAME_ORIGINS.values()) | set(LIVE_FRAME_ORIGINS.values())))
         response.headers.setdefault(
             "Content-Security-Policy",
-            "default-src 'self'; connect-src 'self' http://127.0.0.1:5173 http://localhost:5173 ws://127.0.0.1:5173 ws://localhost:5173; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'",
+            f"default-src 'self'; connect-src 'self' http://127.0.0.1:5173 http://localhost:5173 ws://127.0.0.1:5173 ws://localhost:5173; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'self'; frame-src 'self' {frame_sources}; frame-ancestors 'none'",
         )
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
