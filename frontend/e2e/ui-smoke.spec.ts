@@ -37,7 +37,7 @@ test("main views and preset pickers render without browser or network errors", a
   await page.getByRole("option", { name: "Clair" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.getByRole("button", { name: "Avancé" }).click();
-  await expect(page.locator(".settings-section .section-head h2")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Avancé" })).toBeVisible();
 
   await page.goto("/#history");
   await expect(page.getByText("Client connecté")).toBeVisible();
