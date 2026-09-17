@@ -26,11 +26,6 @@ export function roleLabel(role: string | null | undefined): string {
   }[String(role || "").toUpperCase()] ?? fr.runtime.roles.global;
 }
 
-export function regionLabel(region: string | null | undefined): string {
-  const normalized = String(region || "").trim();
-  return normalized ? normalized.toUpperCase() : fr.runtime.notDetected;
-}
-
 export function connectionLabel(connected: boolean): string {
   return connected ? fr.runtime.connected : fr.runtime.waiting;
 }

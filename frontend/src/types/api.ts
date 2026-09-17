@@ -4,7 +4,13 @@ export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
 
-export type PageId = "dashboard" | "presets" | "history" | "settings";
+export type PageId = "dashboard" | "presets" | "statistics" | "live" | "history" | "settings";
+export type SettingsSection = "general" | "automations" | "account" | "links" | "shortcuts" | "appearance" | "advanced";
+export type PresetsAction = "ban" | "pick_1" | "pick_2" | "pick_3";
+export type AppRoute =
+  | { page: "settings"; section: SettingsSection }
+  | { page: "presets"; action?: PresetsAction; returnTo?: "dashboard" }
+  | { page: Exclude<PageId, "settings" | "presets"> };
 
 export interface RuntimeSnapshot {
   version: string;
@@ -41,6 +47,9 @@ export interface Settings {
   summoner_name_auto_detect: boolean;
   manual_summoner_name: string;
   manual_region: string;
+  auto_detected_riot_id: string;
+  auto_detected_region: string;
+  auto_detected_platform: string;
   preferred_stats_site: string;
   preferred_hotkey_site: string;
   hotkey_toggle_window: string;
@@ -49,8 +58,6 @@ export interface Settings {
   auto_hide_on_connect: boolean;
   close_app_on_lol_exit: boolean;
   ignored_update_version: string;
-  main_skin_mode_override: "inherit" | "none" | "fixed" | "random";
-  main_skin_mode_overrides: Record<string, "inherit" | "none" | "fixed" | "random">;
   skin_automation_enabled: boolean;
   window_x: number;
   window_y: number;
@@ -202,17 +209,29 @@ export interface StatsLinkResponse {
   available: boolean;
   site: string;
   url: string | null;
+  homepage_url: string;
+  riot_id: string | null;
+  region: string | null;
+  embed_allowed: boolean;
 }
 
+export type LiveLinkResponse = StatsLinkResponse;
+
 export interface ProviderOption {
+  id: string;
+  label: string;
+  logo_url: string;
+}
+
+export interface RegionOption {
   id: string;
   label: string;
 }
 
 export interface ProviderCatalog {
   stats: ProviderOption[];
-  hotkey: ProviderOption[];
-  regions: ProviderOption[];
+  live: ProviderOption[];
+  regions: RegionOption[];
 }
 
 export interface BootstrapResponse {

@@ -1,7 +1,7 @@
 import type {
   Champion, HistoryResponse, PresetsResponse, RuntimeSnapshot, RunesResponse, Settings,
   SkinsResponse, StatsLinkResponse, SummonerSpell, UpdateResponse, PresetSlot, PresetSlotPatch, SettingsPatch, ProviderCatalog,
-  BootstrapResponse, SettingsImport,
+  BootstrapResponse, SettingsImport, LiveLinkResponse,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -52,6 +52,7 @@ export const api = {
   getSkins: (championId: number) => request<SkinsResponse>("/api/skins/" + championId),
   getRunes: () => request<RunesResponse>("/api/runes"),
   getStatsLink: () => request<StatsLinkResponse>("/api/links/stats"),
+  getLiveLink: () => request<LiveLinkResponse>("/api/links/live"),
   getProviders: () => request<ProviderCatalog>("/api/catalog/providers"),
   getHistory: (limit = 100) => request<HistoryResponse>("/api/history?limit=" + limit),
   getUpdates: () => request<UpdateResponse>("/api/updates"),

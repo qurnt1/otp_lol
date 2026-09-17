@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -8,25 +9,33 @@ export interface SelectOption {
   label: string;
 }
 
-export function Select({
+export function Select<Option extends SelectOption = SelectOption>({
   label,
   value,
   options,
   disabled = false,
   className,
   onChange,
+  renderOption,
+  renderValue,
 }: {
   label: string;
   value: string;
-  options: readonly SelectOption[];
+  options: readonly Option[];
   disabled?: boolean;
   className?: string;
   onChange: (value: string) => void;
+  renderOption?: (option: Option) => ReactNode;
+  renderValue?: (option: Option) => ReactNode;
 }) {
+  const selectedOption = options.find((option) => option.id === value);
+
   return (
     <SelectPrimitive.Root value={value} disabled={disabled} onValueChange={onChange}>
       <SelectPrimitive.Trigger className={cn("select-trigger", className)} aria-label={label}>
-        <SelectPrimitive.Value />
+        <SelectPrimitive.Value>
+          {selectedOption && (renderValue ?? renderOption)?.(selectedOption)}
+        </SelectPrimitive.Value>
         <SelectPrimitive.Icon asChild><ChevronDown size={14} aria-hidden="true" /></SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
@@ -35,7 +44,7 @@ export function Select({
           <SelectPrimitive.Viewport className="select-viewport">
             {options.map((option) => (
               <SelectPrimitive.Item className="select-item" key={option.id} value={option.id}>
-                <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                <SelectPrimitive.ItemText>{renderOption?.(option) ?? option.label}</SelectPrimitive.ItemText>
                 <SelectPrimitive.ItemIndicator className="select-item-indicator"><Check size={13} aria-hidden="true" /></SelectPrimitive.ItemIndicator>
               </SelectPrimitive.Item>
             ))}

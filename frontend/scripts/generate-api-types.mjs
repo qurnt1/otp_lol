@@ -10,7 +10,7 @@ const target = resolve(frontendRoot, "src/generated/api.ts");
 const checkOnly = process.argv.includes("--check");
 const python = spawnSync("python", [
   "-c",
-  "import json; from src.api.app import app; print(json.dumps(app.openapi(), ensure_ascii=False))",
+  "import json, logging, os, tempfile; logging.disable(logging.CRITICAL); from src.config import settings; temp=tempfile.TemporaryDirectory(prefix='otp-lol-openapi-'); settings.PARAMETERS_PATH=os.path.join(temp.name, 'parameters.toml'); from src.api.app import app; logging.disable(logging.NOTSET); print(json.dumps(app.openapi(), ensure_ascii=False)); temp.cleanup()",
 ], { cwd: repositoryRoot, encoding: "utf8" });
 
 if (python.status !== 0) {

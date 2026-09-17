@@ -1,37 +1,49 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { PageId } from "../types/api";
-import { pageFromHash } from "./routes";
+import type { AppRoute } from "../types/api";
+import { parseHashRoute, routeToHash } from "./routes";
 
-type NavigationGuard = (nextPage: PageId, currentPage: PageId) => boolean;
+type NavigationGuard = (nextRoute: AppRoute, currentRoute: AppRoute) => boolean;
 
-export function useHashRoute(guard?: NavigationGuard): readonly [PageId, (page: PageId) => void] {
-  const initialPage = pageFromHash() ?? "dashboard";
-  const [activePage, setActivePage] = useState<PageId>(initialPage);
-  const currentPage = useRef(initialPage);
+export function useHashRoute(guard?: NavigationGuard): readonly [AppRoute, (route: AppRoute) => void, (route: AppRoute) => void] {
+  const initialRoute = useRef<AppRoute>(parseHashRoute() ?? { page: "dashboard" }).current;
+  const [activeRoute, setActiveRoute] = useState<AppRoute>(initialRoute);
+  const currentRoute = useRef(initialRoute);
   const guardRef = useRef(guard);
   guardRef.current = guard;
 
   useEffect(() => {
-    if (!pageFromHash()) window.history.replaceState(null, "", "#dashboard");
+    if (!parseHashRoute()) window.history.replaceState(null, "", routeToHash(initialRoute));
     const onHashChange = () => {
-      const nextPage = pageFromHash();
-      if (!nextPage) return;
-      if (guardRef.current && !guardRef.current(nextPage, currentPage.current)) {
-        window.history.replaceState(null, "", `#${currentPage.current}`);
+      const nextRoute = parseHashRoute();
+      if (!nextRoute) {
+        window.history.replaceState(null, "", routeToHash(currentRoute.current));
         return;
       }
-      currentPage.current = nextPage;
-      setActivePage(nextPage);
+      if (guardRef.current && !guardRef.current(nextRoute, currentRoute.current)) {
+        window.history.replaceState(null, "", routeToHash(currentRoute.current));
+        return;
+      }
+      currentRoute.current = nextRoute;
+      setActiveRoute(nextRoute);
     };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
+  }, [initialRoute]);
+
+  const navigate = useCallback((route: AppRoute, replace = false) => {
+    const hash = routeToHash(route);
+    if (replace) {
+      window.history.replaceState(null, "", hash);
+      currentRoute.current = route;
+      setActiveRoute(route);
+      return;
+    }
+    if (window.location.hash === hash) return;
+    window.location.hash = hash;
   }, []);
 
-  const navigate = useCallback((page: PageId) => {
-    if (window.location.hash === `#${page}`) return;
-    window.location.hash = `#${page}`;
-  }, []);
+  const replaceRoute = useCallback((route: AppRoute) => navigate(route, true), [navigate]);
 
-  return [activePage, navigate];
+  return [activeRoute, navigate, replaceRoute];
 }

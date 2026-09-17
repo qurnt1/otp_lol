@@ -105,6 +105,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/links/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Live Link */
+        get: operations["live_link_api_links_live_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -237,6 +254,23 @@ export interface paths {
         };
         /** Providers */
         get: operations["providers_api_catalog_providers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/providers/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Provider Logo */
+        get: operations["provider_logo_api_assets_providers__provider_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -513,6 +547,26 @@ export interface components {
             /** Count */
             count: number;
         };
+        /**
+         * LiveLinkResponse
+         * @description Validated provider link for live-game statistics.
+         */
+        LiveLinkResponse: {
+            /** Available */
+            available: boolean;
+            /** Site */
+            site: string;
+            /** Url */
+            url: string | null;
+            /** Homepage Url */
+            homepage_url: string;
+            /** Riot Id */
+            riot_id: string | null;
+            /** Region */
+            region: string | null;
+            /** Embed Allowed */
+            embed_allowed: boolean;
+        };
         /** MetadataResponse */
         MetadataResponse: {
             /** Version */
@@ -600,13 +654,22 @@ export interface components {
         ProviderCatalog: {
             /** Stats */
             stats: components["schemas"]["ProviderOption"][];
-            /** Hotkey */
-            hotkey: components["schemas"]["ProviderOption"][];
+            /** Live */
+            live: components["schemas"]["ProviderOption"][];
             /** Regions */
-            regions: components["schemas"]["ProviderOption"][];
+            regions: components["schemas"]["RegionOption"][];
         };
         /** ProviderOption */
         ProviderOption: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Logo Url */
+            logo_url: string;
+        };
+        /** RegionOption */
+        RegionOption: {
             /** Id */
             id: string;
             /** Label */
@@ -641,7 +704,7 @@ export interface components {
         };
         /**
          * SettingsImport
-         * @description Typed portable settings payload accepted by the import endpoint.
+         * @description Typed current-format settings payload accepted by the import endpoint.
          */
         SettingsImport: {
             /** Auto Accept Enabled */
@@ -690,12 +753,6 @@ export interface components {
             close_app_on_lol_exit?: boolean | null;
             /** Ignored Update Version */
             ignored_update_version?: string | null;
-            /** Main Skin Mode Override */
-            main_skin_mode_override?: ("inherit" | "none" | "fixed" | "random") | null;
-            /** Main Skin Mode Overrides */
-            main_skin_mode_overrides?: {
-                [key: string]: "inherit" | "none" | "fixed" | "random";
-            } | null;
             /** Skin Automation Enabled */
             skin_automation_enabled?: boolean | null;
             /** Window X */
@@ -711,7 +768,7 @@ export interface components {
             /** Config Version */
             config_version?: string | null;
             /** Config Schema Version */
-            config_schema_version?: number | null;
+            config_schema_version: number;
             /** Auto Detected Riot Id */
             auto_detected_riot_id?: string | null;
             /** Auto Detected Region */
@@ -770,12 +827,6 @@ export interface components {
             close_app_on_lol_exit?: boolean | null;
             /** Ignored Update Version */
             ignored_update_version?: string | null;
-            /** Main Skin Mode Override */
-            main_skin_mode_override?: ("inherit" | "none" | "fixed" | "random") | null;
-            /** Main Skin Mode Overrides */
-            main_skin_mode_overrides?: {
-                [key: string]: "inherit" | "none" | "fixed" | "random";
-            } | null;
             /** Skin Automation Enabled */
             skin_automation_enabled?: boolean | null;
             /** Window X */
@@ -850,15 +901,6 @@ export interface components {
             close_app_on_lol_exit: boolean;
             /** Ignored Update Version */
             ignored_update_version: string;
-            /**
-             * Main Skin Mode Override
-             * @enum {string}
-             */
-            main_skin_mode_override: "inherit" | "none" | "fixed" | "random";
-            /** Main Skin Mode Overrides */
-            main_skin_mode_overrides: {
-                [key: string]: "inherit" | "none" | "fixed" | "random";
-            };
             /** Skin Automation Enabled */
             skin_automation_enabled: boolean;
             /** Window X */
@@ -889,6 +931,14 @@ export interface components {
             site: string;
             /** Url */
             url: string | null;
+            /** Homepage Url */
+            homepage_url: string;
+            /** Riot Id */
+            riot_id: string | null;
+            /** Region */
+            region: string | null;
+            /** Embed Allowed */
+            embed_allowed: boolean;
         };
         /** UpdateMetadata */
         UpdateMetadata: {
@@ -1069,6 +1119,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatsLinkResponse"];
+                };
+            };
+        };
+    };
+    live_link_api_links_live_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LiveLinkResponse"];
                 };
             };
         };
@@ -1303,6 +1373,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderCatalog"];
+                };
+            };
+        };
+    };
+    provider_logo_api_assets_providers__provider_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1573,7 +1674,7 @@ export interface operations {
     skin_asset_api_assets_skins__champion_id___skin_id__png_get: {
         parameters: {
             query?: {
-                skin_num?: number;
+                skin_num?: number | null;
             };
             header?: never;
             path: {
@@ -1607,7 +1708,7 @@ export interface operations {
     skin_splash_asset_api_assets_skins__champion_id___skin_id__splash_get: {
         parameters: {
             query?: {
-                skin_num?: number;
+                skin_num?: number | null;
             };
             header?: never;
             path: {
