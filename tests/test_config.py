@@ -15,14 +15,21 @@ class ConfigTests(unittest.TestCase):
     def test_load_parameters_first_launch_creates_default_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
-            json_path = Path(tmpdir) / "parameters.json"
+            skins_cache_dir = Path(tmpdir) / "skins"
+            skins_cache_dir.mkdir()
+            cached_skin = skins_cache_dir / "preview.img"
+            cached_skin.write_text("cached", encoding="utf-8")
 
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
-                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
+                config._settings, "SKINS_CACHE_DIR", str(skins_cache_dir)
             ):
                 loaded = config.load_parameters()
+            persisted = tomllib.loads(params_path.read_text(encoding="utf-8"))
+            cached_skin_exists = cached_skin.exists()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+        self.assertEqual(persisted, config.FIRST_LAUNCH_PARAMS)
+        self.assertTrue(cached_skin_exists)
 
     def test_demo_presets_are_separate_from_blank_first_launch(self):
         slots = config.FIRST_LAUNCH_PARAMS["pick_slots"]
@@ -54,32 +61,10 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
         self.assertTrue(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
 
-    def test_window_geometry_has_desktop_defaults_and_migrates_from_schema_three(self):
+    def test_window_geometry_has_desktop_defaults(self):
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_height"], 760)
         self.assertFalse(config.FIRST_LAUNCH_PARAMS["window_maximized"])
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            payload = {
-                "config_schema_version": 3,
-                "window_x": 80,
-                "window_y": 120,
-                "window_width": 1440,
-                "window_height": 900,
-                "window_maximized": True,
-            }
-            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
-                loaded = config.load_parameters()
-
-        self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
-        self.assertEqual(loaded["window_x"], 80)
-        self.assertEqual(loaded["window_y"], 120)
-        self.assertEqual(loaded["window_width"], 1440)
-        self.assertEqual(loaded["window_height"], 900)
-        self.assertTrue(loaded["window_maximized"])
 
     def test_load_parameters_backs_up_invalid_toml_before_reset(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -104,7 +89,10 @@ class ConfigTests(unittest.TestCase):
     def test_load_parameters_preserves_settings_when_app_version_is_missing(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
-            params_path.write_text(tomli_w.dumps({"selected_pick_1": "Ahri"}), encoding="utf-8")
+            payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+            payload.pop("config_version")
+            payload["selected_pick_1"] = "Ahri"
+            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
 
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
@@ -143,39 +131,48 @@ class ConfigTests(unittest.TestCase):
         self.assertIn("pick_1", loaded["pick_slots"])
         self.assertFalse(backup_exists)
 
-    def test_load_parameters_applies_explicit_schema_migrations(self):
+    def test_load_parameters_resets_and_backs_up_previous_schema_without_migration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
+            skins_cache_dir = Path(tmpdir) / "skins"
             payload = {
-                "config_schema_version": 1,
+                "config_schema_version": 5,
                 "config_version": "9.0",
                 "selected_pick_1": "Ahri",
                 "main_skin_mode_override": "fixed",
                 "global_spell_1": "Flash",
                 "global_spell_2": "Ignite",
             }
-            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
+            original = tomli_w.dumps(payload)
+            params_path.write_text(original, encoding="utf-8")
+            skins_cache_dir.mkdir()
 
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings, "SKINS_CACHE_DIR", str(skins_cache_dir)
+            ):
                 loaded = config.load_parameters()
-            written = tomllib.loads(params_path.read_text(encoding="utf-8"))
+            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
 
-        self.assertEqual(loaded["selected_pick_1"], "Ahri")
+        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
         self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
         self.assertEqual(loaded["config_version"], config._settings.CURRENT_VERSION)
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Ignite")
-        self.assertEqual(loaded["main_skin_mode_overrides"]["pick_2"], "fixed")
-        self.assertEqual(written["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
+        self.assertEqual(backup_content, original)
+        self.assertNotIn("main_skin_mode_override", loaded)
+        self.assertNotIn("main_skin_mode_overrides", loaded)
 
     def test_load_parameters_resets_and_backs_up_unsupported_future_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
+            skins_cache_dir = Path(tmpdir) / "skins"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
             payload["config_schema_version"] = config._settings.CONFIG_SCHEMA_VERSION + 1
             original = tomli_w.dumps(payload)
             params_path.write_text(original, encoding="utf-8")
+            skins_cache_dir.mkdir()
 
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)), patch.object(
+                config._settings, "SKINS_CACHE_DIR", str(skins_cache_dir)
+            ):
                 loaded = config.load_parameters()
             backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
 
@@ -208,6 +205,16 @@ class ConfigTests(unittest.TestCase):
         duplicate = copy.deepcopy(config.DEMO_PARAMS)
         duplicate["hotkey_open_site"] = "alt+c"
         self.assertEqual(config.normalize_parameters(duplicate)["hotkey_open_site"], "alt+p")
+
+    def test_skin_pool_uses_only_current_field_names(self):
+        payload = copy.deepcopy(config.DEFAULT_PARAMS)
+        payload["pick_slots"]["pick_1"]["random_skin_pool"] = [
+            {"id": 86013, "name": "God-King Garen", "num": 13}
+        ]
+
+        normalized = config.normalize_parameters(payload)
+
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["random_skin_pool"], [])
 
     def test_save_parameters_filters_unknown_keys(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -247,22 +254,20 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(params_path.read_text(encoding="utf-8"), original)
             self.assertEqual(list(Path(tmpdir).glob("*.tmp")), [])
 
-    def test_json_settings_migration_keeps_legacy_backup(self):
+    def test_legacy_json_settings_are_not_migrated(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             toml_path = Path(tmpdir) / "parameters.toml"
             json_path = Path(tmpdir) / "parameters.json"
             json_path.write_text(json.dumps(config.FIRST_LAUNCH_PARAMS), encoding="utf-8")
 
-            with patch.object(config._settings, "PARAMETERS_PATH", str(toml_path)), patch.object(
-                config._settings, "PARAMETERS_JSON_PATH", str(json_path)
-            ):
+            with patch.object(config._settings, "PARAMETERS_PATH", str(toml_path)):
                 loaded = config.load_parameters()
             toml_exists = toml_path.exists()
-            backup_payload = json.loads(Path(f"{json_path}.bak").read_text(encoding="utf-8"))
+            legacy_json_exists = json_path.exists()
 
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
         self.assertTrue(toml_exists)
-        self.assertEqual(backup_payload, config.FIRST_LAUNCH_PARAMS)
+        self.assertTrue(legacy_json_exists)
 
     def test_import_export_round_trip(self):
         with tempfile.TemporaryDirectory() as tmpdir:

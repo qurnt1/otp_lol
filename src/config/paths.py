@@ -64,7 +64,6 @@ def get_appdata_path(filename: str) -> str:
 
 
 PARAMETERS_PATH: str = get_appdata_path("parameters.toml")
-PARAMETERS_JSON_PATH: str = get_appdata_path("parameters.json")
 HISTORY_PATH: str = get_appdata_path("history.json")
 LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}.lock")
 DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json")

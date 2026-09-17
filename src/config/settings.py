@@ -3,7 +3,7 @@ FILE NAME: src/config/settings.py
 GLOBAL PURPOSE:
 - Define default configuration payloads for the application.
 - Load, normalize, reset, import, and export persisted settings.
-- Keep schema migration rules explicit for pick slots and skin settings.
+- Keep current-schema validation, first-launch defaults, and normalization centralized.
 
 KEY FUNCTIONS:
 - build_pick_slot_defaults: Build a normalized pick-slot structure.
@@ -13,7 +13,7 @@ KEY FUNCTIONS:
 
 AUDIENCE & LOGIC:
 Why:
-This module exists so settings schema rules, first-launch defaults, and migration behavior remain centralized and predictable.
+This module exists so current settings schema rules, first-launch defaults, and normalization remain centralized and predictable.
 For whom:
 Developers maintaining settings persistence, schema evolution, and configuration import or export.
 
@@ -41,19 +41,18 @@ from ..domain.hotkeys import normalize_hotkey, validate_hotkey_pair
 from .paths import (
     ICONS_CACHE_DIR,
     PARAMETERS_PATH,
-    PARAMETERS_JSON_PATH,
     RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
 )
 
 
-def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[str, Dict[str, Any]]:
-    """Return a normalized pick-slot payload with optional default summoner spells."""
+def build_pick_slot_defaults() -> Dict[str, Dict[str, Any]]:
+    """Return blank pick-slot defaults for the current settings format."""
     return {
         slot: {
-            "spell_1": spell_1,
-            "spell_2": spell_2,
+            "spell_1": "",
+            "spell_2": "",
             "skin_mode": "none",
             "skin_id": 0,
             "skin_name": "",
@@ -70,11 +69,6 @@ def build_pick_slot_defaults(*, spell_1: str = "", spell_2: str = "") -> Dict[st
         }
         for slot in PICK_SLOT_ORDER
     }
-
-
-def build_main_skin_mode_overrides(*, default_mode: str = "inherit") -> Dict[str, str]:
-    """Return main-window skin override defaults for each preset slot."""
-    return {slot: default_mode for slot in PICK_SLOT_ORDER}
 
 
 def build_demo_pick_slots() -> Dict[str, Dict[str, Any]]:
@@ -154,8 +148,6 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
     "ignored_update_version": "",
-    "main_skin_mode_override": "inherit",
-    "main_skin_mode_overrides": build_main_skin_mode_overrides(),
     "skin_automation_enabled": True,
     "window_x": 0,
     "window_y": 0,
@@ -181,25 +173,6 @@ FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
 def _build_first_launch_payload() -> Dict[str, Any]:
     """Return the fully normalized settings payload used for a true first launch."""
     return _normalize_parameters(copy.deepcopy(FIRST_LAUNCH_PARAMS))
-
-
-def _migrate_json_to_toml() -> bool:
-    """Migrate the legacy JSON settings file once, keeping a recoverable backup."""
-    if not os.path.exists(PARAMETERS_JSON_PATH):
-        return False
-    if os.path.exists(PARAMETERS_PATH):
-        return False
-    try:
-        with open(PARAMETERS_JSON_PATH, "r", encoding="utf-8") as f:
-            config = json.load(f)
-        _write_parameters_file(config)
-        backup = PARAMETERS_JSON_PATH + ".bak"
-        os.replace(PARAMETERS_JSON_PATH, backup)
-        logging.info("Migrated settings from %s to %s (backup: %s)", PARAMETERS_JSON_PATH, PARAMETERS_PATH, backup)
-        return True
-    except (OSError, TypeError, ValueError, json.JSONDecodeError) as e:
-        logging.warning("Failed to migrate JSON settings to TOML: %s", e)
-        return False
 
 
 def _atomic_write_bytes(path: str, content: bytes) -> None:
@@ -269,6 +242,7 @@ def _clear_skin_cache() -> None:
 def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     """Reset the settings file to first-launch defaults after a validation failure."""
     logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
+    had_parameters_file = os.path.exists(PARAMETERS_PATH)
     if not _backup_parameters_file():
         return _build_first_launch_payload()
     payload = _build_first_launch_payload()
@@ -277,76 +251,14 @@ def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     except (OSError, TypeError, ValueError) as e:
         logging.error("Unable to write recovery settings: %s", e)
         return payload
-    _clear_skin_cache()
+    if had_parameters_file:
+        _clear_skin_cache()
     return written
 
 
-def _migrate_schema_0_to_1(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Mark schema-less TOML/JSON settings as the first durable schema."""
-    migrated = copy.deepcopy(config)
-    migrated["config_schema_version"] = 1
-    return migrated
-
-
-def _migrate_schema_1_to_2(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Add per-slot skin override storage while preserving the legacy global value."""
-    migrated = copy.deepcopy(config)
-    if "main_skin_mode_overrides" not in migrated:
-        migrated["main_skin_mode_overrides"] = _normalize_main_skin_mode_overrides(
-            None,
-            legacy_value=migrated.get("main_skin_mode_override", "inherit"),
-        )
-    migrated["config_schema_version"] = 2
-    return migrated
-
-
-def _migrate_schema_2_to_3(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Materialize per-slot settings from legacy global summoner-spell fields."""
-    migrated = copy.deepcopy(config)
-    if "pick_slots" not in migrated:
-        migrated["pick_slots"] = _build_normalized_pick_slots(
-            None,
-            fallback_spell_1=migrated.get("global_spell_1", ""),
-            fallback_spell_2=migrated.get("global_spell_2", ""),
-        )
-    migrated["config_schema_version"] = 3
-    return migrated
-
-
-def _migrate_schema_3_to_4(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Persist the native window geometry introduced by the WebView shell."""
-    migrated = copy.deepcopy(config)
-    migrated.setdefault("window_width", DEFAULT_PARAMS["window_width"])
-    migrated.setdefault("window_height", DEFAULT_PARAMS["window_height"])
-    migrated.setdefault("window_maximized", DEFAULT_PARAMS["window_maximized"])
-    migrated["config_schema_version"] = 4
-    return migrated
-
-
-def _migrate_schema_4_to_5(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Separate the global skin automation switch from per-slot skin modes."""
-    migrated = copy.deepcopy(config)
-    legacy_mode = _normalize_main_skin_mode_override(migrated.get("main_skin_mode_override", "inherit"))
-    migrated.setdefault("skin_automation_enabled", legacy_mode != "none")
-    migrated["config_schema_version"] = 5
-    return migrated
-
-
-_SCHEMA_MIGRATIONS = {
-    0: _migrate_schema_0_to_1,
-    1: _migrate_schema_1_to_2,
-    2: _migrate_schema_2_to_3,
-    3: _migrate_schema_3_to_4,
-    4: _migrate_schema_4_to_5,
-}
-
-
 def _read_schema_version(config: Dict[str, Any]) -> int:
-    """Read the canonical schema marker plus the names used by legacy builds."""
-    raw_schema_version = config.get(
-        "config_schema_version",
-        config.get("settings_schema_version", config.get("schema_version", 0)),
-    )
+    """Read the canonical settings schema marker."""
+    raw_schema_version = config.get("config_schema_version")
     if isinstance(raw_schema_version, bool):
         raise ValueError(f"invalid settings schema version: {raw_schema_version!r}")
     try:
@@ -358,31 +270,20 @@ def _read_schema_version(config: Dict[str, Any]) -> int:
     return schema_version
 
 
-def _migrate_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Upgrade readable settings through each known schema without discarding values."""
+def _normalize_current_schema(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Accept only the current settings format; older formats are not migrated."""
     schema_version = _read_schema_version(config)
-    if schema_version > CONFIG_SCHEMA_VERSION:
+    if schema_version != CONFIG_SCHEMA_VERSION:
         raise ValueError(
-            f"unsupported future settings schema (found={schema_version}, expected<={CONFIG_SCHEMA_VERSION})"
+            f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})"
         )
-
-    migrated = copy.deepcopy(config)
-    while schema_version < CONFIG_SCHEMA_VERSION:
-        migration = _SCHEMA_MIGRATIONS.get(schema_version)
-        if migration is None:
-            raise ValueError(f"missing migration for settings schema {schema_version}")
-        migrated = migration(migrated)
-        schema_version += 1
-
-    migrated["config_version"] = APP_VERSION
-    migrated["config_schema_version"] = CONFIG_SCHEMA_VERSION
-    return _normalize_parameters(migrated)
+    normalized = copy.deepcopy(config)
+    normalized["config_version"] = APP_VERSION
+    return _normalize_parameters(normalized)
 
 
 def load_parameters() -> Dict[str, Any]:
     """Load, validate, and normalize parameters from the TOML settings file."""
-    _migrate_json_to_toml()
-
     if not os.path.exists(PARAMETERS_PATH):
         return _reset_parameters_file("missing file")
 
@@ -397,16 +298,16 @@ def load_parameters() -> Dict[str, Any]:
         return _reset_parameters_file("root payload is not an object")
 
     try:
-        normalized = _migrate_parameters(config)
+        normalized = _normalize_current_schema(config)
     except ValueError as e:
         return _reset_parameters_file(str(e))
 
     if config != normalized:
-        logging.info("Migrating parameters.toml to settings schema %s", CONFIG_SCHEMA_VERSION)
+        logging.info("Normalizing parameters.toml for settings schema %s", CONFIG_SCHEMA_VERSION)
         try:
             return _write_parameters_file(normalized)
         except (OSError, TypeError, ValueError) as e:
-            logging.error("Unable to persist migrated settings: %s", e)
+            logging.error("Unable to persist normalized settings: %s", e)
             return normalized
     return normalized
 
@@ -453,14 +354,12 @@ def import_parameters_from_file(path: str) -> Dict[str, Any]:
             payload = tomllib.load(f)
     if not isinstance(payload, dict):
         raise ValueError("The configuration file is invalid.")
-    return _migrate_parameters(payload)
+    return _normalize_current_schema(payload)
 
 
 def _normalize_spell_value(value: Any) -> str:
-    """Normalize legacy spell labels while preserving valid Riot spell names."""
+    """Keep only valid Riot summoner spell names."""
     spell_name = str(value or "")
-    if spell_name == "(Aucun)":
-        return "(None)"
     return spell_name if spell_name in SUMMONER_SPELL_MAP else ""
 
 
@@ -468,25 +367,6 @@ def _normalize_skin_mode(value: Any) -> str:
     """Normalize stored skin modes to the supported values."""
     mode = str(value or "none").strip().lower()
     return mode if mode in {"none", "fixed", "random"} else "none"
-
-
-def _normalize_main_skin_mode_override(value: Any) -> str:
-    """Normalize the main-window skin override value to a supported mode."""
-    mode = str(value or "inherit").strip().lower()
-    return mode if mode in {"inherit", "none", "fixed", "random"} else "inherit"
-
-
-def _normalize_main_skin_mode_overrides(value: Any, *, legacy_value: Any = "inherit") -> Dict[str, str]:
-    """Build the per-slot main-window skin override mapping, including legacy fallbacks."""
-    normalized = build_main_skin_mode_overrides()
-    legacy_mode = _normalize_main_skin_mode_override(legacy_value)
-    if legacy_mode != "inherit":
-        for slot in normalized:
-            normalized[slot] = legacy_mode
-    if isinstance(value, dict):
-        for slot in PICK_SLOT_ORDER:
-            normalized[slot] = _normalize_main_skin_mode_override(value.get(slot, normalized[slot]))
-    return normalized
 
 
 def _normalize_skin_id(value: Any) -> int:
@@ -507,15 +387,15 @@ def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
     for item in value:
         if not isinstance(item, dict):
             continue
-        skin_id = _normalize_skin_id(item.get("skin_id", item.get("id", item.get("skinId", 0))))
+        skin_id = _normalize_skin_id(item.get("skin_id"))
         if skin_id <= 0 or skin_id in seen_ids:
             continue
         seen_ids.add(skin_id)
         normalized_pool.append(
             {
                 "skin_id": skin_id,
-                "skin_name": str(item.get("skin_name", item.get("name", "")) or ""),
-                "skin_num": _normalize_skin_id(item.get("skin_num", item.get("num", 0))),
+                "skin_name": str(item.get("skin_name") or ""),
+                "skin_num": _normalize_skin_id(item.get("skin_num")),
             }
         )
     return normalized_pool
@@ -523,14 +403,9 @@ def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
 
 def _build_normalized_pick_slots(
     raw_slots: Any,
-    *,
-    fallback_spell_1: Any = "",
-    fallback_spell_2: Any = "",
 ) -> Dict[str, Dict[str, Any]]:
-    """Normalize a pick-slot payload while supporting legacy global spell fallbacks."""
-    fallback_1 = _normalize_spell_value(fallback_spell_1)
-    fallback_2 = _normalize_spell_value(fallback_spell_2)
-    slots = build_pick_slot_defaults(spell_1=fallback_1, spell_2=fallback_2)
+    """Normalize pick slots without importing settings from an older format."""
+    slots = build_pick_slot_defaults()
 
     if not isinstance(raw_slots, dict):
         return slots
@@ -568,7 +443,7 @@ def _build_normalized_pick_slots(
 
 
 def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Normalize loaded parameters and migrate old keys."""
+    """Normalize settings for the current schema."""
     merged = copy.deepcopy(DEFAULT_PARAMS)
     for key, value in config.items():
         if key == "pick_slots" or key not in DEFAULT_PARAMS:
@@ -578,42 +453,16 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     merged["config_version"] = APP_VERSION
     merged["config_schema_version"] = CONFIG_SCHEMA_VERSION
 
-    if "manual_region" not in config:
-        merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])
-
-    if "auto_detected_region" not in config and config.get("summoner_name_auto_detect"):
-        merged["auto_detected_region"] = ""
-
-    if "auto_detected_riot_id" not in config:
-        merged["auto_detected_riot_id"] = ""
-
-    if "auto_detected_platform" not in config:
-        merged["auto_detected_platform"] = ""
-
     merged["selected_pick_1"] = str(config.get("selected_pick_1", DEFAULT_PARAMS["selected_pick_1"]))
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))
     merged["selected_pick_3"] = str(config.get("selected_pick_3", DEFAULT_PARAMS["selected_pick_3"]))
     merged["selected_ban"] = str(config.get("selected_ban", DEFAULT_PARAMS["selected_ban"]))
     merged["presets_enabled"] = bool(config.get("presets_enabled", DEFAULT_PARAMS["presets_enabled"]))
-    merged["main_skin_mode_override"] = _normalize_main_skin_mode_override(
-        config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"])
-    )
-    merged["main_skin_mode_overrides"] = _normalize_main_skin_mode_overrides(
-        config.get("main_skin_mode_overrides"),
-        legacy_value=config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"]),
-    )
-    legacy_skin_mode = _normalize_main_skin_mode_override(
-        config.get("main_skin_mode_override", DEFAULT_PARAMS["main_skin_mode_override"])
-    )
-    raw_skin_automation = config.get("skin_automation_enabled", legacy_skin_mode != "none")
+    raw_skin_automation = config.get("skin_automation_enabled", DEFAULT_PARAMS["skin_automation_enabled"])
     if isinstance(raw_skin_automation, str):
         raw_skin_automation = raw_skin_automation.strip().lower() in {"1", "true", "yes", "on"}
     merged["skin_automation_enabled"] = bool(raw_skin_automation)
-    merged["pick_slots"] = _build_normalized_pick_slots(
-        config.get("pick_slots"),
-        fallback_spell_1=config.get("global_spell_1", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_1"]),
-        fallback_spell_2=config.get("global_spell_2", DEFAULT_PARAMS["pick_slots"]["pick_1"]["spell_2"]),
-    )
+    merged["pick_slots"] = _build_normalized_pick_slots(config.get("pick_slots"))
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in {"opgg", "deeplol", "dpm", "leagueofgraphs"}:
