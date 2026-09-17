@@ -260,12 +260,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
         self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
 
-    async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
+    async def test_resolve_skin_selection_uses_preset_skin_mode(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "inherit", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_1"].update(
             {
-                "skin_mode": "random",
+                "skin_mode": "fixed",
                 "skin_id": 86000,
                 "skin_name": "Default Garen",
                 "skin_num": 0,
@@ -283,11 +282,10 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skin_selection["mode"], "fixed")
         self.assertEqual(skin_selection["skin_id"], 86000)
 
-    async def test_resolve_skin_selection_returns_none_when_override_is_none(self):
+    async def test_resolve_skin_selection_returns_none_when_preset_mode_is_none(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "inherit", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_1"].update(
-            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+            {"skin_mode": "none", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
         )
 
         skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
@@ -298,7 +296,6 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
     async def test_resolve_skin_selection_returns_none_when_automation_is_disabled(self):
         self.manager.state.assigned_position = "TOP"
         self.params["skin_automation_enabled"] = False
-        self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "random", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_1"].update(
             {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
         )
@@ -308,11 +305,10 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(skin_selection)
         self.assertEqual(chosen_slot, "pick_1")
 
-    async def test_resolve_skin_selection_uses_slot_specific_override_only_for_target_slot(self):
+    async def test_resolve_skin_selection_uses_only_the_target_preset_slot(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "fixed", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_2"].update(
-            {"skin_mode": "random", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
+            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
         )
 
         skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_2")
@@ -321,6 +317,20 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(skin_selection)
         self.assertEqual(skin_selection["mode"], "fixed")
         self.assertEqual(skin_selection["skin_id"], 99010)
+
+    async def test_resolve_skin_selection_does_not_inherit_pick_1_skin_mode_or_skin(self):
+        self.params["selected_pick_2"] = "Lux"
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86013, "skin_name": "God-King Garen", "skin_num": 13}
+        )
+        self.params["pick_slots"]["pick_2"].update(
+            {"skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_2")
+
+        self.assertEqual(chosen_slot, "pick_2")
+        self.assertIsNone(skin_selection)
 
     async def test_prepick_uses_first_pickable_champion_in_priority(self):
         self.manager.state.assigned_position = "MID"

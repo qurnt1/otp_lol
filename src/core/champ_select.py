@@ -34,7 +34,7 @@ from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
 from ..config import EP_PICKABLE, PRACTICE_TOOL_GAME_MODE, PRESET_ENABLED_QUEUE_IDS, SUMMONER_SPELL_MAP
-from ..services.skin_modes import build_main_skin_overrides, get_effective_skin_mode_for_slot
+from ..services.skin_modes import get_effective_skin_mode_for_slot
 
 if TYPE_CHECKING:
     from .websocket import WebSocketManager
@@ -517,27 +517,21 @@ class ChampSelectMixin:
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
         slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
-        fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
-        champion_name = slot_data.get("champion") or fallback_slot.get("champion") or effective.get("selected_pick_1", "")
+        champion_name = slot_data.get("champion") or effective.get(f"selected_{chosen_slot}", "")
         if not champion_name:
             return None, chosen_slot
 
         if not params.get("skin_automation_enabled", True):
             return None, chosen_slot
 
-        skin_mode = get_effective_skin_mode_for_slot(
-            chosen_slot,
-            effective,
-            build_main_skin_overrides(params),
-            fallback_slot_key="pick_1",
-        )
+        skin_mode = get_effective_skin_mode_for_slot(chosen_slot, effective)
         if skin_mode not in {"fixed", "random"}:
             return None, chosen_slot
 
         if skin_mode == "fixed":
-            skin_id = int(slot_data.get("skin_id") or fallback_slot.get("skin_id") or 0)
-            skin_name = slot_data.get("skin_name") or fallback_slot.get("skin_name") or ""
-            skin_num = int(slot_data.get("skin_num") or fallback_slot.get("skin_num") or 0)
+            skin_id = int(slot_data.get("skin_id") or 0)
+            skin_name = slot_data.get("skin_name") or ""
+            skin_num = int(slot_data.get("skin_num") or 0)
             if skin_id <= 0 and not skin_name:
                 return None, chosen_slot
             return (
@@ -552,10 +546,10 @@ class ChampSelectMixin:
                 chosen_slot,
             )
 
-        random_skin_id = int(slot_data.get("random_skin_id") or fallback_slot.get("random_skin_id") or 0)
-        random_skin_name = slot_data.get("random_skin_name") or fallback_slot.get("random_skin_name") or ""
-        random_skin_num = int(slot_data.get("random_skin_num") or fallback_slot.get("random_skin_num") or 0)
-        random_skin_pool = slot_data.get("random_skin_pool") or fallback_slot.get("random_skin_pool") or []
+        random_skin_id = int(slot_data.get("random_skin_id") or 0)
+        random_skin_name = slot_data.get("random_skin_name") or ""
+        random_skin_num = int(slot_data.get("random_skin_num") or 0)
+        random_skin_pool = slot_data.get("random_skin_pool") or []
         if random_skin_id <= 0 and not random_skin_pool and not random_skin_name:
             return None, chosen_slot
         return (
