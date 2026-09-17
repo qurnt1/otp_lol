@@ -31,6 +31,12 @@ automation services          React shell and pages
 
 The `/api/bootstrap` response contains cached champion, spell, skin, and ban previews for the first dashboard paint. It does not load remote catalogs or the LCU skin inventory. Full catalogs are fetched only when their editor opens.
 
+Dashboard skin-mode controls update the matching `pick_slots[pick_N].skin_mode` preset value directly. There is no separate dashboard-only override. Schema 5 settings migrate their legacy effective skin-mode overrides into the slots and remove those obsolete keys; all other supported settings and slot data are retained.
+
+`src/domain/providers.py` is the canonical provider registry for identifiers, labels, logos, homepages, supported profile/live pages, URL builders, embed eligibility, host allowlists, and ordering. Settings validation, API catalog options, account/live URL generation, and the native desktop allowlist derive from it.
+
+Provider pages that cannot be embedded naturally can open in a second top-level pywebview window. Python builds the URL from the selected provider and account, validates HTTPS and the provider host, and creates the window without the `DesktopBridge` JavaScript API. This reuses the existing WebView2 runtime and installer, with less host work than replacing pywebview with a native WinForms/WPF/WinUI WebView2 shell. It is also more integrated than opening only the system browser. It does not put provider content in a separate process or security sandbox, and pywebview's documented high-level events do not provide a reliable pre-navigation hook to block every top-level redirect. Popup links are sent to the system browser; top-level provider navigation remains subject to that limitation.
+
 Data Dragon provides the champion and skin catalog. CommunityDragon is used only through validated relative asset paths for rune images. Both network paths use timeouts, response checks, bounded payloads, image type validation, logging, and bounded caches.
 
 ## Frontend styling
