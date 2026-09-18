@@ -31,19 +31,42 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(persisted, config.FIRST_LAUNCH_PARAMS)
         self.assertTrue(cached_skin_exists)
 
-    def test_demo_presets_are_separate_from_blank_first_launch(self):
+    def test_first_launch_combines_factory_defaults_with_safe_starter_presets(self):
         slots = config.FIRST_LAUNCH_PARAMS["pick_slots"]
 
         self.assertEqual(config.DEMO_PRESETS["selected_pick_1"], "Garen")
         self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_1"]["spell_1"], "Flash")
         self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_2"]["skin_mode"], "random")
         self.assertEqual(config.DEMO_PRESETS["pick_slots"]["pick_3"]["skin_name"], "Queen Ashe")
-        self.assertEqual(slots["pick_1"]["spell_1"], "")
-        self.assertEqual(slots["pick_1"]["spell_2"], "")
-        self.assertEqual(slots["pick_1"]["skin_mode"], "none")
-        self.assertEqual(slots["pick_1"]["skin_name"], "")
-        self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_pick_1"], "")
-        self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_ban"], "")
+        self.assertEqual(config.STARTER_PRESET_CONFIG["selected_pick_1"], "Garen")
+        self.assertEqual(config.STARTER_PRESET_CONFIG["selected_pick_2"], "Lux")
+        self.assertEqual(config.STARTER_PRESET_CONFIG["selected_pick_3"], "Ashe")
+        self.assertEqual([slots[key]["spell_1"] for key in ("pick_1", "pick_2", "pick_3")], ["Flash"] * 3)
+        self.assertEqual([slots[key]["spell_2"] for key in ("pick_1", "pick_2", "pick_3")], ["Ignite", "Barrier", "Heal"])
+        self.assertTrue(all(slots[key]["skin_mode"] == "none" for key in slots))
+        self.assertTrue(all(slots[key]["skin_id"] == 0 and slots[key]["rune_page_id"] == 0 for key in slots))
+        self.assertTrue(all(not slots[key]["rune_auto_apply"] for key in slots))
+        self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_ban"], "Teemo")
+        self.assertFalse(config.FIRST_LAUNCH_PARAMS["onboarding_completed"])
+        for key in (
+            "auto_accept_enabled",
+            "auto_pick_enabled",
+            "auto_ban_enabled",
+            "auto_summoners_enabled",
+            "presets_enabled",
+            "skin_automation_enabled",
+            "auto_play_again_enabled",
+        ):
+            self.assertFalse(config.FIRST_LAUNCH_PARAMS[key], key)
+
+    def test_settings_missing_onboarding_defaults_during_current_schema_normalization(self):
+        existing_settings = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+        existing_settings.pop("onboarding_completed")
+
+        normalized = config.normalize_parameters(existing_settings)
+
+        self.assertTrue(normalized["onboarding_completed"])
+        self.assertFalse(config.FACTORY_DEFAULT_SETTINGS["onboarding_completed"])
 
     def test_pick_slot_defaults_include_rune_fields(self):
         from src.config.settings import build_pick_slot_defaults
@@ -59,7 +82,7 @@ class ConfigTests(unittest.TestCase):
     def test_default_params_no_longer_has_global_auto_runes_enabled(self):
         self.assertNotIn("auto_runes_enabled", config.DEFAULT_PARAMS)
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
-        self.assertTrue(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
+        self.assertFalse(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
 
     def test_window_geometry_has_desktop_defaults(self):
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)
@@ -130,134 +153,6 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(loaded["selected_pick_1"], "Ahri")
         self.assertIn("pick_1", loaded["pick_slots"])
         self.assertFalse(backup_exists)
-
-    def test_load_parameters_migrates_complete_schema_five_settings_without_losing_values(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            payload = copy.deepcopy(config.DEFAULT_PARAMS)
-            payload.update(
-                {
-                    "config_schema_version": 5,
-                    "config_version": "10.0",
-                    "auto_accept_enabled": True,
-                    "auto_pick_enabled": True,
-                    "auto_ban_enabled": True,
-                    "auto_summoners_enabled": True,
-                    "presets_enabled": True,
-                    "selected_pick_1": "Garen",
-                    "selected_pick_2": "Lux",
-                    "selected_pick_3": "Ashe",
-                    "selected_ban": "Teemo",
-                    "theme": "flatly",
-                    "summoner_name_auto_detect": False,
-                    "manual_summoner_name": "Player#EUW",
-                    "manual_region": "kr",
-                    "preferred_stats_site": "dpm",
-                    "preferred_hotkey_site": "deeplol",
-                    "hotkey_toggle_window": "ctrl+shift+c",
-                    "hotkey_open_site": "ctrl+shift+p",
-                    "skin_automation_enabled": False,
-                    "window_x": 51,
-                    "window_y": 72,
-                    "window_width": 1280,
-                    "window_height": 840,
-                    "window_maximized": True,
-                    "main_skin_mode_override": "none",
-                    "main_skin_mode_overrides": {
-                        "pick_1": "fixed",
-                        "pick_2": "inherit",
-                    },
-                }
-            )
-            payload["pick_slots"]["pick_1"].update(
-                {
-                    "spell_1": "Flash",
-                    "spell_2": "Ignite",
-                    "skin_mode": "none",
-                    "skin_id": 86013,
-                    "skin_name": "God-King Garen",
-                    "skin_num": 13,
-                    "rune_page_id": 4,
-                    "rune_page_name": "Precision",
-                    "rune_auto_apply": False,
-                    "rune_keystone_path": "/perk/8005.png",
-                    "rune_sub_style_icon_path": "/style/8100.png",
-                }
-            )
-            payload["pick_slots"]["pick_2"].update(
-                {
-                    "spell_1": "Flash",
-                    "spell_2": "Teleport",
-                    "skin_mode": "random",
-                    "random_skin_id": 99007,
-                    "random_skin_name": "Star Guardian Lux",
-                    "random_skin_num": 7,
-                    "random_skin_pool": [
-                        {"skin_id": 99007, "skin_name": "Star Guardian Lux", "skin_num": 7}
-                    ],
-                }
-            )
-            payload["pick_slots"]["pick_3"]["skin_mode"] = "fixed"
-            original = tomli_w.dumps(payload)
-            params_path.write_text(original, encoding="utf-8")
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
-                loaded = config.load_parameters()
-            persisted = tomllib.loads(params_path.read_text(encoding="utf-8"))
-            backup_exists = Path(f"{params_path}.bak").exists()
-
-        self.assertEqual(loaded["config_schema_version"], 6)
-        self.assertEqual(loaded["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
-        self.assertEqual(loaded["config_version"], config._settings.CURRENT_VERSION)
-        self.assertEqual(persisted, loaded)
-        self.assertFalse(backup_exists)
-        self.assertTrue(loaded["auto_accept_enabled"])
-        self.assertTrue(loaded["auto_pick_enabled"])
-        self.assertTrue(loaded["auto_ban_enabled"])
-        self.assertTrue(loaded["auto_summoners_enabled"])
-        self.assertTrue(loaded["presets_enabled"])
-        self.assertEqual([loaded[f"selected_pick_{index}"] for index in (1, 2, 3)], ["Garen", "Lux", "Ashe"])
-        self.assertEqual(loaded["selected_ban"], "Teemo")
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_1"], "Flash")
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["spell_2"], "Ignite")
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_id"], 86013)
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["skin_mode"], "fixed")
-        self.assertEqual(loaded["pick_slots"]["pick_1"]["rune_page_id"], 4)
-        self.assertFalse(loaded["pick_slots"]["pick_1"]["rune_auto_apply"])
-        self.assertEqual(loaded["pick_slots"]["pick_2"]["skin_mode"], "random")
-        self.assertEqual(loaded["pick_slots"]["pick_2"]["random_skin_pool"][0]["skin_id"], 99007)
-        self.assertEqual(loaded["pick_slots"]["pick_3"]["skin_mode"], "none")
-        self.assertEqual(loaded["theme"], "flatly")
-        self.assertFalse(loaded["summoner_name_auto_detect"])
-        self.assertEqual(loaded["manual_summoner_name"], "Player#EUW")
-        self.assertEqual(loaded["manual_region"], "kr")
-        self.assertEqual(loaded["preferred_stats_site"], "dpm")
-        self.assertEqual(loaded["preferred_hotkey_site"], "deeplol")
-        self.assertEqual(loaded["hotkey_toggle_window"], "ctrl+shift+c")
-        self.assertEqual(loaded["hotkey_open_site"], "ctrl+shift+p")
-        self.assertFalse(loaded["skin_automation_enabled"])
-        self.assertEqual((loaded["window_x"], loaded["window_y"]), (51, 72))
-        self.assertEqual((loaded["window_width"], loaded["window_height"]), (1280, 840))
-        self.assertTrue(loaded["window_maximized"])
-        self.assertNotIn("main_skin_mode_override", loaded)
-        self.assertNotIn("main_skin_mode_overrides", loaded)
-
-    def test_schema_five_singular_skin_override_applies_to_all_slots(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            params_path = Path(tmpdir) / "parameters.toml"
-            payload = copy.deepcopy(config.DEFAULT_PARAMS)
-            payload["config_schema_version"] = 5
-            payload["main_skin_mode_override"] = "random"
-            payload["pick_slots"]["pick_1"]["skin_mode"] = "fixed"
-            params_path.write_text(tomli_w.dumps(payload), encoding="utf-8")
-
-            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
-                loaded = config.load_parameters()
-
-        self.assertEqual(
-            [loaded["pick_slots"][slot]["skin_mode"] for slot in ("pick_1", "pick_2", "pick_3")],
-            ["random", "random", "random"],
-        )
 
     def test_load_parameters_resets_and_backs_up_unsupported_future_schema(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -353,7 +248,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(params_path.read_text(encoding="utf-8"), original)
             self.assertEqual(list(Path(tmpdir).glob("*.tmp")), [])
 
-    def test_legacy_json_settings_are_not_migrated(self):
+    def test_load_parameters_ignores_a_separate_legacy_json_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             toml_path = Path(tmpdir) / "parameters.toml"
             json_path = Path(tmpdir) / "parameters.json"

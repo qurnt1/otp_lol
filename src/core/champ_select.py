@@ -355,7 +355,7 @@ class ChampSelectMixin:
             self._ensure_rune_is_applied(session, params)
             self._ensure_skin_is_applied(session, params)
 
-        if active_ban_action and params.get("auto_ban_enabled"):
+        if active_ban_action and params.get("auto_ban_enabled") and presets_enabled:
             await self._logic_do_ban(active_ban_action, effective)
         elif active_pick_action and params.get("auto_pick_enabled") and presets_enabled:
             await self._logic_do_pick(active_pick_action, params, pickable_set, banned_ids)
@@ -398,6 +398,8 @@ class ChampSelectMixin:
         return success
 
     async def _logic_do_ban(self: "WebSocketManager", action: Dict[str, Any], effective: Dict[str, Any]) -> None:
+        if not effective.get("presets_enabled", False) or not effective.get("auto_ban_enabled", False):
+            return
         selected_ban = effective.get("selected_ban")
         if not selected_ban:
             return
@@ -442,6 +444,8 @@ class ChampSelectMixin:
         pickable_set: Optional[Set[int]] = None,
         banned_ids: Optional[Set[int]] = None,
     ) -> None:
+        if not params.get("presets_enabled", False) or not params.get("auto_pick_enabled", False):
+            return
         if time() - self.state.last_pick_try_ts < self.ACTION_RETRY_COOLDOWN_S:
             return
         self.state.last_pick_try_ts = time()
@@ -521,7 +525,7 @@ class ChampSelectMixin:
         if not champion_name:
             return None, chosen_slot
 
-        if not params.get("skin_automation_enabled", True):
+        if not params.get("presets_enabled", False) or not params.get("skin_automation_enabled", False):
             return None, chosen_slot
 
         skin_mode = get_effective_skin_mode_for_slot(chosen_slot, effective)
@@ -1116,7 +1120,12 @@ class ChampSelectMixin:
         return confirmed
 
     async def _set_spells(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if not self.connection or self.state.spell_apply_in_progress:
+        if (
+            not params.get("presets_enabled", False)
+            or not params.get("auto_summoners_enabled", False)
+            or not self.connection
+            or self.state.spell_apply_in_progress
+        ):
             return
 
         self.state.spell_apply_in_progress = True
@@ -1333,6 +1342,7 @@ class ChampSelectMixin:
             rune_auto_apply = bool(slot_data.get("rune_auto_apply"))
         else:
             rune_auto_apply = bool(fallback_slot.get("rune_auto_apply", True))
+        rune_auto_apply = bool(effective.get("presets_enabled", False)) and rune_auto_apply
         return rune_page_id, rune_page_name, chosen_slot, rune_auto_apply
 
     def _ensure_rune_is_applied(

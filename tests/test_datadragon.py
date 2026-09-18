@@ -484,6 +484,12 @@ class DataDragonSkinCatalogTests(unittest.TestCase):
             "//attacker.example/foo",
             "file:///C:/Windows/win.ini",
             "../../../foo",
+            "lol-game-data/assets/%2e%2e/private.png",
+            "lol-game-data/assets/%252e%252e/private.png",
+            "lol-game-data/assets/v1/%2e%2e/%2e%2e/private.png",
+            "lol-game-data/assets/v1/%5c%5cattacker.example/private.png",
+            "lol-game-data/assets/v1/" + ("a" * 2050) + ".png",
+            "lol-game-data/assets/v1/bad%00name.png",
         ):
             self.assertIsNone(DataDragon._communitydragon_asset_url(path), path)
 

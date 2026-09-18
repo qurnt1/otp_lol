@@ -70,6 +70,7 @@ from .constants import (
     SUMMONER_SPELL_MAP,
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
+    URL_DD_IMG_ITEM,
     URL_DD_IMG_SPELL,
     URL_DD_CHAMPION_DETAIL,
     URL_DD_SKIN_SPLASH,
@@ -82,9 +83,11 @@ from .constants import (
 )
 from .logging_config import LOG_FILE_PATH
 from .paths import (
+    ACCOUNT_CACHE_DIR,
     DDRAGON_CACHE_FILE,
     HISTORY_PATH,
     ICONS_CACHE_DIR,
+    LCU_CACHE_DIR,
     LOCKFILE_PATH,
     PARAMETERS_PATH,
     SPELLS_CACHE_DIR,
@@ -93,7 +96,15 @@ from .paths import (
     get_appdata_path,
     resource_path,
 )
-from .settings import DEFAULT_PARAMS, DEMO_PARAMS, DEMO_PRESETS, FIRST_LAUNCH_PARAMS
+from .settings import (
+    DEFAULT_PARAMS,
+    DEMO_PARAMS,
+    DEMO_PRESETS,
+    FACTORY_DEFAULT_SETTINGS,
+    FIRST_LAUNCH_PARAMS,
+    STARTER_PRESET_CONFIG,
+    build_pick_slot_defaults,
+)
 
 
 def load_parameters():
@@ -144,6 +155,7 @@ __all__ = [
     "URL_DD_SUMMONERS",
     "URL_DD_IMG_CHAMP",
     "URL_DD_IMG_SPELL",
+    "URL_DD_IMG_ITEM",
     "URL_DD_CHAMPION_DETAIL",
     "URL_DD_SKIN_SPLASH",
     "URL_CDRAGON_CHAMPION_DETAIL",
@@ -186,6 +198,8 @@ __all__ = [
     "get_appdata_path",
     "PARAMETERS_PATH",
     "HISTORY_PATH",
+    "LCU_CACHE_DIR",
+    "ACCOUNT_CACHE_DIR",
     "LOCKFILE_PATH",
     "DDRAGON_CACHE_FILE",
     "ICONS_CACHE_DIR",
@@ -195,7 +209,10 @@ __all__ = [
     "DEFAULT_PARAMS",
     "DEMO_PARAMS",
     "DEMO_PRESETS",
+    "FACTORY_DEFAULT_SETTINGS",
     "FIRST_LAUNCH_PARAMS",
+    "STARTER_PRESET_CONFIG",
+    "build_pick_slot_defaults",
     "load_parameters",
     "save_parameters",
     "export_parameters_to_file",

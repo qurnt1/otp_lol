@@ -70,6 +70,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             "auto_pick_enabled": True,
             "auto_ban_enabled": True,
             "auto_summoners_enabled": False,
+            "skin_automation_enabled": True,
             "presets_enabled": True,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
@@ -125,6 +126,62 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rune_page_name, "Mid")
         self.assertEqual(chosen_slot, "pick_2")
         self.assertFalse(rune_auto_apply)
+
+    async def test_rune_auto_apply_requires_master_but_not_auto_summoners(self):
+        slot = self.params["pick_slots"]["pick_1"]
+        slot.update({"rune_page_id": 100, "rune_page_name": "Top", "rune_auto_apply": True})
+        self.params["auto_summoners_enabled"] = False
+
+        page_id, page_name, slot_key, should_apply = self.manager._resolve_rune_selection(self.params, "pick_1")
+
+        self.assertEqual((page_id, page_name, slot_key), (100, "Top", "pick_1"))
+        self.assertTrue(should_apply)
+
+        self.params["presets_enabled"] = False
+        page_id, page_name, slot_key, should_apply = self.manager._resolve_rune_selection(self.params, "pick_1")
+
+        self.assertEqual((page_id, page_name, slot_key), (100, "Top", "pick_1"))
+        self.assertFalse(should_apply)
+
+    async def test_master_off_blocks_direct_pick_and_ban_handlers(self):
+        self.params["presets_enabled"] = False
+        self.manager._lock_in_champion = AsyncMock()
+        self.manager._fetch_pickable_ids = AsyncMock(side_effect=AssertionError("must not fetch pickables"))
+
+        await self.manager._logic_do_pick({"id": 123}, self.params)
+        await self.manager._logic_do_ban({"id": 456}, self.params)
+
+        self.manager._lock_in_champion.assert_not_awaited()
+        self.manager._fetch_pickable_ids.assert_not_awaited()
+
+    async def test_auto_ban_child_off_blocks_direct_ban_handler(self):
+        self.params["auto_ban_enabled"] = False
+        self.manager._lock_in_champion = AsyncMock()
+
+        await self.manager._logic_do_ban({"id": 456}, self.params)
+
+        self.manager._lock_in_champion.assert_not_awaited()
+
+    async def test_effective_champ_select_config_preserves_auto_ban_child_toggle(self):
+        self.manager._lock_in_champion = AsyncMock(return_value=True)
+        effective = self.manager._get_effective_champ_select_config(self.params)
+
+        self.assertTrue(effective["auto_ban_enabled"])
+        await self.manager._logic_do_ban({"id": 456}, effective)
+
+        self.manager._lock_in_champion.assert_awaited_once_with(456, 17, action_type="ban")
+
+    async def test_master_off_blocks_direct_spell_application_without_changing_child_flag(self):
+        self.params["presets_enabled"] = False
+        self.params["auto_summoners_enabled"] = True
+        connection = type("Connection", (), {})()
+        connection.request = AsyncMock(side_effect=AssertionError("must not patch summoner spells"))
+        self.manager.connection = connection
+
+        await self.manager._set_spells(self.params, "pick_1")
+
+        connection.request.assert_not_awaited()
+        self.assertTrue(self.params["auto_summoners_enabled"])
 
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
@@ -295,6 +352,28 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_resolve_skin_selection_returns_none_when_automation_is_disabled(self):
         self.manager.state.assigned_position = "TOP"
+        self.params["skin_automation_enabled"] = False
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_is_blocked_when_preset_master_is_disabled(self):
+        self.params["presets_enabled"] = False
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_remains_blocked_when_skin_child_is_disabled(self):
         self.params["skin_automation_enabled"] = False
         self.params["pick_slots"]["pick_1"].update(
             {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}

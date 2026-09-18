@@ -5,7 +5,7 @@ import unittest
 from ctypes import wintypes
 from threading import Event
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from src.desktop.bridge import DesktopBridge
 from src.desktop.hotkeys import (
@@ -13,14 +13,15 @@ from src.desktop.hotkeys import (
     _WindowsHotkeyBackend,
     parse_windows_hotkey,
 )
-from src.desktop.server import EmbeddedApiServer
 from src.desktop.provider_browser import ProviderBrowserWindow
+from src.desktop.server import EmbeddedApiServer
 from src.desktop.tray import TrayController
 from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
 from src.desktop.window import (
     WebViewWindow,
     WebViewWindowConfig,
     _valid_window_position,
+    get_webview2_runtime_version,
     has_webview2_runtime,
 )
 
@@ -399,6 +400,27 @@ class DesktopWindowTests(unittest.TestCase):
             "https://www.deeplol.gg/summoner/euw/Player-EUW",
         )
 
+    def test_provider_bridge_uses_the_saved_account_when_league_is_closed(self):
+        params = {
+            "preferred_stats_site": "deeplol",
+            "summoner_name_auto_detect": True,
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+        }
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock(return_value=SimpleNamespace(connected=False, riot_id="", region=""))),
+        )
+        bridge = DesktopBridge(context)
+        with patch("src.desktop.provider_browser.ProviderBrowserWindow.open", return_value=True):
+            self.assertTrue(bridge.open_provider_window("deeplol", "stats"))
+
+        self.assertEqual(
+            bridge._provider_windows[("deeplol", "stats")].url,
+            "https://www.deeplol.gg/summoner/euw/Saved-EUW",
+        )
+
     def test_tray_setup_failure_disables_close_to_tray_fallback(self):
         failed = Mock()
         tray = TrayController()
@@ -410,15 +432,44 @@ class DesktopWindowTests(unittest.TestCase):
                     toggle_window=Mock(),
                     open_settings=Mock(),
                     toggle_presets_automation=Mock(),
-                    toggle_auto_ban=Mock(),
                     is_presets_automation_enabled=Mock(return_value=False),
-                    is_auto_ban_enabled=Mock(return_value=False),
                     quit_callback=Mock(),
                     on_failure=failed,
                 )
 
         self.assertFalse(available)
         failed.assert_called_once_with()
+
+    def test_tray_exposes_only_the_preset_automation_master(self):
+        items = {}
+        master_toggle = Mock()
+        tray = TrayController()
+        fake_image = Mock()
+        fake_image.resize.return_value = object()
+
+        def menu_item(label, callback, **options):
+            items[label] = (callback, options)
+            return label
+
+        with (
+            patch("src.desktop.tray.Image.open", return_value=fake_image),
+            patch("src.desktop.tray.pystray.MenuItem", side_effect=menu_item),
+            patch("src.desktop.tray.pystray.Menu", side_effect=lambda *entries: entries),
+            patch("src.desktop.tray.pystray.Icon"),
+        ):
+            self.assertTrue(tray.setup(
+                executor=Mock(),
+                toggle_window=Mock(),
+                open_settings=Mock(),
+                toggle_presets_automation=master_toggle,
+                is_presets_automation_enabled=Mock(return_value=False),
+                quit_callback=Mock(),
+                on_failure=Mock(),
+            ))
+
+        self.assertEqual(set(items), {"Show/Hide", "Settings", "Enable presets automations", "Quit"})
+        items["Enable presets automations"][0]()
+        master_toggle.assert_called_once_with()
 
     @patch("src.desktop.window.has_webview2_runtime", return_value=True)
     def test_start_passes_the_configured_icon_to_pywebview(self, _runtime):
@@ -434,6 +485,17 @@ class DesktopWindowTests(unittest.TestCase):
     @patch("src.desktop.window.sys.platform", "linux")
     def test_non_windows_runtime_does_not_require_registry_access(self):
         self.assertTrue(has_webview2_runtime())
+        self.assertIsNone(get_webview2_runtime_version())
+
+    @patch("src.desktop.window.sys.platform", "win32")
+    def test_webview2_version_reads_only_a_valid_registered_version(self):
+        registry = MagicMock()
+        registry.HKEY_CURRENT_USER = 1
+        registry.HKEY_LOCAL_MACHINE = 2
+        registry.OpenKey.return_value.__enter__.return_value = object()
+        registry.QueryValueEx.return_value = ("145.0.1.2", None)
+        with patch.dict(sys.modules, {"winreg": registry}):
+            self.assertEqual(get_webview2_runtime_version(), "145.0.1.2")
 
 
 class FakeApiServer:

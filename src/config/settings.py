@@ -128,7 +128,7 @@ DEMO_PRESETS: Dict[str, Any] = {
 }
 
 
-DEFAULT_PARAMS: Dict[str, Any] = {
+FACTORY_DEFAULT_SETTINGS: Dict[str, Any] = {
     "config_version": CURRENT_VERSION,
     "config_schema_version": CONFIG_SCHEMA_VERSION,
     "auto_accept_enabled": False,
@@ -156,13 +156,27 @@ DEFAULT_PARAMS: Dict[str, Any] = {
     "auto_hide_on_connect": True,
     "close_app_on_lol_exit": True,
     "ignored_update_version": "",
-    "skin_automation_enabled": True,
+    "skin_automation_enabled": False,
+    "onboarding_completed": False,
     "window_x": 0,
     "window_y": 0,
     "window_width": 1100,
     "window_height": 760,
     "window_maximized": False,
 }
+
+DEFAULT_PARAMS: Dict[str, Any] = copy.deepcopy(FACTORY_DEFAULT_SETTINGS)
+DEFAULT_PARAMS.update(
+    {
+        "selected_pick_1": "",
+        "selected_pick_2": "",
+        "selected_pick_3": "",
+        "selected_ban": "",
+        "pick_slots": build_pick_slot_defaults(),
+        # Existing settings files that predate onboarding are already configured.
+        "onboarding_completed": True,
+    }
+)
 
 DEMO_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
 DEMO_PARAMS.update(
@@ -171,11 +185,33 @@ DEMO_PARAMS.update(
         "auto_pick_enabled": True,
         "auto_ban_enabled": True,
         "auto_summoners_enabled": True,
+        "skin_automation_enabled": True,
         **copy.deepcopy(DEMO_PRESETS),
     }
 )
 
+def build_starter_pick_slots() -> Dict[str, Dict[str, Any]]:
+    """Return editable starter picks without account-specific skins or runes."""
+    slots = build_pick_slot_defaults()
+    for slot in slots.values():
+        slot["rune_auto_apply"] = False
+    slots["pick_1"].update({"spell_1": "Flash", "spell_2": "Ignite"})
+    slots["pick_2"].update({"spell_1": "Flash", "spell_2": "Barrier"})
+    slots["pick_3"].update({"spell_1": "Flash", "spell_2": "Heal"})
+    return slots
+
+
+STARTER_PRESET_CONFIG: Dict[str, Any] = {
+    "selected_pick_1": "Garen",
+    "selected_pick_2": "Lux",
+    "selected_pick_3": "Ashe",
+    "selected_ban": "Teemo",
+    "pick_slots": build_starter_pick_slots(),
+}
+
 FIRST_LAUNCH_PARAMS: Dict[str, Any] = copy.deepcopy(DEFAULT_PARAMS)
+FIRST_LAUNCH_PARAMS.update(copy.deepcopy(FACTORY_DEFAULT_SETTINGS))
+FIRST_LAUNCH_PARAMS.update(copy.deepcopy(STARTER_PRESET_CONFIG))
 
 
 def _build_first_launch_payload() -> Dict[str, Any]:
@@ -278,38 +314,10 @@ def _read_schema_version(config: Dict[str, Any]) -> int:
     return schema_version
 
 
-def _migrate_schema_5_to_6(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Move schema 5's effective dashboard skin modes into each preset slot."""
-    migrated = copy.deepcopy(config)
-    raw_overrides = migrated.get("main_skin_mode_overrides")
-    legacy_mode = str(migrated.get("main_skin_mode_override") or "inherit").strip().lower()
-    if legacy_mode not in {"inherit", "none", "fixed", "random"}:
-        legacy_mode = "inherit"
-
-    slots = migrated.get("pick_slots")
-    for slot in PICK_SLOT_ORDER:
-        override = legacy_mode
-        if isinstance(raw_overrides, dict):
-            override = str(raw_overrides.get(slot, override) or "inherit").strip().lower()
-            if override not in {"inherit", "none", "fixed", "random"}:
-                override = "inherit"
-        if override != "inherit":
-            slot_data = slots.get(slot) if isinstance(slots, dict) else None
-            if isinstance(slot_data, dict):
-                slot_data["skin_mode"] = override
-
-    migrated.pop("main_skin_mode_override", None)
-    migrated.pop("main_skin_mode_overrides", None)
-    migrated["config_schema_version"] = CONFIG_SCHEMA_VERSION
-    return migrated
-
-
 def _normalize_current_schema(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Migrate the previous supported format, then normalize current settings."""
+    """Validate and normalize settings using the current configuration schema."""
     schema_version = _read_schema_version(config)
-    if schema_version == 5 and CONFIG_SCHEMA_VERSION == 6:
-        config = _migrate_schema_5_to_6(config)
-    elif schema_version != CONFIG_SCHEMA_VERSION:
+    if schema_version != CONFIG_SCHEMA_VERSION:
         raise ValueError(
             f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})"
         )

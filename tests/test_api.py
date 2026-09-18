@@ -175,6 +175,52 @@ class ApiBoundaryTests(unittest.TestCase):
             ],
         )
 
+    def test_skin_splash_asset_prefers_the_versioned_lcu_asset(self):
+        asset = SimpleNamespace(content=b"verified-local-image", content_type="image/png")
+        with (
+            patch.object(self.context.asset_service, "get_asset", new_callable=AsyncMock, return_value=asset) as get_asset,
+            patch.object(self.context, "ensure_data_dragon", new_callable=AsyncMock) as ensure,
+        ):
+            response = self.client.get("/api/assets/skins/86/86013/splash?skin_num=13")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, asset.content)
+        get_asset.assert_awaited_once_with("skin", 86013, variant="splash")
+        ensure.assert_not_awaited()
+
+    def test_item_asset_uses_local_lcu_asset_service(self):
+        asset = SimpleNamespace(content=b"verified-local-image", content_type="image/png")
+        with patch.object(
+            self.context.asset_service,
+            "get_asset",
+            new_callable=AsyncMock,
+            return_value=asset,
+        ) as get_asset:
+            response = self.client.get("/api/assets/items/1055.png")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, asset.content)
+        self.assertEqual(response.headers["cache-control"], "no-cache")
+        get_asset.assert_awaited_once_with("item", 1055)
+
+    def test_item_asset_falls_back_to_versioned_data_dragon_only_when_lcu_asset_is_missing(self):
+        preview = Image.new("RGBA", (4, 4))
+        self.context.data_dragon.version = "16.18.1"
+        with (
+            patch.object(self.context.asset_service, "get_asset", new_callable=AsyncMock, return_value=None) as get_asset,
+            patch.object(self.context, "ensure_data_dragon", new_callable=AsyncMock) as ensure,
+            patch.object(self.context.data_dragon, "get_remote_image", return_value=preview) as get_image,
+        ):
+            response = self.client.get("/api/assets/items/1055.png")
+
+        self.assertEqual(response.status_code, 200)
+        get_asset.assert_awaited_once_with("item", 1055)
+        ensure.assert_awaited_once()
+        get_image.assert_called_once_with(
+            "https://ddragon.leagueoflegends.com/cdn/16.18.1/img/item/1055.png",
+            cache_key="frontend_item_16.18.1_1055",
+        )
+
     def test_skin_splash_asset_uses_skin_number_without_loading_catalogue(self):
         preview = Image.new("RGBA", (4, 4))
         with (
@@ -208,28 +254,181 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(current_version.status_code, 200)
 
     def test_settings_export_import_and_reset_are_real_persistent_operations(self):
+        self.context.params.update({
+            "auto_detected_riot_id": "Local#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+        })
         exported = self.client.get("/api/settings/export")
         self.assertEqual(exported.status_code, 200)
         self.assertEqual(exported.headers["content-disposition"], 'attachment; filename="otp-lol-settings.json"')
+        self.assertNotIn("auto_detected_riot_id", exported.json())
+        self.assertNotIn("auto_detected_region", exported.json())
+        self.assertNotIn("auto_detected_platform", exported.json())
 
         self.assertEqual(self.client.patch("/api/settings", json={"theme": "flatly"}).status_code, 200)
         imported = self.client.post("/api/settings/import", json={
             "config_schema_version": CONFIG_SCHEMA_VERSION,
             "theme": "darkly",
+            "auto_detected_riot_id": "Imported#NA",
+            "auto_detected_region": "na",
+            "auto_detected_platform": "na1",
         })
         self.assertEqual(imported.status_code, 200)
         self.assertEqual(imported.json()["theme"], "darkly")
+        self.assertEqual(imported.json()["auto_detected_riot_id"], "Local#EUW")
+        self.assertEqual(imported.json()["auto_detected_region"], "euw")
+        self.assertEqual(imported.json()["auto_detected_platform"], "euw1")
 
         reset = self.client.post("/api/settings/reset")
         self.assertEqual(reset.status_code, 200)
         self.assertEqual(reset.json()["theme"], "darkly")
+        self.assertEqual(
+            [reset.json()[f"selected_pick_{index}"] for index in range(1, 4)],
+            ["Garen", "Lux", "Ashe"],
+        )
+        self.assertEqual(reset.json()["selected_ban"], "Teemo")
+        self.assertFalse(reset.json()["presets_enabled"])
+        self.assertFalse(reset.json()["onboarding_completed"])
+        self.assertEqual(reset.json()["auto_detected_riot_id"], "")
+        self.assertEqual(reset.json()["auto_detected_region"], "")
+        self.assertEqual(reset.json()["auto_detected_platform"], "")
+        self.assertEqual(reset.json()["pick_slots"]["pick_1"]["spell_2"], "Ignite")
+        self.assertEqual(reset.json()["pick_slots"]["pick_2"]["spell_2"], "Barrier")
+        self.assertEqual(reset.json()["pick_slots"]["pick_3"]["spell_2"], "Heal")
+        self.assertTrue(all(reset.json()["pick_slots"][key]["skin_mode"] == "none" for key in ("pick_1", "pick_2", "pick_3")))
+        self.assertTrue(all(reset.json()["pick_slots"][key]["rune_page_id"] == 0 for key in ("pick_1", "pick_2", "pick_3")))
+        for key in (
+            "auto_accept_enabled",
+            "auto_pick_enabled",
+            "auto_ban_enabled",
+            "auto_summoners_enabled",
+            "skin_automation_enabled",
+            "auto_play_again_enabled",
+        ):
+            self.assertFalse(reset.json()[key], key)
+
+    def test_clear_last_detected_account_only_clears_the_local_detected_identity(self):
+        self.context.params.update({
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+            "manual_summoner_name": "Manual#NA",
+            "manual_region": "na",
+        })
+
+        response = self.client.delete("/api/settings/last-detected-account")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["auto_detected_riot_id"], "")
+        self.assertEqual(response.json()["auto_detected_region"], "")
+        self.assertEqual(response.json()["auto_detected_platform"], "")
+        self.assertEqual(response.json()["manual_summoner_name"], "Manual#NA")
+        self.assertEqual(response.json()["manual_region"], "na")
+
+    def test_settings_response_marks_only_a_complete_consistent_saved_account_valid(self):
+        self.context.params.update({
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+        })
+
+        valid = self.client.get("/api/settings")
+        self.assertTrue(valid.json()["auto_detected_account_valid"])
+
+        self.context.params["auto_detected_platform"] = "na1"
+        invalid = self.client.get("/api/settings")
+        self.assertFalse(invalid.json()["auto_detected_account_valid"])
+
+    def test_preset_only_reset_and_clear_preserve_the_last_detected_account(self):
+        self.context.params.update({
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+        })
+
+        reset = self.client.post("/api/presets/reset")
+        cleared = self.client.post("/api/presets/clear")
+
+        for response in (reset, cleared):
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["auto_detected_riot_id"], "Saved#EUW")
+            self.assertEqual(response.json()["auto_detected_region"], "euw")
+            self.assertEqual(response.json()["auto_detected_platform"], "euw1")
 
     def test_settings_patch_is_persisted_in_context(self):
+        children_before = self.context.get_params()
         response = self.client.patch("/api/settings", json={"presets_enabled": False})
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.json()["presets_enabled"])
         self.assertFalse(self.context.get_params()["presets_enabled"])
+        for key in ("auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled"):
+            self.assertEqual(self.context.get_params()[key], children_before[key], key)
+        self.assertEqual(self.context.get_params()["auto_accept_enabled"], children_before["auto_accept_enabled"])
+        self.assertEqual(self.context.get_params()["auto_play_again_enabled"], children_before["auto_play_again_enabled"])
+
+    def test_resetting_presets_restores_examples_and_disables_the_master(self):
+        preferences = {
+            "presets_enabled": True,
+            "auto_accept_enabled": True,
+            "auto_pick_enabled": True,
+            "auto_ban_enabled": False,
+            "auto_summoners_enabled": True,
+            "skin_automation_enabled": True,
+            "auto_play_again_enabled": True,
+            "theme": "flatly",
+        }
+        self.context.update_parameters(preferences)
+
+        response = self.client.post("/api/presets/reset")
+
+        self.assertEqual(response.status_code, 200)
+        restored = self.context.get_params()
+        self.assertFalse(response.json()["presets_enabled"])
+        self.assertFalse(restored["presets_enabled"])
+        for key, value in preferences.items():
+            if key != "presets_enabled":
+                self.assertEqual(restored[key], value, key)
+        self.assertEqual([restored[f"selected_pick_{index}"] for index in range(1, 4)], ["Garen", "Lux", "Ashe"])
+        self.assertEqual(restored["selected_ban"], "Teemo")
+        self.assertEqual([restored["pick_slots"][f"pick_{index}"]["spell_2"] for index in range(1, 4)], ["Ignite", "Barrier", "Heal"])
+        self.assertTrue(all(slot["skin_mode"] == "none" and slot["skin_id"] == 0 for slot in restored["pick_slots"].values()))
+        self.assertTrue(all(slot["rune_page_id"] == 0 and not slot["rune_auto_apply"] for slot in restored["pick_slots"].values()))
+        self.assertFalse(restored["onboarding_completed"])
+        self.assertEqual(self.client.patch("/api/settings", json={"theme": "darkly"}).status_code, 200)
+
+    def test_clearing_presets_only_preserves_automation_and_general_settings(self):
+        preferences = {
+            "presets_enabled": True,
+            "auto_accept_enabled": True,
+            "auto_pick_enabled": True,
+            "auto_ban_enabled": False,
+            "auto_summoners_enabled": True,
+            "skin_automation_enabled": True,
+            "auto_play_again_enabled": True,
+            "theme": "flatly",
+        }
+        self.context.update_parameters(preferences)
+
+        response = self.client.post("/api/presets/clear")
+
+        self.assertEqual(response.status_code, 200)
+        cleared = self.context.get_params()
+        for key, value in preferences.items():
+            self.assertEqual(cleared[key], value, key)
+        self.assertEqual([cleared[f"selected_pick_{index}"] for index in range(1, 4)], ["", "", ""])
+        self.assertEqual(cleared["selected_ban"], "")
+        self.assertTrue(all(slot["spell_1"] == slot["spell_2"] == "" for slot in cleared["pick_slots"].values()))
+        self.assertTrue(cleared["onboarding_completed"])
+
+    def test_onboarding_dismissal_cannot_be_reversed_by_settings_patch(self):
+        self.context.update_param("onboarding_completed", True)
+
+        response = self.client.patch("/api/settings", json={"onboarding_completed": False})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["onboarding_completed"])
 
     def test_settings_matrix_persists_every_frontend_editable_setting(self):
         save = Mock(return_value=True)
@@ -324,11 +523,13 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(self.context.get_params()["theme"], "darkly")
 
     def test_preset_patch_updates_selected_champion(self):
+        self.context.update_param("onboarding_completed", False)
         response = self.client.put("/api/presets/pick_2", json={"champion": "Ahri"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["slots"]["pick_2"]["champion"], "Ahri")
         self.assertEqual(self.context.get_params()["selected_pick_2"], "Ahri")
+        self.assertTrue(self.context.get_params()["onboarding_completed"])
 
     def test_preset_patch_rejects_unknown_spell(self):
         response = self.client.put("/api/presets/pick_1", json={"spell_1": "NotASpell"})
@@ -386,6 +587,9 @@ class ApiBoundaryTests(unittest.TestCase):
             "summoner_name_auto_detect": True,
             "manual_summoner_name": "Player#TAG",
             "manual_region": "na",
+            "auto_detected_riot_id": "",
+            "auto_detected_region": "",
+            "auto_detected_platform": "",
             "preferred_stats_site": "deeplol",
         })
         snapshot = SimpleNamespace(connected=False, riot_id="", region="")
@@ -401,6 +605,7 @@ class ApiBoundaryTests(unittest.TestCase):
             "riot_id": None,
             "region": None,
             "embed_allowed": True,
+            "account_source": "unavailable",
         })
 
     def test_stats_link_uses_manual_account_only_when_manual_mode_is_enabled(self):
@@ -416,6 +621,7 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["url"], "https://www.deeplol.gg/summoner/na/Player-TAG")
         self.assertEqual(response.json()["riot_id"], "Player#TAG")
+        self.assertEqual(response.json()["account_source"], "manual")
 
     def test_stats_link_uses_connected_auto_detected_account_over_manual_fallback(self):
         self.context.params.update({
@@ -437,29 +643,67 @@ class ApiBoundaryTests(unittest.TestCase):
             "riot_id": "Live#EUW",
             "region": "euw",
             "embed_allowed": False,
+            "account_source": "connected",
         })
 
-    def test_stats_link_does_not_use_stale_detected_account_when_disconnected(self):
+    def test_stats_and_live_links_use_a_complete_saved_account_when_disconnected(self):
         self.context.params.update({
             "summoner_name_auto_detect": True,
             "auto_detected_riot_id": "Stale#TAG",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
             "manual_summoner_name": "",
             "preferred_stats_site": "leagueofgraphs",
+            "preferred_hotkey_site": "deeplol",
         })
         snapshot = SimpleNamespace(connected=False, riot_id="", region="")
         with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            stats = self.client.get("/api/links/stats")
+            live = self.client.get("/api/links/live")
+
+        self.assertEqual(stats.status_code, 200)
+        self.assertEqual(stats.json(), {
+            "available": True,
+            "site": "leagueofgraphs",
+            "url": "https://www.leagueofgraphs.com/fr/summoner/euw/Stale-TAG",
+            "homepage_url": "https://www.leagueofgraphs.com/",
+            "riot_id": "Stale#TAG",
+            "region": "euw",
+            "embed_allowed": False,
+            "account_source": "saved",
+        })
+        self.assertEqual(live.json()["account_source"], "saved")
+        self.assertEqual(live.json()["riot_id"], "Stale#TAG")
+
+    def test_saved_account_with_mismatched_platform_is_not_used_offline(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": True,
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "na1",
+            "preferred_stats_site": "opgg",
+        })
+        with patch.object(self.context.runtime, "snapshot", return_value=SimpleNamespace(connected=False, riot_id="", region="")):
             response = self.client.get("/api/links/stats")
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {
-            "available": False,
-            "site": "leagueofgraphs",
-            "url": None,
-            "homepage_url": "https://www.leagueofgraphs.com/",
-            "riot_id": None,
-            "region": None,
-            "embed_allowed": False,
+        self.assertFalse(response.json()["available"])
+        self.assertEqual(response.json()["account_source"], "unavailable")
+        self.assertIsNone(response.json()["url"])
+
+    def test_connected_but_incomplete_live_identity_does_not_fall_back_to_another_saved_account(self):
+        self.context.params.update({
+            "summoner_name_auto_detect": True,
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
         })
+        snapshot = SimpleNamespace(connected=True, riot_id="Current#NA", region="")
+        with patch.object(self.context.runtime, "snapshot", return_value=snapshot):
+            response = self.client.get("/api/links/stats")
+
+        self.assertFalse(response.json()["available"])
+        self.assertEqual(response.json()["account_source"], "unavailable")
+        self.assertIsNone(response.json()["riot_id"])
 
     def test_provider_catalog_is_the_single_source_for_frontend_options(self):
         response = self.client.get("/api/catalog/providers")
@@ -497,6 +741,7 @@ class ApiBoundaryTests(unittest.TestCase):
             "riot_id": "Live#EUW",
             "region": "euw",
             "embed_allowed": False,
+            "account_source": "connected",
         })
 
     def test_live_link_uses_manual_account_and_safe_homepage_without_an_account(self):
@@ -518,6 +763,7 @@ class ApiBoundaryTests(unittest.TestCase):
             "riot_id": None,
             "region": None,
             "embed_allowed": False,
+            "account_source": "unavailable",
         })
 
     def test_catalog_routes_use_loaded_metadata_and_report_lcu_absence(self):

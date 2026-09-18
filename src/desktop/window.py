@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from typing import Any
@@ -35,6 +36,14 @@ def has_webview2_runtime() -> bool:
     if sys.platform != "win32":
         return True
 
+    return get_webview2_runtime_version() is not None
+
+
+def get_webview2_runtime_version() -> str | None:
+    """Return the registered WebView2 runtime version when Windows exposes it."""
+    if sys.platform != "win32":
+        return None
+
     import winreg
 
     for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
@@ -45,11 +54,12 @@ def has_webview2_runtime() -> bool:
                 try:
                     with winreg.OpenKey(root, path) as key:
                         version, _ = winreg.QueryValueEx(key, "pv")
-                    if str(version).strip() and str(version).strip() != "0.0.0.0":
-                        return True
+                    normalized = str(version).strip()
+                    if re.fullmatch(r"\d+(?:\.\d+){3}", normalized) and normalized != "0.0.0.0":
+                        return normalized
                 except OSError:
                     continue
-    return False
+    return None
 
 
 @dataclass(frozen=True, slots=True)

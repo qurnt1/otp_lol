@@ -147,6 +147,7 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         self.server = FakeLCUServer()
         await self.server.start()
         self.connection = FakeConnection(self.server.base_url)
+        self.persisted_accounts = []
 
     async def asyncTearDown(self):
         await self.connection.close()
@@ -160,6 +161,9 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
             dd=FakeDataDragon(),
             get_params=lambda: dict(params),
             update_param=lambda k, v: None,
+            persist_detected_account=lambda riot_id, region, platform: self.persisted_accounts.append(
+                (riot_id, region, platform)
+            ) or True,
         )
         mgr.connection = self.connection
         mgr.ws_active = True
@@ -209,6 +213,23 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(mgr.state.platform_routing, "euw1")
 
+    async def test_refresh_player_and_region_persists_the_complete_detected_identity(self):
+        mgr = self._make_manager()
+        await mgr._refresh_player_and_region()
+
+        self.assertEqual(self.persisted_accounts, [("TestPlayer#EUW", "euw", "euw1")])
+
+    async def test_refresh_does_not_persist_an_incomplete_identity_or_unknown_platform(self):
+        self.server.auto_tag_line = ""
+        mgr = self._make_manager()
+        await mgr._refresh_player_and_region()
+        self.assertEqual(self.persisted_accounts, [])
+
+        self.server.auto_tag_line = "EUW"
+        self.server.platform_id = "unknown-platform"
+        await mgr._refresh_player_and_region()
+        self.assertEqual(self.persisted_accounts, [])
+
     async def test_get_platform_for_websites_returns_euw(self):
         mgr = self._make_manager()
         await mgr._refresh_player_and_region()
@@ -218,6 +239,15 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         mgr = self._make_manager()
         mgr.state.platform_routing = "unknown-platform"
         mgr.state.region_routing = ""
+
+        self.assertEqual(mgr.get_platform_for_websites(), "")
+
+    async def test_get_platform_for_websites_does_not_reuse_saved_region_as_live_region(self):
+        mgr = WebSocketManager(
+            event_callback=_collect_event,
+            dd=FakeDataDragon(),
+            get_params=lambda: {**_fake_get_params(), "auto_detected_region": "euw"},
+        )
 
         self.assertEqual(mgr.get_platform_for_websites(), "")
 

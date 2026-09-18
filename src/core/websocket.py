@@ -60,8 +60,36 @@ from ..config import (
 )
 from ..services.history import log_history_event
 from ..services.profile_config import build_effective_profile_config
+from ..services.urls import is_valid_riot_id
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
+
+logger = logging.getLogger(__name__)
+
+
+class _LcuDriverMalformedJsonFilter(logging.Filter):
+    """Keep lcu-driver's malformed-frame warning from breaking Python logging."""
+
+    _MESSAGE = "Error decoding the following JSON: "
+    _SAFE_MESSAGE = "Ignoring malformed LCU WebSocket JSON frame."
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != "lcu_driver.connection" or record.msg != self._MESSAGE:
+            return True
+        if record.args == ("",):
+            return False
+        record.msg = self._SAFE_MESSAGE
+        record.args = ()
+        return True
+
+
+def _install_lcu_driver_malformed_json_filter() -> None:
+    driver_logger = logging.getLogger("lcu_driver.connection")
+    if not any(
+        isinstance(existing, _LcuDriverMalformedJsonFilter)
+        for existing in driver_logger.filters
+    ):
+        driver_logger.addFilter(_LcuDriverMalformedJsonFilter())
 
 
 class WebSocketManager(ChampSelectMixin):
@@ -86,12 +114,15 @@ class WebSocketManager(ChampSelectMixin):
         dd,
         get_params: Callable[[], Dict[str, Any]],
         update_param: Optional[Callable[[str, Any], None]] = None,
+        persist_detected_account: Optional[Callable[[str, str, str], bool]] = None,
     ):
         """Store shared collaborators and initialize per-run websocket state."""
         self.event_callback = event_callback
+        self.diagnostic_event_callback: Optional[Callable[[str, str, Any], None]] = None
         self.dd = dd
         self.get_params = get_params
         self.update_param = update_param
+        self.persist_detected_account = persist_detected_account
         self.state = GameState()
         self.connection = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
@@ -104,6 +135,19 @@ class WebSocketManager(ChampSelectMixin):
 
     def _notify_event(self, event_type: str, data: Any = None) -> None:
         self.event_callback(event_type, data)
+
+    def _observe_lcu_event(self, event: Any) -> None:
+        """Forward only events already subscribed to by this runtime."""
+        callback = self.diagnostic_event_callback
+        if callback is not None:
+            try:
+                callback(
+                    str(getattr(event, "uri", "")),
+                    str(getattr(event, "type", "unknown")),
+                    getattr(event, "data", None),
+                )
+            except Exception:  # noqa: BLE001 - diagnostics must not interrupt runtime handlers.
+                logger.debug("LCU diagnostic event observer failed")
 
     def _notify_status(self, action: str, *, level: str = "INFO", **params: Any) -> None:
         self._notify_event(
@@ -130,6 +174,7 @@ class WebSocketManager(ChampSelectMixin):
             return
         if self.thread and self.thread.is_alive():
             return
+        _install_lcu_driver_malformed_json_filter()
         self._stop_event.clear()
         self.thread = Thread(target=self._ws_loop, daemon=True, name="otp-lol-lcu")
         self.thread.start()
@@ -160,15 +205,14 @@ class WebSocketManager(ChampSelectMixin):
         params = self.get_params()
         if not params.get("summoner_name_auto_detect", True):
             return params.get("manual_region", "euw").lower()
-        detected_region = params.get("auto_detected_region") or PLATFORM_TO_REGION.get(
-            (self.state.platform_routing or "").lower()
-        )
+        detected_region = PLATFORM_TO_REGION.get((self.state.platform_routing or "").lower())
         return str(detected_region or "").strip().lower()
 
-    def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, str]:
+    def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
         effective = self.get_effective_profile_config(params=params)
         return {
             "presets_enabled": effective["presets_enabled"],
+            "auto_ban_enabled": bool(params.get("auto_ban_enabled", False)),
             "selected_pick_1": effective["selected_pick_1"],
             "selected_pick_2": effective["selected_pick_2"],
             "selected_pick_3": effective["selected_pick_3"],
@@ -619,15 +663,6 @@ class WebSocketManager(ChampSelectMixin):
             "owned_skins": [],
         }
 
-    def _store_auto_detected_values(self, riot_id: Optional[str], platform: str = "", region: str = "") -> None:
-        if not self.update_param:
-            return
-        self.update_param("auto_detected_riot_id", riot_id or "")
-        if platform:
-            self.update_param("auto_detected_platform", platform.lower())
-        if region:
-            self.update_param("auto_detected_region", region.lower())
-
     def force_refresh_summoner(self) -> None:
         if self.ws_active and self.connection and self.loop:
             asyncio.run_coroutine_threadsafe(self._refresh_player_and_region(), self.loop)
@@ -637,6 +672,13 @@ class WebSocketManager(ChampSelectMixin):
         self.connection = None
         self.ws_active = False
         self.state.current_phase = "None"
+        self.state.summoner = ""
+        self.state.summoner_id = None
+        self.state.puuid = None
+        self.state.auto_game_name = None
+        self.state.auto_tag_line = None
+        self.state.platform_routing = ""
+        self.state.region_routing = ""
         self.state.last_reported_summoner = None
         self.state.current_queue_id = 0
         self.state.reset_between_games()
@@ -681,6 +723,7 @@ class WebSocketManager(ChampSelectMixin):
                 @connector.ready
                 async def on_ready(connection):
                     """Store the live connection and refresh cached player context."""
+                    self._reset_ws_runtime_state()
                     self.connection = connection
                     self.ws_active = True
                     log_history_event(
@@ -719,14 +762,17 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_CURRENT_SUMMONER)
                 async def _ws_summoner_change(connection, event):
+                    self._observe_lcu_event(event)
                     await self._refresh_player_and_region()
 
                 @connector.ws.register(EP_CHAT_ME)
                 async def _ws_chat_me_change(connection, event):
+                    self._observe_lcu_event(event)
                     await self._refresh_player_and_region()
 
                 @connector.ws.register(EP_LOGIN)
                 async def _ws_login_session(connection, event):
+                    self._observe_lcu_event(event)
                     data = event.data or {}
                     if data.get("status") == "SUCCEEDED":
                         self._notify_status("login_detected")
@@ -734,6 +780,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_GAMEFLOW)
                 async def _ws_phase(connection, event):
+                    self._observe_lcu_event(event)
                     # Phase changes are the main trigger for match-flow automation.
                     phase = event.data
                     if not phase:
@@ -755,6 +802,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_READY_CHECK)
                 async def _ws_ready(connection, event):
+                    self._observe_lcu_event(event)
                     if self.state.current_phase not in ["Matchmaking", "ReadyCheck", "None", "Lobby"]:
                         return
                     data = event.data or {}
@@ -783,6 +831,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):
+                    self._observe_lcu_event(event)
                     # Session events can burst quickly; serialize ticks so the mixin
                     # never reads and writes champ-select state concurrently.
                     if self._cs_tick_lock.locked():
@@ -792,6 +841,7 @@ class WebSocketManager(ChampSelectMixin):
 
                 @connector.ws.register(EP_SESSION_TIMER)
                 async def _ws_cs_timer(connection, event):
+                    self._observe_lcu_event(event)
                     # Timer polling is rate-limited because the LCU can emit frequent updates.
                     if time() - self.state._last_cs_timer_fetch > 0.2:
                         await self._champ_select_timer_tick()
@@ -870,8 +920,6 @@ class WebSocketManager(ChampSelectMixin):
             self._notify_event(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
             self._notify_status("account_connected", level="USER", riot_id=self.get_riot_id())
             self.state.last_reported_summoner = self.state.summoner
-        self._store_auto_detected_values(self.get_riot_id(), self.state.platform_routing, self.get_platform_for_websites())
-
         # Region routing can come from different client endpoints depending on the client state.
         reg = None
         resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
@@ -885,11 +933,13 @@ class WebSocketManager(ChampSelectMixin):
             if platform:
                 self.state.platform_routing = platform
                 self.state.region_routing = self._platform_to_region_routing(platform)
-                self._store_auto_detected_values(
-                    self.get_riot_id(),
-                    platform,
-                    PLATFORM_TO_REGION.get(platform, "euw"),
-                )
+                region = PLATFORM_TO_REGION.get(platform)
+                riot_id = self.get_riot_id() or ""
+                if region and is_valid_riot_id(riot_id) and self.persist_detected_account:
+                    try:
+                        self.persist_detected_account(riot_id, region, platform)
+                    except Exception:  # noqa: BLE001 - account persistence must not interrupt LCU event handling.
+                        logger.exception("Unable to persist the detected League account")
 
     async def _refresh_current_queue_id(self) -> None:
         """Poll the lobby endpoint to detect the queue id before champ select starts."""

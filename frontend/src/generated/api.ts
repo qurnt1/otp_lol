@@ -177,6 +177,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/settings/last-detected-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear Last Detected Account */
+        delete: operations["clear_last_detected_account_api_settings_last_detected_account_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings/reset": {
         parameters: {
             query?: never;
@@ -188,6 +205,46 @@ export interface paths {
         put?: never;
         /** Reset Settings */
         post: operations["reset_settings_api_settings_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/presets/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Presets
+         * @description Restore the starter picks and keep all preset automations safely disabled.
+         */
+        post: operations["reset_presets_api_presets_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/presets/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear Presets
+         * @description Clear preset choices while leaving the rest of the settings untouched.
+         */
+        post: operations["clear_presets_api_presets_clear_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -381,6 +438,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/assets/spells/{spell_id}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spell Asset By Id */
+        get: operations["spell_asset_by_id_api_assets_spells__spell_id__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/assets/runes/perk/{perk_id}.png": {
         parameters: {
             query?: never;
@@ -390,6 +464,23 @@ export interface paths {
         };
         /** Rune Perk Asset */
         get: operations["rune_perk_asset_api_assets_runes_perk__perk_id__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/assets/items/{item_id}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Item Asset */
+        get: operations["item_asset_api_assets_items__item_id__png_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -469,6 +560,193 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/account/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Summary */
+        get: operations["account_summary_api_account_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/ranked": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Ranked */
+        get: operations["account_ranked_api_account_ranked_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/masteries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Masteries */
+        get: operations["account_masteries_api_account_masteries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/challenges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Challenges */
+        get: operations["account_challenges_api_account_challenges_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/matches": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Matches */
+        get: operations["account_matches_api_account_matches_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/matches/{game_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Match Detail */
+        get: operations["account_match_detail_api_account_matches__game_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/account/matches/{game_id}/timeline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Account Match Timeline */
+        get: operations["account_match_timeline_api_account_matches__game_id__timeline_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Diagnostics */
+        get: operations["read_diagnostics_api_diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Diagnostics */
+        post: operations["run_diagnostics_api_diagnostics_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/diagnostics/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Diagnostics */
+        get: operations["export_diagnostics_api_diagnostics_export_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/game-data/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Game Data Status */
+        get: operations["game_data_status_api_game_data_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/history": {
         parameters: {
             query?: never;
@@ -491,6 +769,178 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountResult[AccountSummary] */
+        AccountResult_AccountSummary_: {
+            data?: components["schemas"]["AccountSummary"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[ChallengesStats] */
+        AccountResult_ChallengesStats_: {
+            data?: components["schemas"]["ChallengesStats"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[MasteryStats] */
+        AccountResult_MasteryStats_: {
+            data?: components["schemas"]["MasteryStats"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[MatchDetail] */
+        AccountResult_MatchDetail_: {
+            data?: components["schemas"]["MatchDetail"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[MatchHistory] */
+        AccountResult_MatchHistory_: {
+            data?: components["schemas"]["MatchHistory"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[MatchTimeline] */
+        AccountResult_MatchTimeline_: {
+            data?: components["schemas"]["MatchTimeline"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountResult[RankedStats] */
+        AccountResult_RankedStats_: {
+            data?: components["schemas"]["RankedStats"] | null;
+            /** Available */
+            available: boolean;
+            /** Stale */
+            stale: boolean;
+            /** Last Synced */
+            last_synced?: string | null;
+            /** Error */
+            error?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "lcu" | "cache" | "mixed" | "unavailable";
+            /** From Cache */
+            from_cache: boolean;
+            /** Errors */
+            errors: {
+                [key: string]: string;
+            };
+        };
+        /** AccountSummary */
+        AccountSummary: {
+            /** Level */
+            level?: number | null;
+            /** Profile Icon Id */
+            profile_icon_id?: number | null;
+            /** Xp Since Last Level */
+            xp_since_last_level?: number | null;
+            /** Xp Until Next Level */
+            xp_until_next_level?: number | null;
+        };
         /**
          * BootstrapResponse
          * @description Local-only payload required for the first interactive dashboard paint.
@@ -504,6 +954,61 @@ export interface components {
                 [key: string]: components["schemas"]["PresetPreview"];
             };
             ban_preview?: components["schemas"]["PresetPreview"] | null;
+        };
+        /** ChallengeCategory */
+        ChallengeCategory: {
+            /** Category */
+            category: string;
+            /** Current */
+            current?: number | null;
+            /** Max */
+            max?: number | null;
+            /** Percentile */
+            percentile?: number | null;
+        };
+        /** ChallengeProgress */
+        ChallengeProgress: {
+            /** Id */
+            id: number;
+            /** Value */
+            value?: number | null;
+            /** Percentile */
+            percentile?: number | null;
+            /** Level */
+            level?: string | null;
+            /** Category */
+            category?: string | null;
+        };
+        /** ChallengeSummary */
+        ChallengeSummary: {
+            /** Challenges */
+            challenges: components["schemas"]["ChallengeProgress"][];
+            /** Total Points */
+            total_points?: number | null;
+        };
+        /** ChallengesStats */
+        ChallengesStats: {
+            challenges: components["schemas"]["ChallengeSummary"];
+            /** Categories */
+            categories: components["schemas"]["ChallengeCategory"][];
+        };
+        /** ChampionMastery */
+        ChampionMastery: {
+            /** Champion Id */
+            champion_id: number;
+            /** Level */
+            level?: number | null;
+            /** Points */
+            points?: number | null;
+            /** Last Play Time */
+            last_play_time?: number | null;
+            /** Chest Granted */
+            chest_granted?: boolean | null;
+        };
+        /** DiagnosticRunRequest */
+        DiagnosticRunRequest: {
+            /** Endpoint Ids */
+            endpoint_ids?: string[] | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -566,6 +1071,107 @@ export interface components {
             region: string | null;
             /** Embed Allowed */
             embed_allowed: boolean;
+            /**
+             * Account Source
+             * @enum {string}
+             */
+            account_source: "connected" | "saved" | "manual" | "unavailable";
+        };
+        /** MasteryStats */
+        MasteryStats: {
+            /** Champions */
+            champions: components["schemas"]["ChampionMastery"][];
+            /** Score */
+            score?: number | null;
+        };
+        /** MatchDetail */
+        MatchDetail: {
+            /** Game Id */
+            game_id: string;
+            /** Creation */
+            creation?: number | null;
+            /** Duration */
+            duration?: number | null;
+            /** Queue Id */
+            queue_id?: number | null;
+            /** Queue Name */
+            queue_name?: string | null;
+            /** Map Name */
+            map_name?: string | null;
+            /** Participants */
+            participants: components["schemas"]["MatchParticipant"][];
+            /** Item Names */
+            item_names?: {
+                [key: string]: string;
+            };
+        };
+        /** MatchHistory */
+        MatchHistory: {
+            /** Offset */
+            offset: number;
+            /** Matches */
+            matches: components["schemas"]["MatchSummary"][];
+            /** Total */
+            total?: number | null;
+        };
+        /** MatchParticipant */
+        MatchParticipant: {
+            /** Champion Id */
+            champion_id?: number | null;
+            /** Team Id */
+            team_id?: number | null;
+            /** Win */
+            win?: boolean | null;
+            /** Kills */
+            kills?: number | null;
+            /** Deaths */
+            deaths?: number | null;
+            /** Assists */
+            assists?: number | null;
+            /** Gold Earned */
+            gold_earned?: number | null;
+            /** Total Minions Killed */
+            total_minions_killed?: number | null;
+            /** Vision Score */
+            vision_score?: number | null;
+            /** Items */
+            items?: number[];
+        };
+        /** MatchSummary */
+        MatchSummary: {
+            /** Game Id */
+            game_id: string;
+            /** Creation */
+            creation?: number | null;
+            /** Duration */
+            duration?: number | null;
+            /** Queue Id */
+            queue_id?: number | null;
+            /** Queue Name */
+            queue_name?: string | null;
+            /** Map Name */
+            map_name?: string | null;
+            /** Champion Id */
+            champion_id?: number | null;
+            /** Win */
+            win?: boolean | null;
+            /** Kills */
+            kills?: number | null;
+            /** Deaths */
+            deaths?: number | null;
+            /** Assists */
+            assists?: number | null;
+        };
+        /** MatchTimeline */
+        MatchTimeline: {
+            /** Game Id */
+            game_id: string;
+            /** Events */
+            events: components["schemas"]["TimelineEvent"][];
+            /** Item Names */
+            item_names?: {
+                [key: string]: string;
+            };
         };
         /** MetadataResponse */
         MetadataResponse: {
@@ -670,6 +1276,26 @@ export interface components {
             /** Logo Url */
             logo_url: string;
         };
+        /** RankedQueue */
+        RankedQueue: {
+            /** Queue Type */
+            queue_type: string;
+            /** Tier */
+            tier?: string | null;
+            /** Division */
+            division?: string | null;
+            /** League Points */
+            league_points?: number | null;
+            /** Wins */
+            wins?: number | null;
+            /** Losses */
+            losses?: number | null;
+        };
+        /** RankedStats */
+        RankedStats: {
+            /** Queues */
+            queues: components["schemas"]["RankedQueue"][];
+        };
         /** RegionOption */
         RegionOption: {
             /** Id */
@@ -719,6 +1345,8 @@ export interface components {
             auto_summoners_enabled?: boolean | null;
             /** Presets Enabled */
             presets_enabled?: boolean | null;
+            /** Onboarding Completed */
+            onboarding_completed?: boolean | null;
             /** Selected Pick 1 */
             selected_pick_1?: string | null;
             /** Selected Pick 2 */
@@ -793,6 +1421,8 @@ export interface components {
             auto_summoners_enabled?: boolean | null;
             /** Presets Enabled */
             presets_enabled?: boolean | null;
+            /** Onboarding Completed */
+            onboarding_completed?: boolean | null;
             /** Selected Pick 1 */
             selected_pick_1?: string | null;
             /** Selected Pick 2 */
@@ -858,6 +1488,8 @@ export interface components {
             auto_summoners_enabled: boolean;
             /** Presets Enabled */
             presets_enabled: boolean;
+            /** Onboarding Completed */
+            onboarding_completed: boolean;
             /** Selected Pick 1 */
             selected_pick_1: string;
             /** Selected Pick 2 */
@@ -915,6 +1547,8 @@ export interface components {
             window_height: number;
             /** Window Maximized */
             window_maximized: boolean;
+            /** Auto Detected Account Valid */
+            readonly auto_detected_account_valid: boolean;
         };
         /** SkinReference */
         SkinReference: {
@@ -941,6 +1575,30 @@ export interface components {
             region: string | null;
             /** Embed Allowed */
             embed_allowed: boolean;
+            /**
+             * Account Source
+             * @enum {string}
+             */
+            account_source: "connected" | "saved" | "manual" | "unavailable";
+        };
+        /** TimelineEvent */
+        TimelineEvent: {
+            /** Type */
+            type: string;
+            /** Timestamp */
+            timestamp: number;
+            /** Participant Id */
+            participant_id?: number | null;
+            /** Killer Id */
+            killer_id?: number | null;
+            /** Victim Id */
+            victim_id?: number | null;
+            /** Item Id */
+            item_id?: number | null;
+            /** Skill Slot */
+            skill_slot?: number | null;
+            /** Assisting Participant Ids */
+            assisting_participant_ids?: number[];
         };
         /** UpdateMetadata */
         UpdateMetadata: {
@@ -1251,7 +1909,67 @@ export interface operations {
             };
         };
     };
+    clear_last_detected_account_api_settings_last_detected_account_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+        };
+    };
     reset_settings_api_settings_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+        };
+    };
+    reset_presets_api_presets_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+        };
+    };
+    clear_presets_api_presets_clear_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -1580,12 +2298,74 @@ export interface operations {
             };
         };
     };
+    spell_asset_by_id_api_assets_spells__spell_id__png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                spell_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rune_perk_asset_api_assets_runes_perk__perk_id__png_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 perk_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    item_asset_api_assets_items__item_id__png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: number;
             };
             cookie?: never;
         };
@@ -1737,6 +2517,311 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_summary_api_account_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_AccountSummary_"];
+                };
+            };
+        };
+    };
+    account_ranked_api_account_ranked_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_RankedStats_"];
+                };
+            };
+        };
+    };
+    account_masteries_api_account_masteries_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_MasteryStats_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_challenges_api_account_challenges_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_ChallengesStats_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_matches_api_account_matches_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_MatchHistory_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_match_detail_api_account_matches__game_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                game_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_MatchDetail_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    account_match_timeline_api_account_matches__game_id__timeline_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                game_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountResult_MatchTimeline_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_diagnostics_api_diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    run_diagnostics_api_diagnostics_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnosticRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_diagnostics_api_diagnostics_export_get: {
+        parameters: {
+            query?: {
+                include_riot_id?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    game_data_status_api_game_data_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

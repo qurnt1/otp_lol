@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from io import BytesIO
+from urllib.parse import quote, unquote
 
 import requests
 from PIL import Image
@@ -12,6 +13,7 @@ from ..config import URL_PERK_ICON_PREFIX
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 ALLOWED_IMAGE_FORMATS = frozenset({"PNG", "JPEG", "WEBP", "GIF"})
+logger = logging.getLogger(__name__)
 
 
 class CommunityDragonClient:
@@ -19,8 +21,22 @@ class CommunityDragonClient:
 
     @staticmethod
     def asset_url(asset_path: str) -> str | None:
-        normalized_path = str(asset_path or "").strip().replace("\\", "/")
-        if not normalized_path:
+        normalized_path = str(asset_path or "").strip()
+        if not normalized_path or len(normalized_path) > 2048:
+            return None
+        decoded_path = normalized_path
+        for _ in range(16):
+            unquoted_path = unquote(decoded_path)
+            if unquoted_path == decoded_path:
+                break
+            decoded_path = unquoted_path
+        else:
+            return None
+        normalized_path = decoded_path.replace("\\", "/")
+        if len(normalized_path) > 2048 or any(
+            ord(character) < 32 or ord(character) == 127
+            for character in normalized_path
+        ):
             return None
         lowered_path = normalized_path.lower()
         if (
@@ -30,16 +46,16 @@ class CommunityDragonClient:
             or "#" in lowered_path
         ):
             return None
-        if ".." in lowered_path.split("/"):
-            return None
         normalized_path = lowered_path.lstrip("/")
         prefix = "lol-game-data/assets/"
         if not normalized_path.startswith(prefix):
             return None
         relative_path = normalized_path[len(prefix) :]
-        if not relative_path:
+        if not relative_path or any(
+            segment in {"", ".", ".."} for segment in relative_path.split("/")
+        ):
             return None
-        return f"{URL_PERK_ICON_PREFIX}/{relative_path}"
+        return f"{URL_PERK_ICON_PREFIX}/{quote(relative_path, safe='/-._~')}"
 
     @classmethod
     def fetch_image(cls, asset_path: str) -> Image.Image | None:
@@ -61,11 +77,17 @@ class CommunityDragonClient:
                 return None
             image.load()
             return image
-        except Exception as error:
-            logging.warning(
+        except (
+            requests.RequestException,
+            OSError,
+            ValueError,
+            SyntaxError,
+            Image.DecompressionBombError,
+        ) as error:
+            logger.warning(
                 "CommunityDragon image download error for %s: %s", url, error
             )
             return None
 
 
-__all__ = ["CommunityDragonClient", "MAX_IMAGE_BYTES"]
+__all__ = ["MAX_IMAGE_BYTES", "CommunityDragonClient"]

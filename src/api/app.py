@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from ..config import CURRENT_VERSION
 from ..services.urls import LIVE_FRAME_ORIGINS, STATS_FRAME_ORIGINS
 from .context import ApplicationContext
-from .routes import catalog, history, runtime, settings
+from .routes import account, catalog, diagnostics, game_data, history, runtime, settings
 
 
 def create_default_context() -> ApplicationContext:
@@ -73,6 +73,9 @@ def create_app(
     app.include_router(runtime.router)
     app.include_router(settings.router)
     app.include_router(catalog.router)
+    app.include_router(account.router)
+    app.include_router(diagnostics.router)
+    app.include_router(game_data.router)
     app.include_router(history.router)
 
     if frontend_dir:

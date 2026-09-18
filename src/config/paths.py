@@ -71,3 +71,5 @@ ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_i
 SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
 SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")
 RUNES_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes")
+LCU_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "lcu"))
+ACCOUNT_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "account"))

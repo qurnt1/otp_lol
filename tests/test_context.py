@@ -1,7 +1,12 @@
 import unittest
+import tempfile
 from threading import Thread
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 from src.api.context import ApplicationContext
+from src.config import FIRST_LAUNCH_PARAMS, load_parameters
+from src.config import settings as settings_module
 
 
 class ApplicationContextSettingsTests(unittest.TestCase):
@@ -33,6 +38,49 @@ class ApplicationContextSettingsTests(unittest.TestCase):
 
         self.assertIsNone(result)
         self.assertEqual(self.context.get_params()["theme"], "darkly")
+
+    def test_detected_account_is_validated_persisted_atomically_and_emits_identity_event(self):
+        self.context.save = Mock(return_value=True)
+        self.context.broker.publish = Mock()
+
+        saved = self.context.persist_detected_account("Player#EUW", "euw", "euw1")
+
+        self.assertTrue(saved)
+        params = self.context.get_params()
+        self.assertEqual(
+            (params["auto_detected_riot_id"], params["auto_detected_region"], params["auto_detected_platform"]),
+            ("Player#EUW", "euw", "euw1"),
+        )
+        self.context.broker.publish.assert_called_once_with(
+            "account_identity_updated",
+            {"keys": ["auto_detected_riot_id", "auto_detected_region", "auto_detected_platform"]},
+        )
+
+    def test_detected_account_rejects_partial_or_mismatched_identity_without_mutation(self):
+        self.context.save = Mock(return_value=True)
+        original = self.context.get_params()
+
+        self.assertFalse(self.context.persist_detected_account("Player#EUW", "na", "euw1"))
+        self.assertFalse(self.context.persist_detected_account("Player", "euw", "euw1"))
+
+        self.context.save.assert_not_called()
+        params = self.context.get_params()
+        self.assertEqual(params["auto_detected_riot_id"], original["auto_detected_riot_id"])
+        self.assertEqual(params["auto_detected_region"], original["auto_detected_region"])
+        self.assertEqual(params["auto_detected_platform"], original["auto_detected_platform"])
+
+    def test_detected_account_survives_context_reload_while_offline(self):
+        with tempfile.TemporaryDirectory(prefix="otp-lol-account-") as temp_dir:
+            settings_path = str(Path(temp_dir) / "parameters.toml")
+            with patch.object(settings_module, "PARAMETERS_PATH", settings_path):
+                context = ApplicationContext(params=FIRST_LAUNCH_PARAMS)
+                self.assertTrue(context.persist_detected_account("Saved#EUW", "euw", "euw1"))
+                restored = ApplicationContext(params=load_parameters())
+
+        params = restored.get_params()
+        self.assertEqual(params["auto_detected_riot_id"], "Saved#EUW")
+        self.assertEqual(params["auto_detected_region"], "euw")
+        self.assertEqual(params["auto_detected_platform"], "euw1")
 
     def test_persist_preset_slot_keeps_parallel_updates(self):
         self.context.save = lambda: True
@@ -80,6 +128,13 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.assertEqual(window.hide_count, 1)
         self.context._handle_runtime_event("disconnected")
         self.assertEqual(shutdowns, [True])
+
+    def test_runtime_events_are_available_to_local_diagnostics(self):
+        self.context._handle_runtime_event("status", {"action": "ban_confirmed"})
+
+        event = self.context.diagnostics.snapshot()["events"][-1]
+        self.assertEqual(event["topic"], "otp-lol/status")
+        self.assertEqual(event["payload"]["action"], "ban_confirmed")
 
 
 if __name__ == "__main__":

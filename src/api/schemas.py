@@ -4,10 +4,18 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from ..config.constants import CONFIG_SCHEMA_VERSION, SUMMONER_SPELL_MAP
 from ..domain.hotkeys import normalize_hotkey
+from ..services.urls import is_valid_detected_account
 
 SkinMode = Literal["none", "fixed", "random"]
 Theme = Literal["darkly", "flatly"]
@@ -62,6 +70,7 @@ class SettingsPatch(BaseModel):
     auto_ban_enabled: bool | None = None
     auto_summoners_enabled: bool | None = None
     presets_enabled: bool | None = None
+    onboarding_completed: bool | None = None
     selected_pick_1: str | None = None
     selected_pick_2: str | None = None
     selected_pick_3: str | None = None
@@ -171,6 +180,7 @@ class StatsLinkResponse(BaseModel):
     riot_id: str | None
     region: str | None
     embed_allowed: bool
+    account_source: Literal["connected", "saved", "manual", "unavailable"]
 
 
 class LiveLinkResponse(StatsLinkResponse):
@@ -185,6 +195,7 @@ class SettingsResponse(BaseModel):
     auto_ban_enabled: bool
     auto_summoners_enabled: bool
     presets_enabled: bool
+    onboarding_completed: bool
     selected_pick_1: str
     selected_pick_2: str
     selected_pick_3: str
@@ -211,6 +222,15 @@ class SettingsResponse(BaseModel):
     window_width: int
     window_height: int
     window_maximized: bool
+
+    @computed_field
+    @property
+    def auto_detected_account_valid(self) -> bool:
+        return is_valid_detected_account(
+            self.auto_detected_riot_id,
+            self.auto_detected_region,
+            self.auto_detected_platform,
+        )
 
 
 class PresetsResponse(BaseModel):

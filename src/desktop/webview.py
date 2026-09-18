@@ -194,6 +194,7 @@ def run_webview() -> None:
         )
         bridge.attach(window)
         window.create()
+        context.diagnostics.record_event("otp-lol/webview", "created", {})
         context.bind_window(window, shutdown_callback=window.destroy)
         logging.info("[STARTUP] T3 WebView created=%.0fms", (time.perf_counter() - startup_started) * 1000)
 
@@ -216,9 +217,7 @@ def run_webview() -> None:
             toggle_window=lambda: _toggle_window(window),
             open_settings=window.open_settings,
             toggle_presets_automation=lambda: _toggle_preset_automation(context),
-            toggle_auto_ban=lambda: _toggle_setting(context, "auto_ban_enabled"),
             is_presets_automation_enabled=lambda: bool(context.get_params().get("presets_enabled", True)),
-            is_auto_ban_enabled=lambda: bool(context.get_params().get("auto_ban_enabled", True)),
             quit_callback=window.destroy,
             on_failure=tray_unavailable,
         )
@@ -256,15 +255,6 @@ def _toggle_window(window: WebViewWindow) -> None:
         window.show()
     else:
         window.hide()
-
-
-def _toggle_setting(context: ApplicationContext, key: str) -> None:
-    params = context.get_params()
-    updated = context.persist_parameters({key: not bool(params.get(key, True))})
-    if updated is None:
-        logging.error("Unable to persist tray setting %s", key)
-        return
-    context.broker.publish("settings_updated", {"keys": [key]})
 
 
 def _toggle_preset_automation(context: ApplicationContext) -> None:

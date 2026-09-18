@@ -61,6 +61,13 @@ def test_persistent_fields_are_not_reset():
     assert state.region_routing == "americas"
 
 
+def test_region_is_unknown_until_the_lcu_reports_it():
+    state = GameState()
+
+    assert state.platform_routing == ""
+    assert state.region_routing == ""
+
+
 def test_reset_between_games_covers_all_fields():
     """Every GameState field must be classified as either persistent or transient."""
     transient_fields = {f.name for f in fields(GameState) if f.metadata.get("transient")}

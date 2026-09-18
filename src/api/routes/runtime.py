@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
-from ...config import CURRENT_VERSION, REGION_LIST
+from ...config import CURRENT_VERSION, REGION_LIST, SUMMONER_SPELL_MAP
 from ...domain.events import RuntimeEvent
 from ...services.profile_config import build_effective_profile_config
 from ...services.skin_modes import get_effective_skin_mode_for_slot
@@ -60,9 +60,63 @@ def _cached_champion(data_dragon: Any, name_or_id: Any) -> tuple[int, dict[str, 
     return (int(champion_id), champion) if isinstance(champion, dict) else None
 
 
-def _preview_for_champion(data_dragon: Any, champion_name: Any) -> PresetPreview:
+def _lcu_champion_record(static_data: Any, name_or_id: Any) -> dict[str, Any] | None:
+    catalogue = static_data.load_champions()
+    if isinstance(catalogue, dict):
+        catalogue = catalogue.get("champions", catalogue.get("items", catalogue.get("data")))
+        if isinstance(catalogue, dict):
+            catalogue = list(catalogue.values())
+    if not isinstance(catalogue, list):
+        return None
+    requested_name = str(name_or_id or "").strip().casefold()
+    try:
+        requested_id = int(name_or_id)
+    except (TypeError, ValueError):
+        requested_id = 0
+    for record in catalogue:
+        if not isinstance(record, dict):
+            continue
+        try:
+            champion_id = int(record.get("championId", record.get("key", record.get("id", 0))))
+        except (TypeError, ValueError):
+            continue
+        aliases = {
+            str(record.get(field) or "").strip().casefold()
+            for field in ("name", "alias", "id")
+        }
+        if champion_id == requested_id or requested_name in aliases:
+            return record
+    return None
+
+
+def _preview_for_champion(context: Any, champion_name: Any) -> PresetPreview:
     name = str(champion_name or "").strip()
-    cached = _cached_champion(data_dragon, name)
+    static_data = getattr(context, "static_data", None)
+    if static_data is not None:
+        record = _lcu_champion_record(static_data, name)
+        if record is not None:
+            try:
+                champion_id = int(record.get("championId", record.get("key", record.get("id", 0))))
+            except (TypeError, ValueError):
+                champion_id = 0
+            if champion_id > 0:
+                has_icon = static_data.asset_path("champion", champion_id) is not None
+                cached = _cached_champion(context.data_dragon, champion_id)
+                has_splash = bool(cached and (cached[1].get("image") or {}).get("full"))
+                return PresetPreview(
+                    champion_id=champion_id,
+                    champion_name=str(record.get("name") or record.get("alias") or name),
+                    champion_icon_url=versioned_asset_url(
+                        f"/api/assets/champions/{champion_id}.png",
+                        static_data.status.get("game_version"),
+                    ) if has_icon else None,
+                    champion_splash_url=versioned_asset_url(
+                        f"/api/assets/champions/{champion_id}/splash",
+                        context.data_dragon.version,
+                    ) if has_splash else None,
+                )
+
+    cached = _cached_champion(context.data_dragon, name)
     if not cached:
         return PresetPreview(champion_name=name)
     champion_id, champion = cached
@@ -71,10 +125,10 @@ def _preview_for_champion(data_dragon: Any, champion_name: Any) -> PresetPreview
         champion_id=champion_id,
         champion_name=str(champion.get("name") or name),
         champion_icon_url=versioned_asset_url(
-            f"/api/assets/champions/{champion_id}.png", data_dragon.version
+            f"/api/assets/champions/{champion_id}.png", context.data_dragon.version
         ) if has_image else None,
         champion_splash_url=versioned_asset_url(
-            f"/api/assets/champions/{champion_id}/splash", data_dragon.version
+            f"/api/assets/champions/{champion_id}/splash", context.data_dragon.version
         ) if has_image else None,
     )
 
@@ -85,18 +139,36 @@ def _build_preset_previews(context: Any, params: dict[str, Any], effective: dict
     for slot_key in ("pick_1", "pick_2", "pick_3"):
         slot = slots.get(slot_key) if isinstance(slots.get(slot_key), dict) else {}
         champion_name = str(slot.get("champion") or "").strip()
-        preview = _preview_for_champion(context.data_dragon, champion_name)
+        preview = _preview_for_champion(context, champion_name)
         if preview.champion_id:
             spell_1 = str(slot.get("spell_1") or "")
             spell_2 = str(slot.get("spell_2") or "")
-            if context.data_dragon.summoner_loaded:
-                if spell_1 in context.data_dragon.summoner_data:
-                    preview.spell_1_url = versioned_asset_url(
-                        f"/api/assets/spells?name={quote(spell_1)}", context.data_dragon.version
+            static_data = getattr(context, "static_data", None)
+            spell_catalogue = static_data.load_summoner_spells() if static_data is not None else None
+            for spell_name, field in ((spell_1, "spell_1_url"), (spell_2, "spell_2_url")):
+                spell_id = SUMMONER_SPELL_MAP.get(spell_name, 0)
+                has_lcu_asset = bool(
+                    spell_catalogue is not None
+                    and spell_id > 0
+                    and static_data.asset_path("spell", spell_id)
+                )
+                if has_lcu_asset:
+                    setattr(
+                        preview,
+                        field,
+                        versioned_asset_url(
+                            f"/api/assets/spells/{spell_id}.png",
+                            static_data.status.get("game_version"),
+                        ),
                     )
-                if spell_2 in context.data_dragon.summoner_data:
-                    preview.spell_2_url = versioned_asset_url(
-                        f"/api/assets/spells?name={quote(spell_2)}", context.data_dragon.version
+                elif context.data_dragon.summoner_loaded and spell_name in context.data_dragon.summoner_data:
+                    setattr(
+                        preview,
+                        field,
+                        versioned_asset_url(
+                            f"/api/assets/spells?name={quote(spell_name)}",
+                            context.data_dragon.version,
+                        ),
                     )
             mode = get_effective_skin_mode_for_slot(slot_key, effective)
             if mode == "fixed":
@@ -154,7 +226,7 @@ def bootstrap(request: Request) -> BootstrapResponse:
             "slots": effective["pick_slots"],
         },
         "preset_previews": _build_preset_previews(context, params, effective),
-        "ban_preview": _preview_for_champion(context.data_dragon, params.get("selected_ban")),
+        "ban_preview": _preview_for_champion(context, params.get("selected_ban")),
     }
 
 
@@ -179,7 +251,7 @@ async def updates(request: Request) -> UpdatesResponse:
 def stats_link(request: Request) -> StatsLinkResponse:
     context = _context(request)
     params = context.get_params()
-    riot_id, region = resolve_provider_account(params, context.runtime)
+    riot_id, region, account_source = resolve_provider_account(params, context.runtime)
     site = str(params.get("preferred_stats_site") or "opgg").strip().lower()
     if site not in STATS_PROVIDERS:
         site = "opgg"
@@ -192,6 +264,7 @@ def stats_link(request: Request) -> StatsLinkResponse:
         "riot_id": riot_id if available else None,
         "region": region if available else None,
         "embed_allowed": site in STATS_FRAME_ORIGINS,
+        "account_source": account_source,
     }
 
 
@@ -199,7 +272,7 @@ def stats_link(request: Request) -> StatsLinkResponse:
 def live_link(request: Request) -> LiveLinkResponse:
     context = _context(request)
     params = context.get_params()
-    riot_id, region = resolve_provider_account(params, context.runtime)
+    riot_id, region, account_source = resolve_provider_account(params, context.runtime)
     site = str(params.get("preferred_hotkey_site") or "porofessor").strip().lower()
     if site not in HOTKEY_PROVIDERS:
         site = "porofessor"
@@ -212,6 +285,7 @@ def live_link(request: Request) -> LiveLinkResponse:
         "riot_id": riot_id if available else None,
         "region": region if available else None,
         "embed_allowed": site in LIVE_FRAME_ORIGINS,
+        "account_source": account_source,
     }
 
 

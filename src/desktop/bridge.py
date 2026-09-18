@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 import os
 import webbrowser
+from typing import TYPE_CHECKING
 
-from ..services.urls import is_allowed_external_url
-from ..services.urls import build_provider_url, is_allowed_provider_url, resolve_provider_account
+from ..services.urls import (
+    build_provider_url,
+    is_allowed_external_url,
+    is_allowed_provider_url,
+    resolve_provider_account,
+)
 
 if TYPE_CHECKING:
     from .window import WebViewWindow
@@ -53,7 +57,7 @@ class DesktopBridge:
         setting = "preferred_stats_site" if kind == "stats" else "preferred_hotkey_site"
         if str(params.get(setting) or "").strip().lower() != str(provider_id or "").strip().lower():
             return False
-        riot_id, region = resolve_provider_account(params, self._context.runtime)
+        riot_id, region, _account_source = resolve_provider_account(params, self._context.runtime)
         url = build_provider_url(provider_id, kind, region, riot_id)
         if not url or not is_allowed_provider_url(provider_id, url):
             return False

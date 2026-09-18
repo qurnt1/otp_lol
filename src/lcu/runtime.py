@@ -11,6 +11,7 @@ from ..core.datadragon import DataDragon
 from ..core.websocket import WebSocketManager
 from ..domain.events import EventBroker
 from ..domain.models import RuntimeSnapshot
+from .client import LcuClient, LcuResponse
 
 
 class RuntimeUnavailable(RuntimeError):
@@ -26,8 +27,11 @@ class LcuRuntime:
         data_dragon: DataDragon,
         get_params: Callable[[], dict[str, Any]],
         update_param: Callable[[str, Any], None] | None,
+        persist_detected_account: Callable[[str, str, str], bool] | None = None,
         broker: EventBroker,
         event_hook: Callable[[str, Any], None] | None = None,
+        request_observer: Callable[[dict[str, Any]], None] | None = None,
+        event_observer: Callable[[str, str, Any], None] | None = None,
         manager_type: type[WebSocketManager] = WebSocketManager,
     ) -> None:
         self.data_dragon = data_dragon
@@ -38,6 +42,12 @@ class LcuRuntime:
             dd=data_dragon,
             get_params=get_params,
             update_param=update_param,
+            persist_detected_account=persist_detected_account,
+        )
+        self.manager.diagnostic_event_callback = event_observer
+        self.client = LcuClient(
+            lambda: getattr(self.manager, "connection", None),
+            request_observer=request_observer,
         )
 
     _SNAPSHOT_EVENTS = frozenset(
@@ -102,6 +112,23 @@ class LcuRuntime:
             raise RuntimeUnavailable("The League Client runtime is not ready")
         future = asyncio.run_coroutine_threadsafe(coroutine_factory(), loop)
         return await asyncio.wrap_future(future)
+
+    async def _request(self, operation: Callable[[str], Any], path: str) -> LcuResponse:
+        loop = self.manager.loop
+        if loop is None or loop.is_closed():
+            return await operation(path)
+        try:
+            return await self._submit(lambda: operation(path))
+        except RuntimeUnavailable:
+            return await operation(path)
+
+    async def request_json(self, path: str) -> LcuResponse:
+        """Perform a bounded GET using the manager's current LCU connection."""
+        return await self._request(self.client.get_json, path)
+
+    async def request_bytes(self, path: str) -> LcuResponse:
+        """Fetch a bounded binary LCU asset through the existing connection."""
+        return await self._request(self.client.get_bytes, path)
 
     async def fetch_rune_pages(self) -> list[dict[str, Any]]:
         return await self._submit(self.manager._fetch_rune_pages_async)
