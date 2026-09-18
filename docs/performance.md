@@ -1,6 +1,8 @@
 # OTP LOL V2, démarrage et instrumentation
 
-Le chemin critique est désormais local : le serveur FastAPI expose `/api/bootstrap`, le WebView peut afficher le shell, puis les catalogues Data Dragon et GitHub sont demandés en arrière-plan ou à l’ouverture du picker. Les liens de statistiques du compte et de partie en direct sont chargés uniquement à l’ouverture de `#statistics` et `#live`, pas pendant le rendu du Dashboard. Une copie Data Dragon déjà présente est lue depuis le disque au démarrage sans réseau, puis une éventuelle mise à jour est vérifiée en arrière-plan.
+Le chemin critique reste local : `/api/bootstrap` expose les réglages et aperçus déjà disponibles, puis le Dashboard s'affiche sans charger les catalogues complets, l'historique, les maîtrises ou les challenges. Au démarrage, OTP LOL lit le snapshot LCU local et le cache Data Dragon depuis le disque, sans requête réseau. Après connexion du client League, le rafraîchissement du snapshot statique LCU se fait en arrière-plan. Data Dragon reste un fallback de secours.
+
+À l'ouverture de `#statistics`, seuls le résumé de compte, le classement et les derniers matchs sont demandés. Maîtrises, challenges, détail d'un match et timeline sont lazy. `#live` conserve son lien de statistiques de partie séparé. Les diagnostics et leurs tests d'endpoints ne s'exécutent que depuis la page Diagnostics; aucun catalogue items complet ni challenge n'est chargé au démarrage.
 
 Repères disponibles dans les logs :
 

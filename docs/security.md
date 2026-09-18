@@ -11,14 +11,20 @@ OTP LOL is a local desktop application. The security boundary is designed around
 
 ## External requests
 
-- `/api/assets` accepts only known Data Dragon or CommunityDragon relative asset paths.
+- `/api/assets` resolves known numeric champion, spell, perk, and skin IDs against validated LCU snapshots first; Data Dragon and CommunityDragon paths are restricted fallbacks.
 - Absolute URLs, protocol-relative URLs, query strings, fragments, traversal, and unknown path prefixes are rejected.
 - Image downloads have timeouts, size limits, content-type checks, format checks, and decode validation.
 - Native external links are restricted to the configured HTTPS provider allowlist.
 
+`LcuClient` reuses the League connection already detected by OTP LOL and issues bounded GETs through that local connection. The frontend has typed account/catalog/diagnostics operations, not a URL-taking LCU proxy. The diagnostics runner selects from a fixed endpoint allowlist and sends no LCU write methods. Request records omit headers and credentials; event payloads are bounded and redact sensitive fields and identifiers. Diagnostic export redacts the Riot ID by default, and inclusion is an explicit user opt-in.
+
+Event payloads are not expanded in the diagnostics log list. The **Voir JSON** drawer is the only UI surface that renders their bounded, redacted JSON; endpoint results stored for the current app session contain normalized status, timing, and summary fields only.
+
+Account-statistics cache files contain only normalized DTO fields and freshness timestamps. Cache filenames are keyed by a SHA-256 identity hash; the offline pointer stores only that hash, not the raw PUUID or Riot ID. No LCU authorization, password, or token is persisted in the account cache.
+
 ## Statistics embeds and WebView bridge
 
-`/api/links/stats` and `/api/links/live` build URLs from a provider selected for that page, a validated Riot ID, and a valid region. Automatic account detection uses only the currently connected League snapshot; manual values are used only when manual mode is enabled. The frontend never accepts an arbitrary profile URL. Account frames use the `STATS_FRAME_ORIGINS` allowlist, which currently contains only `https://www.deeplol.gg`; `LIVE_FRAME_ORIGINS` is intentionally empty until a provider is validated for live embedding. Other sites use the explicit external-browser fallback. The account allowlist reflects observed probes, not a claim about every profile or future response: DeepLOL returned 200 without displayed XFO/CSP headers; the local DPM GET returned a Cloudflare 403 with SAMEORIGIN while another 16/09/2026 sample returned 308 then 200; OP.GG returned 404 with SAMEORIGIN; LeagueOfGraphs returned a 403 challenge with SAMEORIGIN/CSP. No response is bypassed or rewritten.
+`/api/links/stats` and `/api/links/live` build URLs from a provider selected for that page, a validated Riot ID, and a valid region. Automatic mode prefers a complete connected League identity and uses the last complete locally saved Riot ID/region/platform tuple only while League is disconnected. A connected but incomplete snapshot is unavailable rather than being combined with older account data. Manual values are used only when manual mode is enabled. The detected Riot ID, region, and platform are stored with local settings, but are excluded from portable settings export/import; PUUIDs and LCU credentials are not stored for this feature. The frontend never accepts an arbitrary profile URL. Account frames use the `STATS_FRAME_ORIGINS` allowlist, which currently contains only `https://www.deeplol.gg`; `LIVE_FRAME_ORIGINS` is intentionally empty until a provider is validated for live embedding. Other sites use the explicit external-browser fallback. The account allowlist reflects observed probes, not a claim about every profile or future response: DeepLOL returned 200 without displayed XFO/CSP headers; the local DPM GET returned a Cloudflare 403 with SAMEORIGIN while another 16/09/2026 sample returned 308 then 200; OP.GG returned 404 with SAMEORIGIN; LeagueOfGraphs returned a 403 challenge with SAMEORIGIN/CSP. No response is bypassed or rewritten.
 
 The DeepLOL frame uses `sandbox="allow-scripts allow-same-origin allow-forms"` so its own origin-based requests/storage are not forced into an opaque origin. It does not receive popup or top-navigation permissions, and `referrerPolicy` is `no-referrer`. The external action stays visible. A timeout or frame error shows an explicit fallback; a browser `load` event is not treated as proof that the provider rendered successfully.
 
@@ -32,6 +38,6 @@ The 2026-09-17 live-page probe used a deliberately nonexistent Riot ID, so it di
 
 ## Persistence and updates
 
-Settings use schema version 6, atomic writes, and recoverable backups when a file is invalid or uses an unsupported schema. Missing settings are created with defaults on first launch. Schema 5 is explicitly migrated to schema 6 without resetting supported values; imports require the current schema version. Release updates require the exact `OTP-LOL-Setup.exe` asset and the matching `OTP-LOL-Setup.exe.sha256` asset. The website displays the release version, date, and checksum when GitHub metadata is available.
+Settings use schema version 6, atomic writes, and recoverable backups when a file is invalid or uses an unsupported schema. A missing file is created on first launch with editable Garen/Lux/Ashe starter presets and every automation disabled. No old-schema migration is performed; unsupported files are backed up and replaced by those safe defaults. Imports require the current schema version. Release updates require the exact `OTP-LOL-Setup.exe` asset and the matching `OTP-LOL-Setup.exe.sha256` asset. The website displays the release version, date, and checksum when GitHub metadata is available.
 
 The project does not claim Authenticode signing yet. A signed Windows installer is the next integrity improvement for broad public distribution.
