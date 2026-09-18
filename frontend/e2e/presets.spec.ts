@@ -61,7 +61,7 @@ test("the global preset switch rolls back and explains a rejected activation", a
   await mockLocalApi(page, { rejectPresetActivation: true });
   await page.goto("/#presets");
 
-  const toggle = page.getByRole("switch", { name: "Presets actifs" });
+  const toggle = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -71,7 +71,7 @@ test("the global preset switch rolls back and explains a rejected activation", a
 test("the preset switch updates immediately and exposes its pending state", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
   await page.goto("/#presets");
-  const toggle = page.getByRole("switch", { name: "Presets actifs" });
+  const toggle = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await page.route("**/api/settings", async (route) => {
     if (route.request().method() === "PATCH") await page.waitForTimeout(250);
@@ -81,6 +81,53 @@ test("the preset switch updates immediately and exposes its pending state", asyn
   await expect(toggle).toHaveAttribute("aria-busy", "true");
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await expect(toggle).toHaveAttribute("aria-busy", "false");
+});
+
+test("master gates preset children across Dashboard and Presets without clearing their choices", async ({ page }) => {
+  const state = await mockLocalApi(page, { configured: true });
+  Object.assign(state.settings, {
+    presets_enabled: false,
+    auto_accept_enabled: true,
+    auto_pick_enabled: true,
+    auto_ban_enabled: true,
+    auto_summoners_enabled: true,
+    skin_automation_enabled: true,
+    auto_play_again_enabled: true,
+  });
+  state.presets.presets_enabled = false;
+  state.runtime.presets_enabled = false;
+  await page.goto("/#dashboard");
+
+  const master = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  await expect(master).toHaveAttribute("aria-checked", "false");
+  const automationItems = page.locator(".automation-item");
+  for (const index of [1, 2, 3, 4]) {
+    const child = automationItems.nth(index).getByRole("switch");
+    await expect(child).toBeDisabled();
+    await expect(child).toHaveAttribute("aria-checked", "true");
+  }
+  await expect(automationItems.nth(0).getByRole("switch")).toBeEnabled();
+  await expect(automationItems.nth(5).getByRole("switch")).toBeEnabled();
+
+  await master.click();
+  await expect(master).toHaveAttribute("aria-checked", "true");
+  await expect(automationItems.nth(1).getByRole("switch")).toBeEnabled();
+  for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
+    expect(state.settings[key]).toBe(true);
+  }
+
+  await page.goto("/#presets");
+  const presetsMaster = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  await expect(presetsMaster).toHaveAttribute("aria-checked", "true");
+  await presetsMaster.click();
+  await expect(presetsMaster).toHaveAttribute("aria-checked", "false");
+  await page.locator(".preset-card").first().click();
+  const runeAuto = page.getByRole("dialog").getByRole("switch", { name: "Appliquer automatiquement" });
+  await expect(runeAuto).toBeDisabled();
+  await expect(runeAuto).toHaveAttribute("aria-checked", "true");
+  for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
+    expect(state.settings[key]).toBe(true);
+  }
 });
 
 test("rune page and auto mode stay together when League is unavailable", async ({ page }) => {

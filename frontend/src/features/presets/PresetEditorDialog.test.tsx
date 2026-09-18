@@ -55,7 +55,7 @@ beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
 });
 
-function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
+function editor(slot: PresetSlot, skinPreview: PresetPreview = preview, presetAutomationsEnabled = true) {
   return <PresetEditorDialog
     open
     slotKey="pick_1"
@@ -67,6 +67,7 @@ function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
     pending={false}
     feedback=""
     leagueConnected={false}
+    presetAutomationsEnabled={presetAutomationsEnabled}
     returnFocusRef={createRef<HTMLButtonElement>()}
     onClose={vi.fn()}
     onOpenPicker={vi.fn()}
@@ -75,6 +76,14 @@ function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
 }
 
 describe("PresetEditorDialog previews", () => {
+  it("keeps rune auto-apply preference visible and disabled while the preset master is off", () => {
+    render(editor({ ...baseSlot, rune_auto_apply: true }, preview, false));
+
+    const autoApply = screen.getByRole("switch", { name: "Appliquer automatiquement" });
+    expect(autoApply).toHaveAttribute("aria-checked", "true");
+    expect(autoApply).toBeDisabled();
+  });
+
   it("shows the matching bootstrap skin preview and falls back to the champion icon for none", () => {
     const { rerender } = render(editor(baseSlot));
     const skinChoice = screen.getByRole("button", { name: /Galerie des skins/ });

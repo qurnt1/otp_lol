@@ -5,6 +5,7 @@ import { ChevronRight, CircleOff, Sparkles, Swords, X } from "lucide-react";
 import { AssetImage } from "../../components/game/AssetImage";
 import { Select } from "../../components/ui/Select";
 import { fr } from "../../content/fr";
+import { presetAutomationCopy } from "../../content/presetAutomation";
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
 import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
 import type { PresetSlotKey } from "./PresetCard";
@@ -20,6 +21,7 @@ export function PresetEditorDialog({
   pending,
   feedback,
   leagueConnected,
+  presetAutomationsEnabled,
   returnFocusRef,
   championChoiceRef,
   onClose,
@@ -37,6 +39,7 @@ export function PresetEditorDialog({
   pending: boolean;
   feedback: string;
   leagueConnected: boolean;
+  presetAutomationsEnabled: boolean;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   championChoiceRef?: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
@@ -109,8 +112,9 @@ export function PresetEditorDialog({
                   <span className="editor-choice-copy"><small>{fr.presets.runePage}</small><strong>{slot.rune_page_name || fr.common.default}</strong></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </button>
-                <div className="editor-switch-row"><span>{fr.presets.runeAuto}</span><button className="switch" type="button" role="switch" aria-label={fr.presets.runeAuto} aria-checked={slot.rune_auto_apply} aria-busy={pending} disabled={pending} onClick={() => onUpdate({ rune_auto_apply: !slot.rune_auto_apply })}><span aria-hidden="true" /></button></div>
+                <div className="editor-switch-row"><span>{fr.presets.runeAuto}</span><button className="switch" type="button" role="switch" aria-label={fr.presets.runeAuto} aria-checked={slot.rune_auto_apply} aria-busy={pending} title={!presetAutomationsEnabled ? presetAutomationCopy.masterRequired : undefined} disabled={pending || !presetAutomationsEnabled} onClick={() => onUpdate({ rune_auto_apply: !slot.rune_auto_apply })}><span aria-hidden="true" /></button></div>
               </div>
+              {!presetAutomationsEnabled && <p className="preset-editor-note">{presetAutomationCopy.masterRequired}</p>}
               {!leagueConnected && <p className="preset-editor-note">{fr.presets.runesUnavailableHint} {fr.presets.savedRunePageHint}</p>}
             </section>
 

@@ -28,6 +28,16 @@ test("dashboard connecté affiche l’identité dans la sidebar et la phase dans
   await expect(page.getByRole("combobox", { name: "Mode de skin du slot 1" })).toContainText("Aucun");
 });
 
+test("le statut du ban reflète le maître des automatisations Presets", async ({ page }) => {
+  const state = await mockLocalApi(page, { connected: true, configured: true });
+  state.settings.presets_enabled = false;
+  state.presets.presets_enabled = false;
+  state.settings.auto_ban_enabled = true;
+  await page.goto("/#dashboard");
+
+  await expect(page.locator(".ban-visual strong")).toHaveText("Désactivé");
+});
+
 test("sidebar keeps long account identifiers contained and the phase row never shows account-sync status", async ({ page }) => {
   await mockLocalApi(page, {
     connected: true,

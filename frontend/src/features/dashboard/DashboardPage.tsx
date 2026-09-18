@@ -9,6 +9,8 @@ import { cn } from "../../lib/cn";
 import { phaseLabel } from "../../domain/runtime";
 import { useRuntimeStore } from "../../stores/runtimeStore";
 import type { Champion, PresetsResponse, Settings, SettingsPatch } from "../../types/api";
+import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
+import { PresetOnboardingBanner } from "../automation/PresetOnboardingBanner";
 import { AutomationBar, type AutomationItem } from "./AutomationBar";
 import { BanPanel } from "./BanPanel";
 import { ChampionPriorityCard, type SkinMode } from "./ChampionPriorityCard";
@@ -23,6 +25,7 @@ function DashboardPage() {
   const runtime = useRuntimeStore((state) => state.runtime);
   const presets = useQuery({ queryKey: ["presets"], queryFn: api.getPresets, staleTime: Infinity });
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings, staleTime: Infinity });
+  const presetMaster = usePresetAutomationMaster();
   const currentPresets = presets.data;
   const currentSettings = settings.data;
   const slotsData = slots.map((key) => currentPresets?.slots[key]);
@@ -73,7 +76,10 @@ function DashboardPage() {
     try {
       const next = await api.patchPreset(slot, { skin_mode: mode });
       queryClient.setQueryData(["presets"], next);
-      await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["settings"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap"] }),
+      ]);
     } catch {
       if (previous) queryClient.setQueryData(["presets"], previous);
     } finally {
@@ -83,12 +89,12 @@ function DashboardPage() {
 
   const automationItems = useMemo<AutomationItem[]>(() => currentSettings ? [
     { id: "auto-accept", label: fr.settings.autoAccept, detail: fr.dashboard.readyCheck, enabled: currentSettings.auto_accept_enabled, pending: pendingKeys.has("auto_accept_enabled"), onToggle: () => toggle("auto_accept_enabled") },
-    { id: "auto-pick", label: fr.settings.autoPick, detail: fr.dashboard.prioritizedSlots, enabled: currentSettings.auto_pick_enabled, pending: pendingKeys.has("auto_pick_enabled"), onToggle: () => toggle("auto_pick_enabled") },
-    { id: "auto-ban", label: fr.settings.autoBan, detail: currentPresets?.selected_ban || fr.dashboard.noBan, enabled: currentSettings.auto_ban_enabled, pending: pendingKeys.has("auto_ban_enabled"), onToggle: () => toggle("auto_ban_enabled") },
-    { id: "auto-summoners", label: fr.settings.autoSummoners, detail: fr.dashboard.summonersAndRunes, enabled: currentSettings.auto_summoners_enabled, pending: pendingKeys.has("auto_summoners_enabled"), onToggle: () => toggle("auto_summoners_enabled") },
-    { id: "auto-skin", label: fr.dashboard.skin, detail: currentSettings.skin_automation_enabled ? fr.dashboard.enabled : fr.dashboard.disabled, enabled: currentSettings.skin_automation_enabled, pending: pendingKeys.has("skin_automation_enabled"), onToggle: () => void patchSetting("skin_automation_enabled", !currentSettings.skin_automation_enabled) },
+    { id: "auto-pick", label: fr.settings.autoPick, detail: fr.dashboard.prioritizedSlots, enabled: currentSettings.auto_pick_enabled, pending: pendingKeys.has("auto_pick_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_pick_enabled") },
+    { id: "auto-ban", label: fr.settings.autoBan, detail: currentPresets?.selected_ban || fr.dashboard.noBan, enabled: currentSettings.auto_ban_enabled, pending: pendingKeys.has("auto_ban_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_ban_enabled") },
+    { id: "auto-summoners", label: fr.settings.autoSummoners, detail: fr.dashboard.summonersAndRunes, enabled: currentSettings.auto_summoners_enabled, pending: pendingKeys.has("auto_summoners_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_summoners_enabled") },
+    { id: "auto-skin", label: fr.dashboard.skin, detail: currentSettings.skin_automation_enabled ? fr.dashboard.enabled : fr.dashboard.disabled, enabled: currentSettings.skin_automation_enabled, pending: pendingKeys.has("skin_automation_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => void patchSetting("skin_automation_enabled", !currentSettings.skin_automation_enabled) },
     { id: "auto-play-again", label: fr.settings.playAgain, detail: fr.dashboard.returnToLobby, enabled: currentSettings.auto_play_again_enabled, pending: pendingKeys.has("auto_play_again_enabled"), onToggle: () => toggle("auto_play_again_enabled") },
-  ] : [], [currentPresets?.selected_ban, currentSettings, pendingKeys]);
+  ] : [], [currentPresets?.selected_ban, currentSettings, pendingKeys, presetMaster.enabled]);
 
   if (presets.isPending && !currentPresets) return <div className="page-loading">{fr.common.loading}</div>;
   if (presets.isError && !currentPresets) return <div className="state-error"><strong>{fr.presets.championLoadError}</strong><span>{fr.app.localServerError}</span><Button variant="primary" type="button" onClick={() => void presets.refetch()}>{fr.common.retry}</Button></div>;
@@ -97,14 +103,15 @@ function DashboardPage() {
   const championFor = (name: string, preview?: { champion_id: number | null }) => championCatalog.data?.items.find((item: Champion) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase()) ?? (preview?.champion_id ? championCatalog.data?.items.find((item: Champion) => item.id === preview.champion_id) : undefined);
   return <div className="dashboard-page">
     <div className="page-heading dashboard-heading"><h1>{fr.dashboard.title}</h1></div>
+    <PresetOnboardingBanner />
     <div className="phase-strip" role="status" aria-live="polite"><Activity size={14} aria-hidden="true" /><span>{fr.dashboard.currentPhase}</span><strong>{currentPhase}</strong></div>
     <div className="dashboard-grid">
       <div className="dashboard-main">
         <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><a className="text-button" href="#presets">{fr.dashboard.edit} <ArrowUpRight size={14} aria-hidden="true" /></a></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} onSkinModeChange={(mode) => void setSkinMode(slots[index], mode)} pending={pendingKeys.has(`skin_mode_${slots[index]}`)} />)}</div></section>
       </div>
-      <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} /><QuickActions /></aside>
+      <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} /><QuickActions /></aside>
     </div>
-    <AutomationBar items={automationItems} />
+    <AutomationBar items={automationItems} master={<PresetAutomationMaster enabled={presetMaster.enabled} ready={presetMaster.ready} pending={presetMaster.pending} errorMessage={presetMaster.errorMessage} onToggle={presetMaster.toggle} />} />
   </div>;
 }
 

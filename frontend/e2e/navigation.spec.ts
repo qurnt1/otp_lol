@@ -19,20 +19,24 @@ test("settings deep links and browser back-forward restore the selected section"
   await expect(page.locator(".settings-section h2")).toHaveText("Raccourcis");
 });
 
-test("dashboard account-statistics action navigates internally and fetches only after navigation", async ({ page }) => {
-  const statsRequests: string[] = [];
+test("dashboard account-statistics action opens the provider profile without native account requests", async ({ page }) => {
+  const accountRequests: string[] = [];
+  const statsLinkRequests: string[] = [];
   page.on("request", (request) => {
-    if (request.url().endsWith("/api/links/stats")) statsRequests.push(request.url());
+    const url = new URL(request.url());
+    if (url.pathname.startsWith("/api/account/")) accountRequests.push(url.pathname);
+    if (url.pathname === "/api/links/stats") statsLinkRequests.push(url.pathname);
   });
   await mockLocalApi(page);
   await page.goto("/#dashboard");
   await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
-  expect(statsRequests).toHaveLength(0);
+  expect(accountRequests).toHaveLength(0);
 
   await page.getByRole("link", { name: "Ouvrir les statistiques du compte" }).click();
   await expect(page).toHaveURL(/#statistics$/);
   await expect(page.getByRole("heading", { name: "Statistiques" })).toBeVisible();
-  expect(statsRequests).toHaveLength(1);
+  await expect.poll(() => statsLinkRequests.length).toBe(1);
+  expect(accountRequests).toEqual([]);
 });
 
 test("sidebar settings action opens the default settings deep link", async ({ page }) => {

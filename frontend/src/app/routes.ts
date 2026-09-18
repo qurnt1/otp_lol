@@ -1,8 +1,9 @@
 import type { AppRoute, PageId, PresetsAction, SettingsSection } from "../types/api";
 import { fr } from "../content/fr";
+import { diagnosticsCopy } from "../features/diagnostics/copy";
 
 export const settingsSections = ["general", "automations", "account", "links", "shortcuts", "appearance", "advanced"] as const satisfies readonly SettingsSection[];
-export const pageIds: readonly PageId[] = ["dashboard", "presets", "statistics", "live", "history", "settings"];
+export const pageIds: readonly PageId[] = ["dashboard", "presets", "statistics", "live", "history", "settings", "diagnostics"];
 
 export const pageLabels: Record<PageId, string> = {
   dashboard: fr.nav.dashboard,
@@ -11,6 +12,7 @@ export const pageLabels: Record<PageId, string> = {
   live: fr.nav.live,
   history: fr.nav.history,
   settings: fr.nav.settings,
+  diagnostics: diagnosticsCopy.title,
 };
 
 export function parseHashRoute(hash = window.location.hash): AppRoute | null {

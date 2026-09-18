@@ -10,22 +10,30 @@ const deeplolProfile = {
   riot_id: "Player#EUW",
   region: "euw",
   embed_allowed: true,
+  account_source: "connected" as const,
 };
 
 test("statistics embeds only the backend profile URL with a bounded sandbox and refresh remounts it", async ({ page }) => {
   let statsRequests = 0;
+  const accountRequests: string[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/api/links/stats")) statsRequests += 1;
+    if (request.url().includes("/api/account/")) accountRequests.push(request.url());
   });
   await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
   await page.goto("/#statistics");
 
+  await expect(page.getByRole("heading", { name: "Statistiques", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Vue OTP LOL" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Site externe" })).toHaveCount(0);
+  expect(accountRequests).toEqual([]);
   const frame = page.locator(".statistics-frame");
   await expect(frame).toHaveAttribute("src", deeplolProfile.url);
   await expect(frame).toHaveAttribute("sandbox", "allow-scripts allow-same-origin allow-forms");
   await expect(frame).toHaveAttribute("referrerpolicy", "no-referrer");
   await expect(frame).not.toHaveAttribute("sandbox", /allow-top-navigation|allow-popups/);
   await expect(page.getByRole("link", { name: "Modifier le site" })).toHaveAttribute("href", "#settings/links");
+  await expect(page.locator(".statistics-summary")).toContainText("League connecté");
   const oldFrame = await frame.elementHandle();
   await page.getByRole("button", { name: "Actualiser" }).click();
   await expect(frame).toHaveAttribute("data-reload-token", "1");
@@ -33,8 +41,27 @@ test("statistics embeds only the backend profile URL with a bounded sandbox and 
   expect(statsRequests).toBeGreaterThanOrEqual(2);
 });
 
+test("iframe load cannot confirm provider content, so the browser fallback stays available", async ({ page }) => {
+  await page.clock.install();
+  await page.route(deeplolProfile.url, (route) => route.fulfill({
+    status: 200,
+    contentType: "text/html",
+    body: "<!doctype html><title>Profile</title><p>Profile loaded</p>",
+  }));
+  await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
+  await page.goto("/#statistics");
+
+  await expect(page.frameLocator(".statistics-frame").locator("body")).toContainText("Profile loaded");
+  await page.clock.fastForward(12_000);
+  const fallback = page.locator(".statistics-runtime-fallback");
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toContainText("OTP LOL ne peut pas confirmer l’affichage");
+  await expect(fallback.getByRole("button", { name: "Ouvrir dans le navigateur" })).toHaveClass(/button-primary/);
+});
+
 test("statistics shows an explicit external fallback when the embedded frame cannot be confirmed", async ({ page }) => {
   await page.clock.install();
+  await page.route(deeplolProfile.url, (route) => route.abort());
   await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
   await page.goto("/#statistics");
 
@@ -44,7 +71,7 @@ test("statistics shows an explicit external fallback when the embedded frame can
   const fallback = page.locator(".statistics-runtime-fallback");
   await expect(fallback).toBeVisible();
   await expect(fallback.getByText(/bloqué|confirmé/i)).toBeVisible();
-  await expect(fallback.getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
+  await expect(fallback.getByRole("button", { name: "Ouvrir dans le navigateur" })).toHaveClass(/button-primary/);
 });
 
 for (const provider of [
@@ -53,6 +80,14 @@ for (const provider of [
   { site: "leagueofgraphs", url: "https://www.leagueofgraphs.com/fr/summoner/euw/Player-EUW", homepage_url: "https://www.leagueofgraphs.com/" },
 ]) {
   test(`${provider.site} probe fallback never creates an iframe`, async ({ page }) => {
+    await page.addInitScript(() => {
+      const testWindow = window as Window & { __openedProviderUrls?: string[] };
+      testWindow.__openedProviderUrls = [];
+      testWindow.open = ((url) => {
+        testWindow.__openedProviderUrls?.push(String(url));
+        return null;
+      }) as typeof window.open;
+    });
     await mockLocalApi(page, {
       connected: true,
       statsLink: { ...provider, available: true, riot_id: "Player#EUW", region: "euw", embed_allowed: false },
@@ -61,7 +96,11 @@ for (const provider of [
 
     await expect(page.locator(".statistics-frame")).toHaveCount(0);
     await expect(page.getByText("Ce fournisseur ne permet pas l’affichage intégré.")).toBeVisible();
-    await expect(page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
+    const fallback = page.locator(".statistics-fallback");
+    const openInBrowser = fallback.getByRole("button", { name: "Ouvrir dans le navigateur" });
+    await expect(openInBrowser).toHaveClass(/button-primary/);
+    await openInBrowser.click();
+    await expect.poll(() => page.evaluate(() => (window as Window & { __openedProviderUrls?: string[] }).__openedProviderUrls)).toEqual([provider.url]);
   });
 }
 
@@ -71,6 +110,42 @@ test("statistics without a usable account links directly to account settings", a
 
   await expect(page.getByText("Aucun compte exploitable pour le moment.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Configurer le compte" })).toHaveAttribute("href", "#settings/account");
+  await expect(page.locator(".statistics-summary")).toContainText("À configurer");
+});
+
+test("statistics use the locally saved profile while League is closed and label it as offline", async ({ page }) => {
+  const offlineProfile = { ...deeplolProfile, url: "https://www.deeplol.gg/summoner/euw/Saved-EUW", riot_id: "Saved#EUW", account_source: "saved" as const };
+  await mockLocalApi(page, {
+    autoDetectedRiotId: "Saved#EUW",
+    autoDetectedRegion: "euw",
+    autoDetectedPlatform: "euw1",
+    statsLink: offlineProfile,
+  });
+  await page.goto("/#statistics");
+
+  await expect(page.locator(".statistics-frame")).toHaveAttribute("src", offlineProfile.url);
+  await expect(page.locator(".statistics-summary")).toContainText("Dernier compte enregistré · hors ligne");
+  await expect(page.locator(".statistics-summary")).toContainText("Saved#EUW");
+});
+
+test("live statistics use the locally saved profile while League is closed", async ({ page }) => {
+  const offlineProfile = {
+    ...deeplolProfile,
+    url: "https://www.deeplol.gg/summoner/euw/Saved-EUW/ingame",
+    riot_id: "Saved#EUW",
+    account_source: "saved" as const,
+  };
+  await mockLocalApi(page, {
+    autoDetectedRiotId: "Saved#EUW",
+    autoDetectedRegion: "euw",
+    autoDetectedPlatform: "euw1",
+    liveLink: offlineProfile,
+  });
+  await page.goto("/#live");
+
+  await expect(page.locator(".statistics-frame")).toHaveAttribute("src", offlineProfile.url);
+  await expect(page.locator(".statistics-summary")).toContainText("Dernier compte enregistré · hors ligne");
+  await expect(page.locator(".statistics-summary")).toContainText("Saved#EUW");
 });
 
 test("an iframe-incompatible provider offers an in-app window without accepting a frontend URL", async ({ page }) => {
@@ -148,6 +223,7 @@ test("live statistics use a distinct route, provider URL and safe external fallb
     riot_id: "Player#EUW",
     region: "euw",
     embed_allowed: false,
+    account_source: "connected" as const,
   };
   await mockLocalApi(page, { connected: true, liveLink: liveProfile });
   await page.goto("/#dashboard");
@@ -171,6 +247,7 @@ test("live embeds only a backend-approved provider URL with a bounded sandbox", 
     riot_id: "Player#EUW",
     region: "euw",
     embed_allowed: true,
+    account_source: "connected" as const,
   };
   await mockLocalApi(page, { connected: true, liveLink: liveProfile });
   await page.goto("/#live");

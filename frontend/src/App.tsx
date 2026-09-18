@@ -17,6 +17,7 @@ const HistoryPage = lazy(() => import("./features/history/HistoryPage").then(({ 
 const LiveStatisticsPage = lazy(() => import("./features/live/LiveStatisticsPage").then(({ LiveStatisticsPage: page }) => ({ default: page })));
 const PresetsPage = lazy(() => import("./features/presets/PresetsPage").then(({ PresetsPage: page }) => ({ default: page })));
 const StatisticsPage = lazy(() => import("./features/statistics/StatisticsPage").then(({ StatisticsPage: page }) => ({ default: page })));
+const DiagnosticsPage = lazy(() => import("./features/diagnostics/DiagnosticsPage").then(({ DiagnosticsPage: page }) => ({ default: page })));
 const SettingsPage = lazy(() => import("./features/settings/SettingsPage").then(({ SettingsPage: page }) => ({ default: page })));
 const UPDATE_CHECK_KEY = "otp-lol:last-update-check";
 const UPDATE_CHECK_INTERVAL = 21_600_000;
@@ -80,11 +81,26 @@ function App() {
         void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
         void queryClient.invalidateQueries({ queryKey: ["live-stats-link"] });
       }
+      if (event.type === "account_identity_updated") {
+        void queryClient.invalidateQueries({ queryKey: ["settings"] });
+        void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
+        void queryClient.invalidateQueries({ queryKey: ["live-stats-link"] });
+      }
+      if (event.type === "game_data_updated") {
+        for (const queryKey of [
+          ["bootstrap"], ["champions"], ["spells"], ["runes"], ["skins"],
+          ["diagnostics"], ["game-data-status"],
+        ]) {
+          void queryClient.invalidateQueries({ queryKey });
+        }
+      }
       if (["summoner_update", "connected", "disconnected"].includes(event.type)) {
         refreshRuntime();
         void queryClient.invalidateQueries({ queryKey: ["settings"] });
         void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
         void queryClient.invalidateQueries({ queryKey: ["live-stats-link"] });
+        void queryClient.invalidateQueries({ queryKey: ["diagnostics"] });
+        void queryClient.invalidateQueries({ queryKey: ["game-data-status"] });
       }
       if (["phase_change", "champion_picked", "champion_banned", "spells_set", "toast"].includes(event.type)) void queryClient.invalidateQueries({ queryKey: ["history"] });
     });
@@ -114,6 +130,7 @@ function App() {
         {activeRoute.page === "dashboard" && <DashboardPage />}
         {activeRoute.page === "presets" && <PresetsPage action={activeRoute.action} onActionClose={closePresetAction} />}
         {activeRoute.page === "statistics" && <StatisticsPage />}
+        {activeRoute.page === "diagnostics" && <DiagnosticsPage />}
         {activeRoute.page === "live" && <LiveStatisticsPage />}
         {activeRoute.page === "history" && <HistoryPage />}
         {activeRoute.page === "settings" && <SettingsPage section={activeRoute.section} onSectionChange={(section) => navigate({ page: "settings", section })} />}

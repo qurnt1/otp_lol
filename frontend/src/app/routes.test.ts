@@ -5,6 +5,7 @@ import { parseHashRoute, routeToHash } from "./routes";
 describe("hash routes", () => {
   it("parses statistics and settings subroutes", () => {
     expect(parseHashRoute("#statistics")).toEqual({ page: "statistics" });
+    expect(parseHashRoute("#diagnostics")).toEqual({ page: "diagnostics" });
     expect(parseHashRoute("#live")).toEqual({ page: "live" });
     expect(parseHashRoute("#settings/links")).toEqual({ page: "settings", section: "links" });
     expect(parseHashRoute("#settings")).toEqual({ page: "settings", section: "general" });

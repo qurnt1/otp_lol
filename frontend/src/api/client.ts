@@ -2,6 +2,7 @@ import type {
   Champion, HistoryResponse, PresetsResponse, RuntimeSnapshot, RunesResponse, Settings,
   SkinsResponse, StatsLinkResponse, SummonerSpell, UpdateResponse, PresetSlot, PresetSlotPatch, SettingsPatch, ProviderCatalog,
   BootstrapResponse, SettingsImport, LiveLinkResponse,
+  DiagnosticsResponse, DiagnosticsRunResponse,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -44,8 +45,10 @@ export const api = {
   getBootstrap: () => request<BootstrapResponse>("/api/bootstrap"),
   getRuntime: () => request<RuntimeSnapshot>("/api/runtime"),
   getSettings: () => request<Settings>("/api/settings"),
-  patchSettings: (values: SettingsPatch | Partial<Settings>) => request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(values) }),
+  patchSettings: (values: SettingsPatch) => request<Settings>("/api/settings", { method: "PATCH", body: JSON.stringify(values) }),
   getPresets: () => request<PresetsResponse>("/api/presets"),
+  resetPresets: () => request<Settings>("/api/presets/reset", { method: "POST" }),
+  clearPresets: () => request<Settings>("/api/presets/clear", { method: "POST" }),
   patchPreset: (slot: string, values: PresetSlotPatch | Partial<PresetSlot>) => request<PresetsResponse>("/api/presets/" + slot, { method: "PUT", body: JSON.stringify(values) }),
   getChampions: (query = "", signal?: AbortSignal) => request<{ items: Champion[]; count: number }>("/api/champions?q=" + encodeURIComponent(query), { signal }),
   getSpells: () => request<{ items: SummonerSpell[] }>("/api/spells"),
@@ -53,10 +56,14 @@ export const api = {
   getRunes: () => request<RunesResponse>("/api/runes"),
   getStatsLink: () => request<StatsLinkResponse>("/api/links/stats"),
   getLiveLink: () => request<LiveLinkResponse>("/api/links/live"),
+  getDiagnostics: () => request<DiagnosticsResponse>("/api/diagnostics"),
+  runDiagnostics: (endpointIds?: string[]) => request<DiagnosticsRunResponse>("/api/diagnostics/run", { method: "POST", body: JSON.stringify({ endpoint_ids: endpointIds ?? null }) }),
+  exportDiagnostics: (includeRiotId: boolean) => request<Record<string, unknown>>(`/api/diagnostics/export?include_riot_id=${includeRiotId}`),
   getProviders: () => request<ProviderCatalog>("/api/catalog/providers"),
   getHistory: (limit = 100) => request<HistoryResponse>("/api/history?limit=" + limit),
   getUpdates: () => request<UpdateResponse>("/api/updates"),
   clearHistory: () => request<{ ok: boolean }>("/api/history", { method: "DELETE" }),
   resetSettings: () => request<Settings>("/api/settings/reset", { method: "POST" }),
+  clearLastDetectedAccount: () => request<Settings>("/api/settings/last-detected-account", { method: "DELETE" }),
   importSettings: (values: SettingsImport) => request<Settings>("/api/settings/import", { method: "POST", body: JSON.stringify(values) }),
 };

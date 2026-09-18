@@ -16,7 +16,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
     retry: false,
   });
   const providers = useQuery({ queryKey: ["providers"], queryFn: api.getProviders, staleTime: Infinity });
-  const [frameStatus, setFrameStatus] = useState<"waiting" | "blocked" | "unconfirmed">("waiting");
+  const [frameStatus, setFrameStatus] = useState<"waiting" | "unconfirmed">("waiting");
   const [frameNonce, setFrameNonce] = useState(0);
   const [externalFailed, setExternalFailed] = useState(false);
   const [providerWindowFailed, setProviderWindowFailed] = useState(false);
@@ -32,7 +32,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
     setFrameStatus("waiting");
     if (!iframeUrl) return;
     const timeout = window.setTimeout(() => {
-      setFrameStatus((current) => current === "waiting" ? "unconfirmed" : current);
+      setFrameStatus("unconfirmed");
     }, 12_000);
     return () => window.clearTimeout(timeout);
   }, [iframeKey, iframeUrl]);
@@ -73,6 +73,10 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
             {provider}
           </strong>
         </div>
+        <div className="statistics-summary-copy">
+          <span className="section-label">{copy.account}</span>
+          <strong>{copy.accountSource[link.data.account_source]}</strong>
+        </div>
         {link.data.available && link.data.riot_id && <div className="statistics-summary-copy">
           <span className="section-label">{copy.profile}</span>
           <strong>{link.data.riot_id}</strong>
@@ -97,20 +101,19 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
           sandbox="allow-scripts allow-same-origin allow-forms"
           referrerPolicy="no-referrer"
           loading="lazy"
-          onError={() => setFrameStatus("blocked")}
         />
         {frameStatus === "waiting" && <p className="statistics-frame-message" role="status">{copy.frameHint}</p>}
-        {frameStatus !== "waiting" && <div className="statistics-runtime-fallback" role="alert">
+        {frameStatus === "unconfirmed" && <div className="statistics-runtime-fallback" role="status">
           <p>{copy.frameFailed}</p>
-          {link.data.site && <Button variant="primary" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
-          {externalUrl && <Button variant="quiet" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>}
+          {externalUrl && <Button variant="primary" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>}
+          {link.data.site && <Button variant="quiet" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
         </div>}
       </section>}
 
       {link.data.available && linkUrl && !link.data.embed_allowed && <section className="surface statistics-fallback" role="status">
         <p>{copy.blocked}</p>
-        {link.data.site && <Button variant="primary" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
-        <Button variant="quiet" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>
+        <Button variant="primary" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>
+        {link.data.site && <Button variant="quiet" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
       </section>}
 
       {!link.data.available && <section className="surface statistics-fallback" aria-labelledby={`${kind}-empty-heading`}>

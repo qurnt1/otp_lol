@@ -4,7 +4,7 @@ export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
 
-export type PageId = "dashboard" | "presets" | "statistics" | "live" | "history" | "settings";
+export type PageId = "dashboard" | "presets" | "statistics" | "live" | "history" | "settings" | "diagnostics";
 export type SettingsSection = "general" | "automations" | "account" | "links" | "shortcuts" | "appearance" | "advanced";
 export type PresetsAction = "ban" | "pick_1" | "pick_2" | "pick_3";
 export type AppRoute =
@@ -39,6 +39,7 @@ export interface Settings {
   auto_ban_enabled: boolean;
   auto_summoners_enabled: boolean;
   presets_enabled: boolean;
+  onboarding_completed: boolean;
   selected_pick_1: string;
   selected_pick_2: string;
   selected_pick_3: string;
@@ -50,6 +51,7 @@ export interface Settings {
   auto_detected_riot_id: string;
   auto_detected_region: string;
   auto_detected_platform: string;
+  auto_detected_account_valid: boolean;
   preferred_stats_site: string;
   preferred_hotkey_site: string;
   hotkey_toggle_window: string;
@@ -213,9 +215,28 @@ export interface StatsLinkResponse {
   riot_id: string | null;
   region: string | null;
   embed_allowed: boolean;
+  account_source: "connected" | "saved" | "manual" | "unavailable";
 }
 
 export type LiveLinkResponse = StatsLinkResponse;
+
+export interface GameDataStatus {
+  source: "lcu" | "cache" | "mixed" | "datadragon" | null;
+  game_version: string | null;
+  connected: boolean;
+  cache_available: boolean;
+  cache_version: string | null;
+  fallback: "datadragon" | null;
+  catalogs: Record<string, boolean>;
+}
+
+export interface DiagnosticRequestEntry { timestamp: string; method: string; path: string; status: number | null; duration_ms: number; success: boolean; error: string | null }
+export interface DiagnosticEventEntry { timestamp: string; topic: string; event_type: string; summary: string; payload: unknown; payload_truncated: boolean; payload_redacted: boolean }
+export interface DiagnosticErrorEntry { timestamp: string; source: string; error: string; method: string | null; path: string | null; status: number | null }
+export interface DiagnosticEndpoint { id: string; label: string; path: string; method: string }
+export interface DiagnosticCheckResult extends DiagnosticEndpoint { status: number | null; duration_ms: number; success: boolean; error: string | null; summary: string }
+export interface DiagnosticsResponse { runtime: RuntimeSnapshot; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
+export interface DiagnosticsRunResponse { results: DiagnosticCheckResult[] }
 
 export interface ProviderOption {
   id: string;

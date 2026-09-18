@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ban, Check, LoaderCircle, Swords } from "lucide-react";
+import { Ban, Check, LoaderCircle } from "lucide-react";
 
-import { ApiError, api } from "../../api/client";
+import { api } from "../../api/client";
 import { AssetImage } from "../../components/game/AssetImage";
 import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
 import { safeImageUrl } from "../../domain/assets";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { BootstrapResponse, Champion, PresetsAction, PresetSlot, PresetsResponse, Settings, SettingsPatch } from "../../types/api";
+import type { Champion, PresetsAction, PresetSlot, PresetsResponse, SettingsPatch } from "../../types/api";
+import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
 import { ChampionPicker } from "./ChampionPicker";
 import { PickerDialog, type Picker } from "./PickerDialog";
 import { PresetCard, type PresetSlotKey } from "./PresetCard";
@@ -21,6 +22,7 @@ const slotKeys: readonly PresetSlotKey[] = ["pick_1", "pick_2", "pick_3"];
 export function PresetsPage({ action, onActionClose }: { action?: PresetsAction; onActionClose?: () => void }) {
   const queryClient = useQueryClient();
   const runtime = useRuntimeStore((state) => state.runtime);
+  const presetMaster = usePresetAutomationMaster();
   const [editingSlot, setEditingSlot] = useState<PresetSlotKey | null>(null);
   const [picker, setPicker] = useState<Picker>(null);
   const [feedback, setFeedback] = useState("");
@@ -108,49 +110,6 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
     },
   });
 
-  const togglePresets = useMutation({
-    mutationFn: (enabled: boolean) => api.patchSettings({ presets_enabled: enabled }),
-    onMutate: async (enabled) => {
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: ["presets"] }),
-        queryClient.cancelQueries({ queryKey: ["settings"] }),
-        queryClient.cancelQueries({ queryKey: ["bootstrap"] }),
-      ]);
-      const previous = {
-        presets: queryClient.getQueryData<PresetsResponse>(["presets"]),
-        settings: queryClient.getQueryData<Settings>(["settings"]),
-        bootstrap: queryClient.getQueryData<BootstrapResponse>(["bootstrap"]),
-      };
-      queryClient.setQueryData<PresetsResponse>(["presets"], (current) => current ? { ...current, presets_enabled: enabled } : current);
-      queryClient.setQueryData<Settings>(["settings"], (current) => current ? { ...current, presets_enabled: enabled } : current);
-      queryClient.setQueryData<BootstrapResponse>(["bootstrap"], (current) => current ? {
-        ...current,
-        settings: { ...current.settings, presets_enabled: enabled },
-        presets: { ...current.presets, presets_enabled: enabled },
-      } : current);
-      return previous;
-    },
-    onSuccess: (next) => {
-      queryClient.setQueryData(["settings"], next);
-      queryClient.setQueryData<PresetsResponse>(["presets"], (current) => current ? { ...current, presets_enabled: next.presets_enabled } : current);
-      showFeedback(fr.presets.saved);
-    },
-    onError: (error, _enabled, previous) => {
-      if (previous?.presets) queryClient.setQueryData(["presets"], previous.presets);
-      if (previous?.settings) queryClient.setQueryData(["settings"], previous.settings);
-      if (previous?.bootstrap) queryClient.setQueryData(["bootstrap"], previous.bootstrap);
-      const message = error instanceof ApiError && error.status === 422
-        ? fr.presets.activationRequiresChampion
-        : fr.presets.saveFailed;
-      showFeedback(message, true);
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: ["presets"] });
-      void queryClient.invalidateQueries({ queryKey: ["settings"] });
-      void queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
-    },
-  });
-
   const updateSettings = useMutation({
     mutationFn: (values: SettingsPatch) => api.patchSettings(values),
     onSuccess: (next) => {
@@ -199,7 +158,7 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
   if (presets.isPending && !presets.data) return <div className="page-loading">{fr.common.loading}</div>;
   if (presets.isError || !presets.data) return <div className="state-error"><strong>{fr.presets.championLoadError}</strong><Button variant="primary" type="button" onClick={() => void presets.refetch()}>{fr.common.retry}</Button></div>;
 
-  const isSaving = updatePreset.isPending || updateSettings.isPending || togglePresets.isPending;
+  const isSaving = updatePreset.isPending || updateSettings.isPending || presetMaster.pending;
   const selectedBan = presets.data.selected_ban;
   const banChampion = champions.data?.items.find((item) => item.name.toLocaleLowerCase() === selectedBan.toLocaleLowerCase());
   const banIcon = bootstrap.data?.ban_preview?.champion_icon_url ?? banChampion?.icon_url;
@@ -227,12 +186,9 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
   return <div className="presets-page">
     <div className="page-heading">
       <div><h1>{fr.presets.title}</h1><p>{fr.presets.subtitle}</p></div>
-      <div className="presets-header-toggle">
-        <span className="presets-header-icon"><Swords size={16} aria-hidden="true" /></span>
-        <span className="presets-header-copy"><strong>{fr.presets.active}</strong><small>{togglePresets.isPending ? fr.presets.saving : presets.data.presets_enabled ? fr.common.on : fr.common.off}</small></span>
-        <button className="switch" type="button" role="switch" aria-label={fr.presets.active} aria-checked={presets.data.presets_enabled} aria-busy={togglePresets.isPending} disabled={isSaving} onClick={() => togglePresets.mutate(!presets.data.presets_enabled)}><span aria-hidden="true" /></button>
-      </div>
     </div>
+
+    <PresetAutomationMaster enabled={presetMaster.enabled} ready={presetMaster.ready} pending={presetMaster.pending} errorMessage={presetMaster.errorMessage} onToggle={presetMaster.toggle} />
 
     <div className="preset-grid">{slotKeys.map((key, index) => {
       const slot = presets.data.slots[key];
@@ -272,6 +228,7 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
       pending={updatePreset.isPending || spells.isPending}
       feedback={feedbackIsError ? "" : feedback}
       leagueConnected={Boolean(runtime?.connected)}
+      presetAutomationsEnabled={presetMaster.enabled}
       returnFocusRef={cardFocusRef}
       championChoiceRef={championChoiceFocusRef}
       onClose={() => { setEditingSlot(null); setPicker(null); if (action && action !== "ban") onActionClose?.(); }}
