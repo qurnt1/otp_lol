@@ -29,6 +29,7 @@ The assistant runs on Windows in a native pywebview window backed by a local Fas
 - The interface must support a dark theme and a light theme.
 - Preset previews must retain champion, spell, rune, skin, and website imagery when those assets are available.
 - When League is unavailable, the interface must remain useful as a configuration surface and state the offline condition clearly.
+- The Statistics page displays the external provider selected in Settings. Native `/api/account` statistics remain a separate backend capability and are not presented as the current Statistics UI.
 
 ## Brand Commitments
 
@@ -53,3 +54,7 @@ The assistant runs on Windows in a native pywebview window backed by a local Fas
 ## Accessibility & Inclusion
 
 The web surface must remain keyboard navigable, preserve visible focus states, keep status changes announced where relevant, maintain readable contrast in both themes, and avoid relying on color or imagery alone to communicate a setting.
+
+## Account identity
+
+The account surface shows the detected Riot ID, provider region, platform ID, regional routing, and source. Automatic detection is enabled by the positive setting **Détection automatique du compte**; when League is closed, a complete locally saved tuple can keep provider profile links usable.

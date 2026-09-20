@@ -14,7 +14,7 @@ Ce document sert de contrat de non-régression pour la migration vers le shell W
 | Skins possédés | Inventaire LCU puis fallback pickable | Skin picker | Couvert | `tests/test_api.py` | Conserver |
 | Modes de skin | Override global historique | Modes par preset `none`, `fixed`, `random`, identiques sur Dashboard et Presets | Couvert | `tests/test_config.py`, `tests/test_skin_modes.py`, `tests/test_core_champ_select.py`, E2E Dashboard | Aucun mode hérité ni override global |
 | Recovery champion select / retries | Reconnexion et retries existants | Runtime inchangé | Couvert | `tests/test_integration_lcu.py` | Ne pas réécrire |
-| Statuts d’automatisation | Confirme les étapes LCU et les erreurs | Événements `status` structurés, libellés dans `fr.ts` | Couvert | `tests/test_core_champ_select.py`, `frontend/src/domain/runtimeStatus.test.ts` | Conserver |
+| Statuts d’automatisation | Confirme les étapes LCU et les erreurs | Événements `status` structurés, libellés dans `fr.ts`, dernière action visible sur le Dashboard | Couvert | `tests/test_core_champ_select.py`, `frontend/src/domain/runtimeStatus.test.ts`, `frontend/e2e/dashboard-connected.spec.ts` | Conserver |
 | Auto Play Again | Retour au lobby après partie | Switch Settings | Couvert | `tests/test_integration_lcu.py` | Conserver |
 | Compte / région / Riot ID manuel | Détection LCU ou saisie manuelle | Snapshot LCU complet, dernier compte local hors connexion, ou compte manuel explicite | Couvert | `tests/test_api.py`, `tests/test_context.py`, `tests/test_integration_lcu.py`, `tests/test_desktop.py`, `frontend/e2e/settings.spec.ts` | Aucun mélange de Riot ID/régions, source affichée, copie/oubli explicites; le tuple auto reste local à l’installation |
 | Statistiques du compte | Profil via le fournisseur externe configuré | `#statistics`: panneau web si autorisé par le fournisseur, sinon ouverture dans le navigateur | Couvert | `frontend/e2e/statistics.spec.ts` | Aucune vue native du compte; OTP LOL ne peut pas confirmer le rendu d'une iframe tierce |
@@ -37,3 +37,7 @@ Ce document sert de contrat de non-régression pour la migration vers le shell W
 ## Règle de validation
 
 Toute nouvelle fonctionnalité visible doit avoir une entrée ici, un test ciblé et une vérification E2E si elle traverse le shell. Les tests locaux prouvent la logique et le contrat HTTP, pas la disponibilité réelle du client League ni le comportement d’un WebView2 installé sur chaque machine.
+
+## Identity and reliability additions
+
+The account and region parity path now has one normalized resolver and `/api/account/identity`. Diagnostics expose the tuple source without secrets, Live explains when a saved profile is shown while League is closed, and update checks run 7 seconds after mount then every 6 hours after each completed check. Runtime status tones are explicit: role and game-mode notices are informational, while success is reserved for completed actions.

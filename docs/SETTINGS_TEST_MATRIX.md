@@ -4,7 +4,7 @@ La matrice couvre les réglages éditables par l’interface. Le test API vérif
 
 | Groupe | Réglages | Contrat automatisé | Effet vérifié |
 |---|---|---|---|
-| Général | `auto_hide_on_connect`, `close_app_on_lol_exit` | `test_settings_matrix_persists_every_frontend_editable_setting`, `test_runtime_transition_hides_once_and_closes_only_after_a_real_connection` | Transition déconnecté → connecté, puis fermeture uniquement après une connexion réelle |
+| Général | `auto_hide_on_connect`, `close_app_on_lol_exit` | `test_settings_matrix_persists_every_frontend_editable_setting`, `test_transient_disconnect_never_closes_the_application`, `test_definitive_disconnect_keeps_application_open_while_league_process_exists`, `test_definitive_disconnect_closes_when_league_process_is_gone` | Transition déconnecté → connecté, puis fermeture seulement après vérification que le processus League est absent; une déconnexion transitoire ne ferme jamais l'application |
 | Automatisations | `presets_enabled`, `auto_accept_enabled`, `auto_pick_enabled`, `auto_ban_enabled`, `auto_summoners_enabled`, `skin_automation_enabled`, `auto_play_again_enabled`, `pick_slots[slot].rune_auto_apply` | tests API, `tests/test_core_champ_select.py`, `tests/test_desktop.py`, `frontend/e2e/presets.spec.ts`, `frontend/e2e/settings.spec.ts` | Le master gate pick/ban/sorts/runes/skins sans écraser les préférences enfants; Auto-Accept et Auto Play Again restent indépendants; le tray ne toggle que le master |
 | Compte | `summoner_name_auto_detect`, `manual_summoner_name`, `manual_region`, tuple local `auto_detected_*` | `tests/test_api.py`, `tests/test_context.py`, `tests/test_integration_lcu.py`, `tests/test_desktop.py`, `frontend/e2e/settings.spec.ts` | Auto utilise l’identité LCU complète puis le dernier tuple validé hors ligne; mode manuel prioritaire; ID/région/plateforme persistés atomiquement, copie et oubli explicites |
 | Liens | `preferred_stats_site`, `preferred_hotkey_site` | matrice API, tests URLs/API, `frontend/e2e/statistics.spec.ts` | `preferred_stats_site` ne rafraîchit que `#statistics`; `preferred_hotkey_site` ne rafraîchit que `#live`; reset/import invalident les deux |
@@ -21,3 +21,7 @@ Validation UI de référence : `npm run test:e2e`, dont `settings.spec.ts` véri
 Le fichier de réglages utilise le schéma 6. Le premier lancement crée et persiste les valeurs d'usine et les presets de départ; un schéma différent n'est pas migré, il est sauvegardé puis remplacé par cet état sûr. L'import exige aussi la version courante.
 
 Les champs `auto_detected_*` sont locaux à l'installation, absents de l'export portable et ignorés à l'import. La réinitialisation complète les efface; les actions de reset/clear des seuls presets les conservent.
+
+## Identity and maintenance checks
+
+The account row also covers the positive automatic-detection label, source-aware account identity, platform/region consistency, and the saved-profile path while League is closed. Diagnostics covers the account identity card and redacted export. The maintenance row covers the recursive 7-second then 6-hour update scheduler.

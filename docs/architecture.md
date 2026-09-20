@@ -4,7 +4,7 @@
 
 `launcher_web.py` starts the native desktop shell and the local FastAPI application. `pywebview` hosts the compiled `frontend/dist` output in WebView2. The Python runtime owns LCU communication, automation, settings persistence, history, and asset retrieval.
 
-The React application talks to the backend through typed HTTP endpoints and a WebSocket event stream. Runtime status events carry an action key, parameters, and severity; the frontend owns their localized presentation in `fr.ts`. The sidebar shows League connection, account, and version; the Dashboard phase strip reflects the current runtime phase. `useHashRoute` owns page and settings-section routes (including browser history), while `runtimeStore` owns the live runtime snapshot and latest status. `#statistics` defaults to native account statistics; its separate external-site tab and `/api/links/stats` use `preferred_stats_site`. `#live` and `/api/links/live` use `preferred_hotkey_site` for in-game links. Account and live iframe origins have separate allowlists.
+The React application talks to the backend through typed HTTP endpoints and a WebSocket event stream. Runtime status events carry an action key, parameters, and severity; the frontend owns their localized presentation in `fr.ts`. The sidebar shows League connection, account, and version; the Dashboard shows the current phase and the latest automation status. `useHashRoute` owns page and settings-section routes (including browser history), while `runtimeStore` owns the live runtime snapshot and latest status. `#statistics` displays the external provider selected in Settings through `/api/links/stats`; it does not render the native `/api/account` statistics endpoints. `#live` and `/api/links/live` use `preferred_hotkey_site` for in-game links. Account and live iframe origins have separate allowlists.
 
 ## Main layers
 
@@ -54,3 +54,10 @@ The diagnostics page is reachable from Settings > Advanced, not the main sidebar
 ## Frontend styling
 
 The desktop UI uses the shared stylesheet in `frontend/src/styles/globals.css`. Tailwind is available through the Vite plugin for the few utility-level cases that need it, while the application layout and tokens remain in the inspectable stylesheet.
+
+## Account identity and regional routing
+
+`src/config/regions.py` is the shared normalization boundary for platform IDs, provider regions, and Riot regional routing. `detect_account_routing` checks platform configuration, RSO authorization, region-locale endpoints, then command-line arguments. It does not infer a platform from locale or `webRegion`. The runtime stores the complete tuple with its source and exposes it through `/api/account/identity`; provider links and account statistics consume the same resolver.
+
+The tuple is persisted only when Riot ID, provider region, and platform ID are consistent. Repeating the same tuple does not publish a duplicate `account_identity_updated` event.
+The identity response keeps the account source (`connected`, `saved`, `manual`, `unavailable`) separate from `routing_source`, which records the LCU source that supplied the platform (`platform_config`, `rso_auth`, `region_locale`, or `command_line_args`).
