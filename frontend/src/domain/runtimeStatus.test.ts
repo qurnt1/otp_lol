@@ -24,13 +24,19 @@ describe("runtime status localization", () => {
     expect(localizeRuntimeStatus({ action: "account_connected", params: { riot_id: "Quentin#EUW" } }).message)
       .toBe("Compte synchronisé : Quentin#EUW.");
     expect(localizeRuntimeStatus({ action: "summoners_unconfirmed", level: "WARN" }))
-      .toEqual({ message: "Les sorts ne sont pas encore confirmés, nouvelle tentative en attente.", level: "WARN" });
+      .toEqual({ message: "Les sorts ne sont pas encore confirmés, nouvelle tentative en attente.", level: "WARN", tone: "warning" });
+  });
+
+  it("uses explicit tones for role and game mode status messages", () => {
+    expect(localizeRuntimeStatus({ action: "role_detected", level: "ROLE" }).tone).toBe("info");
+    expect(localizeRuntimeStatus({ action: "presets_disabled", level: "GAMEMODE" }).tone).toBe("info");
+    expect(localizeRuntimeStatus({ action: "pick_confirmed", level: "INFO" }).tone).toBe("success");
   });
 
   it("never exposes unknown backend text directly and retains the event level", () => {
     expect(localizeRuntimeStatus({ action: "future_backend_message", level: "ERROR", params: { text: "raw English" } }))
-      .toEqual({ message: "Activité League mise à jour.", level: "ERROR" });
+      .toEqual({ message: "Activité League mise à jour.", level: "ERROR", tone: "warning" });
     expect(localizeRuntimeStatus("raw English"))
-      .toEqual({ message: "Activité League mise à jour.", level: "INFO" });
+      .toEqual({ message: "Activité League mise à jour.", level: "INFO", tone: "info" });
   });
 });

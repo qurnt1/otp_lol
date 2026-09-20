@@ -2,7 +2,7 @@ import type {
   Champion, HistoryResponse, PresetsResponse, RuntimeSnapshot, RunesResponse, Settings,
   SkinsResponse, StatsLinkResponse, SummonerSpell, UpdateResponse, PresetSlot, PresetSlotPatch, SettingsPatch, ProviderCatalog,
   BootstrapResponse, SettingsImport, LiveLinkResponse,
-  DiagnosticsResponse, DiagnosticsRunResponse,
+  DiagnosticsResponse, DiagnosticsRunResponse, AccountIdentity,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -56,6 +56,7 @@ export const api = {
   getRunes: () => request<RunesResponse>("/api/runes"),
   getStatsLink: () => request<StatsLinkResponse>("/api/links/stats"),
   getLiveLink: () => request<LiveLinkResponse>("/api/links/live"),
+  getAccountIdentity: () => request<AccountIdentity>("/api/account/identity"),
   getDiagnostics: () => request<DiagnosticsResponse>("/api/diagnostics"),
   runDiagnostics: (endpointIds?: string[]) => request<DiagnosticsRunResponse>("/api/diagnostics/run", { method: "POST", body: JSON.stringify({ endpoint_ids: endpointIds ?? null }) }),
   exportDiagnostics: (includeRiotId: boolean) => request<Record<string, unknown>>(`/api/diagnostics/export?include_riot_id=${includeRiotId}`),

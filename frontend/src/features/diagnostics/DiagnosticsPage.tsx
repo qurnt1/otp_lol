@@ -70,6 +70,8 @@ export function DiagnosticsPage() {
 
   const data = diagnostics.data;
   const endpointResults = data?.endpoint_results ?? [];
+  const accountIdentity = data?.account_identity;
+  const accountValid = Boolean(accountIdentity?.riot_id && accountIdentity.region && accountIdentity.platform_id && accountIdentity.regional_routing && accountIdentity.source !== "unavailable");
   return <div className="diagnostics-page">
     <div className="page-heading">
       <div><h1>{copy.title}</h1><p>{copy.subtitle}</p></div>
@@ -100,6 +102,18 @@ export function DiagnosticsPage() {
           <div><span className="section-label">{copy.cache}</span><strong>{data.game_data.cache_available ? copy.available : copy.unavailable}</strong><small>{data.game_data.cache_version ?? copy.none}</small></div>
         </section>
       </div>
+
+      <section className="surface diagnostics-account-card" aria-labelledby="diagnostics-account-heading">
+        <div className="statistics-card-heading"><div><span className="section-label">{copy.account}</span><h2 id="diagnostics-account-heading">{data.account_identity.riot_id ?? "—"}</h2></div><span className={accountValid ? "diagnostics-check is-success" : "diagnostics-check is-error"}>{accountValid ? copy.accountValid : copy.accountUnavailable}</span></div>
+        <dl className="diagnostics-account-grid">
+          <div><dt>{copy.accountRiotId}</dt><dd>{data.account_identity.riot_id ?? "—"}</dd></div>
+          <div><dt>{copy.accountPlatform}</dt><dd>{data.account_identity.platform_id?.toUpperCase() ?? "—"}</dd></div>
+          <div><dt>{copy.accountRegion}</dt><dd>{data.account_identity.region?.toUpperCase() ?? "—"}</dd></div>
+          <div><dt>{copy.accountRouting}</dt><dd>{data.account_identity.regional_routing?.toUpperCase() ?? "—"}</dd></div>
+          <div><dt>{copy.accountSource}</dt><dd>{copy.routingSources[(data.account_identity.routing_source ?? data.account_identity.source) as keyof typeof copy.routingSources] ?? data.account_identity.source}</dd></div>
+          <div><dt>{copy.accountState}</dt><dd>{data.account_identity.connected ? baseFr.runtime.connected : baseFr.runtime.waiting}</dd></div>
+        </dl>
+      </section>
 
       {!data.runtime.connected && <p className="diagnostics-note" role="status">{copy.noLeague}</p>}
       <p className="diagnostics-note">{copy.redacted}</p>

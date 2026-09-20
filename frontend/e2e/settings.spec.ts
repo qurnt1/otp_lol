@@ -79,8 +79,8 @@ test("automatic account field shows the live Riot ID and preserves the saved man
   await page.goto("/#settings/account");
 
   const riotId = page.getByRole("textbox", { name: "Riot ID" });
-  const detection = page.getByRole("switch", { name: "Utiliser un Riot ID manuel" });
-  await expect(detection).toHaveAttribute("aria-checked", "false");
+  const detection = page.getByRole("switch", { name: "Détection automatique du compte" });
+  await expect(detection).toHaveAttribute("aria-checked", "true");
   await expect(riotId).toBeDisabled();
   await expect(riotId).toHaveValue("Detected#Live");
 
@@ -91,6 +91,13 @@ test("automatic account field shows the live Riot ID and preserves the saved man
   await expect(riotId).toBeDisabled();
   await expect(riotId).toHaveValue("Detected#Live");
   expect(state.settings.manual_summoner_name).toBe("Saved#Manual");
+});
+
+test("manual account mode identifies the manual link source", async ({ page }) => {
+  await mockLocalApi(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
+  await page.goto("/#settings/account");
+
+  await expect(page.getByText("Compte configuré manuellement")).toBeVisible();
 });
 
 test("automatic account input follows the live account, then uses its complete saved identity offline", async ({ page }) => {
@@ -120,7 +127,7 @@ test("automatic account input follows the live account, then uses its complete s
   }, state.runtime);
   await expect(riotId).toBeDisabled();
   await expect(riotId).toHaveValue("Fresh#EUW");
-  await expect(page.getByText("Dernier compte enregistré · EUW · League fermé")).toBeVisible();
+  await expect(page.getByText("Dernier compte détecté · EUW · League fermé")).toBeVisible();
   expect(state.settings.manual_summoner_name).toBe("Saved#Manual");
 });
 
@@ -146,7 +153,7 @@ test("offline saved account can be copied explicitly and forgotten without chang
   const riotId = page.getByRole("textbox", { name: "Riot ID" });
   await expect(riotId).toBeDisabled();
   await expect(riotId).toHaveValue("Saved#EUW");
-  await expect(page.getByText("Dernier compte enregistré · EUW · League fermé")).toBeVisible();
+  await expect(page.getByText("Dernier compte détecté · EUW · League fermé")).toBeVisible();
   await page.getByRole("button", { name: "Copier vers les champs manuels" }).click();
   const overwrite = page.getByRole("alertdialog");
   await expect(overwrite).toBeVisible();
@@ -156,7 +163,7 @@ test("offline saved account can be copied explicitly and forgotten without chang
   expect(state.settings.manual_region).toBe("euw");
   expect(state.settings.summoner_name_auto_detect).toBe(true);
 
-  await page.getByRole("switch", { name: "Utiliser un Riot ID manuel" }).click();
+  await page.getByRole("switch", { name: "Détection automatique du compte" }).click();
   await expect(riotId).toBeEnabled();
   await page.getByRole("button", { name: "Oublier le dernier compte" }).click();
   const forget = page.getByRole("alertdialog");

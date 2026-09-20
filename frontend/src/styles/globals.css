@@ -118,6 +118,18 @@ img { display: block; }
 .phase-strip { display: flex; align-items: center; gap: 9px; min-height: 36px; margin-bottom: 15px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 10px; }
 .phase-strip svg { color: var(--primary); }
 .phase-strip strong { overflow: hidden; margin-left: auto; color: var(--text); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.automation-status { display: flex; align-items: center; gap: 8px; min-height: 34px; margin-bottom: 15px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 10px; }
+.automation-status svg { flex: 0 0 auto; color: var(--primary); }
+.automation-status.is-success svg { color: var(--success); }
+.automation-status.is-warning { border-color: rgb(225 176 92 / .36); }
+.automation-status.is-warning svg { color: var(--gold); }
+.automation-status-message { min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; white-space: nowrap; }
+.automation-status time { margin-left: auto; flex: 0 0 auto; color: var(--subtle); font-size: 9px; }
+.update-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 10px 12px; border: 1px solid rgb(200 155 60 / .42); border-radius: 8px; background: var(--surface); }
+.update-banner-copy { display: grid; gap: 2px; min-width: 0; }
+.update-banner-copy strong { color: var(--text); font-size: 12px; }
+.update-banner-copy > span:last-child { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.update-banner-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .status-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 25px; padding: 0 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 9px; white-space: nowrap; }
 .status-pill.is-on { border-color: rgb(89 201 169 / .35); color: var(--success); }
 .status-pill i { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
@@ -259,6 +271,11 @@ img { display: block; }
 .diagnostics-status-card > div { display: grid; min-width: 0; gap: 5px; }
 .diagnostics-status-card strong { overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .diagnostics-status-card small, .diagnostics-note { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.diagnostics-account-card { display: grid; gap: 12px; margin-top: 9px; padding: 13px; }
+.diagnostics-account-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.diagnostics-account-grid div { display: grid; gap: 3px; min-width: 0; }
+.diagnostics-account-grid dt { color: var(--subtle); font-size: 8px; }
+.diagnostics-account-grid dd { margin: 0; overflow: hidden; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .diagnostics-note { margin: 0; }
 .diagnostics-tests, .diagnostics-log-panel { display: grid; gap: 12px; min-width: 0; padding: 14px; }
 .diagnostics-test-list, .diagnostics-log-list { display: grid; gap: 7px; max-height: 380px; overflow: auto; }
@@ -284,6 +301,7 @@ img { display: block; }
 .diagnostics-json-dialog pre { min-height: 0; overflow: auto; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
 .diagnostics-json-dialog code { color: var(--muted); font-family: var(--font-mono, monospace); font-size: 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .statistics-summary { display: flex; align-items: center; gap: clamp(14px, 2vw, 24px); min-width: 0; padding: 14px 16px; }
+.statistics-note { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .statistics-summary-copy { display: grid; gap: 4px; min-width: 0; }
 .statistics-summary-copy strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .statistics-provider-value { display: inline-flex; align-items: center; gap: 8px; }
@@ -294,9 +312,6 @@ img { display: block; }
 .statistics-embed { display: grid; gap: 10px; min-width: 0; padding: 10px; }
 .statistics-frame { width: 100%; height: clamp(420px, calc(100vh - 220px), 900px); border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
 .statistics-frame-message { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.statistics-runtime-fallback { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2); }
-.statistics-runtime-fallback p { flex: 1 1 260px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
-.statistics-runtime-fallback .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 .statistics-fallback { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; padding: 18px; }
 .statistics-fallback h2, .statistics-fallback p { margin: 0; }
 .statistics-fallback h2 { width: 100%; color: var(--text); font-size: 14px; }
@@ -490,6 +505,7 @@ img { display: block; }
   .content-area { padding: 22px 15px 38px; }
   .dashboard-grid, .settings-layout { grid-template-columns: 1fr; }
   .diagnostics-status-grid { grid-template-columns: 1fr; }
+  .diagnostics-account-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-aside { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-nav { position: static; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .settings-nav button { text-align: center; }

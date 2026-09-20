@@ -269,6 +269,15 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
       state.settings.auto_detected_account_valid = false;
       payload = state.settings;
     } else if (url.pathname === "/api/runtime") payload = state.runtime;
+    else if (url.pathname === "/api/account/identity") payload = {
+      riot_id: state.settings.summoner_name_auto_detect ? (state.runtime.riot_id || state.settings.auto_detected_riot_id || null) : (state.settings.manual_summoner_name || null),
+      region: state.settings.summoner_name_auto_detect ? (state.runtime.region || state.settings.auto_detected_region || null) : state.settings.manual_region,
+      platform_id: state.settings.summoner_name_auto_detect ? (state.settings.auto_detected_platform || null) : state.settings.manual_region === "euw" ? "euw1" : null,
+      regional_routing: state.settings.summoner_name_auto_detect && (state.runtime.region || state.settings.auto_detected_region) ? "europe" : state.settings.manual_region === "euw" ? "europe" : null,
+      routing_source: !state.settings.summoner_name_auto_detect ? "manual" : state.runtime.connected ? "region_locale" : state.settings.auto_detected_account_valid ? "saved" : "unavailable",
+      source: !state.settings.summoner_name_auto_detect ? "manual" : state.runtime.connected ? "connected" : state.settings.auto_detected_account_valid ? "saved" : "unavailable",
+      connected: Boolean(state.runtime.connected),
+    };
     else if (url.pathname === "/api/account/summary") payload = { data: options.connected ? { level: 88, profile_icon_id: 42, xp_since_last_level: 900, xp_until_next_level: 100 } : null, available: Boolean(options.connected), stale: false, last_synced: options.connected ? "2026-09-18T10:00:00Z" : null, error: null, source: options.connected ? "lcu" : "unavailable", from_cache: false, errors: {} };
     else if (url.pathname === "/api/account/ranked") payload = { data: options.connected ? { queues: [{ queue_type: "RANKED_SOLO_5x5", tier: "GOLD", division: "II", league_points: 23, wins: 14, losses: 9 }] } : null, available: Boolean(options.connected), stale: false, last_synced: options.connected ? "2026-09-18T10:00:00Z" : null, error: null, source: options.connected ? "lcu" : "unavailable", from_cache: false, errors: {} };
     else if (url.pathname === "/api/account/masteries") payload = { data: { champions: [{ champion_id: 86, level: 7, points: 12345, chest_granted: true }], score: 54321 }, available: true, stale: false, last_synced: "2026-09-18T10:00:00Z", error: null, source: "lcu", from_cache: false, errors: {} };
@@ -277,7 +286,15 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     else if (/^\/api\/account\/matches\/\d+\/timeline$/.test(url.pathname)) payload = { data: { game_id: "12345", events: [{ type: "CHAMPION_KILL", timestamp: 650000, killer_id: 2, victim_id: 7, assisting_participant_ids: [] }, { type: "ITEM_PURCHASED", timestamp: 660000, item_id: 1055, participant_id: 1, assisting_participant_ids: [] }], item_names: { "1055": "Doran Blade" } }, available: true, stale: false, last_synced: "2026-09-18T10:00:00Z", error: null, source: "lcu", from_cache: false, errors: {} };
     else if (/^\/api\/account\/matches\/\d+$/.test(url.pathname)) payload = { data: { game_id: url.pathname.split("/").pop(), participants: [{ champion_id: 86, team_id: 100, win: true, kills: 8, deaths: 2, assists: 5, items: [1055, 3006] }], item_names: { "1055": "Doran Blade", "3006": "Berserker Greaves" } }, available: true, stale: false, last_synced: "2026-09-18T10:00:00Z", error: null, source: "lcu", from_cache: false, errors: {} };
     else if (url.pathname === "/api/game-data/status") payload = { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } };
-    else if (url.pathname === "/api/diagnostics") payload = { runtime: state.runtime, game_data: { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } }, requests: [{ timestamp: "2026-09-18T10:00:00Z", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null }], events: [], errors: [], endpoint_checks: [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase" }], endpoint_results: diagnosticResults };
+    else if (url.pathname === "/api/diagnostics") payload = { runtime: state.runtime, account_identity: {
+      riot_id: state.runtime.riot_id || null,
+      region: state.runtime.region || null,
+      platform_id: state.settings.auto_detected_platform || null,
+      regional_routing: state.runtime.region ? "europe" : null,
+      routing_source: options.connected ? "region_locale" : "unavailable",
+      source: options.connected ? "connected" : "unavailable",
+      connected: Boolean(options.connected),
+    }, game_data: { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } }, requests: [{ timestamp: "2026-09-18T10:00:00Z", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null }], events: [], errors: [], endpoint_checks: [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase" }], endpoint_results: diagnosticResults };
     else if (url.pathname === "/api/diagnostics/run" && method === "POST") {
       const results = [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null, summary: "InProgress" }];
       diagnosticResults = results;

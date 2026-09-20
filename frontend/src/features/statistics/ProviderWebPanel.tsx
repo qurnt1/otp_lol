@@ -6,6 +6,7 @@ import { api } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
 import { openExternalUrl, openProviderWindow } from "../../domain/external";
+import { useRuntimeStore } from "../../stores/runtimeStore";
 
 export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const copy = kind === "stats" ? fr.statistics : fr.live;
@@ -16,7 +17,8 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
     retry: false,
   });
   const providers = useQuery({ queryKey: ["providers"], queryFn: api.getProviders, staleTime: Infinity });
-  const [frameStatus, setFrameStatus] = useState<"waiting" | "unconfirmed">("waiting");
+  const runtime = useRuntimeStore((state) => state.runtime);
+  const [frameStatus, setFrameStatus] = useState<"waiting" | "loaded">("waiting");
   const [frameNonce, setFrameNonce] = useState(0);
   const [externalFailed, setExternalFailed] = useState(false);
   const [providerWindowFailed, setProviderWindowFailed] = useState(false);
@@ -30,11 +32,6 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
 
   useEffect(() => {
     setFrameStatus("waiting");
-    if (!iframeUrl) return;
-    const timeout = window.setTimeout(() => {
-      setFrameStatus("unconfirmed");
-    }, 12_000);
-    return () => window.clearTimeout(timeout);
   }, [iframeKey, iframeUrl]);
 
   const refresh = async () => {
@@ -65,6 +62,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
     {link.isError && <div className="state-error" role="alert">{copy.error}</div>}
 
     {link.data && <>
+      {kind === "live" && !runtime?.connected && link.data.account_source === "saved" && <p className="statistics-note" role="status">{fr.live.offlineSavedProfile}</p>}
       <section className="surface statistics-summary" aria-label={copy.title}>
         <div className="statistics-summary-copy">
           <span className="section-label">{copy.provider}</span>
@@ -101,13 +99,9 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
           sandbox="allow-scripts allow-same-origin allow-forms"
           referrerPolicy="no-referrer"
           loading="lazy"
+          onLoad={() => setFrameStatus("loaded")}
         />
         {frameStatus === "waiting" && <p className="statistics-frame-message" role="status">{copy.frameHint}</p>}
-        {frameStatus === "unconfirmed" && <div className="statistics-runtime-fallback" role="status">
-          <p>{copy.frameFailed}</p>
-          {externalUrl && <Button variant="primary" type="button" onClick={() => void openExternal()}><ExternalLink size={14} aria-hidden="true" />{copy.openExternal}</Button>}
-          {link.data.site && <Button variant="quiet" type="button" onClick={() => void openInApp()}>{fr.provider.openInApp}</Button>}
-        </div>}
       </section>}
 
       {link.data.available && linkUrl && !link.data.embed_allowed && <section className="surface statistics-fallback" role="status">

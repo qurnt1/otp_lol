@@ -28,6 +28,24 @@ test("dashboard connecté affiche l’identité dans la sidebar et la phase dans
   await expect(page.getByRole("combobox", { name: "Mode de skin du slot 1" })).toContainText("Aucun");
 });
 
+test("dashboard affiche le dernier statut d’automatisation avec sa gravité et son âge", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.goto("/#dashboard");
+
+  await page.evaluate(() => {
+    (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({
+      type: "status",
+      data: { action: "summoners_unconfirmed", level: "WARN", params: {} },
+      timestamp: new Date(Date.now() - 2_000).toISOString(),
+    });
+  });
+
+  const status = page.locator(".automation-status");
+  await expect(status).toHaveAttribute("class", /is-warning/);
+  await expect(status).toContainText("Les sorts ne sont pas encore confirmés");
+  await expect(status).toContainText(/à l’instant|il y a 2 s/);
+});
+
 test("le statut du ban reflète le maître des automatisations Presets", async ({ page }) => {
   const state = await mockLocalApi(page, { connected: true, configured: true });
   state.settings.presets_enabled = false;

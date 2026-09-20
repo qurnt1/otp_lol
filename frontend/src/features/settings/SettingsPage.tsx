@@ -39,6 +39,7 @@ function ProviderSelectRow({ label, description, value, options, pending, error,
 export function SettingsPage({ section, onSectionChange }: { section: SettingsSection; onSectionChange: (section: SettingsSection) => void }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings, staleTime: Infinity });
+  const accountIdentity = useQuery({ queryKey: ["account-identity"], queryFn: api.getAccountIdentity, staleTime: Infinity, enabled: section === "account", retry: false });
   const providers = useQuery({ queryKey: ["providers"], queryFn: api.getProviders, staleTime: Infinity });
   const runtime = useRuntimeStore((state) => state.runtime);
   const [local, setLocal] = useState<Settings | null>(null);
@@ -65,6 +66,8 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
     local?.auto_detected_riot_id || local?.auto_detected_region || local?.auto_detected_platform,
   );
   const detectedAccount = runtime?.connected ? liveDetectedAccount : savedDetectedAccount;
+  const fallbackAccountSource = runtime?.connected ? "connected" : savedDetectedAccount ? "saved" : local?.summoner_name_auto_detect === false ? "manual" : "unavailable";
+  const accountSource = accountIdentity.data?.source && accountIdentity.data.source !== "unavailable" ? accountIdentity.data.source : fallbackAccountSource;
 
   const setPending = (key: string, pending: boolean) => setPendingKeys((current) => { const next = new Set(current); pending ? next.add(key) : next.delete(key); return next; });
   const save = async (values: SettingsPatch, key: string): Promise<boolean> => {
@@ -83,6 +86,9 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       setFeedback(fr.settings.saved);
       window.setTimeout(() => setFeedback(""), 1800);
       setDraft((current) => { if (!(key in current)) return current; const next = { ...current }; delete next[key as keyof Settings]; return next; });
+      if (accountLinkSettingKeys.has(key)) {
+        void queryClient.invalidateQueries({ queryKey: ["account-identity"] });
+      }
       if (key === "preferred_stats_site" || accountLinkSettingKeys.has(key)) {
         void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
       }
@@ -121,6 +127,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       setLocal(next);
       queryClient.setQueryData(["settings"], next);
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["account-identity"] }),
         queryClient.invalidateQueries({ queryKey: ["stats-link"] }),
         queryClient.invalidateQueries({ queryKey: ["live-stats-link"] }),
       ]);
@@ -143,6 +150,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       setLocal(next);
       queryClient.setQueryData(["settings"], next);
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["account-identity"] }),
         queryClient.invalidateQueries({ queryKey: ["stats-link"] }),
         queryClient.invalidateQueries({ queryKey: ["live-stats-link"] }),
       ]);
@@ -177,6 +185,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       setLocal(next);
       queryClient.setQueryData(["settings"], next);
       await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["account-identity"] }),
         queryClient.invalidateQueries({ queryKey: ["stats-link"] }),
         queryClient.invalidateQueries({ queryKey: ["live-stats-link"] }),
       ]);
@@ -191,7 +200,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       setErrors((current) => ({ ...current, import: error instanceof Error ? error.message : fr.settings.importFailed }));
     }
   };
-  const reset = async () => { setConfirmReset(false); setPending("reset", true); try { const next = await api.resetSettings(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] }), queryClient.invalidateQueries({ queryKey: ["stats-link"] }), queryClient.invalidateQueries({ queryKey: ["live-stats-link"] })]); applyTheme(next.theme); setDraft({}); submittedManualValues.current = {}; setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, reset: error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset", false); } };
+  const reset = async () => { setConfirmReset(false); setPending("reset", true); try { const next = await api.resetSettings(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] }), queryClient.invalidateQueries({ queryKey: ["account-identity"] }), queryClient.invalidateQueries({ queryKey: ["stats-link"] }), queryClient.invalidateQueries({ queryKey: ["live-stats-link"] })]); applyTheme(next.theme); setDraft({}); submittedManualValues.current = {}; setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, reset: error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset", false); } };
   const resetPresets = async () => { setConfirmResetPresets(false); setPending("reset-presets", true); try { const next = await api.resetPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["reset-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "reset-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset-presets", false); } };
   const clearPresets = async () => { setConfirmClearPresets(false); setPending("clear-presets", true); try { const next = await api.clearPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["clear-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "clear-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("clear-presets", false); } };
   if (!local) return <div className="page-loading">{fr.common.loading}</div>;
@@ -206,7 +215,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
       {section === "general" && <><ToggleRow label={fr.settings.autoHide} description={fr.settings.descriptions.autoHide} checked={local.auto_hide_on_connect} pending={pending("auto_hide_on_connect")} error={errors.auto_hide_on_connect} onChange={(value) => update("auto_hide_on_connect", value)} /><ToggleRow label={fr.settings.closeOnExit} description={fr.settings.descriptions.closeOnExit} checked={local.close_app_on_lol_exit} pending={pending("close_app_on_lol_exit")} error={errors.close_app_on_lol_exit} onChange={(value) => update("close_app_on_lol_exit", value)} /></>}
       {section === "automations" && <><ToggleRow label={fr.settings.autoAccept} description={fr.settings.descriptions.autoAccept} checked={local.auto_accept_enabled} pending={pending("auto_accept_enabled")} error={errors.auto_accept_enabled} onChange={(value) => update("auto_accept_enabled", value)} /><ToggleRow label={fr.settings.autoPick} description={fr.settings.descriptions.autoPick} checked={local.auto_pick_enabled} pending={pending("auto_pick_enabled")} disabledByMaster={!local.presets_enabled} error={errors.auto_pick_enabled} onChange={(value) => update("auto_pick_enabled", value)} /><ToggleRow label={fr.settings.autoBan} description={fr.settings.descriptions.autoBan} checked={local.auto_ban_enabled} pending={pending("auto_ban_enabled")} disabledByMaster={!local.presets_enabled} error={errors.auto_ban_enabled} onChange={(value) => update("auto_ban_enabled", value)} /><ToggleRow label={fr.settings.autoSummoners} description={fr.settings.descriptions.autoSummoners} checked={local.auto_summoners_enabled} pending={pending("auto_summoners_enabled")} disabledByMaster={!local.presets_enabled} error={errors.auto_summoners_enabled} onChange={(value) => update("auto_summoners_enabled", value)} /><ToggleRow label={fr.settings.skinAutomation} description={fr.settings.descriptions.skinAutomation} checked={local.skin_automation_enabled} pending={pending("skin_automation_enabled")} disabledByMaster={!local.presets_enabled} error={errors.skin_automation_enabled} onChange={(value) => update("skin_automation_enabled", value)} /><ToggleRow label={fr.settings.playAgain} description={fr.settings.descriptions.playAgain} checked={local.auto_play_again_enabled} pending={pending("auto_play_again_enabled")} error={errors.auto_play_again_enabled} onChange={(value) => update("auto_play_again_enabled", value)} /></>}
       {section === "account" && <>
-        <ToggleRow label={fr.settings.manualAccount} description={fr.settings.descriptions.manualAccount} checked={!local.summoner_name_auto_detect} pending={pending("summoner_name_auto_detect")} error={errors.summoner_name_auto_detect} onChange={(value) => update("summoner_name_auto_detect", !value)} />
+        <ToggleRow label={fr.settings.manualAccount} description={local.summoner_name_auto_detect ? fr.settings.descriptions.autoDetectAccount : fr.settings.descriptions.manualAccount} checked={local.summoner_name_auto_detect} pending={pending("summoner_name_auto_detect")} error={errors.summoner_name_auto_detect} onChange={(value) => update("summoner_name_auto_detect", value)} />
         <div className="settings-form">
           <label>
             <span>{fr.settings.riotId}</span>
@@ -219,11 +228,15 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
               onKeyDown={(event) => { if (event.key === "Enter") saveManual("manual_summoner_name"); }}
               placeholder={local.summoner_name_auto_detect ? (runtime?.connected ? fr.account.waitingCurrent : fr.account.noSavedAccount) : fr.settings.riotIdPlaceholder}
             />
-            {local.summoner_name_auto_detect && <small className="field-hint" role="status">
-              {runtime?.connected
-                ? liveDetectedAccount ? fr.account.liveAccount(liveDetectedAccount.region.toUpperCase()) : fr.account.waitingCurrent
-                : savedDetectedAccount ? fr.account.savedOffline(savedDetectedAccount.region.toUpperCase()) : fr.account.noSavedAccount}
-            </small>}
+            <small className="field-hint" role="status">
+              {!local.summoner_name_auto_detect || accountSource === "manual"
+                ? fr.account.manualAccount
+                : accountSource === "connected"
+                  ? liveDetectedAccount ? fr.account.liveAccount(liveDetectedAccount.region.toUpperCase()) : fr.account.waitingCurrent
+                  : accountSource === "saved"
+                    ? savedDetectedAccount ? fr.account.savedOffline(savedDetectedAccount.region.toUpperCase()) : fr.account.noSavedAccount
+                    : fr.account.noSavedAccount}
+            </small>
             {errors.manual_summoner_name && <small className="inline-error" role="alert">{errors.manual_summoner_name}</small>}
           </label>
           <label><span>{fr.settings.region}</span><Select className="settings-control" label={fr.settings.region} value={local.summoner_name_auto_detect ? detectedAccount?.region ?? "" : local.manual_region} disabled={local.summoner_name_auto_detect || pending("manual_region")} options={regions} onChange={(value) => update("manual_region", value)} /></label>

@@ -194,31 +194,10 @@ export interface HistoryResponse {
   count: number;
 }
 
-export interface UpdateResponse {
-  available: boolean;
-  update: {
-    version: string;
-    highlights: string;
-    release_url: string;
-    asset_name: string;
-    asset_url: string;
-    checksum_name: string;
-    checksum_url: string;
-  } | null;
-}
-
-export interface StatsLinkResponse {
-  available: boolean;
-  site: string;
-  url: string | null;
-  homepage_url: string;
-  riot_id: string | null;
-  region: string | null;
-  embed_allowed: boolean;
-  account_source: "connected" | "saved" | "manual" | "unavailable";
-}
-
-export type LiveLinkResponse = StatsLinkResponse;
+export type UpdateResponse = components["schemas"]["UpdatesResponse"];
+export type AccountIdentity = components["schemas"]["AccountIdentityResponse"];
+export type StatsLinkResponse = components["schemas"]["StatsLinkResponse"];
+export type LiveLinkResponse = components["schemas"]["LiveLinkResponse"];
 
 export interface GameDataStatus {
   source: "lcu" | "cache" | "mixed" | "datadragon" | null;
@@ -235,7 +214,7 @@ export interface DiagnosticEventEntry { timestamp: string; topic: string; event_
 export interface DiagnosticErrorEntry { timestamp: string; source: string; error: string; method: string | null; path: string | null; status: number | null }
 export interface DiagnosticEndpoint { id: string; label: string; path: string; method: string }
 export interface DiagnosticCheckResult extends DiagnosticEndpoint { status: number | null; duration_ms: number; success: boolean; error: string | null; summary: string }
-export interface DiagnosticsResponse { runtime: RuntimeSnapshot; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
+export interface DiagnosticsResponse { runtime: RuntimeSnapshot; account_identity: AccountIdentity; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
 export interface DiagnosticsRunResponse { results: DiagnosticCheckResult[] }
 
 export interface ProviderOption {

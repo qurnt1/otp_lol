@@ -34,9 +34,29 @@ const STATUS_MESSAGES: Record<string, (params: StatusParams) => string> = {
   account_connected: (params) => fr.runtime.messages.accountConnected(textParam(params, "riot_id")),
 };
 
-export function localizeRuntimeStatus(data: unknown): { message: string; level: string } {
+export type RuntimeStatusTone = "success" | "info" | "warning";
+
+const SUCCESS_ACTIONS = new Set([
+  "client_connected", "account_connected", "match_accepted", "play_again_succeeded",
+  "prepick_confirmed", "ban_confirmed", "pick_confirmed", "summoners_applied",
+  "skin_selected", "runes_applied",
+]);
+
+const WARNING_ACTIONS = new Set([
+  "client_disconnected", "prepick_timed_out", "prepick_failed", "pickable_unavailable",
+  "no_champion_available", "pick_unconfirmed", "summoners_unconfirmed", "lcu_missing",
+  "client_detection_retry", "connection_retry",
+]);
+
+function statusTone(action: string, level: string): RuntimeStatusTone {
+  if (SUCCESS_ACTIONS.has(action)) return "success";
+  if (WARNING_ACTIONS.has(action) || /WARN|ERROR/i.test(level)) return "warning";
+  return "info";
+}
+
+export function localizeRuntimeStatus(data: unknown): { message: string; level: string; tone: RuntimeStatusTone } {
   if (!data || typeof data !== "object" || !("action" in data) || typeof data.action !== "string") {
-    return { message: fr.runtime.messages.unknown, level: "INFO" };
+    return { message: fr.runtime.messages.unknown, level: "INFO", tone: "info" };
   }
 
   const params = "params" in data && data.params && typeof data.params === "object"
@@ -44,5 +64,5 @@ export function localizeRuntimeStatus(data: unknown): { message: string; level: 
     : {};
   const message = STATUS_MESSAGES[data.action]?.(params) ?? fr.runtime.messages.unknown;
   const level = "level" in data && typeof data.level === "string" ? data.level : "INFO";
-  return { message, level };
+  return { message, level, tone: statusTone(data.action, level) };
 }

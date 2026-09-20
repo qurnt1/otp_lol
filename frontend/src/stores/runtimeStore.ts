@@ -5,6 +5,7 @@ import type { RuntimeSnapshot } from "../types/api";
 export interface RuntimeStatus {
   message: string;
   level: string;
+  tone: "success" | "info" | "warning";
   timestamp: string;
 }
 
@@ -18,6 +19,6 @@ interface RuntimeStore {
 export const useRuntimeStore = create<RuntimeStore>((set) => ({
   runtime: null,
   setRuntime: (runtime) => set({ runtime }),
-  status: { message: "En attente de League pour synchroniser.", level: "INFO", timestamp: "" },
+  status: { message: "En attente de League pour synchroniser.", level: "INFO", tone: "info", timestamp: "" },
   setStatus: (status) => set({ status }),
 }));

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowUpRight } from "lucide-react";
+import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Info } from "lucide-react";
 
 import { api } from "../../api/client";
 import { Button } from "../../components/ui/button";
@@ -19,6 +19,37 @@ import { QuickActions } from "./QuickActions";
 const slots = ["pick_1", "pick_2", "pick_3"] as const;
 type SlotKey = typeof slots[number];
 type ToggleKey = "auto_accept_enabled" | "auto_pick_enabled" | "auto_ban_enabled" | "auto_summoners_enabled" | "auto_play_again_enabled";
+
+function relativeStatusTime(timestamp: string, now: number): string {
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return "";
+  const seconds = Math.max(0, Math.floor((now - parsed) / 1000));
+  if (seconds < 5) return "à l’instant";
+  if (seconds < 60) return `il y a ${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `il y a ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `il y a ${hours} h`;
+}
+
+function AutomationStatus() {
+  const status = useRuntimeStore((state) => state.status);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!status.timestamp) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, [status.timestamp]);
+  if (!status.timestamp) return null;
+  const tone = status.tone;
+  const Icon = tone === "warning" ? AlertTriangle : tone === "success" ? CheckCircle2 : Info;
+  const relative = relativeStatusTime(status.timestamp, now);
+  return <section className={cn("automation-status", `is-${tone}`)} role="status" aria-live="polite">
+    <Icon size={14} aria-hidden="true" />
+    <span className="automation-status-message">{status.message}</span>
+    {relative && <time dateTime={status.timestamp}>{relative}</time>}
+  </section>;
+}
 
 function DashboardPage() {
   const queryClient = useQueryClient();
@@ -105,6 +136,7 @@ function DashboardPage() {
     <div className="page-heading dashboard-heading"><h1>{fr.dashboard.title}</h1></div>
     <PresetOnboardingBanner />
     <div className="phase-strip" role="status" aria-live="polite"><Activity size={14} aria-hidden="true" /><span>{fr.dashboard.currentPhase}</span><strong>{currentPhase}</strong></div>
+    <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">
         <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><a className="text-button" href="#presets">{fr.dashboard.edit} <ArrowUpRight size={14} aria-hidden="true" /></a></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} onSkinModeChange={(mode) => void setSkinMode(slots[index], mode)} pending={pendingKeys.has(`skin_mode_${slots[index]}`)} />)}</div></section>

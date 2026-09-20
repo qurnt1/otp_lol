@@ -41,7 +41,7 @@ test("statistics embeds only the backend profile URL with a bounded sandbox and 
   expect(statsRequests).toBeGreaterThanOrEqual(2);
 });
 
-test("iframe load cannot confirm provider content, so the browser fallback stays available", async ({ page }) => {
+test("iframe load cannot confirm provider content, so the embedded panel stays neutral", async ({ page }) => {
   await page.clock.install();
   await page.route(deeplolProfile.url, (route) => route.fulfill({
     status: 200,
@@ -53,13 +53,12 @@ test("iframe load cannot confirm provider content, so the browser fallback stays
 
   await expect(page.frameLocator(".statistics-frame").locator("body")).toContainText("Profile loaded");
   await page.clock.fastForward(12_000);
-  const fallback = page.locator(".statistics-runtime-fallback");
-  await expect(fallback).toBeVisible();
-  await expect(fallback).toContainText("OTP LOL ne peut pas confirmer l’affichage");
-  await expect(fallback.getByRole("button", { name: "Ouvrir dans le navigateur" })).toHaveClass(/button-primary/);
+  await expect(page.locator(".statistics-runtime-fallback")).toHaveCount(0);
+  await expect(page.locator(".statistics-frame")).toBeVisible();
+  await expect(page.locator(".statistics-summary").getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
 });
 
-test("statistics shows an explicit external fallback when the embedded frame cannot be confirmed", async ({ page }) => {
+test("an iframe that cannot be confirmed keeps the provider visible and offers the external action", async ({ page }) => {
   await page.clock.install();
   await page.route(deeplolProfile.url, (route) => route.abort());
   await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
@@ -68,10 +67,9 @@ test("statistics shows an explicit external fallback when the embedded frame can
   const frame = page.locator(".statistics-frame");
   await expect(frame).toBeVisible();
   await page.clock.fastForward(12_000);
-  const fallback = page.locator(".statistics-runtime-fallback");
-  await expect(fallback).toBeVisible();
-  await expect(fallback.getByText(/bloqué|confirmé/i)).toBeVisible();
-  await expect(fallback.getByRole("button", { name: "Ouvrir dans le navigateur" })).toHaveClass(/button-primary/);
+  await expect(page.locator(".statistics-runtime-fallback")).toHaveCount(0);
+  await expect(frame).toBeVisible();
+  await expect(page.locator(".statistics-summary").getByRole("button", { name: "Ouvrir dans le navigateur" })).toBeVisible();
 });
 
 for (const provider of [
@@ -144,6 +142,7 @@ test("live statistics use the locally saved profile while League is closed", asy
   await page.goto("/#live");
 
   await expect(page.locator(".statistics-frame")).toHaveAttribute("src", offlineProfile.url);
+  await expect(page.locator(".statistics-note")).toContainText("League est fermé");
   await expect(page.locator(".statistics-summary")).toContainText("Dernier compte enregistré · hors ligne");
   await expect(page.locator(".statistics-summary")).toContainText("Saved#EUW");
 });

@@ -64,6 +64,7 @@ test("diagnostic event payload is available only in the JSON drawer", async ({ p
       contentType: "application/json",
       body: JSON.stringify({
         runtime: { connected: true, phase: "ChampSelect" },
+        account_identity: { riot_id: "Player#EUW", region: "euw", platform_id: "euw1", regional_routing: "europe", routing_source: "platform_config", source: "connected", connected: true },
         game_data: { source: "cache", game_version: "16.18.1", cache_available: true, cache_version: "16.18.1", catalogs: {} },
         requests: [],
         events: [{ timestamp: "2026-09-18T10:00:00Z", topic: "/lol-gameflow/v1/gameflow-phase", event_type: "Update", summary: "Lobby", payload: { phase: "Lobby" }, payload_truncated: false, payload_redacted: false }],
@@ -92,6 +93,7 @@ test("diagnostics filters include runtime automation, static data, WebView and e
       contentType: "application/json",
       body: JSON.stringify({
         runtime: { connected: true, phase: "ChampSelect" },
+        account_identity: { riot_id: "Player#EUW", region: "euw", platform_id: "euw1", regional_routing: "europe", routing_source: "platform_config", source: "connected", connected: true },
         game_data: { source: "lcu", game_version: "16.18.1", cache_available: true, cache_version: "16.18.1" },
         requests: [],
         events: [

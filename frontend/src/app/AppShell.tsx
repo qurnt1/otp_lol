@@ -1,11 +1,11 @@
-import type { PropsWithChildren } from "react";
+import type { PropsWithChildren, ReactNode } from "react";
 import { Activity, BarChart3, BookOpen, LayoutDashboard, UserRound, Wifi, WifiOff, Settings2, Swords } from "lucide-react";
 
 import { fr } from "../content/fr";
 import { cn } from "../lib/cn";
 import type { PageId, RuntimeSnapshot } from "../types/api";
 
-interface AppShellProps extends PropsWithChildren { activePage: PageId; runtime?: RuntimeSnapshot | null; version?: string }
+interface AppShellProps extends PropsWithChildren { activePage: PageId; runtime?: RuntimeSnapshot | null; version?: string; updateBanner?: ReactNode }
 const navigation = [
   { id: "dashboard", icon: LayoutDashboard, label: fr.nav.dashboard },
   { id: "presets", icon: Swords, label: fr.nav.presets },
@@ -15,7 +15,7 @@ const navigation = [
   { id: "settings", icon: Settings2, label: fr.nav.settings },
 ] as const;
 
-export function AppShell({ activePage, runtime, version, children }: AppShellProps) {
+export function AppShell({ activePage, runtime, version, updateBanner, children }: AppShellProps) {
   const connected = Boolean(runtime?.connected);
   const account = connected ? runtime?.riot_id || fr.runtime.noAccount : fr.runtime.noAccount;
   return <div className="app-shell">
@@ -35,6 +35,9 @@ export function AppShell({ activePage, runtime, version, children }: AppShellPro
         <span className="sidebar-version">{fr.app.version} {version ? `v${version}` : ""}</span>
       </div>
     </aside>
-    <div className="app-workspace">{children}</div>
+    <div className="app-workspace">
+      {updateBanner}
+      {children}
+    </div>
   </div>;
 }
