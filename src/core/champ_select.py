@@ -1200,26 +1200,27 @@ class ChampSelectMixin:
                 self.state.skin_apply_in_progress,
             )
             return
-
-        skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
-        if not skin_selection:
-            logging.info("[SKIN] No skin selection resolved for slot=%s", slot_key or self.state.last_locked_pick_slot or "pick_1")
-            return
-
-        session = await self._fetch_current_champ_select_session(area="SKIN")
-        local_selection = self._extract_local_player_selection(session)
-        if not local_selection:
-            logging.info("[SKIN] No local player selection available for slot=%s", chosen_slot)
-            return
-
-        champion_id = int(local_selection.get("championId") or 0)
-        if champion_id <= 0:
-            logging.info("[SKIN] Champion id is unavailable for slot=%s; selected champion not locked yet", chosen_slot)
-            return
-
+        # Reserve the single-flight operation before the first await. Tasks on this
+        # event loop cannot interleave between this assignment and the next check.
         self.state.skin_apply_in_progress = True
-        selected_skin = dict(skin_selection)
         try:
+            skin_selection, chosen_slot = self._resolve_skin_selection(params, slot_key=slot_key)
+            if not skin_selection:
+                logging.info("[SKIN] No skin selection resolved for slot=%s", slot_key or self.state.last_locked_pick_slot or "pick_1")
+                return
+
+            session = await self._fetch_current_champ_select_session(area="SKIN")
+            local_selection = self._extract_local_player_selection(session)
+            if not local_selection:
+                logging.info("[SKIN] No local player selection available for slot=%s", chosen_slot)
+                return
+
+            champion_id = int(local_selection.get("championId") or 0)
+            if champion_id <= 0:
+                logging.info("[SKIN] Champion id is unavailable for slot=%s; selected champion not locked yet", chosen_slot)
+                return
+
+            selected_skin = dict(skin_selection)
             pickable_skins = await self._fetch_pickable_skins(champion_id)
             if selected_skin.get("mode") == "random":
                 pool_candidates = self._build_random_skin_pool_candidates(

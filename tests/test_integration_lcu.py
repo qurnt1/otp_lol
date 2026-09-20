@@ -212,6 +212,9 @@ class IntegrationLCUTests(unittest.IsolatedAsyncioTestCase):
         await mgr._refresh_player_and_region()
 
         self.assertEqual(mgr.state.platform_routing, "euw1")
+        self.assertEqual(mgr.state.provider_region, "euw")
+        self.assertEqual(mgr.state.region_routing, "europe")
+        self.assertEqual(mgr.state.routing_source, "region_locale")
 
     async def test_refresh_player_and_region_persists_the_complete_detected_identity(self):
         mgr = self._make_manager()

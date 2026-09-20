@@ -76,6 +76,10 @@ class LcuRuntime:
     def is_active(self) -> bool:
         return self.manager.is_active
 
+    def get_account_identity(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Expose the normalized account identity used by every API surface."""
+        return self.manager.get_account_identity(params)
+
     def start(self) -> None:
         self.manager.start()
 

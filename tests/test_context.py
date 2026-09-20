@@ -69,6 +69,18 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.assertEqual(params["auto_detected_region"], original["auto_detected_region"])
         self.assertEqual(params["auto_detected_platform"], original["auto_detected_platform"])
 
+    def test_identical_detected_account_does_not_emit_duplicate_identity_event(self):
+        self.context.save = Mock(return_value=True)
+        self.context.broker.publish = Mock()
+
+        self.assertTrue(self.context.persist_detected_account("Player#EUW", "euw", "euw1"))
+        self.context.broker.publish.reset_mock()
+        self.context.save.reset_mock()
+
+        self.assertTrue(self.context.persist_detected_account("Player#EUW", "euw", "euw1"))
+        self.context.save.assert_not_called()
+        self.context.broker.publish.assert_not_called()
+
     def test_detected_account_survives_context_reload_while_offline(self):
         with tempfile.TemporaryDirectory(prefix="otp-lol-account-") as temp_dir:
             settings_path = str(Path(temp_dir) / "parameters.toml")
@@ -118,6 +130,7 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         window = FakeWindow()
         shutdowns = []
         self.context.bind_window(window, shutdown_callback=lambda: shutdowns.append(True))
+        self.context.process_checker = lambda: False
 
         self.context._handle_runtime_event("disconnected")
         self.assertEqual(window.hide_count, 0)
@@ -128,6 +141,47 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.assertEqual(window.hide_count, 1)
         self.context._handle_runtime_event("disconnected")
         self.assertEqual(shutdowns, [True])
+
+    def test_transient_disconnect_never_closes_the_application(self):
+        shutdowns = []
+        self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+        self.context.process_checker = lambda: False
+        self.context._handle_runtime_event("connected")
+
+        self.context._handle_runtime_event("disconnected", {"transient": True, "reason": "retry"})
+
+        self.assertEqual(shutdowns, [])
+
+    def test_definitive_disconnect_keeps_application_open_while_league_process_exists(self):
+        shutdowns = []
+        self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+        self.context.process_checker = lambda: True
+        self.context._handle_runtime_event("connected")
+
+        self.context._handle_runtime_event("disconnected", {"transient": False})
+
+        self.assertEqual(shutdowns, [])
+
+    def test_definitive_disconnect_closes_when_league_process_is_gone(self):
+        shutdowns = []
+        self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+        self.context.process_checker = lambda: False
+        self.context._handle_runtime_event("connected")
+
+        self.context._handle_runtime_event("disconnected", {"transient": False})
+
+        self.assertEqual(shutdowns, [True])
+
+    def test_definitive_disconnect_does_not_close_when_option_is_disabled(self):
+        shutdowns = []
+        self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+        self.context.process_checker = lambda: False
+        self.context.update_param("close_app_on_lol_exit", False)
+        self.context._handle_runtime_event("connected")
+
+        self.context._handle_runtime_event("disconnected", {"transient": False})
+
+        self.assertEqual(shutdowns, [])
 
     def test_runtime_events_are_available_to_local_diagnostics(self):
         self.context._handle_runtime_event("status", {"action": "ban_confirmed"})

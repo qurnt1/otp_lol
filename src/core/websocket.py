@@ -54,13 +54,19 @@ from ..config import (
     EP_READY_CHECK,
     EP_SESSION,
     EP_SESSION_TIMER,
-    PLATFORM_TO_REGION,
     PRACTICE_TOOL_GAME_MODE,
     PRESET_ENABLED_QUEUE_IDS,
 )
 from ..services.history import log_history_event
 from ..services.profile_config import build_effective_profile_config
 from ..services.urls import is_valid_riot_id
+from ..config.regions import (
+    RegionIdentity,
+    detect_account_routing,
+    normalize_platform_id,
+    normalize_provider_region,
+    platform_to_regional_routing,
+)
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
 
@@ -205,8 +211,72 @@ class WebSocketManager(ChampSelectMixin):
         params = self.get_params()
         if not params.get("summoner_name_auto_detect", True):
             return params.get("manual_region", "euw").lower()
-        detected_region = PLATFORM_TO_REGION.get((self.state.platform_routing or "").lower())
-        return str(detected_region or "").strip().lower()
+        return str(self.state.provider_region or "").strip().lower()
+
+    def get_account_identity(self, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Return one normalized account identity for every provider and UI surface."""
+        values = params or self.get_params()
+        connected = bool(self.is_active)
+        if not values.get("summoner_name_auto_detect", True):
+            riot_id = str(values.get("manual_summoner_name") or "").strip()
+            region = normalize_provider_region(values.get("manual_region"))
+            platform_id = normalize_platform_id(region)
+            source = "manual"
+        elif connected:
+            riot_id = str(self.get_riot_id() or "").strip()
+            region = normalize_provider_region(self.state.provider_region)
+            platform_id = normalize_platform_id(self.state.platform_routing)
+            source = "connected"
+        else:
+            riot_id = str(values.get("auto_detected_riot_id") or "").strip()
+            region = normalize_provider_region(values.get("auto_detected_region"))
+            platform_id = normalize_platform_id(values.get("auto_detected_platform"))
+            source = "saved"
+
+        if source == "saved":
+            if (
+                not is_valid_riot_id(riot_id)
+                or not region
+                or not platform_id
+                or normalize_provider_region(platform_id) != region
+            ):
+                source = "unavailable"
+        elif source == "connected":
+            if (
+                not is_valid_riot_id(riot_id)
+                or not region
+                or not platform_id
+                or normalize_provider_region(platform_id) != region
+            ):
+                source = "unavailable"
+        elif source == "manual" and (not is_valid_riot_id(riot_id) or not region):
+            source = "manual"
+
+        if source == "unavailable":
+            riot_id = None
+            region = None
+            platform_id = None
+            regional_routing = None
+        else:
+            regional_routing = platform_to_regional_routing(platform_id or region)
+        routing_source = (
+            "manual"
+            if source == "manual"
+            else self.state.routing_source
+            if source == "connected"
+            else "saved"
+            if source == "saved"
+            else "unavailable"
+        )
+        return {
+            "riot_id": riot_id,
+            "region": region,
+            "platform_id": platform_id,
+            "regional_routing": regional_routing,
+            "source": source,
+            "routing_source": routing_source,
+            "connected": connected,
+        }
 
     def _get_effective_champ_select_config(self, params: Dict[str, Any]) -> Dict[str, Any]:
         effective = self.get_effective_profile_config(params=params)
@@ -678,7 +748,9 @@ class WebSocketManager(ChampSelectMixin):
         self.state.auto_game_name = None
         self.state.auto_tag_line = None
         self.state.platform_routing = ""
+        self.state.provider_region = ""
         self.state.region_routing = ""
+        self.state.routing_source = ""
         self.state.last_reported_summoner = None
         self.state.current_queue_id = 0
         self.state.reset_between_games()
@@ -920,26 +992,21 @@ class WebSocketManager(ChampSelectMixin):
             self._notify_event(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
             self._notify_status("account_connected", level="USER", riot_id=self.get_riot_id())
             self.state.last_reported_summoner = self.state.summoner
-        # Region routing can come from different client endpoints depending on the client state.
-        reg = None
-        resp_reg = await self.connection.request("get", "/riotclient/get_region_locale")
-        if resp_reg.status != 200:
-            resp_reg = await self.connection.request("get", "/riotclient/region-locale")
-        if resp_reg.status == 200:
-            reg = await resp_reg.json()
+        routing = await detect_account_routing(self.connection)
+        if routing:
+            self._install_region_identity(routing)
+            riot_id = self.get_riot_id() or ""
+            if is_valid_riot_id(riot_id) and self.persist_detected_account:
+                try:
+                    self.persist_detected_account(riot_id, routing.provider_region, routing.platform_id)
+                except Exception:  # noqa: BLE001 - account persistence must not interrupt LCU event handling.
+                    logger.exception("Unable to persist the detected League account")
 
-        if isinstance(reg, dict):
-            platform = (reg.get("platformId") or reg.get("region") or "").lower()
-            if platform:
-                self.state.platform_routing = platform
-                self.state.region_routing = self._platform_to_region_routing(platform)
-                region = PLATFORM_TO_REGION.get(platform)
-                riot_id = self.get_riot_id() or ""
-                if region and is_valid_riot_id(riot_id) and self.persist_detected_account:
-                    try:
-                        self.persist_detected_account(riot_id, region, platform)
-                    except Exception:  # noqa: BLE001 - account persistence must not interrupt LCU event handling.
-                        logger.exception("Unable to persist the detected League account")
+    def _install_region_identity(self, identity: RegionIdentity) -> None:
+        self.state.platform_routing = identity.platform_id
+        self.state.provider_region = identity.provider_region
+        self.state.region_routing = identity.regional_routing
+        self.state.routing_source = identity.source
 
     async def _refresh_current_queue_id(self) -> None:
         """Poll the lobby endpoint to detect the queue id before champ select starts."""
@@ -965,11 +1032,5 @@ class WebSocketManager(ChampSelectMixin):
 
     @staticmethod
     def _platform_to_region_routing(platform: str) -> str:
-        platform = platform.lower()
-        if platform in {"euw1", "eun1", "tr1", "ru"}:
-            return "europe"
-        if platform in {"na1", "br1", "la1", "la2", "oc1"}:
-            return "americas"
-        if platform in {"kr", "jp1"}:
-            return "asia"
-        return "europe"
+        """Keep the old helper as a compatibility wrapper for callers and tests."""
+        return platform_to_regional_routing(platform) or ""

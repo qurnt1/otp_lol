@@ -644,6 +644,48 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.manager.state.last_confirmed_skin_id, 99010)
 
+    async def test_set_skin_allows_only_one_concurrent_application(self):
+        self.manager.state.last_locked_pick_slot = "pick_2"
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(return_value=FakeResponse(200, {}))
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def fetch_session(*, area):
+            started.set()
+            await release.wait()
+            return {
+                "localPlayerCellId": 1,
+                "myTeam": [{"cellId": 1, "championId": 99, "selectedSkinId": 0}],
+            }
+
+        self.manager._fetch_current_champ_select_session = fetch_session
+        self.manager._fetch_pickable_skins = AsyncMock(return_value=[{"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}])
+        self.manager._confirm_skin_applied = AsyncMock(return_value=True)
+
+        first = asyncio.create_task(self.manager._set_skin(self.params, slot_key="pick_2"))
+        await started.wait()
+        second = asyncio.create_task(self.manager._set_skin(self.params, slot_key="pick_2"))
+        await asyncio.sleep(0)
+        self.assertTrue(second.done())
+        self.assertEqual(self.manager.connection.request.await_count, 0)
+
+        release.set()
+        await asyncio.gather(first, second)
+
+        self.assertEqual(self.manager.connection.request.await_count, 1)
+        self.assertFalse(self.manager.state.skin_apply_in_progress)
+
+    async def test_set_skin_releases_concurrent_guard_after_error(self):
+        self.manager.state.last_locked_pick_slot = "pick_2"
+        self.manager.connection = type("Connection", (), {})()
+        self.manager._fetch_current_champ_select_session = AsyncMock(side_effect=RuntimeError("session unavailable"))
+
+        with self.assertRaises(RuntimeError):
+            await self.manager._set_skin(self.params, slot_key="pick_2")
+
+        self.assertFalse(self.manager.state.skin_apply_in_progress)
+
     async def test_set_skin_fixed_skips_non_pickable_skin(self):
         self.manager.state.assigned_position = "MID"
         self.manager.state.last_locked_pick_slot = "pick_2"

@@ -23,9 +23,11 @@ class DiagnosticRunRequest(BaseModel):
 async def read_diagnostics(request: Request) -> dict[str, Any]:
     context = request.app.state.context
     runtime = context.runtime.snapshot(context.get_params()).as_dict()
+    identity = context.runtime.get_account_identity(context.get_params())
     runtime.pop("riot_id", None)
     return {
         "runtime": runtime,
+        "account_identity": identity,
         "game_data": await resolved_game_data_status(context),
         **context.diagnostics.snapshot(),
     }
@@ -48,18 +50,22 @@ async def export_diagnostics(request: Request, include_riot_id: bool = False) ->
     context = request.app.state.context
     report = context.diagnostics.export(include_riot_id=include_riot_id)
     runtime = context.runtime.snapshot(context.get_params()).as_dict()
+    identity = context.runtime.get_account_identity(context.get_params())
     game_data = await resolved_game_data_status(context)
     report.update(
         {
             "app_version": CURRENT_VERSION,
             "webview2_version": get_webview2_runtime_version(),
             "league_connected": runtime["connected"],
+            "account_identity": identity,
             "league_version": game_data["game_version"],
             "game_data": game_data,
         }
     )
     if not include_riot_id:
         report.pop("riot_id", None)
+        if isinstance(report.get("account_identity"), dict):
+            report["account_identity"]["riot_id"] = None
     return JSONResponse(
         content=report,
         headers={"Content-Disposition": 'attachment; filename="otp-lol-diagnostics.json"'},

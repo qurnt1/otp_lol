@@ -26,7 +26,7 @@ Uses:
 
 import urllib.parse
 
-from ..config.constants import PLATFORM_TO_REGION, REGION_LIST
+from ..config.constants import REGION_LIST
 from ..domain.providers import (
     ALLOWED_EXTERNAL_HOSTS,
     HOTKEY_PROVIDERS,
@@ -46,6 +46,7 @@ from ..domain.providers import (
     build_opgg_url,
     build_porofessor_url,
 )
+from ..config.regions import normalize_platform_id, normalize_provider_region
 
 
 def is_allowed_external_url(url: str) -> bool:
@@ -78,12 +79,12 @@ def is_valid_riot_id(riot_id: str) -> bool:
 
 def is_valid_detected_account(riot_id: str, region: str, platform: str) -> bool:
     """Validate a persisted LCU identity as one complete, consistent tuple."""
-    normalized_region = str(region or "").strip().lower()
-    normalized_platform = str(platform or "").strip().lower()
+    normalized_region = normalize_provider_region(region)
+    normalized_platform = normalize_platform_id(platform)
     return (
         is_valid_riot_id(riot_id)
         and normalized_region in REGION_LIST
-        and PLATFORM_TO_REGION.get(normalized_platform) == normalized_region
+        and normalize_provider_region(normalized_platform) == normalized_region
     )
 
 
@@ -137,19 +138,36 @@ def resolve_provider_account(params: dict, runtime) -> tuple[str, str, str]:
     """Resolve a complete account identity and report where it came from."""
     if not params.get("summoner_name_auto_detect", True):
         riot_id = str(params.get("manual_summoner_name") or "").strip()
-        region = str(params.get("manual_region") or "").strip().lower()
-        source = "manual"
-    else:
+        region = normalize_provider_region(params.get("manual_region"))
+        if is_valid_riot_id(riot_id) and region in REGION_LIST:
+            return riot_id, region, "manual"
+        return "", "", "unavailable"
+
+    identity_getter = getattr(runtime, "get_account_identity", None)
+    identity = identity_getter(params) if callable(identity_getter) else None
+    if not isinstance(identity, dict):
         snapshot = runtime.snapshot(params)
+        riot_id = str(snapshot.riot_id or "").strip()
+        region = normalize_provider_region(snapshot.region)
         if snapshot.connected:
-            riot_id = str(snapshot.riot_id or "").strip()
-            region = str(snapshot.region or "").strip().lower()
-            source = "connected"
+            source = "connected" if is_valid_riot_id(riot_id) and region in REGION_LIST else "unavailable"
         else:
             riot_id = str(params.get("auto_detected_riot_id") or "").strip()
-            region = str(params.get("auto_detected_region") or "").strip().lower()
-            platform = str(params.get("auto_detected_platform") or "").strip().lower()
-            source = "saved" if is_valid_detected_account(riot_id, region, platform) else "unavailable"
+            region = normalize_provider_region(params.get("auto_detected_region"))
+            platform = normalize_platform_id(params.get("auto_detected_platform"))
+            source = "saved" if is_valid_detected_account(riot_id, region or "", platform or "") else "unavailable"
+    else:
+        riot_id = str(identity.get("riot_id") or "").strip()
+        region = normalize_provider_region(identity.get("region"))
+        source = str(identity.get("source") or "unavailable")
+        snapshot = runtime.snapshot(params)
+        if source in {"saved", "unavailable"} and snapshot.connected:
+            fallback_riot_id = str(snapshot.riot_id or "").strip()
+            fallback_region = normalize_provider_region(snapshot.region)
+            if snapshot.connected and is_valid_riot_id(fallback_riot_id) and fallback_region in REGION_LIST:
+                riot_id, region, source = fallback_riot_id, fallback_region, "connected"
+            else:
+                return "", "", "unavailable"
 
     if source == "unavailable" or not is_valid_riot_id(riot_id) or region not in REGION_LIST:
         return "", "", "unavailable"

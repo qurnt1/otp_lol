@@ -95,6 +95,18 @@ PLATFORM_TO_REGION: Dict[str, str] = {
     "oc1": "oce", "tr1": "tr", "ru": "ru"
 }
 
+REGION_TO_PLATFORM: Dict[str, str] = {
+    "euw": "euw1", "eune": "eun1", "na": "na1", "kr": "kr",
+    "jp": "jp1", "br": "br1", "lan": "la1", "las": "la2",
+    "oce": "oc1", "tr": "tr1", "ru": "ru",
+}
+
+PLATFORM_TO_REGIONAL_ROUTING: Dict[str, str] = {
+    "euw1": "europe", "eun1": "europe", "tr1": "europe", "ru": "europe",
+    "na1": "americas", "br1": "americas", "la1": "americas", "la2": "americas",
+    "oc1": "sea", "kr": "asia", "jp1": "asia",
+}
+
 PHASE_DISPLAY_MAP: Dict[str, str] = {
     "Lobby": "In Lobby",
     "Matchmaking": "Searching for a match...",

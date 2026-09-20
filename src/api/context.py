@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import os
 from dataclasses import dataclass, field
 from threading import RLock
 from typing import Any, Callable, Dict, Mapping
+
+import psutil
 
 from ..config import (
     ACCOUNT_CACHE_DIR,
@@ -42,6 +45,8 @@ class ApplicationContext:
     _connected: bool = field(default=False, init=False, repr=False)
     _window: Any = field(default=None, init=False, repr=False)
     _shutdown_callback: Callable[[], None] | None = field(default=None, init=False, repr=False)
+    _shutdown_check_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    process_checker: Callable[[], bool | None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.params = normalize_parameters(self.params)
@@ -76,11 +81,12 @@ class ApplicationContext:
 
     def _get_account_identity(self) -> dict[str, Any]:
         state = self.runtime.manager.state
+        identity = self.runtime.get_account_identity(self.get_params())
         return {
             "puuid": getattr(state, "puuid", None),
             "summoner_id": getattr(state, "summoner_id", None),
-            "riot_id": self.runtime.manager.get_riot_id(),
-            "region": self.runtime.manager.get_platform_for_websites(),
+            "riot_id": identity.get("riot_id"),
+            "region": identity.get("region"),
         }
 
     def bind_window(self, window: Any, *, shutdown_callback: Callable[[], None] | None = None) -> None:
@@ -88,9 +94,70 @@ class ApplicationContext:
         self._window = window
         self._shutdown_callback = shutdown_callback
 
+    @staticmethod
+    def _default_process_checker() -> bool | None:
+        """Return whether a League process is present, or None when lookup is uncertain."""
+        names = {"leagueclient.exe", "leagueclientux.exe", "league of legends.exe"}
+        uncertain = False
+        try:
+            for process in psutil.process_iter(["name", "exe"]):
+                try:
+                    name = str(process.info.get("name") or "").lower()
+                    executable = os.path.basename(str(process.info.get("exe") or "")).lower()
+                    if name in names or executable in names:
+                        return True
+                except psutil.NoSuchProcess:
+                    continue
+                except (psutil.AccessDenied, psutil.ZombieProcess):
+                    uncertain = True
+        except (psutil.AccessDenied, psutil.Error):
+            return None
+        return None if uncertain else False
+
+    def _league_process_present(self) -> bool | None:
+        checker = self.process_checker or self._default_process_checker
+        try:
+            return checker()
+        except (OSError, psutil.Error):
+            return None
+
+    def _cancel_shutdown_check(self) -> None:
+        task = self._shutdown_check_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._shutdown_check_task = None
+
+    def _request_shutdown_if_league_stopped(self) -> None:
+        state = self._league_process_present()
+        if state is False:
+            callback = self._shutdown_callback
+            if callback is not None:
+                callback()
+            return
+        if state is True and self._async_loop is not None and self._async_loop.is_running():
+            self._shutdown_check_task = asyncio.create_task(self._wait_for_league_exit())
+
+    async def _wait_for_league_exit(self) -> None:
+        try:
+            for _ in range(20):
+                await asyncio.sleep(0.5)
+                if self._connected:
+                    return
+                state = self._league_process_present()
+                if state is False:
+                    callback = self._shutdown_callback
+                    if callback is not None:
+                        callback()
+                    return
+                if state is None:
+                    return
+        except asyncio.CancelledError:
+            raise
+
     def _handle_runtime_event(self, event_type: str, _data: Any = None) -> None:
         self.diagnostics.record_event(f"otp-lol/{event_type}", "Update", _data)
         if event_type == "connected":
+            self._cancel_shutdown_check()
             if self._connected:
                 return
             self._connected = True
@@ -101,10 +168,12 @@ class ApplicationContext:
         elif event_type == "disconnected":
             was_connected = self._connected
             self._connected = False
-            if was_connected and self.get_params().get("close_app_on_lol_exit", True):
-                callback = self._shutdown_callback
-                if callback is not None:
-                    callback()
+            transient = isinstance(_data, dict) and bool(_data.get("transient"))
+            if was_connected and not transient and self.get_params().get("close_app_on_lol_exit", True):
+                if self._async_loop is not None and self._async_loop.is_running():
+                    self._async_loop.call_soon_threadsafe(self._request_shutdown_if_league_stopped)
+                else:
+                    self._request_shutdown_if_league_stopped()
 
     @classmethod
     def from_system(cls) -> "ApplicationContext":
@@ -145,7 +214,9 @@ class ApplicationContext:
         }
         with self._params_lock:
             changed = any(self.params.get(key) != value for key, value in values.items())
-            updated = self.persist_parameters(values) if changed else self.get_params()
+            if not changed:
+                return True
+            updated = self.persist_parameters(values)
         if updated is None:
             return False
         self.broker.publish("account_identity_updated", {"keys": list(values)})
@@ -257,6 +328,7 @@ class ApplicationContext:
             self.broker.publish("game_data_updated", self.static_data.status)
 
     async def stop(self) -> None:
+        self._cancel_shutdown_check()
         if self._static_data_refresh_task and not self._static_data_refresh_task.done():
             self._static_data_refresh_task.cancel()
             await asyncio.gather(self._static_data_refresh_task, return_exceptions=True)

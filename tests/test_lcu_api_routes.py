@@ -177,6 +177,7 @@ class LcuApiRouteTests(unittest.TestCase):
 
         self.assertEqual(overview.status_code, 200)
         self.assertNotIn("riot_id", overview.json()["runtime"])
+        self.assertIn("account_identity", overview.json())
         self.assertIs(overview.json()["game_data"]["catalogs"]["champions"], True)
         self.assertEqual(run.status_code, 200)
         self.assertEqual(run.json()["results"][0]["id"], "gameflow_phase")
@@ -194,6 +195,7 @@ class LcuApiRouteTests(unittest.TestCase):
 
         self.assertEqual(redacted.status_code, 200)
         self.assertNotIn("riot_id", redacted.json())
+        self.assertIsNone(redacted.json()["account_identity"]["riot_id"])
         self.assertEqual(redacted.json()["webview2_version"], "145.0.1.2")
         self.assertEqual(redacted.json()["endpoint_results"][0]["id"], "gameflow_phase")
         self.assertTrue(redacted.json()["game_data"]["catalogs"]["champions"])

@@ -18,12 +18,19 @@ from ..account_models import (
     MatchTimeline,
     RankedStats,
 )
+from ..schemas import AccountIdentityResponse
 
 router = APIRouter(prefix="/api/account", tags=["account"])
 
 
 def _context(request: Request) -> Any:
     return request.app.state.context
+
+
+@router.get("/identity", response_model=AccountIdentityResponse)
+def account_identity(request: Request) -> dict[str, Any]:
+    context = _context(request)
+    return context.runtime.get_account_identity(context.get_params())
 
 
 def _catalogue_records(payload: Any, collection: str) -> list[tuple[Any, Mapping[str, Any]]]:

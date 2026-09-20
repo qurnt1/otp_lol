@@ -172,6 +172,16 @@ class UpdatesResponse(BaseModel):
     update: UpdateMetadata | None
 
 
+class AccountIdentityResponse(BaseModel):
+    riot_id: str | None
+    region: str | None
+    platform_id: str | None
+    regional_routing: str | None
+    source: Literal["connected", "saved", "manual", "unavailable"]
+    routing_source: str | None = None
+    connected: bool
+
+
 class StatsLinkResponse(BaseModel):
     available: bool
     site: str
@@ -252,7 +262,9 @@ class SettingsImport(SettingsPatch):
     @classmethod
     def validate_current_schema(cls, value: int) -> int:
         if value != CONFIG_SCHEMA_VERSION:
-            raise ValueError(f"unsupported settings schema (found={value}, expected={CONFIG_SCHEMA_VERSION})")
+            raise ValueError(
+                f"unsupported settings schema (found={value}, expected={CONFIG_SCHEMA_VERSION})"
+            )
         return value
 
 
@@ -312,6 +324,7 @@ class HistoryResponse(BaseModel):
 
 
 __all__ = [
+    "AccountIdentityResponse",
     "BootstrapResponse",
     "HealthResponse",
     "HistoryResponse",

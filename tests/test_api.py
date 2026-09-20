@@ -93,6 +93,35 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(runtime.json()["version"], CURRENT_VERSION)
         self.assertNotIn("password", runtime.text.lower())
 
+    def test_account_identity_route_returns_one_normalized_saved_or_manual_tuple(self):
+        unavailable = self.client.get("/api/account/identity")
+        self.assertEqual(unavailable.status_code, 200)
+        self.assertEqual(unavailable.json()["source"], "unavailable")
+        self.assertFalse(unavailable.json()["connected"])
+
+        self.context.params.update({
+            "auto_detected_riot_id": "Saved#EUW",
+            "auto_detected_region": "euw",
+            "auto_detected_platform": "euw1",
+        })
+        saved = self.client.get("/api/account/identity")
+        self.assertEqual(saved.json()["source"], "saved")
+        self.assertEqual(saved.json()["routing_source"], "saved")
+        self.assertEqual(
+            {key: saved.json()[key] for key in ("riot_id", "region", "platform_id", "regional_routing")},
+            {"riot_id": "Saved#EUW", "region": "euw", "platform_id": "euw1", "regional_routing": "europe"},
+        )
+
+        self.context.params.update({
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Manual#NA",
+            "manual_region": "na",
+        })
+        manual = self.client.get("/api/account/identity")
+        self.assertEqual(manual.json()["source"], "manual")
+        self.assertEqual(manual.json()["routing_source"], "manual")
+        self.assertEqual(manual.json()["platform_id"], "na1")
+
     def test_bootstrap_is_local_only_and_contains_the_three_initial_snapshots(self):
         response = self.client.get("/api/bootstrap")
 
