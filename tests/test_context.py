@@ -131,6 +131,7 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         shutdowns = []
         self.context.bind_window(window, shutdown_callback=lambda: shutdowns.append(True))
         self.context.process_checker = lambda: False
+        self.context.network_status._state = "online"
 
         self.context._handle_runtime_event("disconnected")
         self.assertEqual(window.hide_count, 0)
@@ -141,6 +142,22 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.assertEqual(window.hide_count, 1)
         self.context._handle_runtime_event("disconnected")
         self.assertEqual(shutdowns, [True])
+
+    def test_connected_event_keeps_the_network_gate_visible_when_offline(self):
+        class FakeWindow:
+            def __init__(self):
+                self.hide_count = 0
+
+            def hide(self):
+                self.hide_count += 1
+
+        window = FakeWindow()
+        self.context.bind_window(window)
+        self.context.network_status._state = "offline"
+
+        self.context._handle_runtime_event("connected")
+
+        self.assertEqual(window.hide_count, 0)
 
     def test_transient_disconnect_never_closes_the_application(self):
         shutdowns = []

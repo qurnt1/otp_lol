@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -88,6 +89,8 @@ class WebViewWindow:
         self._maximized = config.maximized
         self._close_to_tray = False
         self._allow_close = False
+        self._shown_callback: Any = None
+        self._native_shown = False
 
     def create(self) -> None:
         import webview
@@ -110,11 +113,15 @@ class WebViewWindow:
         self.window = webview.create_window(self.config.title, **create_kwargs)
         events = getattr(self.window, "events", None)
         if events is not None:
+            self._native_shown = False
             closing = getattr(events, "closing", None)
+            shown = getattr(events, "shown", None)
             maximized = getattr(events, "maximized", None)
             restored = getattr(events, "restored", None)
             if closing is not None:
                 closing += self._on_closing
+            if shown is not None:
+                shown += self._on_shown
             if maximized is not None:
                 maximized += lambda: setattr(self, "_maximized", True)
             if restored is not None:
@@ -155,8 +162,8 @@ class WebViewWindow:
         if "window_width" not in result or "window_height" not in result:
             try:
                 result.update(
-                    window_width=int(getattr(self.window, "width")),
-                    window_height=int(getattr(self.window, "height")),
+                    window_width=int(self.window.width),
+                    window_height=int(self.window.height),
                 )
             except (AttributeError, TypeError, ValueError, OSError, RuntimeError):
                 pass
@@ -169,8 +176,8 @@ class WebViewWindow:
         if "window_x" not in result or "window_y" not in result:
             try:
                 result.update(
-                    window_x=int(getattr(self.window, "x")),
-                    window_y=int(getattr(self.window, "y")),
+                    window_x=int(self.window.x),
+                    window_y=int(self.window.y),
                 )
             except (AttributeError, TypeError, ValueError, OSError, RuntimeError):
                 pass
@@ -185,9 +192,25 @@ class WebViewWindow:
         if self.window is None:
             return False
         events = getattr(self.window, "events", None)
+        if events is None:
+            return True
         shown = getattr(events, "shown", None)
+        if shown is None:
+            return True
         is_set = getattr(shown, "is_set", None)
-        return bool(is_set()) if callable(is_set) else True
+        return bool(is_set()) if callable(is_set) else self._native_shown
+
+    @property
+    def native_ready(self) -> bool:
+        return self._native_window_ready()
+
+    def set_shown_callback(self, callback: Any) -> None:
+        self._shown_callback = callback
+
+    def _on_shown(self) -> None:
+        self._native_shown = True
+        if self._shown_callback is not None:
+            self._shown_callback()
 
     def start(self) -> None:
         if not has_webview2_runtime():
@@ -195,17 +218,17 @@ class WebViewWindow:
 
         import webview
 
-        webview.start(debug=False, icon=self.config.icon)
+        webview.start(debug=os.environ.get("OTP_LOL_LOG_LEVEL", "").upper() == "DEBUG", icon=self.config.icon)
 
     def show(self) -> None:
         """Show the native window when a tray or hotkey callback requests it."""
-        if self.window is not None:
+        if self.window is not None and self._native_window_ready():
             self.window.show()
             self._visible = True
 
     def hide(self) -> None:
         """Hide the native window without destroying the embedded application."""
-        if self.window is not None:
+        if self.window is not None and self._native_window_ready():
             self.window.hide()
             self._visible = False
 
@@ -233,12 +256,12 @@ class WebViewWindow:
 
     def resize(self, width: int, height: int) -> None:
         """Resize the native window when the React route changes its density."""
-        if self.window is not None:
+        if self.window is not None and self._native_window_ready():
             self.window.resize(max(width, self.config.min_width), max(height, self.config.min_height))
 
     def open_route(self, route: str) -> bool:
         """Show the native window and navigate to a known frontend route."""
-        if self.window is None or route not in _APP_ROUTES:
+        if self.window is None or not self._native_window_ready() or route not in _APP_ROUTES:
             return False
         if getattr(self.window, "minimized", False):
             restore = getattr(self.window, "restore", None)

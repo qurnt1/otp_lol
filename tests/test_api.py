@@ -48,6 +48,76 @@ class EventBrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(broker.subscriber_count, 0)
 
 
+class ProviderRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.context = ApplicationContext(params=DEMO_PARAMS)
+        self.context.provider_window_manager = SimpleNamespace(
+            status=Mock(return_value={
+                "stats": {"state": "hidden", "provider_id": "opgg", "url": "secret", "last_error": None, "last_action": "preload", "last_transition_at": 1.0, "load_started_at": 0.5, "last_load_duration_ms": 42.0},
+                "live": {"state": "not_created", "provider_id": None, "url": None, "last_error": None, "last_action": "not_created", "last_transition_at": None, "load_started_at": None, "last_load_duration_ms": None},
+            }),
+            request_open=Mock(return_value={"ok": True, "reason": "scheduled", "state": "loading", "provider_id": "opgg", "url": "secret"}),
+            request_show=Mock(return_value={"ok": True, "reason": "scheduled", "state": "visible", "provider_id": "opgg"}),
+            request_reload=Mock(return_value={"ok": True, "reason": "scheduled", "state": "loading", "provider_id": "opgg"}),
+            request_hide=Mock(return_value={"ok": True, "reason": "scheduled", "state": "hidden", "provider_id": "opgg"}),
+        )
+        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+
+    def test_provider_routes_use_manager_and_redact_urls(self):
+        status = self.client.get("/api/desktop/providers/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["windows"]["stats"]["state"], "hidden")
+        self.assertNotIn("url", status.json()["windows"]["stats"])
+
+        opened = self.client.post("/api/desktop/providers/stats/open")
+        self.assertEqual(opened.status_code, 200)
+        self.context.provider_window_manager.request_open.assert_called_once_with("stats")
+
+        shown = self.client.post("/api/desktop/providers/stats/show")
+        self.assertEqual(shown.status_code, 200)
+        self.context.provider_window_manager.request_show.assert_called_once_with("stats")
+
+        reloaded = self.client.post("/api/desktop/providers/stats/reload")
+        self.assertEqual(reloaded.status_code, 200)
+        self.context.provider_window_manager.request_reload.assert_called_once_with("stats")
+
+        hidden = self.client.post("/api/desktop/providers/stats/hide")
+        self.assertEqual(hidden.status_code, 200)
+        self.context.provider_window_manager.request_hide.assert_called_once_with("stats")
+
+    def test_provider_routes_reject_unknown_kind_and_missing_manager(self):
+        self.assertEqual(self.client.post("/api/desktop/providers/other/open").status_code, 404)
+        del self.context.provider_window_manager
+        self.assertEqual(self.client.get("/api/desktop/providers/status").status_code, 503)
+
+
+class NetworkRouteTests(unittest.TestCase):
+    def setUp(self):
+        self.context = ApplicationContext(params=DEMO_PARAMS)
+        self.context.network_status = SimpleNamespace(
+            check=Mock(return_value={
+                "state": "offline",
+                "online": False,
+                "checked_at": 1.0,
+                "last_success_at": None,
+                "reason": "timeout",
+                "source": "ddragon",
+            })
+        )
+        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+
+    def test_status_and_manual_check_are_local_routes(self):
+        status = self.client.get("/api/network/status")
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["state"], "offline")
+        self.context.network_status.check.assert_called_once_with()
+
+        checked = self.client.post("/api/network/check")
+        self.assertEqual(checked.status_code, 200)
+        self.assertEqual(self.context.network_status.check.call_args.args, ())
+        self.assertEqual(self.context.network_status.check.call_args.kwargs, {"force": True})
+
+
 class ApiBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.context = ApplicationContext(params=DEMO_PARAMS)
@@ -282,6 +352,28 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(old_version.status_code, 422)
         self.assertEqual(current_version.status_code, 200)
 
+    def test_settings_import_migrates_the_removed_rune_toggle(self):
+        payload = {
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+            "pick_slots": {
+                "pick_1": {
+                    "rune_page_id": 123,
+                    "rune_page_name": "Legacy page",
+                    "rune_keystone_id": 8005,
+                    "rune_auto_apply": False,
+                }
+            },
+        }
+        disabled = self.client.post("/api/settings/import", json=payload)
+        self.assertEqual(disabled.status_code, 200)
+        self.assertEqual(disabled.json()["pick_slots"]["pick_1"]["rune_page_id"], 0)
+        self.assertNotIn("rune_auto_apply", disabled.json()["pick_slots"]["pick_1"])
+
+        payload["pick_slots"]["pick_1"]["rune_auto_apply"] = True
+        preserved = self.client.post("/api/settings/import", json=payload)
+        self.assertEqual(preserved.status_code, 200)
+        self.assertEqual(preserved.json()["pick_slots"]["pick_1"]["rune_page_id"], 123)
+
     def test_settings_export_import_and_reset_are_real_persistent_operations(self):
         self.context.params.update({
             "auto_detected_riot_id": "Local#EUW",
@@ -423,7 +515,7 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(restored["selected_ban"], "Teemo")
         self.assertEqual([restored["pick_slots"][f"pick_{index}"]["spell_2"] for index in range(1, 4)], ["Ignite", "Barrier", "Heal"])
         self.assertTrue(all(slot["skin_mode"] == "none" and slot["skin_id"] == 0 for slot in restored["pick_slots"].values()))
-        self.assertTrue(all(slot["rune_page_id"] == 0 and not slot["rune_auto_apply"] for slot in restored["pick_slots"].values()))
+        self.assertTrue(all(slot["rune_page_id"] == 0 and slot["rune_keystone_id"] == 0 for slot in restored["pick_slots"].values()))
         self.assertFalse(restored["onboarding_completed"])
         self.assertEqual(self.client.patch("/api/settings", json={"theme": "darkly"}).status_code, 200)
 
@@ -605,11 +697,22 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(response.headers["referrer-policy"], "no-referrer")
         policy = response.headers["content-security-policy"]
         self.assertIn("default-src 'self'", policy)
-        frame_src = next(directive for directive in policy.split("; ") if directive.startswith("frame-src "))
-        self.assertEqual(frame_src, "frame-src 'self' https://www.deeplol.gg")
-        self.assertNotIn("frame-src *", policy)
-        self.assertNotIn("op.gg", frame_src)
-        self.assertNotIn("leagueofgraphs", frame_src)
+        self.assertNotIn("frame-src", policy)
+        self.assertIn("frame-ancestors 'none'", policy)
+
+    def test_diagnostics_exposes_per_shortcut_hotkey_status(self):
+        self.context.set_hotkey_status({
+            "window": {"hotkey": "alt+c", "backend": "keyboard_hook", "active": True},
+            "site": {"hotkey": "alt+p", "backend": "register_hotkey", "active": True},
+        })
+
+        response = self.client.get("/api/diagnostics")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["hotkeys"], {
+            "window": {"hotkey": "alt+c", "backend": "keyboard_hook", "active": True},
+            "site": {"hotkey": "alt+p", "backend": "register_hotkey", "active": True},
+        })
 
     def test_auto_detection_does_not_use_manual_account_when_league_is_closed(self):
         self.context.params.update({
@@ -633,7 +736,6 @@ class ApiBoundaryTests(unittest.TestCase):
             "homepage_url": "https://www.deeplol.gg/",
             "riot_id": None,
             "region": None,
-            "embed_allowed": True,
             "account_source": "unavailable",
         })
 
@@ -671,7 +773,6 @@ class ApiBoundaryTests(unittest.TestCase):
             "homepage_url": "https://dpm.lol/",
             "riot_id": "Live#EUW",
             "region": "euw",
-            "embed_allowed": False,
             "account_source": "connected",
         })
 
@@ -698,7 +799,6 @@ class ApiBoundaryTests(unittest.TestCase):
             "homepage_url": "https://www.leagueofgraphs.com/",
             "riot_id": "Stale#TAG",
             "region": "euw",
-            "embed_allowed": False,
             "account_source": "saved",
         })
         self.assertEqual(live.json()["account_source"], "saved")
@@ -769,7 +869,6 @@ class ApiBoundaryTests(unittest.TestCase):
             "homepage_url": "https://www.deeplol.gg/",
             "riot_id": "Live#EUW",
             "region": "euw",
-            "embed_allowed": False,
             "account_source": "connected",
         })
 
@@ -791,7 +890,6 @@ class ApiBoundaryTests(unittest.TestCase):
             "homepage_url": "https://dpm.lol/",
             "riot_id": None,
             "region": None,
-            "embed_allowed": False,
             "account_source": "unavailable",
         })
 

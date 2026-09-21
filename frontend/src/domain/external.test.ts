@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { openExternalUrl, openProviderWindow } from "./external";
+import { isNativeBridgeReady, openExternalUrl } from "./external";
 
 afterEach(() => {
   vi.restoreAllMocks();
   delete (window as Window & { pywebview?: unknown }).pywebview;
+  delete (window as Window & { __otpNativeBridgeReady?: boolean }).__otpNativeBridgeReady;
 });
 
 describe("external provider links", () => {
@@ -26,6 +27,17 @@ describe("external provider links", () => {
     expect(open).toHaveBeenCalledWith("https://porofessor.gg/fr/live/euw/Player-Tag/ranked-only", "_blank", "noopener,noreferrer");
   });
 
+  it("keeps the desktop shell blocked until pywebviewready", () => {
+    const currentUrl = window.location.href;
+    window.history.replaceState({}, "", "/?desktop=1");
+    delete (window as Window & { pywebview?: unknown }).pywebview;
+    delete (window as Window & { __otpNativeBridgeReady?: boolean }).__otpNativeBridgeReady;
+    expect(isNativeBridgeReady()).toBe(false);
+    window.dispatchEvent(new Event("pywebviewready"));
+    expect(isNativeBridgeReady()).toBe(true);
+    window.history.replaceState({}, "", currentUrl);
+  });
+
   it("delegates a validated provider URL to the native opener", async () => {
     const openExternal = vi.fn().mockResolvedValue(true);
     Object.defineProperty(window, "pywebview", {
@@ -37,23 +49,4 @@ describe("external provider links", () => {
     expect(openExternal).toHaveBeenCalledWith("https://dpm.lol/Player-Tag/");
   });
 
-  it("requests an in-app provider window by provider and page kind, never by URL", async () => {
-    const openProvider = vi.fn().mockResolvedValue(true);
-    Object.defineProperty(window, "pywebview", {
-      configurable: true,
-      value: { api: { open_provider_window: openProvider } },
-    });
-
-    expect(await openProviderWindow("deeplol", "live")).toBe(true);
-    expect(openProvider).toHaveBeenCalledWith("deeplol", "live");
-  });
-
-  it("returns a failure result when the native provider window rejects", async () => {
-    Object.defineProperty(window, "pywebview", {
-      configurable: true,
-      value: { api: { open_provider_window: vi.fn().mockRejectedValue(new Error("window failed")) } },
-    });
-
-    expect(await openProviderWindow("opgg", "stats")).toBe(false);
-  });
 });

@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import webbrowser
 from typing import TYPE_CHECKING
 
 from ..services.urls import (
-    build_provider_url,
     is_allowed_external_url,
-    is_allowed_provider_url,
-    resolve_provider_account,
 )
 
 if TYPE_CHECKING:
     from .window import WebViewWindow
+
+LOGGER = logging.getLogger("otp_lol.bridge")
 
 
 class DesktopBridge:
@@ -23,19 +24,25 @@ class DesktopBridge:
     def __init__(self, context=None) -> None:
         self._window: WebViewWindow | None = None
         self._context = context
-        self._provider_windows = {}
+        from .provider_browser import ProviderWindowManager
+
+        self._provider_manager = ProviderWindowManager(context)
+        if context is not None:
+            context.provider_window_manager = self._provider_manager
+        # Compatibility view for callers/tests that inspected the old per-kind mapping.
+        self._provider_windows = self._provider_manager._windows
 
     def attach(self, window: WebViewWindow) -> None:
         self._window = window
 
     def resize_window(self, width: int, height: int) -> None:
-        if self._window is None:
+        if self._window is None or not self._window.native_ready:
             return
         self._window.resize(width, height)
 
     def toggle_fullscreen(self) -> bool:
         """Toggle fullscreen when the installed pywebview backend supports it."""
-        if self._window is None or self._window.window is None:
+        if self._window is None or not self._window.native_ready or self._window.window is None:
             return False
         toggle = getattr(self._window.window, "toggle_fullscreen", None)
         if not callable(toggle):
@@ -49,36 +56,89 @@ class DesktopBridge:
             return False
         return bool(webbrowser.open(url))
 
+    def open_provider_window_result(self, provider_id: str, kind: str) -> dict[str, object]:
+        """Return a structured provider action result for diagnostics."""
+        if self._context is None:
+            return {"ok": False, "reason": "context_unavailable", "state": "not_created"}
+        if self._window is not None and not self._window.native_ready:
+            return {"ok": False, "reason": "bridge_not_ready", "state": "not_created"}
+        # A bridge without an attached native window is the deterministic test/browser facade.
+        if self._window is None:
+            self._provider_manager.mark_main_window_shown(preload=False)
+        result = self._provider_manager.open_result(provider_id, kind)
+        LOGGER.info(
+            "provider_open provider=%s kind=%s ok=%s reason=%s state=%s",
+            provider_id,
+            kind,
+            result.get("ok"),
+            result.get("reason"),
+            result.get("state"),
+        )
+        return result
+
     def open_provider_window(self, provider_id: str, kind: str) -> bool:
         """Open a selected account provider without accepting frontend-supplied URLs."""
-        if self._context is None or kind not in {"stats", "live"}:
-            return False
-        params = self._context.get_params()
-        setting = "preferred_stats_site" if kind == "stats" else "preferred_hotkey_site"
-        if str(params.get(setting) or "").strip().lower() != str(provider_id or "").strip().lower():
-            return False
-        riot_id, region, _account_source = resolve_provider_account(params, self._context.runtime)
-        url = build_provider_url(provider_id, kind, region, riot_id)
-        if not url or not is_allowed_provider_url(provider_id, url):
-            return False
+        return bool(self.open_provider_window_result(provider_id, kind).get("ok"))
 
-        key = (provider_id, kind)
-        existing = self._provider_windows.get(key)
-        if existing is not None and existing.window is not None:
-            existing.window.show()
-            return True
+    def reload_provider_window_result(self, kind: str) -> dict[str, object]:
+        if self._window is not None and not self._window.native_ready:
+            return {"ok": False, "reason": "bridge_not_ready", "state": "not_created"}
+        if self._window is None:
+            self._provider_manager.mark_main_window_shown(preload=False)
+        ok = self._provider_manager.reload(kind)
+        status = self._provider_manager.status().get(kind, {})
+        return {
+            "ok": ok,
+            "reason": None if ok else status.get("last_error") or "reload_failed",
+            "state": status.get("state", "not_created"),
+        }
 
-        from .provider_browser import ProviderBrowserWindow
+    def reload_provider_window(self, kind: str) -> bool:
+        return bool(self.reload_provider_window_result(kind).get("ok"))
 
-        provider_window = ProviderBrowserWindow(
-            provider_id,
-            url,
-            on_closed=lambda: self._provider_windows.pop(key, None),
-        )
-        if not provider_window.open():
-            return False
-        self._provider_windows[key] = provider_window
-        return True
+    def provider_window_status(self) -> dict:
+        return self._provider_manager.status()
+
+    def mark_main_window_shown(self) -> None:
+        self._provider_manager.mark_main_window_shown()
+
+    def notify_provider_identity_updated(self) -> None:
+        self._provider_manager.notify_identity_updated()
+
+    def shutdown(self) -> None:
+        self._provider_manager.shutdown()
+
+    def export_diagnostics_report(self, include_riot_id: bool = False) -> dict[str, object]:
+        """Save one redacted diagnostics report through the native save dialog."""
+        if self._context is None or self._window is None or not self._window.native_ready:
+            return {"success": False, "error": "native_bridge_unavailable"}
+        report = self._context.diagnostics.export(bool(include_riot_id))
+        native_window = self._window.window
+        create_dialog = getattr(native_window, "create_file_dialog", None)
+        if not callable(create_dialog):
+            return {"success": False, "error": "save_dialog_unavailable"}
+        try:
+            import webview
+
+            selected = create_dialog(
+                webview.SAVE_DIALOG,
+                save_filename="otp-lol-diagnostics.json",
+                file_types=("JSON files (*.json)", "All files (*.*)"),
+            )
+        except (AttributeError, OSError, RuntimeError, TypeError) as error:
+            return {"success": False, "error": str(error)}
+        path = selected[0] if isinstance(selected, (list, tuple)) and selected else selected
+        if not path:
+            return {"success": False, "cancelled": True}
+        try:
+            with open(os.fspath(path), "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(report, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+        except (OSError, TypeError, ValueError) as error:
+            return {"success": False, "error": str(error)}
+        return {"success": True, "path": os.fspath(path)}
+
+    save_diagnostics_report = export_diagnostics_report
 
     def open_local_folder(self, folder: str) -> bool:
         """Open only application-owned folders from the Advanced settings page."""

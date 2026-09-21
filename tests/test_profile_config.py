@@ -45,7 +45,7 @@ class ProfileConfigTests(unittest.TestCase):
                         "random_skin_pool": [{"skin_id": 86013}, "ignored"],
                         "rune_page_id": "123",
                         "rune_page_name": "Top Runes",
-                        "rune_auto_apply": False,
+                        "rune_keystone_id": 8005,
                         "rune_keystone_path": "keystone.png",
                         "rune_sub_style_icon_path": "substyle.png",
                     }
@@ -61,7 +61,7 @@ class ProfileConfigTests(unittest.TestCase):
         self.assertEqual(slot["random_skin_pool"], [{"skin_id": 86013}])
         self.assertEqual(slot["rune_page_id"], 123)
         self.assertEqual(slot["rune_page_name"], "Top Runes")
-        self.assertFalse(slot["rune_auto_apply"])
+        self.assertEqual(slot["rune_keystone_id"], 8005)
         self.assertEqual(slot["rune_keystone_path"], "keystone.png")
         self.assertEqual(slot["rune_sub_style_icon_path"], "substyle.png")
 

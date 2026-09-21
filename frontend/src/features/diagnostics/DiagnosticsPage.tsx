@@ -8,6 +8,8 @@ import { Button } from "../../components/ui/button";
 import { fr as baseFr } from "../../content/fr";
 import type { DiagnosticsResponse } from "../../types/api";
 import { diagnosticsCopy as copy } from "./copy";
+import { exportDiagnosticsReport } from "../../domain/external";
+import { useNativeBridgeReady } from "../../hooks/useNativeBridgeReady";
 
 type LogFilter = "all" | "lcu" | "automation" | "data" | "webview" | "errors";
 
@@ -30,6 +32,8 @@ export function DiagnosticsPage() {
   const [selectedPayload, setSelectedPayload] = useState<{ title: string; payload: unknown } | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const nativeBridgeReady = useNativeBridgeReady();
+  const providerStatus = useQuery({ queryKey: ["provider-window-status"], queryFn: api.getProviderWindowStatus, staleTime: 0, retry: false, refetchInterval: (query) => query.state.data?.windows ? 1000 : false });
   const run = useMutation({ mutationFn: () => api.runDiagnostics(), onSuccess: async () => { setError(""); await diagnostics.refetch(); }, onError: (reason) => setError(reason instanceof Error ? reason.message : copy.runFailed) });
 
   const logs = useMemo(() => makeLogRows(diagnostics.data), [diagnostics.data]);
@@ -43,6 +47,18 @@ export function DiagnosticsPage() {
     setError("");
     setNotice("");
     try {
+      if (nativeBridgeReady) {
+        const result = await exportDiagnosticsReport(includeRiotId);
+        if (result) {
+          if (result.cancelled) {
+            setNotice(copy.exportCancelled);
+            return;
+          }
+          if (!result.success) throw new Error(result.error || copy.exportFailed);
+          setNotice(copy.exported);
+          return;
+        }
+      }
       const report = await api.exportDiagnostics(includeRiotId);
       const file = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(file);
@@ -101,6 +117,28 @@ export function DiagnosticsPage() {
           {data.game_data.cache_available ? <CheckCircle2 size={17} aria-hidden="true" /> : <AlertTriangle size={17} aria-hidden="true" />}
           <div><span className="section-label">{copy.cache}</span><strong>{data.game_data.cache_available ? copy.available : copy.unavailable}</strong><small>{data.game_data.cache_version ?? copy.none}</small></div>
         </section>
+        {data.hotkeys && <section className="surface diagnostics-status-card diagnostics-hotkeys-card">
+          <Activity size={17} aria-hidden="true" />
+          <div>
+            <span className="section-label">{copy.hotkeys}</span>
+            {(["window", "site"] as const).map((key) => {
+              const status = data.hotkeys?.[key];
+              if (!status) return null;
+              const backend = status.backend === "keyboard_hook" ? copy.keyboardHook : status.backend === "register_hotkey" ? copy.registerHotkey : copy.shortcutUnavailable;
+              return <small key={key}>{key === "window" ? copy.windowShortcut : copy.siteShortcut}: {status.hotkey} · {backend} · {status.active ? copy.available : copy.shortcutUnavailable}</small>;
+            })}
+          </div>
+        </section>}
+        {providerStatus.data && <section className="surface diagnostics-status-card diagnostics-hotkeys-card">
+          <Activity size={17} aria-hidden="true" />
+          <div>
+            <span className="section-label">{copy.providerWindows}</span>
+            {(["stats", "live"] as const).map((kind) => {
+              const status = providerStatus.data.windows?.[kind];
+              return <small key={kind}>{kind === "stats" ? copy.providerStats : copy.providerLive}: {status?.state ?? copy.notAvailable}{status?.last_error ? ` · ${status.last_error}` : ""}</small>;
+            })}
+          </div>
+        </section>}
       </div>
 
       <section className="surface diagnostics-account-card" aria-labelledby="diagnostics-account-heading">

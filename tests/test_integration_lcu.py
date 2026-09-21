@@ -53,7 +53,7 @@ def _fake_get_params():
                 "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0,
                 "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0,
                 "random_skin_pool": [],
-                "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True,
+                "rune_page_id": 0, "rune_page_name": "", "rune_keystone_id": 0,
                 "rune_keystone_path": "", "rune_sub_style_icon_path": "",
             },
             "pick_2": {
@@ -61,7 +61,7 @@ def _fake_get_params():
                 "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0,
                 "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0,
                 "random_skin_pool": [],
-                "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True,
+                "rune_page_id": 0, "rune_page_name": "", "rune_keystone_id": 0,
                 "rune_keystone_path": "", "rune_sub_style_icon_path": "",
             },
             "pick_3": {
@@ -69,7 +69,7 @@ def _fake_get_params():
                 "skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0,
                 "random_skin_id": 0, "random_skin_name": "", "random_skin_num": 0,
                 "random_skin_pool": [],
-                "rune_page_id": 0, "rune_page_name": "", "rune_auto_apply": True,
+                "rune_page_id": 0, "rune_page_name": "", "rune_keystone_id": 0,
                 "rune_keystone_path": "", "rune_sub_style_icon_path": "",
             },
         },

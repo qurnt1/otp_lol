@@ -16,8 +16,6 @@ class ProviderDefinition:
     allowed_hosts: tuple[str, ...]
     profile_builder: Callable[[str, str], str] | None = None
     live_builder: Callable[[str, str], str] | None = None
-    profile_embed: bool = False
-    live_embed: bool = False
     profile_order: int | None = None
     live_order: int | None = None
 
@@ -73,7 +71,6 @@ PROVIDER_REGISTRY = {
         ("deeplol.gg", "www.deeplol.gg"),
         profile_builder=build_deeplol_url,
         live_builder=lambda region, riot_id: build_deeplol_url(region, riot_id, ingame=True),
-        profile_embed=True,
         profile_order=1,
         live_order=1,
     ),
@@ -118,16 +115,6 @@ STATS_PROVIDER_HOME_URLS = {
 HOTKEY_PROVIDERS = {
     provider_id: (PROVIDER_REGISTRY[provider_id].live_builder, PROVIDER_REGISTRY[provider_id].homepage_url)
     for provider_id in LIVE_PROVIDER_IDS
-}
-STATS_FRAME_ORIGINS = {
-    provider.id: provider.homepage_url.rstrip("/")
-    for provider in PROVIDER_REGISTRY.values()
-    if provider.profile_embed
-}
-LIVE_FRAME_ORIGINS = {
-    provider.id: provider.homepage_url.rstrip("/")
-    for provider in PROVIDER_REGISTRY.values()
-    if provider.live_embed
 }
 PROVIDER_LOGO_FILES = {provider.id: provider.logo_filename for provider in PROVIDER_REGISTRY.values()}
 ALLOWED_EXTERNAL_HOSTS = frozenset(

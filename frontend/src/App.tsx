@@ -9,6 +9,7 @@ import { useHashRoute } from "./app/useHashRoute";
 import { Button } from "./components/ui/button";
 import { fr } from "./content/fr";
 import { localizeRuntimeStatus } from "./domain/runtimeStatus";
+import { NetworkGate } from "./features/network/NetworkGate";
 import { useRuntimeStore } from "./stores/runtimeStore";
 import type { RuntimeEvent, RuntimeSnapshot, UpdateResponse } from "./types/api";
 
@@ -69,7 +70,14 @@ function App() {
   const setRuntime = useRuntimeStore((state) => state.setRuntime);
   const setStatus = useRuntimeStore((state) => state.setStatus);
   const storedRuntime = useRuntimeStore((state) => state.runtime);
-  const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.getBootstrap, staleTime: Infinity, gcTime: Infinity, retry: 1 });
+  const network = useQuery({
+    queryKey: ["network-status"],
+    queryFn: api.getNetworkStatus,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: (query) => query.state.data?.online ? false : 5_000,
+  });
+  const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.getBootstrap, enabled: network.data?.online === true, staleTime: Infinity, gcTime: Infinity, retry: 1 });
   const runtime = storedRuntime ?? bootstrap.data?.runtime ?? null;
   const closePresetAction = () => {
     if (activeRoute.page === "presets") {
@@ -80,6 +88,19 @@ function App() {
   };
 
   useEffect(() => { performance.mark("otp:t5-react-mount"); }, []);
+  useEffect(() => {
+    const refreshNetwork = () => {
+      void api.checkNetworkStatus()
+        .then((next) => queryClient.setQueryData(["network-status"], next))
+        .catch(() => undefined);
+    };
+    window.addEventListener("online", refreshNetwork);
+    window.addEventListener("offline", refreshNetwork);
+    return () => {
+      window.removeEventListener("online", refreshNetwork);
+      window.removeEventListener("offline", refreshNetwork);
+    };
+  }, [queryClient]);
   useEffect(() => {
     if (!bootstrap.data) return;
     performance.mark("otp:t6-bootstrap");
@@ -118,6 +139,12 @@ function App() {
           void queryClient.invalidateQueries({ queryKey });
         }
       }
+      if (event.type === "provider_window") {
+        void queryClient.invalidateQueries({ queryKey: ["provider-window-status"] });
+      }
+      if (event.type === "network_status") {
+        void queryClient.invalidateQueries({ queryKey: ["network-status"] });
+      }
       if (["summoner_update", "connected", "disconnected"].includes(event.type)) {
         refreshRuntime();
         void queryClient.invalidateQueries({ queryKey: ["settings"] });
@@ -151,6 +178,19 @@ function App() {
   }, [queryClient]);
   useEffect(() => { if (activeRoute.page === "dashboard") performance.mark("otp:t7-dashboard-interactive"); }, [activeRoute.page]);
 
+  if (network.isError) return <div className="boot-screen"><div className="state-error"><strong>{fr.app.serverNotResponding}</strong><span>{fr.app.serverHint}</span><Button variant="primary" type="button" onClick={() => void network.refetch()}>{fr.common.retry}</Button></div></div>;
+  if (network.isPending || network.data?.state === "checking") return <NetworkGate state="checking" />;
+  if (!network.data?.online) {
+    const retryNetwork = async () => {
+      try {
+        const next = await api.checkNetworkStatus();
+        queryClient.setQueryData(["network-status"], next);
+      } catch {
+        await network.refetch();
+      }
+    };
+    return <NetworkGate state="offline" onRetry={() => void retryNetwork()} />;
+  }
   if (bootstrap.isPending && !bootstrap.data) return <div className="boot-screen"><div className="boot-mark">O</div><strong>{fr.app.name}</strong><span>{fr.common.loading}</span></div>;
   if (bootstrap.isError && !bootstrap.data) return <div className="boot-screen"><div className="state-error"><strong>{fr.app.serverNotResponding}</strong><span>{fr.app.serverHint}</span><Button variant="primary" type="button" onClick={() => void bootstrap.refetch()}>{fr.common.retry}</Button></div></div>;
 

@@ -72,7 +72,7 @@ def _resolve_slot(
         "random_skin_pool": _normalize_random_skin_pool(slot.get("random_skin_pool")),
         "rune_page_id": _to_int(slot.get("rune_page_id")),
         "rune_page_name": str(slot.get("rune_page_name") or ""),
-        "rune_auto_apply": bool(slot.get("rune_auto_apply", True)),
+        "rune_keystone_id": _to_int(slot.get("rune_keystone_id")),
         "rune_keystone_path": str(slot.get("rune_keystone_path") or ""),
         "rune_sub_style_icon_path": str(slot.get("rune_sub_style_icon_path") or ""),
     }

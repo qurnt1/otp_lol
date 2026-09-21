@@ -79,7 +79,7 @@ EP_CS_RUNE_PAGE: str = "/lol-champ-select/v1/session/rune-page"
 EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
 EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
-REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
+REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru", "sea"]
 SUPPORTED_REGIONS: tuple[str, ...] = tuple(REGION_LIST)
 
 SUMMONER_SPELL_MAP: Dict[str, int] = {
@@ -92,19 +92,21 @@ SUMMONER_SPELL_LIST: list[str] = sorted(list(SUMMONER_SPELL_MAP.keys()))
 PLATFORM_TO_REGION: Dict[str, str] = {
     "euw1": "euw", "eun1": "eune", "na1": "na", "kr": "kr",
     "jp1": "jp", "br1": "br", "la1": "lan", "la2": "las",
-    "oc1": "oce", "tr1": "tr", "ru": "ru"
+    "oc1": "oce", "tr1": "tr", "ru": "ru",
+    "ph2": "sea", "sg2": "sea", "th2": "sea", "tw2": "sea", "vn2": "sea",
 }
 
 REGION_TO_PLATFORM: Dict[str, str] = {
     "euw": "euw1", "eune": "eun1", "na": "na1", "kr": "kr",
     "jp": "jp1", "br": "br1", "lan": "la1", "las": "la2",
-    "oce": "oc1", "tr": "tr1", "ru": "ru",
+    "oce": "oc1", "tr": "tr1", "ru": "ru", "sea": "sg2",
 }
 
 PLATFORM_TO_REGIONAL_ROUTING: Dict[str, str] = {
     "euw1": "europe", "eun1": "europe", "tr1": "europe", "ru": "europe",
     "na1": "americas", "br1": "americas", "la1": "americas", "la2": "americas",
     "oc1": "sea", "kr": "asia", "jp1": "asia",
+    "ph2": "sea", "sg2": "sea", "th2": "sea", "tw2": "sea", "vn2": "sea",
 }
 
 PHASE_DISPLAY_MAP: Dict[str, str] = {

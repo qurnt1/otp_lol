@@ -5,6 +5,26 @@ import type {
   DiagnosticsResponse, DiagnosticsRunResponse, AccountIdentity,
 } from "../types/api";
 
+export type ProviderWindowState = "not_created" | "creating" | "loading" | "ready" | "hidden" | "visible" | "error" | "closed";
+export type ProviderWindowStatus = {
+  state: ProviderWindowState | string;
+  provider_id?: string | null;
+  last_error?: string | null;
+  last_action?: string;
+  last_transition_at?: number | null;
+  load_started_at?: number | null;
+  last_load_duration_ms?: number | null;
+};
+export type ProviderWindowAction = { ok: boolean; kind: "stats" | "live"; reason?: string | null; state: string; provider_id?: string | null };
+export type NetworkStatus = {
+  state: "checking" | "offline" | "online";
+  online: boolean;
+  checked_at?: number | null;
+  last_success_at?: number | null;
+  reason?: string | null;
+  source: string;
+};
+
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message);
@@ -63,8 +83,15 @@ export const api = {
   getProviders: () => request<ProviderCatalog>("/api/catalog/providers"),
   getHistory: (limit = 100) => request<HistoryResponse>("/api/history?limit=" + limit),
   getUpdates: () => request<UpdateResponse>("/api/updates"),
+  getNetworkStatus: () => request<NetworkStatus>("/api/network/status"),
+  checkNetworkStatus: () => request<NetworkStatus>("/api/network/check", { method: "POST" }),
   clearHistory: () => request<{ ok: boolean }>("/api/history", { method: "DELETE" }),
   resetSettings: () => request<Settings>("/api/settings/reset", { method: "POST" }),
   clearLastDetectedAccount: () => request<Settings>("/api/settings/last-detected-account", { method: "DELETE" }),
   importSettings: (values: SettingsImport) => request<Settings>("/api/settings/import", { method: "POST", body: JSON.stringify(values) }),
+  getProviderWindowStatus: () => request<{ windows: Record<"stats" | "live", ProviderWindowStatus> }>("/api/desktop/providers/status"),
+  openProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/open`, { method: "POST" }),
+  showProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/show`, { method: "POST" }),
+  reloadProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/reload`, { method: "POST" }),
+  hideProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/hide`, { method: "POST" }),
 };

@@ -71,7 +71,7 @@ def build_pick_slot_defaults() -> Dict[str, Dict[str, Any]]:
             "random_skin_pool": [],
             "rune_page_id": 0,
             "rune_page_name": "",
-            "rune_auto_apply": True,
+            "rune_keystone_id": 0,
             "rune_keystone_path": "",
             "rune_sub_style_icon_path": "",
         }
@@ -193,8 +193,6 @@ DEMO_PARAMS.update(
 def build_starter_pick_slots() -> Dict[str, Dict[str, Any]]:
     """Return editable starter picks without account-specific skins or runes."""
     slots = build_pick_slot_defaults()
-    for slot in slots.values():
-        slot["rune_auto_apply"] = False
     slots["pick_1"].update({"spell_1": "Flash", "spell_2": "Ignite"})
     slots["pick_2"].update({"spell_1": "Flash", "spell_2": "Barrier"})
     slots["pick_3"].update({"spell_1": "Flash", "spell_2": "Heal"})
@@ -476,13 +474,36 @@ def _build_normalized_pick_slots(
                 "random_skin_pool": _normalize_skin_pool(
                     slot_data.get("random_skin_pool", slots[slot]["random_skin_pool"])
                 ),
-                "rune_page_id": int(slot_data.get("rune_page_id", slots[slot]["rune_page_id"]) or 0),
+                "rune_page_id": _normalize_skin_id(slot_data.get("rune_page_id", slots[slot]["rune_page_id"])),
                 "rune_page_name": str(slot_data.get("rune_page_name", slots[slot]["rune_page_name"]) or ""),
-                "rune_auto_apply": bool(slot_data.get("rune_auto_apply", slots[slot]["rune_auto_apply"])),
+                "rune_keystone_id": _normalize_skin_id(slot_data.get("rune_keystone_id", slots[slot]["rune_keystone_id"])),
                 "rune_keystone_path": str(slot_data.get("rune_keystone_path", slots[slot]["rune_keystone_path"]) or ""),
                 "rune_sub_style_icon_path": str(slot_data.get("rune_sub_style_icon_path", slots[slot]["rune_sub_style_icon_path"]) or ""),
             }
         )
+        legacy_auto_apply = slot_data.get("rune_auto_apply")
+        if isinstance(legacy_auto_apply, str):
+            normalized_legacy = legacy_auto_apply.strip().lower()
+            if normalized_legacy in {"0", "false", "no", "off"}:
+                legacy_auto_apply = False
+            elif normalized_legacy in {"1", "true", "yes", "on"}:
+                legacy_auto_apply = True
+        if legacy_auto_apply is False:
+            slots[slot].update(
+                rune_page_id=0,
+                rune_page_name="",
+                rune_keystone_id=0,
+                rune_keystone_path="",
+                rune_sub_style_icon_path="",
+            )
+        elif slots[slot]["rune_page_id"] <= 0:
+            slots[slot].update(
+                rune_page_id=0,
+                rune_page_name="",
+                rune_keystone_id=0,
+                rune_keystone_path="",
+                rune_sub_style_icon_path="",
+            )
     return slots
 
 

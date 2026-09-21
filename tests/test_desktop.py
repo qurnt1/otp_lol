@@ -1,5 +1,8 @@
 import ctypes
+import json
+import os
 import sys
+import tempfile
 import time
 import unittest
 from ctypes import wintypes
@@ -13,7 +16,7 @@ from src.desktop.hotkeys import (
     _WindowsHotkeyBackend,
     parse_windows_hotkey,
 )
-from src.desktop.provider_browser import ProviderBrowserWindow
+from src.desktop.provider_browser import ProviderBrowserWindow, ProviderWindowManager
 from src.desktop.server import EmbeddedApiServer
 from src.desktop.tray import TrayController
 from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
@@ -144,15 +147,44 @@ class DesktopWindowTests(unittest.TestCase):
     @patch("src.desktop.hotkeys.sys.platform", "linux")
     @patch("src.desktop.hotkeys.keyboard.remove_hotkey")
     @patch("src.desktop.hotkeys.keyboard.add_hotkey", side_effect=[1, 2])
-    def test_fallback_hotkeys_log_success_without_a_warning(self, add_hotkey, _remove_hotkey):
+    def test_keyboard_hook_registers_shortcuts_independently(self, add_hotkey, _remove_hotkey):
         manager = HotkeyManager()
 
-        with self.assertLogs(level="INFO") as logs:
-            self.assertTrue(manager.setup(lambda: None, lambda: None, "alt+c", "alt+p"))
+        self.assertTrue(manager.setup(lambda: None, lambda: None, "alt+c", "alt+p"))
         manager.shutdown()
 
         self.assertEqual(add_hotkey.call_count, 2)
-        self.assertTrue(any("fallback hook" in message for message in logs.output))
+        self.assertEqual(add_hotkey.call_args_list[0].kwargs["suppress"], False)
+        self.assertEqual(add_hotkey.call_args_list[1].kwargs["suppress"], False)
+
+    @patch("src.desktop.hotkeys.sys.platform", "win32")
+    @patch("src.desktop.hotkeys._RegisterHotKeyBackend")
+    @patch("src.desktop.hotkeys.keyboard.add_hotkey", side_effect=[1, RuntimeError("hook unavailable")])
+    def test_register_hotkey_fallback_is_scoped_to_the_failed_shortcut(self, add_hotkey, backend_type):
+        backend = backend_type.return_value
+        backend.setup.return_value = True
+        backend.registered_indices = {0}
+        manager = HotkeyManager()
+
+        self.assertTrue(manager.setup(lambda: None, lambda: None, "alt+c", "alt+p"))
+
+        backend.setup.assert_called_once()
+        self.assertEqual(backend.setup.call_args.args[0][0][0], "alt+p")
+        self.assertEqual(manager.status("alt+c", "alt+p"), {
+            "window": {"hotkey": "alt+c", "backend": "keyboard_hook", "active": True},
+            "site": {"hotkey": "alt+p", "backend": "register_hotkey", "active": True},
+        })
+        manager.shutdown()
+
+    @patch("src.desktop.hotkeys.sys.platform", "linux")
+    @patch("src.desktop.hotkeys.keyboard.remove_hotkey")
+    @patch("src.desktop.hotkeys.keyboard.add_hotkey", side_effect=[1, 2, 3, 4])
+    def test_hotkey_setup_cleans_up_before_reregistering(self, add_hotkey, remove_hotkey):
+        manager = HotkeyManager()
+        self.assertTrue(manager.setup(lambda: None, lambda: None, "alt+c", "alt+p"))
+        self.assertTrue(manager.setup(lambda: None, lambda: None, "alt+c", "alt+p"))
+        self.assertEqual(remove_hotkey.call_count, 2)
+        manager.shutdown()
 
     def test_hotkey_listener_only_reloads_for_hotkey_settings(self):
         self.assertTrue(_settings_update_changes_hotkeys(SimpleNamespace(
@@ -379,6 +411,21 @@ class DesktopWindowTests(unittest.TestCase):
         close_event.fire()
         closed.assert_called_once_with()
 
+    def test_provider_window_navigates_and_focuses_an_existing_window(self):
+        native = FakeNativeWindow()
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+        )
+        provider_window.window = native
+        native.minimized = True
+
+        self.assertTrue(provider_window.navigate("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW"))
+        self.assertEqual(provider_window.provider_id, "opgg")
+        self.assertEqual(provider_window.url, "https://op.gg/fr/lol/summoners/euw/Player-EUW")
+        self.assertEqual(native.calls, [("load_url", "https://op.gg/fr/lol/summoners/euw/Player-EUW"), "restore", "show"])
+
     def test_provider_bridge_builds_url_from_configured_account_and_rejects_other_provider(self):
         params = {
             "preferred_stats_site": "deeplol",
@@ -396,7 +443,7 @@ class DesktopWindowTests(unittest.TestCase):
             self.assertFalse(bridge.open_provider_window("opgg", "stats"))
 
         self.assertEqual(
-            bridge._provider_windows[("deeplol", "stats")].url,
+            bridge._provider_windows["stats"].url,
             "https://www.deeplol.gg/summoner/euw/Player-EUW",
         )
 
@@ -417,9 +464,201 @@ class DesktopWindowTests(unittest.TestCase):
             self.assertTrue(bridge.open_provider_window("deeplol", "stats"))
 
         self.assertEqual(
-            bridge._provider_windows[("deeplol", "stats")].url,
+            bridge._provider_windows["stats"].url,
             "https://www.deeplol.gg/summoner/euw/Saved-EUW",
         )
+
+    def test_provider_bridge_reuses_and_navigates_one_window_per_kind(self):
+        params = {
+            "preferred_stats_site": "deeplol",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock(side_effect=AssertionError("manual account must not query LCU"))),
+        )
+        bridge = DesktopBridge(context)
+        provider_window = Mock()
+        provider_window.window = object()
+        provider_window.provider_id = "deeplol"
+        provider_window.url = "https://www.deeplol.gg/summoner/euw/Player-EUW"
+        with patch("src.desktop.provider_browser.ProviderBrowserWindow", return_value=provider_window):
+            provider_window.open.return_value = True
+            self.assertTrue(bridge.open_provider_window("deeplol", "stats"))
+            self.assertTrue(bridge.open_provider_window("deeplol", "stats"))
+            params["preferred_stats_site"] = "opgg"
+            self.assertTrue(bridge.open_provider_window("opgg", "stats"))
+
+        provider_window.focus.assert_called_once_with()
+        provider_window.navigate.assert_called_once_with("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW")
+
+    def test_provider_manager_waits_for_main_window_and_reuses_each_kind(self):
+        class ProviderNative(FakeNativeWindow):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(
+                    loaded=FakeEventSignal(),
+                    shown=FakeEventSignal(),
+                    closed=FakeEventSignal(),
+                )
+
+            def bring_to_front(self):
+                self.calls.append("bring_to_front")
+
+            def reload(self):
+                self.calls.append("reload")
+
+            def destroy(self):
+                self.calls.append("destroy")
+
+            def set_title(self, title):
+                self.calls.append(("set_title", title))
+
+        params = {
+            "preferred_stats_site": "deeplol",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        created: list[ProviderNative] = []
+        fake_webview = SimpleNamespace(
+            settings={},
+            create_window=lambda *_args, **_kwargs: created.append(ProviderNative()) or created[-1],
+        )
+        manager = ProviderWindowManager(context)
+
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            self.assertFalse(manager.open("deeplol", "stats"))
+            manager.mark_main_window_shown(preload=False)
+            self.assertTrue(manager.open("deeplol", "stats"))
+            created[0].events.loaded.fire()
+            self.assertEqual(manager.status()["stats"]["state"], "ready")
+            self.assertTrue(manager.reload("stats"))
+            self.assertIn("reload", created[0].calls)
+            params["preferred_stats_site"] = "opgg"
+            self.assertTrue(manager.open("opgg", "stats"))
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(manager.status()["stats"]["provider_id"], "opgg")
+        self.assertIn(("set_title", "OP.GG | OTP LOL"), created[0].calls)
+
+    def test_provider_manager_preloads_only_after_main_window_shown_and_shutdown_rejects_actions(self):
+        class ProviderNative(FakeNativeWindow):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+
+            def bring_to_front(self):
+                pass
+
+        params = {
+            "preferred_stats_site": "opgg",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        created: list[ProviderNative] = []
+        fake_webview = SimpleNamespace(settings={}, create_window=lambda *_args, **_kwargs: created.append(ProviderNative()) or created[-1])
+        manager = ProviderWindowManager(context)
+
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            manager.preload()
+            self.assertEqual(created, [])
+            manager.mark_main_window_shown(preload=True)
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline and len(created) < 2:
+                time.sleep(0.01)
+            self.assertLessEqual(len(created), 2)
+            self.assertNotEqual(manager.status()["stats"]["state"], "not_created")
+            manager.shutdown()
+
+        self.assertTrue(manager.shutting_down)
+        self.assertEqual(manager.status()["stats"]["state"], "closed")
+        self.assertFalse(manager.open("opgg", "stats"))
+        self.assertFalse(manager.reload("stats"))
+        self.assertFalse(manager.show("stats"))
+        self.assertFalse(manager.request_show("stats")["ok"])
+        self.assertFalse(manager.request_hide("stats")["ok"])
+
+    def test_provider_manager_async_open_focuses_an_existing_visible_window(self):
+        params = {
+            "preferred_stats_site": "opgg",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        manager = ProviderWindowManager(context)
+        manager._main_window_ready = True
+        url = "https://op.gg/fr/lol/summoners/euw/Player-EUW"
+        native = FakeNativeWindow()
+        window = ProviderBrowserWindow("opgg", url, Mock())
+        window.window = native
+        window.state = "visible"
+        manager._windows["stats"] = window
+
+        result = manager.request_open("stats")
+        self.assertTrue(result["ok"])
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline and "show" not in native.calls:
+            time.sleep(0.01)
+
+        self.assertIn("show", native.calls)
+
+    def test_provider_manager_rejects_remote_actions_without_network(self):
+        context = SimpleNamespace(
+            get_params=lambda: {},
+            network_status=SimpleNamespace(is_online=lambda: False),
+        )
+        manager = ProviderWindowManager(context)
+        manager.mark_main_window_shown(preload=False)
+
+        result = manager.request_open("stats")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "network_unavailable")
+
+    def test_diagnostics_export_native_success_cancel_and_write_error(self):
+        class ReadyNative(FakeNativeWindow):
+            def __init__(self, selected):
+                super().__init__()
+                self.selected = selected
+                self.events = SimpleNamespace(shown=SimpleNamespace(is_set=lambda: True))
+
+            def create_file_dialog(self, *_args, **_kwargs):
+                return self.selected
+
+        report = {"runtime": {"connected": False}, "errors": []}
+        context = SimpleNamespace(diagnostics=SimpleNamespace(export=Mock(return_value=report)))
+        bridge = DesktopBridge(context)
+        with tempfile.TemporaryDirectory() as directory:
+            target = os.path.join(directory, "report.json")
+            window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+            window.window = ReadyNative(target)
+            bridge.attach(window)
+            with patch.dict(sys.modules, {"webview": SimpleNamespace(SAVE_DIALOG="save")}):
+                result = bridge.export_diagnostics_report(True)
+            self.assertEqual(result, {"success": True, "path": target})
+            self.assertEqual(json.loads(open(target, encoding="utf-8").read()), report)
+            context.diagnostics.export.assert_called_with(True)
+
+            window.window.selected = None
+            with patch.dict(sys.modules, {"webview": SimpleNamespace(SAVE_DIALOG="save")}):
+                self.assertEqual(bridge.export_diagnostics_report(), {"success": False, "cancelled": True})
+
+            window.window.selected = target
+            with patch("builtins.open", side_effect=OSError("disk full")):
+                with patch.dict(sys.modules, {"webview": SimpleNamespace(SAVE_DIALOG="save")}):
+                    error = bridge.export_diagnostics_report()
+            self.assertFalse(error["success"])
+            self.assertIn("disk full", error["error"])
 
     def test_tray_setup_failure_disables_close_to_tray_fallback(self):
         failed = Mock()

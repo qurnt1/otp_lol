@@ -76,7 +76,7 @@ def parse_windows_hotkey(hotkey: str) -> tuple[int, int]:
     return modifiers | _MOD_NOREPEAT, virtual_key
 
 
-class _WindowsHotkeyBackend:
+class _RegisterHotKeyBackend:
     """Own a Win32 message loop so global shortcuts work independently of WebView2."""
 
     def __init__(self) -> None:
@@ -129,8 +129,7 @@ class _WindowsHotkeyBackend:
                     get_last_error = getattr(kernel32, "GetLastError", lambda: 0)
                     error_code = int(get_last_error())
                     logging.info(
-                        "Global hotkey %s unavailable through RegisterHotKey (Win32 error %s); "
-                        "trying the fallback hook.",
+                        "Global hotkey %s unavailable through RegisterHotKey (Win32 error %s).",
                         self._labels.get(hotkey_id, f"id {hotkey_id}"),
                         error_code,
                     )
@@ -186,7 +185,8 @@ class HotkeyManager:
     def __init__(self) -> None:
         self.available = False
         self.handles: list[object] = []
-        self._windows_backend: _WindowsHotkeyBackend | None = None
+        self._register_backend: _RegisterHotKeyBackend | None = None
+        self._backend_by_index: dict[int, str] = {}
 
     def setup(self, toggle_window, open_hotkey_site, toggle_hotkey: str, stats_hotkey: str) -> bool:
         """Register the configured shortcuts and roll back partial registrations."""
@@ -198,49 +198,68 @@ class HotkeyManager:
             return False
         callbacks = [(normalized_toggle, toggle_window), (normalized_stats, open_hotkey_site)]
 
-        fallback_callbacks = callbacks
-        if sys.platform == "win32":
-            try:
-                backend = _WindowsHotkeyBackend()
-                if backend.setup(callbacks):
-                    self._windows_backend = backend
-                    registered_indices = backend.registered_indices
-                    fallback_callbacks = [
-                        entry for index, entry in enumerate(callbacks) if index not in registered_indices
-                    ]
-            except (OSError, ValueError) as error:
-                logging.warning("Windows hotkey backend unavailable: %s", error)
-
         registered_handles: list[object] = []
-        try:
-            for hotkey, callback in fallback_callbacks:
-                registered_handles.append(keyboard.add_hotkey(hotkey, callback))
-                logging.info("Global hotkey %s registered through the fallback hook.", hotkey)
-            self.handles = registered_handles
-            self.available = bool(self._windows_backend or self.handles)
-        except Exception as error:
-            for handle in registered_handles:
-                try:
-                    keyboard.remove_hotkey(handle)
-                except Exception:
-                    pass
-            self.handles = []
-            failed_hotkeys = ", ".join(hotkey for hotkey, _ in fallback_callbacks)
-            logging.warning("Unable to configure fallback keyboard hotkeys (%s): %s", failed_hotkeys, error)
-            self.available = bool(self._windows_backend)
+        fallback_callbacks: list[tuple[int, tuple[str, Callable[[], None]]]] = []
+        for index, entry in enumerate(callbacks):
+            hotkey, callback = entry
+            try:
+                registered_handles.append(keyboard.add_hotkey(hotkey, callback, suppress=False))
+                self._backend_by_index[index] = "keyboard_hook"
+            except Exception as error:
+                logging.info("Keyboard hook unavailable for %s: %s", hotkey, error)
+                fallback_callbacks.append((index, entry))
+
+        if fallback_callbacks and sys.platform == "win32":
+            try:
+                backend = _RegisterHotKeyBackend()
+                if backend.setup([entry for _, entry in fallback_callbacks]):
+                    self._register_backend = backend
+                    registered_indices = backend.registered_indices
+                    for local_index, (index, (hotkey, _callback)) in enumerate(fallback_callbacks):
+                        if local_index in registered_indices:
+                            self._backend_by_index[index] = "register_hotkey"
+                        else:
+                            logging.warning("Global hotkey unavailable: %s", hotkey)
+            except (OSError, ValueError) as error:
+                logging.warning("RegisterHotKey backend unavailable: %s", error)
+
+        self.handles = registered_handles
+        self.available = bool(self.handles or self._register_backend)
         return self.available
 
+    def status(self, toggle_hotkey: str, stats_hotkey: str) -> dict[str, dict[str, object]]:
+        """Return the active backend for each configured shortcut."""
+        def label(value: str) -> str:
+            try:
+                return normalize_hotkey(value)
+            except (TypeError, ValueError):
+                return str(value or "")
+
+        labels = (label(toggle_hotkey), label(stats_hotkey))
+        names = ("window", "site")
+        return {
+            name: {
+                "hotkey": label,
+                "backend": self._backend_by_index.get(index, "unavailable"),
+                "active": index in self._backend_by_index,
+            }
+            for index, (name, label) in enumerate(zip(names, labels))
+        }
+
     def shutdown(self) -> None:
-        if self._windows_backend is not None:
-            self._windows_backend.shutdown()
-            self._windows_backend = None
+        if self._register_backend is not None:
+            self._register_backend.shutdown()
+            self._register_backend = None
         for handle in self.handles:
             try:
                 keyboard.remove_hotkey(handle)
             except Exception as error:
                 logging.debug("Error removing hotkey: %s", error)
         self.handles = []
+        self._backend_by_index = {}
         self.available = False
 
+
+_WindowsHotkeyBackend = _RegisterHotKeyBackend
 
 __all__ = ["HotkeyManager", "normalize_hotkey", "parse_windows_hotkey", "validate_hotkey_pair"]

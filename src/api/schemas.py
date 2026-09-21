@@ -48,7 +48,7 @@ class PresetSlotPatch(BaseModel):
     random_skin_pool: list[SkinReference] | None = None
     rune_page_id: int | None = Field(default=None, ge=0)
     rune_page_name: str | None = None
-    rune_auto_apply: bool | None = None
+    rune_keystone_id: int | None = Field(default=None, ge=0)
     rune_keystone_path: str | None = None
     rune_sub_style_icon_path: str | None = None
 
@@ -135,6 +135,15 @@ class HealthResponse(BaseModel):
     lcu_connected: bool
 
 
+class NetworkStatusResponse(BaseModel):
+    state: Literal["checking", "offline", "online"]
+    online: bool
+    checked_at: float | None = None
+    last_success_at: float | None = None
+    reason: str | None = None
+    source: str
+
+
 class RuntimeSnapshotResponse(BaseModel):
     version: str
     connected: bool
@@ -189,7 +198,6 @@ class StatsLinkResponse(BaseModel):
     homepage_url: str
     riot_id: str | None
     region: str | None
-    embed_allowed: bool
     account_source: Literal["connected", "saved", "manual", "unavailable"]
 
 
@@ -249,11 +257,18 @@ class PresetsResponse(BaseModel):
     slots: dict[str, PresetSlotPatch]
 
 
+class LegacyPresetSlotImport(PresetSlotPatch):
+    """Accept the removed rune toggle only while importing older settings."""
+
+    rune_auto_apply: bool | None = None
+
+
 class SettingsImport(SettingsPatch):
     """Typed current-format settings payload accepted by the import endpoint."""
 
     config_version: str | None = None
     config_schema_version: int = Field(ge=0)
+    pick_slots: dict[str, LegacyPresetSlotImport] | None = None
     auto_detected_riot_id: str | None = None
     auto_detected_region: str | None = None
     auto_detected_platform: str | None = None

@@ -782,6 +782,131 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/network/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Network Status
+         * @description Return the cached status, refreshing it when its TTL has expired.
+         */
+        get: operations["network_status_api_network_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/network/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check Network
+         * @description Force one bounded asset-origin probe for the retry button.
+         */
+        post: operations["check_network_api_network_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/providers/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Provider Status */
+        get: operations["provider_status_api_desktop_providers_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/providers/{kind}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Open Provider */
+        post: operations["open_provider_api_desktop_providers__kind__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/providers/{kind}/show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Show Provider */
+        post: operations["show_provider_api_desktop_providers__kind__show_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/providers/{kind}/reload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reload Provider */
+        post: operations["reload_provider_api_desktop_providers__kind__reload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/desktop/providers/{kind}/hide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hide Provider */
+        post: operations["hide_provider_api_desktop_providers__kind__hide_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1090,6 +1215,46 @@ export interface components {
             count: number;
         };
         /**
+         * LegacyPresetSlotImport
+         * @description Accept the removed rune toggle only while importing older settings.
+         */
+        LegacyPresetSlotImport: {
+            /** Champion */
+            champion?: string | null;
+            /** Spell 1 */
+            spell_1?: string | null;
+            /** Spell 2 */
+            spell_2?: string | null;
+            /** Skin Mode */
+            skin_mode?: ("none" | "fixed" | "random") | null;
+            /** Skin Id */
+            skin_id?: number | null;
+            /** Skin Name */
+            skin_name?: string | null;
+            /** Skin Num */
+            skin_num?: number | null;
+            /** Random Skin Id */
+            random_skin_id?: number | null;
+            /** Random Skin Name */
+            random_skin_name?: string | null;
+            /** Random Skin Num */
+            random_skin_num?: number | null;
+            /** Random Skin Pool */
+            random_skin_pool?: components["schemas"]["SkinReference"][] | null;
+            /** Rune Page Id */
+            rune_page_id?: number | null;
+            /** Rune Page Name */
+            rune_page_name?: string | null;
+            /** Rune Keystone Id */
+            rune_keystone_id?: number | null;
+            /** Rune Keystone Path */
+            rune_keystone_path?: string | null;
+            /** Rune Sub Style Icon Path */
+            rune_sub_style_icon_path?: string | null;
+            /** Rune Auto Apply */
+            rune_auto_apply?: boolean | null;
+        };
+        /**
          * LiveLinkResponse
          * @description Validated provider link for live-game statistics.
          */
@@ -1106,8 +1271,6 @@ export interface components {
             riot_id: string | null;
             /** Region */
             region: string | null;
-            /** Embed Allowed */
-            embed_allowed: boolean;
             /**
              * Account Source
              * @enum {string}
@@ -1221,6 +1384,24 @@ export interface components {
             /** Data Dragon Version */
             data_dragon_version?: string | null;
         };
+        /** NetworkStatusResponse */
+        NetworkStatusResponse: {
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "checking" | "offline" | "online";
+            /** Online */
+            online: boolean;
+            /** Checked At */
+            checked_at?: number | null;
+            /** Last Success At */
+            last_success_at?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Source */
+            source: string;
+        };
         /**
          * PresetPreview
          * @description Metadata-only preview assembled from already loaded local catalog data.
@@ -1277,8 +1458,8 @@ export interface components {
             rune_page_id?: number | null;
             /** Rune Page Name */
             rune_page_name?: string | null;
-            /** Rune Auto Apply */
-            rune_auto_apply?: boolean | null;
+            /** Rune Keystone Id */
+            rune_keystone_id?: number | null;
             /** Rune Keystone Path */
             rune_keystone_path?: string | null;
             /** Rune Sub Style Icon Path */
@@ -1394,7 +1575,7 @@ export interface components {
             selected_ban?: string | null;
             /** Pick Slots */
             pick_slots?: {
-                [key: string]: components["schemas"]["PresetSlotPatch"];
+                [key: string]: components["schemas"]["LegacyPresetSlotImport"];
             } | null;
             /** Theme */
             theme?: ("darkly" | "flatly") | null;
@@ -1610,8 +1791,6 @@ export interface components {
             riot_id: string | null;
             /** Region */
             region: string | null;
-            /** Embed Allowed */
-            embed_allowed: boolean;
             /**
              * Account Source
              * @enum {string}
@@ -2932,6 +3111,200 @@ export interface operations {
                     "application/json": {
                         [key: string]: boolean;
                     };
+                };
+            };
+        };
+    };
+    network_status_api_network_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkStatusResponse"];
+                };
+            };
+        };
+    };
+    check_network_api_network_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkStatusResponse"];
+                };
+            };
+        };
+    };
+    provider_status_api_desktop_providers_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    open_provider_api_desktop_providers__kind__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    show_provider_api_desktop_providers__kind__show_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reload_provider_api_desktop_providers__kind__reload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_provider_api_desktop_providers__kind__hide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -6,17 +6,17 @@ const DATA_DRAGON_VERSION = "test-version";
 export const blankSlot = {
   champion: "", spell_1: "", spell_2: "", skin_mode: "none", skin_id: 0, skin_name: "", skin_num: 0,
   random_skin_id: 0, random_skin_name: "", random_skin_num: 0, random_skin_pool: [], rune_page_id: 0,
-  rune_page_name: "", rune_auto_apply: true, rune_keystone_path: "", rune_sub_style_icon_path: "",
+  rune_page_name: "", rune_keystone_id: 0, rune_keystone_path: "", rune_sub_style_icon_path: "",
 };
 
 function starterSlot(champion: string, secondSpell: string) {
-  return { ...blankSlot, champion, spell_1: "Flash", spell_2: secondSpell, rune_auto_apply: false };
+  return { ...blankSlot, champion, spell_1: "Flash", spell_2: secondSpell };
 }
 
 function hasValidDetectedAccount(riotId: string, region: string, platform: string) {
   const platformRegions: Record<string, string> = {
     euw1: "euw", eun1: "eune", na1: "na", kr: "kr", jp1: "jp", br1: "br",
-    la1: "lan", la2: "las", oc1: "oce", tr1: "tr", ru: "ru",
+    la1: "lan", la2: "las", oc1: "oce", tr1: "tr", ru: "ru", ph2: "sea", sg2: "sea", th2: "sea", tw2: "sea", vn2: "sea",
   };
   const [gameName, tagLine, extra] = riotId.trim().split("#");
   return Boolean(gameName?.trim() && tagLine?.trim() && extra === undefined)
@@ -139,7 +139,9 @@ export function createState(connected = false, configured = false) {
   return { settings, runtime, presets: { presets_enabled: configured, selected_ban: settings.selected_ban, slots: settings.pick_slots }, preset_previews: configured ? { pick_1: preview(86, "Garen", "God-King Garen", 86013, 13), pick_2: preview(99, "Lux", "Battle Academia Lux", 99010, 10), pick_3: preview(22, "Ashe", "PROJECT: Ashe", 22013, 13) } : {}, ban_preview: configured ? preview(17, "Teemo", "", 0, 0) : null };
 }
 
-export async function mockLocalApi(page: Page, options: { connected?: boolean; configured?: boolean; onboardingCompleted?: boolean; assignedPosition?: string; phase?: string; historyItems?: unknown[]; rejectPresetActivation?: boolean; randomSkinPreview?: boolean; alternateSkin?: boolean; autoDetect?: boolean; autoDetectedRiotId?: string; autoDetectedRegion?: string; autoDetectedPlatform?: string; manualRiotId?: string; riotId?: string; region?: string; statsLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; embed_allowed: boolean; account_source: "connected" | "saved" | "manual" | "unavailable" }>; liveLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; embed_allowed: boolean; account_source: "connected" | "saved" | "manual" | "unavailable" }> } = {}) {
+type NetworkStatusOption = "online" | "offline" | { value: "online" | "offline" };
+
+export async function mockLocalApi(page: Page, options: { connected?: boolean; configured?: boolean; onboardingCompleted?: boolean; assignedPosition?: string; phase?: string; historyItems?: unknown[]; rejectPresetActivation?: boolean; randomSkinPreview?: boolean; alternateSkin?: boolean; autoDetect?: boolean; autoDetectedRiotId?: string; autoDetectedRegion?: string; autoDetectedPlatform?: string; manualRiotId?: string; riotId?: string; region?: string; networkStatus?: NetworkStatusOption; statsLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }>; liveLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }> } = {}) {
   const state = createState(options.connected, options.configured);
   let diagnosticResults: unknown[] = [];
   state.settings.onboarding_completed = options.onboardingCompleted ?? true;
@@ -164,7 +166,6 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     homepage_url: "https://op.gg/",
     riot_id: null,
     region: null,
-    embed_allowed: false,
     account_source: options.statsLink?.account_source ?? (options.statsLink?.available ? options.autoDetect === false ? "manual" : options.connected ? "connected" : "saved" : "unavailable"),
     ...options.statsLink,
   };
@@ -175,7 +176,6 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     homepage_url: "https://porofessor.gg/",
     riot_id: null,
     region: null,
-    embed_allowed: false,
     account_source: options.liveLink?.account_source ?? (options.liveLink?.available ? options.autoDetect === false ? "manual" : options.connected ? "connected" : "saved" : "unavailable"),
     ...options.liveLink,
   };
@@ -224,7 +224,15 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     }
     const method = route.request().method();
     let payload: unknown = {};
-    if (url.pathname === "/api/bootstrap") payload = state;
+    if (url.pathname === "/api/network/status" || url.pathname === "/api/network/check") payload = {
+      state: typeof options.networkStatus === "object" ? options.networkStatus.value : options.networkStatus ?? "online",
+      online: (typeof options.networkStatus === "object" ? options.networkStatus.value : options.networkStatus ?? "online") === "online",
+      checked_at: 1,
+      last_success_at: (typeof options.networkStatus === "object" ? options.networkStatus.value : options.networkStatus ?? "online") === "online" ? 1 : null,
+      reason: (typeof options.networkStatus === "object" ? options.networkStatus.value : options.networkStatus ?? "online") === "online" ? null : "timeout",
+      source: "ddragon",
+    };
+    else if (url.pathname === "/api/bootstrap") payload = state;
     else if (url.pathname === "/api/settings") {
       if (method === "PATCH") {
         const changes = route.request().postDataJSON() as Record<string, unknown>;
@@ -234,6 +242,8 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
           return;
         }
         Object.assign(state.settings, changes);
+        if (typeof changes.preferred_stats_site === "string") statsLink.site = changes.preferred_stats_site;
+        if (typeof changes.preferred_hotkey_site === "string") liveLink.site = changes.preferred_hotkey_site;
         if (typeof changes.presets_enabled === "boolean") {
           state.presets.presets_enabled = changes.presets_enabled;
           state.runtime.presets_enabled = changes.presets_enabled;
@@ -314,7 +324,7 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
         { id: "dpm", label: "DPM.LOL", logo_url: "/api/assets/providers/dpm" },
         { id: "opgg", label: "OP.GG", logo_url: "/api/assets/providers/opgg" },
       ],
-      regions: ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"].map((id) => ({ id, label: id.toUpperCase() })),
+      regions: ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru", "sea"].map((id) => ({ id, label: id.toUpperCase() })),
     };
     else if (url.pathname === "/api/presets/reset" && method === "POST") {
       restoreStarterPresetData(state);

@@ -15,8 +15,6 @@ from ...services.skin_modes import get_effective_skin_mode_for_slot
 from ...services.updates import check_for_updates
 from ...services.urls import (
     HOTKEY_PROVIDERS,
-    LIVE_FRAME_ORIGINS,
-    STATS_FRAME_ORIGINS,
     STATS_PROVIDERS,
     build_hotkey_provider_home_url,
     build_hotkey_site_url,
@@ -263,7 +261,6 @@ def stats_link(request: Request) -> StatsLinkResponse:
         "homepage_url": build_stats_provider_home_url(site),
         "riot_id": riot_id if available else None,
         "region": region if available else None,
-        "embed_allowed": site in STATS_FRAME_ORIGINS,
         "account_source": account_source,
     }
 
@@ -284,7 +281,6 @@ def live_link(request: Request) -> LiveLinkResponse:
         "homepage_url": build_hotkey_provider_home_url(site),
         "riot_id": riot_id if available else None,
         "region": region if available else None,
-        "embed_allowed": site in LIVE_FRAME_ORIGINS,
         "account_source": account_source,
     }
 

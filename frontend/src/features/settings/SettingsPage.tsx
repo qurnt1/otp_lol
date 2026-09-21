@@ -12,7 +12,9 @@ import { diagnosticsCopy } from "../diagnostics/copy";
 import { regionOptionsOrFallback } from "../../domain/catalog";
 import { cn } from "../../lib/cn";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { ProviderOption, Settings, SettingsImport, SettingsPatch, SettingsSection } from "../../types/api";
+import { openLocalFolder, toggleFullscreen } from "../../domain/external";
+import { useNativeBridgeReady } from "../../hooks/useNativeBridgeReady";
+import type { Settings, SettingsImport, SettingsPatch, SettingsSection } from "../../types/api";
 import { settingsSections } from "../../app/routes";
 
 const sectionLabels: Record<SettingsSection, string> = { general: fr.settings.general, automations: fr.settings.automations, account: fr.settings.account, links: fr.settings.links, shortcuts: fr.settings.shortcuts, appearance: fr.settings.appearance, advanced: fr.settings.advanced };
@@ -31,17 +33,13 @@ function SelectRow({ label, description, value, options, pending, error, onChang
   return <div className="settings-row"><div><strong>{label}</strong><p>{description}</p>{error && <small className="inline-error" role="alert">{error}</small>}</div><Select className="settings-control" label={label} disabled={pending} value={value} options={options} onChange={onChange} /></div>;
 }
 
-function ProviderSelectRow({ label, description, value, options, pending, error, onChange }: { label: string; description: string; value: string; options: readonly ProviderOption[]; pending: boolean; error?: string; onChange: (value: string) => void }) {
-  const renderProvider = (option: ProviderOption) => <span className="provider-select-option"><img src={option.logo_url} alt="" aria-hidden="true" />{option.label}</span>;
-  return <div className="settings-row"><div><strong>{label}</strong><p>{description}</p>{error && <small className="inline-error" role="alert">{error}</small>}</div><Select className="settings-control" label={label} disabled={pending} value={value} options={options} renderOption={renderProvider} renderValue={renderProvider} onChange={onChange} /></div>;
-}
-
 export function SettingsPage({ section, onSectionChange }: { section: SettingsSection; onSectionChange: (section: SettingsSection) => void }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: ["settings"], queryFn: api.getSettings, staleTime: Infinity });
   const accountIdentity = useQuery({ queryKey: ["account-identity"], queryFn: api.getAccountIdentity, staleTime: Infinity, enabled: section === "account", retry: false });
   const providers = useQuery({ queryKey: ["providers"], queryFn: api.getProviders, staleTime: Infinity });
   const runtime = useRuntimeStore((state) => state.runtime);
+  const nativeBridgeReady = useNativeBridgeReady();
   const [local, setLocal] = useState<Settings | null>(null);
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -174,9 +172,8 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
   };
   const manualUpdate = (key: ManualSettingKey, value: string) => { delete submittedManualValues.current[key]; setDraft((current) => ({ ...current, [key]: value })); setLocal((current) => current ? { ...current, [key]: value } : current); };
   const saveManual = (key: ManualSettingKey) => { const value = draft[key] ?? local?.[key]; if (typeof value !== "string" || pending(key) || submittedManualValues.current[key] === value) return; submittedManualValues.current[key] = value; void save({ [key]: value } as SettingsPatch, key).then((success) => { if (!success) delete submittedManualValues.current[key]; }); };
-  const nativeApi = () => (window as Window & { pywebview?: { api?: { open_local_folder?: (value: string) => Promise<boolean>; toggle_fullscreen?: () => Promise<boolean> } } }).pywebview?.api;
-  const openNativeFolder = (kind: "logs" | "appdata") => { const bridge = nativeApi(); if (bridge?.open_local_folder) void bridge.open_local_folder(kind); };
-  const toggleFullscreen = () => { const bridge = nativeApi(); if (bridge?.toggle_fullscreen) void bridge.toggle_fullscreen(); };
+  const openNativeFolder = (kind: "logs" | "appdata") => { if (nativeBridgeReady) void openLocalFolder(kind); };
+  const toggleNativeFullscreen = () => { if (nativeBridgeReady) void toggleFullscreen(); };
   const downloadExport = async () => { const response = await fetch("/api/settings/export"); if (!response.ok) return; const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "otp-lol-settings.json"; anchor.click(); URL.revokeObjectURL(url); };
   const importFile = async (file: File) => {
     try {
@@ -204,8 +201,6 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
   const resetPresets = async () => { setConfirmResetPresets(false); setPending("reset-presets", true); try { const next = await api.resetPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["reset-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "reset-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset-presets", false); } };
   const clearPresets = async () => { setConfirmClearPresets(false); setPending("clear-presets", true); try { const next = await api.clearPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["clear-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "clear-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("clear-presets", false); } };
   if (!local) return <div className="page-loading">{fr.common.loading}</div>;
-  const statsSites = providers.data?.stats ?? [];
-  const liveSites = providers.data?.live ?? [];
   const regions = regionOptionsOrFallback(providers.data);
   const pending = (key: string) => pendingKeys.has(key);
   return <div className="settings-page">
@@ -250,10 +245,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
         </div>}
         {errors["forget-detected-account"] && <small className="inline-error" role="alert">{errors["forget-detected-account"]}</small>}
       </>}
-      {section === "links" && <>
-        <ProviderSelectRow label={fr.settings.statsSite} description={fr.settings.descriptions.statsSite} value={local.preferred_stats_site} options={statsSites} pending={!providers.data || pending("preferred_stats_site")} error={errors.preferred_stats_site} onChange={(value) => update("preferred_stats_site", value)} />
-        <ProviderSelectRow label={fr.settings.hotkeySite} description={fr.settings.descriptions.hotkeySite} value={local.preferred_hotkey_site} options={liveSites} pending={!providers.data || pending("preferred_hotkey_site")} error={errors.preferred_hotkey_site} onChange={(value) => update("preferred_hotkey_site", value)} />
-      </>}
+      {section === "links" && <div className="settings-row"><div><strong>{fr.settings.links}</strong><p>{fr.settings.linksHint}</p></div><a className="button button-secondary" href="#statistics">{fr.nav.statistics}</a><a className="button button-secondary" href="#live">{fr.nav.live}</a></div>}
       {section === "shortcuts" && <div className="settings-form"><label><span><Keyboard size={13} aria-hidden="true" />{fr.settings.toggleHotkey}</span><input className="field-input" value={draft.hotkey_toggle_window ?? local.hotkey_toggle_window} disabled={pending("hotkey_toggle_window")} onChange={(event) => manualUpdate("hotkey_toggle_window", event.target.value)} onBlur={() => saveManual("hotkey_toggle_window")} onKeyDown={(event) => { if (event.key === "Enter") saveManual("hotkey_toggle_window"); }} />{errors.hotkey_toggle_window && <small className="inline-error" role="alert">{errors.hotkey_toggle_window}</small>}</label><label><span><Keyboard size={13} aria-hidden="true" />{fr.settings.statsHotkey}</span><input className="field-input" value={draft.hotkey_open_site ?? local.hotkey_open_site} disabled={pending("hotkey_open_site")} onChange={(event) => manualUpdate("hotkey_open_site", event.target.value)} onBlur={() => saveManual("hotkey_open_site")} onKeyDown={(event) => { if (event.key === "Enter") saveManual("hotkey_open_site"); }} />{errors.hotkey_open_site && <small className="inline-error" role="alert">{errors.hotkey_open_site}</small>}</label></div>}
       {section === "appearance" && <SelectRow label={fr.settings.theme} description={fr.settings.descriptions.theme} value={local.theme} options={[{ id: "darkly", label: fr.settings.dark }, { id: "flatly", label: fr.settings.light }]} pending={pending("theme")} error={errors.theme} onChange={(value) => { document.documentElement.dataset.theme = value === "flatly" ? "light" : "dark"; update("theme", value as Settings["theme"]); }} />}
       {section === "advanced" && <div className="advanced-settings">
@@ -281,7 +273,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
         </section>
         <section className="advanced-group" aria-labelledby="advanced-window-heading">
           <div className="advanced-group-heading"><div className="advanced-group-icon"><Maximize2 size={16} aria-hidden="true" /></div><div><h3 id="advanced-window-heading">{fr.settings.advancedWindow}</h3><p>{fr.settings.advancedWindowDescription}</p></div></div>
-          <div className="advanced-actions"><AdvancedAction icon={<Maximize2 size={15} aria-hidden="true" />} title={fr.settings.fullscreen} description={fr.settings.advancedDescriptions.fullscreen} onClick={toggleFullscreen} /></div>
+          <div className="advanced-actions"><AdvancedAction icon={<Maximize2 size={15} aria-hidden="true" />} title={fr.settings.fullscreen} description={fr.settings.advancedDescriptions.fullscreen} onClick={toggleNativeFullscreen} /></div>
         </section>
       </div>}
     </section></div>

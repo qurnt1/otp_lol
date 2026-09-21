@@ -1,10 +1,43 @@
 type NativeDesktopApi = {
   open_external_url?: (value: string) => Promise<boolean>;
-  open_provider_window?: (providerId: string, kind: "stats" | "live") => Promise<boolean>;
+  export_diagnostics_report?: (includeRiotId: boolean) => Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>;
+  save_diagnostics_report?: (includeRiotId: boolean) => Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>;
+  open_local_folder?: (value: string) => Promise<boolean>;
+  toggle_fullscreen?: () => Promise<boolean>;
 };
 
-function getNativeDesktopApi(): NativeDesktopApi | undefined {
-  return (window as Window & { pywebview?: { api?: NativeDesktopApi } }).pywebview?.api;
+type NativeWindow = Window & {
+  __otpDesktopMode?: boolean;
+  __otpNativeBridgeReady?: boolean;
+  pywebview?: { api?: NativeDesktopApi };
+};
+
+function isDesktopMode(): boolean {
+  if (typeof window === "undefined") return false;
+  const current = window as NativeWindow;
+  return Boolean(current.__otpDesktopMode || new URLSearchParams(window.location.search).get("desktop") === "1");
+}
+
+let bridgeReadyFromEvent = false;
+if (typeof window !== "undefined") {
+  window.addEventListener("pywebviewready", () => {
+    bridgeReadyFromEvent = true;
+    (window as Window & { __otpNativeBridgeReady?: boolean }).__otpNativeBridgeReady = true;
+  });
+}
+
+export function isNativeBridgeReady(): boolean {
+  if (typeof window === "undefined") return false;
+  const current = window as NativeWindow;
+  const desktopMode = isDesktopMode();
+  if (!desktopMode && !("pywebview" in window)) return true;
+  if (desktopMode) return Boolean(current.__otpNativeBridgeReady || current.pywebview?.api);
+  return bridgeReadyFromEvent || Boolean(current.__otpNativeBridgeReady || current.pywebview?.api);
+}
+
+export function getNativeDesktopApi(): NativeDesktopApi | undefined {
+  if (!isNativeBridgeReady()) return undefined;
+  return (window as NativeWindow).pywebview?.api;
 }
 
 function isSafeExternalUrl(value: string, homepageUrl: string): boolean {
@@ -31,14 +64,34 @@ export async function openExternalUrl(url: string, homepageUrl: string): Promise
   if (nativeApi?.open_external_url) {
     return nativeApi.open_external_url(url);
   }
+  if (typeof window !== "undefined" && ("pywebview" in window || isDesktopMode())) return false;
   window.open(url, "_blank", "noopener,noreferrer");
   return true;
 }
 
-export async function openProviderWindow(providerId: string, kind: "stats" | "live"): Promise<boolean> {
+export async function exportDiagnosticsReport(includeRiotId: boolean): Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string } | null> {
   try {
-    return Boolean(await getNativeDesktopApi()?.open_provider_window?.(providerId, kind));
-  } catch {
+    return (await getNativeDesktopApi()?.export_diagnostics_report?.(includeRiotId)) ?? null;
+  } catch (error) {
+    console.error("[native] export_diagnostics_report failed", error);
+    return { success: false, error: "native_export_failed" };
+  }
+}
+
+export async function openLocalFolder(folder: "logs" | "appdata"): Promise<boolean> {
+  try {
+    return Boolean(await getNativeDesktopApi()?.open_local_folder?.(folder));
+  } catch (error) {
+    console.error("[native] open_local_folder failed", error);
+    return false;
+  }
+}
+
+export async function toggleFullscreen(): Promise<boolean> {
+  try {
+    return Boolean(await getNativeDesktopApi()?.toggle_fullscreen?.());
+  } catch (error) {
+    console.error("[native] toggle_fullscreen failed", error);
     return false;
   }
 }

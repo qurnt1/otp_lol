@@ -270,7 +270,7 @@ test("reset writes the starter presets and shows a dismissible first-run message
   for (const slot of Object.values(state.settings.pick_slots)) {
     expect(slot.skin_mode).toBe("none");
     expect(slot.rune_page_id).toBe(0);
-    expect(slot.rune_auto_apply).toBe(false);
+    expect(slot.rune_keystone_id).toBe(0);
   }
   for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
     expect(state.settings[key]).toBe(false);
@@ -342,7 +342,7 @@ test("preset reset restores examples, disables the master and preserves child pr
   expect([state.settings.selected_pick_1, state.settings.selected_pick_2, state.settings.selected_pick_3]).toEqual(["Garen", "Lux", "Ashe"]);
   expect(state.settings.selected_ban).toBe("Teemo");
   expect(Object.values(state.settings.pick_slots).map((slot) => slot.spell_2)).toEqual(["Ignite", "Barrier", "Heal"]);
-  expect(Object.values(state.settings.pick_slots).every((slot) => slot.skin_mode === "none" && slot.rune_page_id === 0 && !slot.rune_auto_apply)).toBe(true);
+  expect(Object.values(state.settings.pick_slots).every((slot) => slot.skin_mode === "none" && slot.rune_page_id === 0 && slot.rune_keystone_id === 0)).toBe(true);
 
   await page.goto("/#presets");
   await expect(page.getByRole("switch", { name: "Utiliser les presets en sélection" })).toHaveAttribute("aria-checked", "false");

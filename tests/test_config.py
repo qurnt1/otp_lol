@@ -45,7 +45,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual([slots[key]["spell_2"] for key in ("pick_1", "pick_2", "pick_3")], ["Ignite", "Barrier", "Heal"])
         self.assertTrue(all(slots[key]["skin_mode"] == "none" for key in slots))
         self.assertTrue(all(slots[key]["skin_id"] == 0 and slots[key]["rune_page_id"] == 0 for key in slots))
-        self.assertTrue(all(not slots[key]["rune_auto_apply"] for key in slots))
+        self.assertTrue(all(slots[key]["rune_keystone_id"] == 0 for key in slots))
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["selected_ban"], "Teemo")
         self.assertFalse(config.FIRST_LAUNCH_PARAMS["onboarding_completed"])
         for key in (
@@ -74,15 +74,34 @@ class ConfigTests(unittest.TestCase):
         for slot_key in ("pick_1", "pick_2", "pick_3"):
             self.assertIn("rune_page_id", slots[slot_key])
             self.assertIn("rune_page_name", slots[slot_key])
-            self.assertIn("rune_auto_apply", slots[slot_key])
+            self.assertIn("rune_keystone_id", slots[slot_key])
             self.assertEqual(slots[slot_key]["rune_page_id"], 0)
             self.assertEqual(slots[slot_key]["rune_page_name"], "")
-            self.assertTrue(slots[slot_key]["rune_auto_apply"])
+            self.assertEqual(slots[slot_key]["rune_keystone_id"], 0)
 
     def test_default_params_no_longer_has_global_auto_runes_enabled(self):
         self.assertNotIn("auto_runes_enabled", config.DEFAULT_PARAMS)
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
         self.assertFalse(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
+
+    def test_legacy_rune_auto_apply_false_clears_page_and_true_preserves_it(self):
+        raw = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+        raw["pick_slots"]["pick_1"].update(
+            {
+                "rune_page_id": 123,
+                "rune_page_name": "Legacy page",
+                "rune_keystone_id": 8005,
+                "rune_auto_apply": False,
+            }
+        )
+        normalized = config.normalize_parameters(raw)
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 0)
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 0)
+
+        raw["pick_slots"]["pick_1"]["rune_auto_apply"] = True
+        normalized = config.normalize_parameters(raw)
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 123)
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 8005)
 
     def test_window_geometry_has_desktop_defaults(self):
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)

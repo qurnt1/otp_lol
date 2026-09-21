@@ -27,6 +27,7 @@ from ..lcu.assets import LcuAssetService
 from ..lcu.diagnostics import DiagnosticsService
 from ..lcu.runtime import LcuRuntime
 from ..lcu.static_data import LcuStaticDataService
+from ..services.network_status import NetworkStatusService
 from ..services.urls import is_valid_detected_account
 
 
@@ -46,10 +47,13 @@ class ApplicationContext:
     _window: Any = field(default=None, init=False, repr=False)
     _shutdown_callback: Callable[[], None] | None = field(default=None, init=False, repr=False)
     _shutdown_check_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _hotkey_status: dict[str, dict[str, Any]] = field(default_factory=dict, init=False, repr=False)
+    network_status: NetworkStatusService = field(init=False, repr=False)
     process_checker: Callable[[], bool | None] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         self.params = normalize_parameters(self.params)
+        self.network_status = NetworkStatusService(self.broker)
         self.diagnostics = DiagnosticsService(
             self._request_diagnostics,
             get_riot_id=self._get_diagnostic_riot_id,
@@ -93,6 +97,34 @@ class ApplicationContext:
         """Bind native lifecycle effects after the local API and WebView exist."""
         self._window = window
         self._shutdown_callback = shutdown_callback
+
+    def set_hotkey_status(self, status: Mapping[str, Mapping[str, Any]]) -> None:
+        """Expose the native shortcut backend state to diagnostics without handles."""
+        self._hotkey_status = {
+            str(name): {
+                "hotkey": str(values.get("hotkey") or ""),
+                "backend": str(values.get("backend") or "unavailable"),
+                "active": bool(values.get("active")),
+            }
+            for name, values in status.items()
+            if isinstance(values, Mapping)
+        }
+
+    def get_hotkey_status(self) -> dict[str, dict[str, Any]]:
+        if self._hotkey_status:
+            return copy.deepcopy(self._hotkey_status)
+        return {
+            "window": {
+                "hotkey": str(self.params.get("hotkey_toggle_window") or "alt+c"),
+                "backend": "unavailable",
+                "active": False,
+            },
+            "site": {
+                "hotkey": str(self.params.get("hotkey_open_site") or "alt+p"),
+                "backend": "unavailable",
+                "active": False,
+            },
+        }
 
     @staticmethod
     def _default_process_checker() -> bool | None:
@@ -161,7 +193,11 @@ class ApplicationContext:
             if self._connected:
                 return
             self._connected = True
-            if self.get_params().get("auto_hide_on_connect", True) and self._window is not None:
+            if (
+                self.get_params().get("auto_hide_on_connect", True)
+                and self._window is not None
+                and self.network_status.is_online()
+            ):
                 self._window.hide()
             if self._async_loop is not None and self._async_loop.is_running():
                 self._async_loop.call_soon_threadsafe(self._start_static_data_refresh)

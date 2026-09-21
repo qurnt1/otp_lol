@@ -82,7 +82,7 @@ export interface PresetSlot {
   random_skin_pool: SkinReference[];
   rune_page_id: number;
   rune_page_name: string;
-  rune_auto_apply: boolean;
+  rune_keystone_id: number;
   rune_keystone_path: string;
   rune_sub_style_icon_path: string;
 }
@@ -214,7 +214,8 @@ export interface DiagnosticEventEntry { timestamp: string; topic: string; event_
 export interface DiagnosticErrorEntry { timestamp: string; source: string; error: string; method: string | null; path: string | null; status: number | null }
 export interface DiagnosticEndpoint { id: string; label: string; path: string; method: string }
 export interface DiagnosticCheckResult extends DiagnosticEndpoint { status: number | null; duration_ms: number; success: boolean; error: string | null; summary: string }
-export interface DiagnosticsResponse { runtime: RuntimeSnapshot; account_identity: AccountIdentity; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
+export interface HotkeyStatus { hotkey: string; backend: "keyboard_hook" | "register_hotkey" | "unavailable"; active: boolean }
+export interface DiagnosticsResponse { runtime: RuntimeSnapshot; account_identity: AccountIdentity; hotkeys?: Record<"window" | "site", HotkeyStatus>; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
 export interface DiagnosticsRunResponse { results: DiagnosticCheckResult[] }
 
 export interface ProviderOption {

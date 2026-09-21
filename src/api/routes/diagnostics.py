@@ -28,6 +28,7 @@ async def read_diagnostics(request: Request) -> dict[str, Any]:
     return {
         "runtime": runtime,
         "account_identity": identity,
+        "hotkeys": context.get_hotkey_status(),
         "game_data": await resolved_game_data_status(context),
         **context.diagnostics.snapshot(),
     }
@@ -58,6 +59,7 @@ async def export_diagnostics(request: Request, include_riot_id: bool = False) ->
             "webview2_version": get_webview2_runtime_version(),
             "league_connected": runtime["connected"],
             "account_identity": identity,
+            "hotkeys": context.get_hotkey_status(),
             "league_version": game_data["game_version"],
             "game_data": game_data,
         }
