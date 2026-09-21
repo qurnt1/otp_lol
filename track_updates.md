@@ -45,3 +45,5 @@
 - fix: preserve rune and skin fallbacks, isolate hotkey conflicts, and reload shortcuts live
 - docs: refresh production setup, architecture, and current UI screenshots
 - chore: ignore local environment files and release packaging artifacts
+- refactor: configure presets directly from Dashboard cards and remove the duplicate Presets page
+- fix: surface preset and ban save errors and centralize Dashboard preset actions

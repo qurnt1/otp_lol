@@ -16,7 +16,6 @@ import type { RuntimeEvent, RuntimeSnapshot, UpdateResponse } from "./types/api"
 const DashboardPage = lazy(() => import("./features/dashboard/DashboardPage").then(({ DashboardPage: page }) => ({ default: page })));
 const HistoryPage = lazy(() => import("./features/history/HistoryPage").then(({ HistoryPage: page }) => ({ default: page })));
 const LiveStatisticsPage = lazy(() => import("./features/live/LiveStatisticsPage").then(({ LiveStatisticsPage: page }) => ({ default: page })));
-const PresetsPage = lazy(() => import("./features/presets/PresetsPage").then(({ PresetsPage: page }) => ({ default: page })));
 const StatisticsPage = lazy(() => import("./features/statistics/StatisticsPage").then(({ StatisticsPage: page }) => ({ default: page })));
 const DiagnosticsPage = lazy(() => import("./features/diagnostics/DiagnosticsPage").then(({ DiagnosticsPage: page }) => ({ default: page })));
 const SettingsPage = lazy(() => import("./features/settings/SettingsPage").then(({ SettingsPage: page }) => ({ default: page })));
@@ -79,14 +78,6 @@ function App() {
   });
   const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.getBootstrap, staleTime: Infinity, gcTime: Infinity, retry: 1 });
   const runtime = storedRuntime ?? bootstrap.data?.runtime ?? null;
-  const closePresetAction = () => {
-    if (activeRoute.page === "presets") {
-      const returnToDashboard = activeRoute.returnTo === "dashboard";
-      replaceRoute(returnToDashboard ? { page: "dashboard" } : { page: "presets" });
-      if (returnToDashboard) window.setTimeout(() => document.getElementById("dashboard-edit-ban")?.focus(), 0);
-    }
-  };
-
   useEffect(() => { performance.mark("otp:t5-react-mount"); }, []);
   useEffect(() => {
     const refreshNetwork = () => {
@@ -199,8 +190,7 @@ function App() {
   return <AppShell activePage={activeRoute.page} runtime={runtime} version={runtime?.version} updateBanner={<>{networkWarning}<UpdateBanner /></>}>
     <main className="content-area" id="main-content" tabIndex={-1}>
       <div className="page-content"><Suspense fallback={<PageFallback />}>
-        {activeRoute.page === "dashboard" && <DashboardPage />}
-        {activeRoute.page === "presets" && <PresetsPage action={activeRoute.action} onActionClose={closePresetAction} />}
+        {activeRoute.page === "dashboard" && <DashboardPage action={activeRoute.action} onActionClose={() => replaceRoute({ page: "dashboard" })} />}
         {activeRoute.page === "statistics" && <StatisticsPage />}
         {activeRoute.page === "diagnostics" && <DiagnosticsPage />}
         {activeRoute.page === "live" && <LiveStatisticsPage />}

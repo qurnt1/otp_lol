@@ -6,13 +6,13 @@ Ce document sert de contrat de non-régression pour la migration vers le shell W
 |---|---|---|---|---|---|
 | Auto-Accept | Accepte le ready-check si activé | Switch Dashboard + runtime LCU | Couvert | `tests/test_integration_lcu.py` | Conserver |
 | Pre-pick | Survole le champion prioritaire | Runtime LCU, presets V2 | Couvert | `tests/test_core_champ_select.py` | Conserver |
-| Presets 1 → 2 → 3 | Essaie les slots dans l’ordre | Éditeur Presets | Couvert | `tests/test_api.py` | Conserver |
+| Presets 1 → 2 → 3 | Essaie les slots dans l’ordre | Éditeur des priorités intégré au Dashboard | Couvert | `tests/test_api.py` | Conserver |
 | Auto-Pick / Auto-Ban | Verrouille pick ou ban configuré | Switches Dashboard | Couvert | `tests/test_core_champ_select.py` | Conserver |
 | Auto-Summs / Auto-Runes | Applique les réglages du slot | Preset slot + runtime | Couvert | `tests/test_lcu_runtime.py` | Conserver |
 | `rune_page_id = 0` | Conserver la page actuelle | Éditeur Runes | Couvert | `tests/test_api.py`, `frontend/src/features/presets/RunePicker.tsx` | Les champs legacy ne sont pas interprétés |
 | Skin fixe / pool aléatoire | Sélection et fallback LCU | Skin picker différé | Couvert | `tests/test_datadragon.py` | Conserver |
 | Skins possédés | Inventaire LCU puis fallback pickable | Skin picker | Couvert | `tests/test_api.py` | Conserver |
-| Modes de skin | Override global historique | Modes par preset `none`, `fixed`, `random`, identiques sur Dashboard et Presets | Couvert | `tests/test_config.py`, `tests/test_skin_modes.py`, `tests/test_core_champ_select.py`, E2E Dashboard | Aucun mode hérité ni override global |
+| Modes de skin | Override global historique | Modes par preset `none`, `fixed`, `random`, prévisualisés et configurés depuis le Dashboard | Couvert | `tests/test_config.py`, `tests/test_skin_modes.py`, `tests/test_core_champ_select.py`, E2E Dashboard | Aucun mode hérité ni override global |
 | Recovery champion select / retries | Reconnexion et retries existants | Runtime inchangé | Couvert | `tests/test_integration_lcu.py` | Ne pas réécrire |
 | Statuts d’automatisation | Confirme les étapes LCU et les erreurs | Événements `status` structurés, libellés dans `fr.ts`, dernière action visible sur le Dashboard | Couvert | `tests/test_core_champ_select.py`, `frontend/src/domain/runtimeStatus.test.ts`, `frontend/e2e/dashboard-connected.spec.ts` | Conserver |
 | Auto Play Again | Retour au lobby après partie | Switch Settings | Couvert | `tests/test_integration_lcu.py` | Conserver |
@@ -32,7 +32,7 @@ Ce document sert de contrat de non-régression pour la migration vers le shell W
 | Instance unique / format des réglages | Lockfile et paramètres TOML | Launcher WebView; schéma 6 strict, création au premier lancement, aucune migration d'ancien schéma | Couvert | `tests/test_config.py`, `tests/test_api.py` | Ancien schéma sauvegardé en `.bak`, puis remplacé par les défauts |
 | Fenêtre redimensionnable | Taille native persistée | `WebViewWindow`, restauration position/taille/maximisation et validation multi-écran | Couvert localement | `tests/test_desktop.py`, `tests/test_config.py` | Vérifier sur plusieurs écrans réels |
 
-`presets_enabled` est le master gate des automatisations des presets, sans effacer les préférences Auto-Pick, Auto-Ban, Auto-Summs ou Auto-Skin. Les pages de runes restent configurées par slot, avec `rune_page_id = 0` pour conserver la page active. Auto-Accept et Auto Play Again restent indépendants. Dashboard, Presets et menu tray partagent ce même réglage. Factory reset rétablit les starter presets modifiables (Garen, Lux, Ashe et ban Teemo) et laisse toutes les automatisations désactivées. « Restaurer les presets d'exemple » remet ces choix et coupe le master en conservant les autres préférences. « Effacer uniquement les presets » vide picks et ban sans changer les réglages généraux ni les automatisations.
+`presets_enabled` est le master gate des automatisations des presets, sans effacer les préférences Auto-Pick, Auto-Ban, Auto-Summs ou Auto-Skin. Les pages de runes restent configurées par slot, avec `rune_page_id = 0` pour conserver la page active. Auto-Accept et Auto Play Again restent indépendants. Dashboard, Réglages et menu tray partagent ce même réglage. Factory reset rétablit les starter presets modifiables (Garen, Lux, Ashe et ban Teemo) et laisse toutes les automatisations désactivées. « Restaurer les presets d'exemple » remet ces choix et coupe le master en conservant les autres préférences. « Effacer uniquement les presets » vide picks et ban sans changer les réglages généraux ni les automatisations.
 
 ## Règle de validation
 

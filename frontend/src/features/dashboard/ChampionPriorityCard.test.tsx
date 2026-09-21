@@ -49,7 +49,7 @@ describe("ChampionPriorityCard skin rendering", () => {
     const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
 
     expect(container.querySelector(".priority-art img")).toHaveAttribute("src", preview.skin_preview_url);
-    expect(container.querySelector(".priority-card-link")).toHaveAttribute("href", "#presets/pick_1");
+    expect(container.querySelector(".priority-card-link")).toHaveAttribute("href", "#dashboard/pick_1");
     expect(container.querySelector(".priority-mode-select")).toBeNull();
   });
 

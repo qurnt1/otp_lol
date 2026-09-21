@@ -7,7 +7,7 @@ import { Select } from "../../components/ui/Select";
 import { fr } from "../../content/fr";
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
 import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
-import type { PresetSlotKey } from "./PresetCard";
+import type { PresetSlotKey } from "../../domain/presets";
 
 export function PresetEditorDialog({
   open,
@@ -19,6 +19,7 @@ export function PresetEditorDialog({
   spells,
   pending,
   feedback,
+  feedbackIsError,
   leagueConnected,
   returnFocusRef,
   championChoiceRef,
@@ -36,8 +37,9 @@ export function PresetEditorDialog({
   spells: SummonerSpell[];
   pending: boolean;
   feedback: string;
+  feedbackIsError: boolean;
   leagueConnected: boolean;
-  returnFocusRef: RefObject<HTMLButtonElement | null>;
+  returnFocusRef: RefObject<HTMLElement | null>;
   championChoiceRef?: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onOpenPicker: (kind: "champion" | "skin" | "runes", trigger: HTMLButtonElement) => void;
@@ -131,7 +133,7 @@ export function PresetEditorDialog({
           </div>
 
           <footer className="preset-editor-footer">
-            <span className="feedback" role="status" aria-live="polite">{pending ? fr.presets.saving : feedback}</span>
+            <span className={feedbackIsError ? "feedback feedback-error" : "feedback"} role={feedbackIsError ? "alert" : "status"} aria-live={feedbackIsError ? "assertive" : "polite"}>{pending ? fr.presets.saving : feedback}</span>
             <Dialog.Close asChild><button className="button button-primary" type="button">{fr.common.close}</button></Dialog.Close>
           </footer>
             {children}

@@ -11,10 +11,8 @@ test("dashboard connecté affiche l’identité dans la sidebar et la phase dans
 
   await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 
-  await page.getByRole("link", { name: "Presets", exact: true }).click();
-  await expect(page.locator(".preset-summary-skin").first()).toContainText("God-King Garen");
-
-  await page.locator(".preset-card").first().click();
+  await expect(page.locator(".skin-preview").first()).toContainText("God-King Garen");
+  await page.locator(".priority-card").first().click();
   await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
   await page.getByRole("link", { name: "Dashboard", exact: true }).click();
   await expect(page.locator(".priority-mode-select")).toHaveCount(0);
@@ -119,7 +117,7 @@ for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
     const card = page.locator(".priority-card").nth(index);
     await card.click();
 
-    await expect(page).toHaveURL(new RegExp(`#presets/${slot}$`));
+    await expect(page).toHaveURL(new RegExp(`#dashboard/${slot}$`));
     const editor = page.getByRole("dialog", { name: `Modifier la priorité ${priority}` });
     await expect(editor).toBeVisible();
     await expect(page.locator(".picker-drawer")).toHaveCount(0);
@@ -131,8 +129,8 @@ for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
     await page.locator('.drawer-card button[aria-label="Fermer"]').click();
     await expect(page.locator(".champion-choice")).toBeFocused();
     await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
-    await expect(page).toHaveURL(/#presets$/);
-    await expect(page.locator(".preset-card").nth(index)).toBeFocused();
+    await expect(page).toHaveURL(/#dashboard$/);
+    await expect(page.locator(".priority-card-link").nth(index)).toBeFocused();
   });
 }
 
@@ -141,7 +139,7 @@ test("modifier le ban ouvre son sélecteur directement et revient au Dashboard a
   await page.goto("/#dashboard");
 
   await page.locator(".ban-panel").click();
-  await expect(page).toHaveURL(/#presets\/ban\?return=dashboard$/);
+  await expect(page).toHaveURL(/#dashboard\/ban$/);
   await expect(page.locator("#champion-search")).toBeFocused();
   await page.locator("#champion-search").fill("Teemo");
   await page.getByRole("option", { name: /Teemo/ }).click();

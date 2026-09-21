@@ -1,5 +1,5 @@
 import type { PropsWithChildren, ReactNode } from "react";
-import { Activity, BarChart3, BookOpen, LayoutDashboard, UserRound, Wifi, WifiOff, Settings2, Swords } from "lucide-react";
+import { Activity, BarChart3, BookOpen, LayoutDashboard, UserRound, Wifi, WifiOff, Settings2 } from "lucide-react";
 
 import { fr } from "../content/fr";
 import { cn } from "../lib/cn";
@@ -8,7 +8,6 @@ import type { PageId, RuntimeSnapshot } from "../types/api";
 interface AppShellProps extends PropsWithChildren { activePage: PageId; runtime?: RuntimeSnapshot | null; version?: string; updateBanner?: ReactNode }
 const navigation = [
   { id: "dashboard", icon: LayoutDashboard, label: fr.nav.dashboard },
-  { id: "presets", icon: Swords, label: fr.nav.presets },
   { id: "statistics", icon: BarChart3, label: fr.nav.statistics },
   { id: "live", icon: Activity, label: fr.nav.live },
   { id: "history", icon: BookOpen, label: fr.nav.history },

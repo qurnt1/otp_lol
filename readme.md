@@ -83,7 +83,7 @@ Version `11.0` focuses on preset completeness: skins, summoner spells, rune page
   The settings window now exposes a cleaner skin picker with direct `fixed` or `random list` selection, centered skin art in the picker, tile previews in settings, and confirmation when a skin is not detected on the current account.
 
 - `Per-preset skin modes`
-  Every preset uses the same three skin modes in Presets and Dashboard: `none`, `fixed`, and `random`. There is no inherited mode or global skin override.
+  Every preset uses the same three skin modes in the Dashboard editor and preview: `none`, `fixed`, and `random`. There is no inherited mode or global skin override.
 
 - `Cleaner startup and runtime output`
   Audio initialization no longer pollutes startup output, temporary rune debug prints were removed, and noisy rune retry logs were moved to debug-level logging.
@@ -303,14 +303,14 @@ On first launch, you can:
 5. decide whether you want automatic account detection
 6. enable or disable automatic return to lobby
 
-Editable Garen, Lux, and Ashe picks plus a Teemo ban are already prepared. A dismissible banner points you to the preset editors; every automation starts disabled.
+Editable Garen, Lux, and Ashe picks plus a Teemo ban are already prepared. A dismissible banner points you to the first priority to configure; every automation starts disabled.
 
-### Dashboard And Presets
+### Dashboard And Preset Editing
 
 - Dashboard champion cards open the corresponding preset editor; the whole card is clickable.
 - The ban action opens its champion selector directly.
-- Presets provides one editor per priority slot for champion, summoner spells, skin, and runes.
-- Skin modes are `none`, `fixed`, and `random` in Presets; Dashboard shows the saved mode and links to its editor.
+- Each Dashboard priority editor configures its champion, summoner spells, skin, and runes without leaving the Dashboard.
+- Skin modes are `none`, `fixed`, and `random`; the Dashboard preview reflects the saved mode immediately.
 - The **Avancé** settings section groups local files and diagnostics, configuration import/export/reset, and window controls.
 
 ### Automatic Detection Or Manual Mode

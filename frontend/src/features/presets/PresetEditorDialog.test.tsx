@@ -66,6 +66,7 @@ function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
     spells={spells}
     pending={false}
     feedback=""
+    feedbackIsError={false}
     leagueConnected={false}
     returnFocusRef={createRef<HTMLButtonElement>()}
     onClose={vi.fn()}

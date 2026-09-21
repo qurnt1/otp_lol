@@ -20,7 +20,7 @@ The React application talks to the backend through typed HTTP endpoints and a We
 - `src/desktop/`: pywebview bridge, native links, self-tests, and window lifecycle.
 - `frontend/src/api/`: HTTP client, generated OpenAPI types, and WebSocket event handling.
 - `frontend/src/components/`: shared shell and UI primitives.
-- `frontend/src/features/`: the dashboard, presets, statistics, history, and settings views with feature-local components.
+- `frontend/src/features/`: the Dashboard, its preset editing flow, statistics, history, and settings views with feature-local components.
 - `website/`: separate public Vite site. It is not the desktop frontend.
 
 ## Data flow
@@ -41,7 +41,7 @@ React shell and pages
 
 The `/api/bootstrap` response contains cached champion, spell, skin, and ban previews for the first dashboard paint. It does not load remote catalogs or the LCU skin inventory. Full catalogs are fetched only when their editor opens.
 
-Dashboard cards summarize the configured skin mode and link to the matching Presets editor; skin-mode changes happen in Presets only. Settings require the exact current schema; there is no schema migration. A missing, invalid, or unsupported settings file is backed up when present and replaced by first-launch defaults and editable starter presets. Factory reset restores those defaults and starter presets, with automation switches off.
+The Dashboard is the central surface for viewing and editing presets. Its three priority cards open the matching editor above the Dashboard, and the ban card opens its champion picker in the same way. The normal Dashboard paint uses bootstrap previews; champion, rune, and skin catalogs remain conditional and load only when the relevant editor or picker opens. Settings require the exact current schema; there is no schema migration. A missing, invalid, or unsupported settings file is backed up when present and replaced by first-launch defaults and editable starter presets. Factory reset restores those defaults and starter presets, with automation switches off.
 
 Detected account links share one resolver across the Stats API, live-provider API, and native provider window. Auto mode uses a complete connected identity first and falls back to the last validated Riot ID/region/platform tuple only when the LCU is disconnected. Manual mode remains separate. The detected identity is installation-local, excluded from settings export/import, cleared by factory reset, and retained when presets alone are reset or cleared.
 

@@ -1,16 +1,18 @@
 import type { components } from "../generated/api";
+import type { DashboardAction } from "../domain/presets";
+
+export type { DashboardAction } from "../domain/presets";
 
 export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
 
-export type PageId = "dashboard" | "presets" | "statistics" | "live" | "history" | "settings" | "diagnostics";
+export type PageId = "dashboard" | "statistics" | "live" | "history" | "settings" | "diagnostics";
 export type SettingsSection = "general" | "automations" | "account" | "links" | "shortcuts" | "appearance" | "advanced";
-export type PresetsAction = "ban" | "pick_1" | "pick_2" | "pick_3";
 export type AppRoute =
   | { page: "settings"; section: SettingsSection }
-  | { page: "presets"; action?: PresetsAction; returnTo?: "dashboard" }
-  | { page: Exclude<PageId, "settings" | "presets"> };
+  | { page: "dashboard"; action?: DashboardAction }
+  | { page: Exclude<PageId, "settings" | "dashboard"> };
 
 export interface RuntimeSnapshot {
   version: string;

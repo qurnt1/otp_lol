@@ -1,22 +1,26 @@
 import { CircleOff, Moon, Swords } from "lucide-react";
+import type { Ref } from "react";
 
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
 import { cn } from "../../lib/cn";
 import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
+import type { PresetSlotKey } from "../../domain/presets";
 import { AssetImage } from "../../components/game/AssetImage";
 import { fr } from "../../content/fr";
 import { routeToHash } from "../../app/routes";
 
 interface ChampionPriorityCardProps {
-  slotKey: "pick_1" | "pick_2" | "pick_3";
+  slotKey: PresetSlotKey;
   slot: PresetSlot | undefined;
   index: number;
   spells: SummonerSpell[];
   preview?: PresetPreview;
   champion?: Champion;
+  isOpen?: boolean;
+  triggerRef?: Ref<HTMLAnchorElement>;
 }
 
-export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, champion }: ChampionPriorityCardProps) {
+export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, champion, isOpen = false, triggerRef }: ChampionPriorityCardProps) {
   const championName = slot?.champion?.trim() ?? "";
   const skinMode = slot?.skin_mode ?? "none";
   const skinLabel = skinMode === "fixed" ? preview?.skin_name || fr.presets.skinFixed : skinMode === "random" ? fr.presets.skinRandom : fr.presets.skinNone;
@@ -32,7 +36,7 @@ export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, ch
     ?? safeImageUrl(champion?.splash_url);
 
   return <article className={cn("priority-card", !championName && "is-empty")}>
-    <a className="priority-card-link" href={routeToHash({ page: "presets", action: slotKey })} aria-label={`${championName ? `Modifier ${championName}` : "Configurer un champion"}, preset ${index + 1}`}>
+    <a ref={triggerRef} className="priority-card-link" href={routeToHash({ page: "dashboard", action: slotKey })} aria-haspopup="dialog" aria-expanded={isOpen} aria-label={`${championName ? `Modifier ${championName}` : "Configurer un champion"}, preset ${index + 1}`}>
       <div className="priority-art">
       {splashUrl && <AssetImage src={splashUrl} alt="" width="640" height="340" loading={index === 0 ? "eager" : "lazy"} />}
       <span className="priority-shade" aria-hidden="true" />

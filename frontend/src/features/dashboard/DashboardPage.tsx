@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Info } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Info } from "lucide-react";
 
 import { api } from "../../api/client";
 import { Button } from "../../components/ui/button";
@@ -8,7 +8,8 @@ import { fr } from "../../content/fr";
 import { cn } from "../../lib/cn";
 import { phaseLabel } from "../../domain/runtime";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { Champion, Settings, SettingsPatch } from "../../types/api";
+import type { Champion, DashboardAction, Settings, SettingsPatch } from "../../types/api";
+import { presetSlotKeys, type PresetSlotKey } from "../../domain/presets";
 import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
 import { PresetOnboardingBanner } from "../automation/PresetOnboardingBanner";
 import { AutomationBar, type AutomationItem } from "./AutomationBar";
@@ -16,7 +17,9 @@ import { BanPanel } from "./BanPanel";
 import { ChampionPriorityCard } from "./ChampionPriorityCard";
 import { QuickActions } from "./QuickActions";
 
-const slots = ["pick_1", "pick_2", "pick_3"] as const;
+const PresetEditorFlow = lazy(() => import("../presets/PresetEditorFlow").then(({ PresetEditorFlow: flow }) => ({ default: flow })));
+
+const slots = presetSlotKeys;
 type ToggleKey = "auto_accept_enabled" | "auto_pick_enabled" | "auto_ban_enabled" | "auto_summoners_enabled" | "auto_play_again_enabled";
 
 function relativeStatusTime(timestamp: string, now: number): string {
@@ -50,7 +53,7 @@ function AutomationStatus() {
   </section>;
 }
 
-function DashboardPage() {
+function DashboardPage({ action, onActionClose }: { action?: DashboardAction; onActionClose: () => void }) {
   const queryClient = useQueryClient();
   const runtime = useRuntimeStore((state) => state.runtime);
   const presets = useQuery({ queryKey: ["presets"], queryFn: api.getPresets, staleTime: Infinity });
@@ -67,6 +70,12 @@ function DashboardPage() {
   const needsChampionCatalog = slots.some((key) => Boolean(currentPresets?.slots[key]?.champion && !previews[key]?.champion_id)) || Boolean(banName !== fr.dashboard.noBan && !bootstrap.data?.ban_preview?.champion_id);
   const championCatalog = useQuery({ queryKey: ["champions", "dashboard"], queryFn: () => api.getChampions(), enabled: needsChampionCatalog, staleTime: 3_600_000 });
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  const cardTriggerRefs = useRef<Record<PresetSlotKey, HTMLElement | null>>({ pick_1: null, pick_2: null, pick_3: null });
+  const banTriggerRef = useRef<HTMLElement | null>(null);
+  const activeTriggerRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (action) activeTriggerRef.current = action === "ban" ? banTriggerRef.current : cardTriggerRefs.current[action];
+  }, [action]);
   useEffect(() => { performance.mark("otp:t8-dashboard-ready"); }, []);
   const setPending = (key: string, pending: boolean) => setPendingKeys((current) => {
     const next = new Set(current);
@@ -115,11 +124,12 @@ function DashboardPage() {
     <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">
-        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><a className="text-button" href="#presets">{fr.dashboard.edit} <ArrowUpRight size={14} aria-hidden="true" /></a></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} />)}</div></section>
+        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><span className="field-hint">{fr.dashboard.priorityHint}</span></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} isOpen={action === slots[index]} triggerRef={(node) => { cardTriggerRefs.current[slots[index]] = node; if (node && action === slots[index]) activeTriggerRef.current = node; }} />)}</div></section>
       </div>
-      <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} /><QuickActions /></aside>
+      <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} isOpen={action === "ban"} triggerRef={(node) => { banTriggerRef.current = node; if (node && action === "ban") activeTriggerRef.current = node; }} /><QuickActions /></aside>
     </div>
     <AutomationBar items={automationItems} master={<PresetAutomationMaster enabled={presetMaster.enabled} ready={presetMaster.ready} pending={presetMaster.pending} errorMessage={presetMaster.errorMessage} onToggle={presetMaster.toggle} />} />
+    {action && <Suspense fallback={null}><PresetEditorFlow action={action} onClose={onActionClose} returnFocusRef={activeTriggerRef} /></Suspense>}
   </div>;
 }
 

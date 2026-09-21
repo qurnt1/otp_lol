@@ -11,26 +11,28 @@ describe("hash routes", () => {
     expect(parseHashRoute("#settings")).toEqual({ page: "settings", section: "general" });
   });
 
-  it("parses dashboard-triggered preset actions and their return target", () => {
-    expect(parseHashRoute("#presets/ban?return=dashboard")).toEqual({ page: "presets", action: "ban", returnTo: "dashboard" });
-    expect(parseHashRoute("#presets/pick_3")).toEqual({ page: "presets", action: "pick_3" });
-    expect(parseHashRoute("#presets")).toEqual({ page: "presets" });
+  it("parses dashboard-triggered preset actions", () => {
+    expect(parseHashRoute("#dashboard")).toEqual({ page: "dashboard" });
+    expect(parseHashRoute("#dashboard/ban")).toEqual({ page: "dashboard", action: "ban" });
+    expect(parseHashRoute("#dashboard/pick_3")).toEqual({ page: "dashboard", action: "pick_3" });
   });
 
   it("rejects unknown pages, sections, and trailing path segments", () => {
     expect(parseHashRoute("#unknown")).toBeNull();
     expect(parseHashRoute("#settings/missing")).toBeNull();
     expect(parseHashRoute("#statistics/links")).toBeNull();
-    expect(parseHashRoute("#presets/unknown")).toBeNull();
-    expect(parseHashRoute("#presets/pick_1?return=dashboard")).toBeNull();
-    expect(parseHashRoute("#presets/ban?return=unknown")).toBeNull();
+    expect(parseHashRoute("#dashboard/foo")).toBeNull();
+    expect(parseHashRoute("#presets")).toBeNull();
+    expect(parseHashRoute("#presets/pick_1")).toBeNull();
+    expect(parseHashRoute("#dashboard/pick_1?return=dashboard")).toBeNull();
   });
 
   it("serializes settings sections and normal pages", () => {
     expect(routeToHash({ page: "settings", section: "shortcuts" })).toBe("#settings/shortcuts");
+    expect(routeToHash({ page: "dashboard" })).toBe("#dashboard");
+    expect(routeToHash({ page: "dashboard", action: "pick_1" })).toBe("#dashboard/pick_1");
+    expect(routeToHash({ page: "dashboard", action: "ban" })).toBe("#dashboard/ban");
     expect(routeToHash({ page: "statistics" })).toBe("#statistics");
     expect(routeToHash({ page: "live" })).toBe("#live");
-    expect(routeToHash({ page: "presets", action: "ban", returnTo: "dashboard" })).toBe("#presets/ban?return=dashboard");
-    expect(routeToHash({ page: "presets", action: "pick_3" })).toBe("#presets/pick_3");
   });
 });

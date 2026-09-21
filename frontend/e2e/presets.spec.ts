@@ -2,47 +2,53 @@ import { expect, test } from "@playwright/test";
 
 import { mockLocalApi } from "./helpers";
 
-test("priority cards summarize a preset and open its editor from anywhere on the card", async ({ page }) => {
+test("priority cards summarize presets and open their editor from the Dashboard", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  await expect(page.locator(".page-heading .eyebrow")).toHaveCount(0);
+  await page.goto("/#dashboard");
+  await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
 
-  const cards = page.locator(".preset-card");
+  const cards = page.locator(".priority-card");
   await expect(cards).toHaveCount(3);
-  await expect(cards.nth(0).locator(".preset-priority")).toHaveText("Priorité 1");
-  await expect(cards.nth(1).locator(".preset-priority")).toHaveText("Priorité 2");
-  await expect(cards.nth(2).locator(".preset-priority")).toHaveText("Priorité 3");
-  await expect(cards.nth(0).locator(".preset-summary-runes")).toContainText("Ma page Top");
-  await expect(cards.nth(0).locator(".preset-summary-runes").getByText("Runes", { exact: true })).toHaveCount(1);
-  await expect(cards.nth(0).locator(".preset-card-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
+  await expect(cards.nth(0).locator(".priority-number")).toHaveText("01");
+  await expect(cards.nth(1).locator(".priority-number")).toHaveText("02");
+  await expect(cards.nth(2).locator(".priority-number")).toHaveText("03");
+  await expect(cards.nth(0).locator(".rune-name")).toContainText("Ma page Top");
+  await expect(cards.nth(0).locator(".priority-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
 
-  await cards.nth(0).locator(".preset-summary-skin").click();
+  await cards.nth(0).locator(".skin-preview").click();
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor).toBeVisible();
   await expect(editor.locator(".eyebrow")).toHaveText("Priorité 1");
 });
 
-test("preset cards open with Enter and Space and restore focus after Escape", async ({ page }) => {
+test("Dashboard cards open with Enter and restore focus after Escape", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  const card = page.locator(".preset-card").first();
+  await page.goto("/#dashboard");
+  const card = page.locator(".priority-card-link").first();
   await card.focus();
   await page.keyboard.press("Enter");
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
+  await expect(page).toHaveURL(/#dashboard$/);
   await expect(card).toBeFocused();
-
-  await page.keyboard.press("Space");
-  await expect(editor).toBeVisible();
-  await page.keyboard.press("Escape");
 });
 
-test("the champion base portrait opens the Champion Picker from the preset editor", async ({ page }) => {
+test("a direct Dashboard editor route keeps the Dashboard mounted and closes cleanly", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  await page.locator(".preset-card").first().click();
+  await page.goto("/#dashboard/pick_2");
+  await expect(page.locator(".dashboard-page")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).last().click();
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.locator(".priority-card-link").nth(1)).toBeFocused();
+});
+
+test("the champion base portrait opens the Champion Picker from the Dashboard editor", async ({ page }) => {
+  await mockLocalApi(page, { configured: true });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await editor.getByRole("button", { name: "Garen La Force de Demacia", exact: true }).click();
@@ -54,12 +60,12 @@ test("the champion base portrait opens the Champion Picker from the preset edito
   await expect(picker).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
-  await expect(page.locator(".preset-card").first()).toBeFocused();
+  await expect(page.locator(".priority-card-link").first()).toBeFocused();
 });
 
 test("the global preset switch rolls back and explains a rejected activation", async ({ page }) => {
   await mockLocalApi(page, { rejectPresetActivation: true });
-  await page.goto("/#presets");
+  await page.goto("/#dashboard");
 
   const toggle = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
   await expect(toggle).toHaveAttribute("aria-checked", "false");
@@ -70,7 +76,7 @@ test("the global preset switch rolls back and explains a rejected activation", a
 
 test("the preset switch updates immediately and exposes its pending state", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
+  await page.goto("/#dashboard");
   const toggle = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await page.route("**/api/settings", async (route) => {
@@ -83,7 +89,45 @@ test("the preset switch updates immediately and exposes its pending state", asyn
   await expect(toggle).toHaveAttribute("aria-busy", "false");
 });
 
-test("master gates preset children across Dashboard and Presets without clearing their choices", async ({ page }) => {
+test("a failed preset save rolls back and exposes an editor error", async ({ page }) => {
+  const state = await mockLocalApi(page, { configured: true });
+  await page.route("**/api/presets/pick_1", async (route) => {
+    if (route.request().method() === "PUT") {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "save failed" }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("combobox", { name: "Sort 1" }).click();
+  await page.getByRole("option", { name: "Ignite" }).click();
+  await expect(editor.getByRole("alert")).toHaveText("Impossible d’enregistrer la modification.");
+  await expect(editor.getByRole("combobox", { name: "Sort 1" })).toContainText("Flash");
+  expect(state.presets.slots.pick_1.spell_1).toBe("Flash");
+});
+
+test("a failed ban save keeps the picker open and exposes an error", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, configured: true });
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "save failed" }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/#dashboard");
+  await page.locator(".ban-panel").click();
+  const picker = page.getByRole("dialog", { name: "Champion à bannir" });
+  await picker.locator("#champion-search").fill("Teemo");
+  await picker.getByRole("option", { name: /Teemo/ }).click();
+  await expect(picker.getByRole("alert")).toHaveText("Impossible d’enregistrer la modification.");
+  await expect(picker).toBeVisible();
+});
+
+test("master gates preset children without clearing their choices", async ({ page }) => {
   const state = await mockLocalApi(page, { configured: true });
   Object.assign(state.settings, {
     presets_enabled: false,
@@ -116,12 +160,7 @@ test("master gates preset children across Dashboard and Presets without clearing
     expect(state.settings[key]).toBe(true);
   }
 
-  await page.goto("/#presets");
-  const presetsMaster = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
-  await expect(presetsMaster).toHaveAttribute("aria-checked", "true");
-  await presetsMaster.click();
-  await expect(presetsMaster).toHaveAttribute("aria-checked", "false");
-  await page.locator(".preset-card").first().click();
+  await page.locator(".priority-card").first().click();
   await expect(page.getByRole("dialog").getByRole("switch", { name: "Appliquer automatiquement" })).toHaveCount(0);
   for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
     expect(state.settings[key]).toBe(true);
@@ -130,8 +169,8 @@ test("master gates preset children across Dashboard and Presets without clearing
 
 test("rune page picker exposes an explicit do-nothing choice when League is unavailable", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  const card = page.locator(".preset-card").first();
+  await page.goto("/#dashboard");
+  const card = page.locator(".priority-card").first();
   await card.click();
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor.getByRole("switch", { name: "Appliquer automatiquement" })).toHaveCount(0);
@@ -143,14 +182,14 @@ test("rune page picker exposes an explicit do-nothing choice when League is unav
   await expect(runePicker).toContainText("Pages de runes indisponibles");
   await page.keyboard.press("Escape");
   await expect(editor).toBeVisible();
-  await expect(card.locator(".preset-summary-runes")).toContainText("Ma page Top");
+  await expect(card.locator(".rune-name")).toContainText("Ma page Top");
 });
 
 test("skin selection uses a splash preview and retains a base-splash fallback", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  const card = page.locator(".preset-card").first();
-  await expect(card.locator(".preset-card-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
+  await page.goto("/#dashboard");
+  const card = page.locator(".priority-card").first();
+  await expect(card.locator(".priority-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
   await card.click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
@@ -160,7 +199,7 @@ test("skin selection uses a splash preview and retains a base-splash fallback", 
   await editor.getByRole("radio", { name: "Aucun" }).click();
   await bootstrapRefresh;
   await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", "/assets/app/garen.webp");
-  await expect(card.locator(".preset-card-art img")).toHaveAttribute("src", "/assets/app/garen.webp");
+  await expect(card.locator(".priority-art img")).toHaveAttribute("src", "/assets/app/garen.webp");
   await expect(skinChoice).toBeDisabled();
 
   await editor.getByRole("radio", { name: "Fixe" }).click();
@@ -173,8 +212,8 @@ test("random skin preview is shown in the editor without loading another catalog
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
   await mockLocalApi(page, { configured: true, randomSkinPreview: true });
-  await page.goto("/#presets");
-  await page.locator(".preset-card").first().click();
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor.getByRole("button", { name: /Pool aléatoire/ }).locator(".editor-skin-preview"))
@@ -184,8 +223,8 @@ test("random skin preview is shown in the editor without loading another catalog
 
 test("the editor skin thumbnail refreshes after selecting another fixed skin", async ({ page }) => {
   await mockLocalApi(page, { configured: true, alternateSkin: true });
-  await page.goto("/#presets");
-  await page.locator(".preset-card").first().click();
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await editor.getByRole("button", { name: /Galerie des skins/ }).click();
@@ -200,8 +239,8 @@ test("the editor skin thumbnail refreshes after selecting another fixed skin", a
 
 test("spell Select shows option and selected icons while preserving Radix keyboard behavior", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
-  await page.goto("/#presets");
-  await page.locator(".preset-card").first().click();
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
 
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   const spellSelect = editor.getByRole("combobox", { name: "Sort 1" });
@@ -215,8 +254,7 @@ test("spell Select shows option and selected icons while preserving Radix keyboa
   await expect(flashOption.locator(".spell-select-icon")).toHaveAttribute("src", "/assets/app/garen.webp");
   const igniteOption = page.getByRole("option", { name: "Ignite" });
   await expect(igniteOption).toHaveText("Ignite");
-  await expect(igniteOption.locator(".spell-select-icon"))
-    .toHaveAttribute("src", "/assets/app/garen.webp");
+  await expect(igniteOption.locator(".spell-select-icon")).toHaveAttribute("src", "/assets/app/garen.webp");
   await expect(page.getByRole("option", { name: "Aucun" }).locator(".spell-select-icon svg")).toBeVisible();
 
   await page.keyboard.press("Escape");

@@ -16,8 +16,8 @@ test("main views and preset pickers render without browser or network errors", a
   await page.goto("/#dashboard");
   await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
 
-  await page.goto("/#presets");
-  await page.locator(".preset-card").first().click();
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await expect(editor).toBeVisible();
   await editor.getByRole("button", { name: "Garen La Force de Demacia", exact: true }).click();

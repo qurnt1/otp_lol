@@ -9,7 +9,7 @@ describe("desktop shell", () => {
 
     expect(screen.getByRole("link", { name: "Réglages" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "#dashboard");
-    expect(screen.getByRole("link", { name: "Presets" })).toHaveAttribute("href", "#presets");
+    expect(screen.queryByRole("link", { name: "Presets" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Statistiques" })).toHaveAttribute("href", "#statistics");
     expect(screen.getByRole("link", { name: "En direct" })).toHaveAttribute("href", "#live");
     expect(screen.getByRole("link", { name: "Journal de logs" })).toHaveAttribute("href", "#history");

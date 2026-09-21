@@ -46,3 +46,29 @@ test("sidebar settings action opens the default settings deep link", async ({ pa
   await expect(page).toHaveURL(/#settings\/general$/);
   await expect(page.locator(".settings-section h2")).toHaveText("Général");
 });
+
+test("Dashboard editor actions participate in browser back-forward history", async ({ page }) => {
+  await mockLocalApi(page, { configured: true });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card-link").first().click();
+  await expect(page).toHaveURL(/#dashboard\/pick_1$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 1" })).toBeVisible();
+
+  await page.goBack();
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 1" })).toBeHidden();
+
+  await page.goForward();
+  await expect(page).toHaveURL(/#dashboard\/pick_1$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 1" })).toBeVisible();
+});
+
+test("Dashboard quick actions expose only valid destinations", async ({ page }) => {
+  await mockLocalApi(page, { configured: true });
+  await page.goto("/#dashboard");
+  const quickActions = page.locator(".quick-panel");
+  await expect(quickActions.getByRole("link", { name: "Ouvrir le journal de logs" })).toHaveAttribute("href", "#history");
+  await expect(quickActions.getByRole("link", { name: "Ouvrir les diagnostics LCU" })).toHaveAttribute("href", "#diagnostics");
+  await expect(quickActions.getByRole("link", { name: "Raccourcis clavier" })).toHaveAttribute("href", "#settings/shortcuts");
+  await expect(quickActions.getByRole("link", { name: /presets/i })).toHaveCount(0);
+});

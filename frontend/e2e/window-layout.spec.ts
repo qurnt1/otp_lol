@@ -15,8 +15,8 @@ for (const viewport of [{ width: 1100, height: 760 }, { width: 800, height: 540 
   test(`éditeur de preset sans débordement à ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await mockLocalApi(page, { configured: true });
-    await page.goto("/#presets");
-    await page.locator(".preset-card").first().click();
+    await page.goto("/#dashboard");
+    await page.locator(".priority-card").first().click();
 
     const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
     await expect(editor).toBeVisible();
@@ -41,8 +41,8 @@ for (const scale of [1.25, 1.5]) {
     });
     const page = await context.newPage();
     await mockLocalApi(page, { configured: true });
-    await page.goto("/#presets");
-    await page.locator(".preset-card").first().click();
+    await page.goto("/#dashboard");
+    await page.locator(".priority-card").first().click();
     const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
     await expect(editor).toBeVisible();
     expect(await editor.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

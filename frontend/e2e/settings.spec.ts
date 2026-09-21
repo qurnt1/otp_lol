@@ -276,12 +276,11 @@ test("reset writes the starter presets and shows a dismissible first-run message
     expect(state.settings[key]).toBe(false);
   }
 
-  await page.goto("/#presets");
-  for (const [index, champion] of ["Garen", "Lux", "Ashe"].entries()) {
-    await expect(page.locator(".preset-card").nth(index)).toContainText(champion);
-  }
-  await expect(page.locator(".ban-editor")).toContainText("Teemo");
   await page.goto("/#dashboard");
+  for (const [index, champion] of ["Garen", "Lux", "Ashe"].entries()) {
+    await expect(page.locator(".priority-card").nth(index)).toContainText(champion);
+  }
+  await expect(page.locator(".ban-panel")).toContainText("Teemo");
   const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
   await expect(onboarding).toBeVisible();
   await page.reload();
@@ -297,8 +296,9 @@ test("first-run onboarding closes permanently after editing a preset", async ({ 
   applyFactoryDefaults(state);
   await page.goto("/#dashboard");
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
-  await page.getByRole("link", { name: "Modifier mes presets" }).click();
-  await page.locator(".preset-card").first().click();
+  await page.getByRole("link", { name: "Configurer mes priorités" }).click();
+  await expect(page).toHaveURL(/#dashboard\/pick_1$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 1" })).toBeVisible();
   const editRequest = page.waitForRequest((request) => request.url().endsWith("/api/presets/pick_1") && request.method() === "PUT");
   await page.locator('.skin-mode-options input[value="fixed"]').click();
   await editRequest;
@@ -308,6 +308,17 @@ test("first-run onboarding closes permanently after editing a preset", async ({ 
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeHidden();
   await page.reload();
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeHidden();
+});
+
+test("first-run onboarding targets the first empty priority", async ({ page }) => {
+  const state = await mockLocalApi(page, { configured: true, onboardingCompleted: false });
+  state.presets.slots.pick_2.champion = "";
+  state.settings.pick_slots.pick_2.champion = "";
+  state.settings.selected_pick_2 = "";
+  await page.goto("/#dashboard");
+  await page.getByRole("link", { name: "Configurer mes priorités" }).click();
+  await expect(page).toHaveURL(/#dashboard\/pick_2$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 2" })).toBeVisible();
 });
 
 test("preset reset restores examples, disables the master and preserves child preferences", async ({ page }) => {
@@ -344,13 +355,12 @@ test("preset reset restores examples, disables the master and preserves child pr
   expect(Object.values(state.settings.pick_slots).map((slot) => slot.spell_2)).toEqual(["Ignite", "Barrier", "Heal"]);
   expect(Object.values(state.settings.pick_slots).every((slot) => slot.skin_mode === "none" && slot.rune_page_id === 0 && slot.rune_keystone_id === 0)).toBe(true);
 
-  await page.goto("/#presets");
+  await page.goto("/#dashboard");
   await expect(page.getByRole("switch", { name: "Utiliser les presets en sélection" })).toHaveAttribute("aria-checked", "false");
   for (const [index, champion] of ["Garen", "Lux", "Ashe"].entries()) {
-    await expect(page.locator(".preset-card").nth(index)).toContainText(champion);
+    await expect(page.locator(".priority-card").nth(index)).toContainText(champion);
   }
-  await expect(page.locator(".ban-editor")).toContainText("Teemo");
-  await page.goto("/#dashboard");
+  await expect(page.locator(".ban-panel")).toContainText("Teemo");
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
 });
 

@@ -5,7 +5,7 @@ export const presetAutomationCopy = {
   masterRequired: "Active d'abord les automatisations des presets.",
   onboardingTitle: "Des exemples sont prêts.",
   onboardingMessage: "Personnalise les trois priorités avant d'activer les automatisations.",
-  onboardingAction: "Modifier mes presets",
+  onboardingAction: "Configurer mes priorités",
   dismissOnboarding: "Masquer le message de bienvenue",
   resetPresets: "Restaurer les presets d'exemple",
   resetPresetsDescription: "Restaure les exemples Garen, Lux et Ashe; automatismes désactivés.",
