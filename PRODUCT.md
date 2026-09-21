@@ -29,7 +29,8 @@ The assistant runs on Windows in a native pywebview window backed by a local Fas
 - The interface must support a dark theme and a light theme.
 - Preset previews must retain champion, spell, rune, skin, and website imagery when those assets are available.
 - When League is unavailable, the interface must remain useful as a configuration surface and state the offline condition clearly.
-- The Statistics page displays the external provider selected in Settings. Native `/api/account` statistics remain a separate backend capability and are not presented as the current Statistics UI.
+- When the Internet or the configured asset origin is unavailable, the desktop interface must remain on a bundled blocking screen until connectivity returns.
+- The Statistics and Live pages expose their provider choices directly. Each selected site opens in a reusable top-level WebView, with the system browser as fallback and no provider iframe.
 
 ## Brand Commitments
 
