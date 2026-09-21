@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
 from dataclasses import dataclass
 from typing import Any
+
+from ..config.paths import WEBVIEW_STORAGE_DIR
+
+LOGGER = logging.getLogger("otp_lol.window")
 
 _WEBVIEW2_CLIENT_GUIDS = (
     "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -218,7 +223,13 @@ class WebViewWindow:
 
         import webview
 
-        webview.start(debug=os.environ.get("OTP_LOL_LOG_LEVEL", "").upper() == "DEBUG", icon=self.config.icon)
+        LOGGER.info("webview_storage persistent=true path=%s", WEBVIEW_STORAGE_DIR)
+        webview.start(
+            debug=os.environ.get("OTP_LOL_LOG_LEVEL", "").upper() == "DEBUG",
+            icon=self.config.icon,
+            private_mode=False,
+            storage_path=WEBVIEW_STORAGE_DIR,
+        )
 
     def show(self) -> None:
         """Show the native window when a tray or hotkey callback requests it."""

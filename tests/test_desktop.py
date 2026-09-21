@@ -25,6 +25,7 @@ from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hot
 from src.desktop.window import (
     WebViewWindow,
     WebViewWindowConfig,
+    WEBVIEW_STORAGE_DIR,
     _valid_window_position,
     get_webview2_runtime_version,
     has_webview2_runtime,
@@ -451,6 +452,101 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertEqual(provider_window.url, "https://op.gg/fr/lol/summoners/euw/Player-EUW")
         self.assertEqual(native.calls, [("load_url", "https://op.gg/fr/lol/summoners/euw/Player-EUW"), "restore", "show"])
 
+    def test_provider_open_inherits_main_window_geometry(self):
+        class ProviderNative(FakeNativeWindow):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+
+        params = {
+            "preferred_stats_site": "opgg",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        main_window = SimpleNamespace(geometry=lambda: {
+            "window_width": 1280,
+            "window_height": 800,
+            "window_x": 120,
+            "window_y": 80,
+            "window_maximized": False,
+        })
+        created = []
+        native = ProviderNative()
+        fake_webview = SimpleNamespace(settings={}, create_window=lambda *args, **kwargs: created.append((args, kwargs)) or native)
+        manager = ProviderWindowManager(context)
+        manager.attach_main_window(main_window)
+        manager.mark_main_window_shown(preload=False)
+
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            self.assertTrue(manager.open("opgg", "stats"))
+
+        self.assertEqual(created[0][1]["width"], 1280)
+        self.assertEqual(created[0][1]["height"], 800)
+        self.assertEqual(created[0][1]["x"], 120)
+        self.assertEqual(created[0][1]["y"], 80)
+        self.assertFalse(created[0][1]["maximized"])
+
+    def test_provider_show_inherits_main_maximized_state_without_stale_position(self):
+        class ProviderNative(FakeNativeWindow):
+            is_maximized = False
+
+            def bring_to_front(self):
+                self.calls.append("bring_to_front")
+
+            def maximize(self):
+                self.calls.append("maximize")
+                self.is_maximized = True
+
+            def move(self, x, y):
+                self.calls.append(("move", x, y))
+
+        context = SimpleNamespace(get_params=lambda: {}, runtime=SimpleNamespace(snapshot=Mock()))
+        native = ProviderNative()
+        window = ProviderBrowserWindow("opgg", "https://op.gg/", Mock())
+        window.window = native
+        window.state = "hidden"
+        window.last_loaded_url = window.url
+        manager = ProviderWindowManager(context)
+        manager._windows["stats"] = window
+        manager.attach_main_window(SimpleNamespace(geometry=lambda: {
+            "window_width": 1100,
+            "window_height": 760,
+            "window_x": -9000,
+            "window_y": -9000,
+            "window_maximized": True,
+        }))
+
+        self.assertTrue(manager.show("stats"))
+        self.assertEqual(native.calls, ["show", "maximize", "bring_to_front"])
+
+    def test_provider_preload_reveals_with_the_latest_geometry(self):
+        class ProviderNative(FakeNativeWindow):
+            def move(self, x, y):
+                self.calls.append(("move", x, y))
+
+        native = ProviderNative()
+        events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+        native.events = events
+        provider_window = ProviderBrowserWindow("opgg", "https://op.gg/", Mock())
+        geometry = {
+            "window_width": 1200,
+            "window_height": 700,
+            "window_x": 40,
+            "window_y": 50,
+            "window_maximized": False,
+        }
+        with patch.dict(sys.modules, {"webview": SimpleNamespace(settings={}, create_window=lambda *_args, **_kwargs: native)}):
+            self.assertTrue(provider_window.open(preload=True))
+        events.shown.fire()
+        provider_window.request_reveal(geometry)
+        events.loaded.fire()
+
+        self.assertEqual(provider_window.state, "visible")
+        self.assertIn(("resize", 1200, 700), native.calls)
+        self.assertIn(("move", 40, 50), native.calls)
+
     def test_provider_bridge_builds_url_from_configured_account_and_rejects_other_provider(self):
         params = {
             "preferred_stats_site": "deeplol",
@@ -516,8 +612,8 @@ class DesktopWindowTests(unittest.TestCase):
             params["preferred_stats_site"] = "opgg"
             self.assertTrue(bridge.open_provider_window("opgg", "stats"))
 
-        provider_window.focus.assert_called_once_with()
-        provider_window.navigate.assert_called_once_with("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", reveal=True)
+        provider_window.focus.assert_called_once_with(geometry={})
+        provider_window.navigate.assert_called_once_with("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", reveal=True, geometry={})
 
     def test_provider_preload_is_hidden_only_once_and_user_show_stays_visible(self):
         native = FakeNativeWindow()
@@ -985,7 +1081,7 @@ class DesktopWindowTests(unittest.TestCase):
         master_toggle.assert_called_once_with()
 
     @patch("src.desktop.window.has_webview2_runtime", return_value=True)
-    def test_start_passes_the_configured_icon_to_pywebview(self, _runtime):
+    def test_start_uses_persistent_webview_storage(self, _runtime):
         calls = []
         fake_webview = SimpleNamespace(start=lambda **kwargs: calls.append(kwargs))
         window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/", icon="garen.ico"))
@@ -993,7 +1089,12 @@ class DesktopWindowTests(unittest.TestCase):
         with patch.dict(sys.modules, {"webview": fake_webview}):
             window.start()
 
-        self.assertEqual(calls, [{"debug": False, "icon": "garen.ico"}])
+        self.assertEqual(calls, [{
+            "debug": False,
+            "icon": "garen.ico",
+            "private_mode": False,
+            "storage_path": WEBVIEW_STORAGE_DIR,
+        }])
 
     @patch("src.desktop.window.sys.platform", "linux")
     def test_non_windows_runtime_does_not_require_registry_access(self):

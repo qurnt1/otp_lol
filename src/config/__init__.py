@@ -95,6 +95,7 @@ from .paths import (
     SPELLS_CACHE_DIR,
     SKINS_CACHE_DIR,
     RUNES_CACHE_DIR,
+    WEBVIEW_STORAGE_DIR,
     get_appdata_path,
     resource_path,
 )
@@ -210,6 +211,7 @@ __all__ = [
     "SPELLS_CACHE_DIR",
     "SKINS_CACHE_DIR",
     "RUNES_CACHE_DIR",
+    "WEBVIEW_STORAGE_DIR",
     "DEFAULT_PARAMS",
     "DEMO_PARAMS",
     "DEMO_PRESETS",

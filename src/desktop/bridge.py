@@ -34,6 +34,7 @@ class DesktopBridge:
 
     def attach(self, window: WebViewWindow) -> None:
         self._window = window
+        self._provider_manager.attach_main_window(window)
 
     def resize_window(self, width: int, height: int) -> None:
         if self._window is None or not self._window.native_ready:

@@ -48,3 +48,4 @@
 - refactor: configure presets directly from Dashboard cards and remove the duplicate Presets page
 - fix: surface preset and ban save errors and centralize Dashboard preset actions
 - ui: rebalance Dashboard cards, sidebar spacing, and automation separation without behavior changes
+- feat: persist provider WebView storage, sync provider geometry, and polish Dashboard card assets

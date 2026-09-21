@@ -58,8 +58,34 @@ describe("ChampionPriorityCard skin rendering", () => {
     const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
 
     expect(container.querySelector(".priority-art img")).toHaveAttribute("src", preview.skin_preview_url);
+    expect(container.querySelector(".skin-preview img")).toHaveAttribute("src", preview.champion_icon_url);
     expect(container.querySelector(".priority-card-link")).toHaveAttribute("href", "#dashboard/pick_1");
     expect(container.querySelector(".priority-mode-select")).toBeNull();
+  });
+
+  it("falls back to the catalog champion icon for the skin row", () => {
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={{ ...preview, champion_icon_url: null }} champion={champion} />);
+
+    expect(container.querySelector(".skin-preview img")).toHaveAttribute("src", champion.icon_url);
+  });
+
+  it("treats an empty preview icon as missing", () => {
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={{ ...preview, champion_icon_url: "" }} champion={champion} />);
+
+    expect(container.querySelector(".skin-preview img")).toHaveAttribute("src", champion.icon_url);
+  });
+
+  it("does not show a redundant ready subtitle when the champion catalog is unavailable", () => {
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} />);
+
+    expect(container.querySelector(".priority-caption small")).toBeNull();
+    expect(container.querySelector(".priority-caption")).not.toHaveTextContent("Prêt");
+  });
+
+  it("keeps rune assets borderless through the dedicated asset class", () => {
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
+
+    expect(container.querySelector(".rune-row .rune-asset")).not.toBeNull();
   });
 
   it("uses the champion splash when the effective mode is none", () => {

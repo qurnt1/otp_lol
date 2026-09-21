@@ -14,6 +14,8 @@ test("priority cards summarize presets and open their editor from the Dashboard"
   await expect(cards.nth(2).locator(".priority-number")).toHaveText("03");
   await expect(cards.nth(0).locator(".rune-name")).toContainText("Ma page Top");
   await expect(cards.nth(0).locator(".priority-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
+  await expect(cards.nth(0).locator(".priority-caption small")).toHaveCount(0);
+  await expect(cards.nth(0).locator(".skin-preview img")).toHaveAttribute("src", "/assets/app/garen.webp");
 
   await cards.nth(0).locator(".skin-preview").click();
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });

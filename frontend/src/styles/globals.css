@@ -169,13 +169,14 @@ img { display: block; }
 .asset-row .asset-pair img, .asset-row .asset-pair .asset-fallback { width: 30px; height: 30px; }
 .rune-row { min-width: 0; padding-top: 8px; }
 .rune-row .asset-pair img, .rune-row .asset-pair .asset-fallback { width: 24px; height: 24px; }
+.rune-row .rune-asset { border: 0; border-radius: 0; background: transparent; box-shadow: none; object-fit: contain; }
 .rune-row .rune-name { flex: 1; }
 .summoner-row { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .asset-row img, .asset-fallback { border: 1px solid var(--line-strong); border-radius: 5px; object-fit: cover; }
 .asset-fallback { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; color: var(--subtle); background: var(--surface-3); font-size: 9px; font-weight: 800; }
 .rune-name { min-width: 0; overflow: hidden; margin-left: auto; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .skin-preview { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 8px 0 0; border-top: 1px solid var(--line); }
-.skin-preview > img, .skin-preview > .asset-fallback { width: 62px; height: 34px; }
+.skin-preview > img, .skin-preview > .asset-fallback { width: 34px; height: 34px; }
 .skin-preview > span { display: grid; min-width: 0; gap: 2px; }
 .skin-preview small, .preset-action small { color: var(--subtle); font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
 .skin-preview strong, .preset-action strong { overflow: hidden; color: var(--text); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
