@@ -84,7 +84,7 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
         self.assertFalse(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
 
-    def test_legacy_rune_auto_apply_false_clears_page_and_true_preserves_it(self):
+    def test_legacy_fields_are_not_interpreted(self):
         raw = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
         raw["pick_slots"]["pick_1"].update(
             {
@@ -95,13 +95,9 @@ class ConfigTests(unittest.TestCase):
             }
         )
         normalized = config.normalize_parameters(raw)
-        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 0)
-        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 0)
-
-        raw["pick_slots"]["pick_1"]["rune_auto_apply"] = True
-        normalized = config.normalize_parameters(raw)
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 123)
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 8005)
+        self.assertNotIn("rune_auto_apply", normalized["pick_slots"]["pick_1"])
 
     def test_window_geometry_has_desktop_defaults(self):
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)
@@ -204,6 +200,72 @@ class ConfigTests(unittest.TestCase):
                 loaded = config.load_parameters()
 
         self.assertEqual(loaded, payload)
+        self.assertFalse(Path(f"{params_path}.bak").exists())
+
+    def test_current_schema_normalization_preserves_supported_values(self):
+        payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+        payload["selected_pick_1"] = "Ahri"
+        payload["preferred_stats_site"] = "dpm"
+        payload["pick_slots"]["pick_1"].update(
+            {"rune_page_id": 42, "rune_page_name": "Saved page", "rune_keystone_id": 8005}
+        )
+
+        normalized = config.normalize_parameters(payload)
+
+        self.assertEqual(normalized["selected_pick_1"], "Ahri")
+        self.assertEqual(normalized["preferred_stats_site"], "dpm")
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 42)
+        self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 8005)
+
+    def test_load_parameters_resets_and_backs_up_old_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+            payload["config_schema_version"] = 3
+            payload["selected_pick_1"] = "LegacyChampion"
+            original = tomli_w.dumps(payload)
+            params_path.write_text(original, encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
+            persisted = tomllib.loads(params_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(backup_content, original)
+        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+        self.assertEqual(persisted["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
+        self.assertNotEqual(persisted["selected_pick_1"], "LegacyChampion")
+
+    def test_load_parameters_resets_and_backs_up_invalid_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            original = "config_schema_version = \"invalid\"\nselected_pick_1 = \"LegacyChampion\"\n"
+            params_path.write_text(original, encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
+
+        self.assertEqual(backup_content, original)
+        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
+
+    def test_load_parameters_resets_and_backs_up_absent_schema(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            params_path = Path(tmpdir) / "parameters.toml"
+            payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+            payload.pop("config_schema_version")
+            original = tomli_w.dumps(payload)
+            params_path.write_text(original, encoding="utf-8")
+
+            with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
+                loaded = config.load_parameters()
+
+            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
+
+        self.assertEqual(backup_content, original)
+        self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
 
     def test_normalize_parameters_recovers_from_invalid_or_duplicate_hotkeys(self):
         invalid = copy.deepcopy(config.DEMO_PARAMS)

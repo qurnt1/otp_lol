@@ -481,22 +481,7 @@ def _build_normalized_pick_slots(
                 "rune_sub_style_icon_path": str(slot_data.get("rune_sub_style_icon_path", slots[slot]["rune_sub_style_icon_path"]) or ""),
             }
         )
-        legacy_auto_apply = slot_data.get("rune_auto_apply")
-        if isinstance(legacy_auto_apply, str):
-            normalized_legacy = legacy_auto_apply.strip().lower()
-            if normalized_legacy in {"0", "false", "no", "off"}:
-                legacy_auto_apply = False
-            elif normalized_legacy in {"1", "true", "yes", "on"}:
-                legacy_auto_apply = True
-        if legacy_auto_apply is False:
-            slots[slot].update(
-                rune_page_id=0,
-                rune_page_name="",
-                rune_keystone_id=0,
-                rune_keystone_path="",
-                rune_sub_style_icon_path="",
-            )
-        elif slots[slot]["rune_page_id"] <= 0:
+        if slots[slot]["rune_page_id"] <= 0:
             slots[slot].update(
                 rune_page_id=0,
                 rune_page_name="",
