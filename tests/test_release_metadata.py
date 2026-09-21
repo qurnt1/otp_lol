@@ -28,11 +28,51 @@ class ReleaseMetadataTests(unittest.TestCase):
         build_text = (ROOT_DIR / "create_exe.py").read_text(encoding="utf-8")
         self.assertIn("from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION", build_text)
 
+    def test_installer_default_version_matches_current_version(self):
+        installer_text = (ROOT_DIR / "installer/OTP-LOL.iss").read_text(encoding="utf-8")
+        self.assertIn(f'#define AppVersion "{CURRENT_VERSION}"', installer_text)
+
     def test_test_dependencies_are_separate_from_packaging_dependencies(self):
         test_requirements = (ROOT_DIR / "requirements-test.txt").read_text(encoding="utf-8")
         build_requirements = (ROOT_DIR / "requirements-build.txt").read_text(encoding="utf-8")
         self.assertIn("httpx", test_requirements)
         self.assertNotIn("httpx", build_requirements)
+
+    def test_release_api_check_runs_after_python_dependencies_are_installed(self):
+        workflow_text = (
+            ROOT_DIR / ".github/workflows/release.yml"
+        ).read_text(encoding="utf-8")
+        frontend_start = workflow_text.index("- name: Build frontend")
+        python_setup_start = workflow_text.index("- name: Set up Python")
+
+        self.assertNotIn(
+            "npm run api:check",
+            workflow_text[frontend_start:python_setup_start],
+        )
+        self.assertEqual(workflow_text.count("npm run api:check"), 1)
+        self.assertGreater(
+            workflow_text.index("npm run api:check"),
+            workflow_text.index("python -m pip install"),
+        )
+
+    def test_documentation_screenshots_are_current_and_shared_with_website(self):
+        readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
+        screenshot_names = (
+            "dashboard-web.png",
+            "dashboard-web-1440.png",
+            "dashboard-web-1920.png",
+            "settings-web.png",
+        )
+
+        for name in screenshot_names:
+            docs_image = ROOT_DIR / "docs" / "images" / name
+            self.assertTrue(docs_image.is_file(), name)
+            if name in {"dashboard-web.png", "settings-web.png"}:
+                self.assertIn(f"./docs/images/{name}", readme_text)
+                website_image = ROOT_DIR / "website" / "public" / "assets" / "screenshots" / name
+                self.assertEqual(docs_image.read_bytes(), website_image.read_bytes(), name)
+
+        self.assertNotIn("better screenshots in the README", readme_text)
 
 
 if __name__ == "__main__":
