@@ -9,7 +9,7 @@ import { useHashRoute } from "./app/useHashRoute";
 import { Button } from "./components/ui/button";
 import { fr } from "./content/fr";
 import { localizeRuntimeStatus } from "./domain/runtimeStatus";
-import { NetworkGate } from "./features/network/NetworkGate";
+import { NetworkWarning } from "./features/network/NetworkGate";
 import { useRuntimeStore } from "./stores/runtimeStore";
 import type { RuntimeEvent, RuntimeSnapshot, UpdateResponse } from "./types/api";
 
@@ -77,7 +77,7 @@ function App() {
     retry: false,
     refetchInterval: (query) => query.state.data?.online ? false : 5_000,
   });
-  const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.getBootstrap, enabled: network.data?.online === true, staleTime: Infinity, gcTime: Infinity, retry: 1 });
+  const bootstrap = useQuery({ queryKey: ["bootstrap"], queryFn: api.getBootstrap, staleTime: Infinity, gcTime: Infinity, retry: 1 });
   const runtime = storedRuntime ?? bootstrap.data?.runtime ?? null;
   const closePresetAction = () => {
     if (activeRoute.page === "presets") {
@@ -178,23 +178,25 @@ function App() {
   }, [queryClient]);
   useEffect(() => { if (activeRoute.page === "dashboard") performance.mark("otp:t7-dashboard-interactive"); }, [activeRoute.page]);
 
-  if (network.isError) return <div className="boot-screen"><div className="state-error"><strong>{fr.app.serverNotResponding}</strong><span>{fr.app.serverHint}</span><Button variant="primary" type="button" onClick={() => void network.refetch()}>{fr.common.retry}</Button></div></div>;
-  if (network.isPending || network.data?.state === "checking") return <NetworkGate state="checking" />;
-  if (!network.data?.online) {
-    const retryNetwork = async () => {
-      try {
-        const next = await api.checkNetworkStatus();
-        queryClient.setQueryData(["network-status"], next);
-      } catch {
-        await network.refetch();
-      }
-    };
-    return <NetworkGate state="offline" onRetry={() => void retryNetwork()} />;
-  }
   if (bootstrap.isPending && !bootstrap.data) return <div className="boot-screen"><div className="boot-mark">O</div><strong>{fr.app.name}</strong><span>{fr.common.loading}</span></div>;
   if (bootstrap.isError && !bootstrap.data) return <div className="boot-screen"><div className="state-error"><strong>{fr.app.serverNotResponding}</strong><span>{fr.app.serverHint}</span><Button variant="primary" type="button" onClick={() => void bootstrap.refetch()}>{fr.common.retry}</Button></div></div>;
 
-  return <AppShell activePage={activeRoute.page} runtime={runtime} version={runtime?.version} updateBanner={<UpdateBanner />}>
+  if (network.isError) return <div className="boot-screen"><div className="state-error"><strong>{fr.app.serverNotResponding}</strong><span>{fr.app.serverHint}</span><Button variant="primary" type="button" onClick={() => void network.refetch()}>{fr.common.retry}</Button></div></div>;
+  const retryNetwork = async () => {
+    try {
+      const next = await api.checkNetworkStatus();
+      queryClient.setQueryData(["network-status"], next);
+    } catch {
+      await network.refetch();
+    }
+  };
+  const networkWarning = network.isPending || network.data?.state === "checking"
+    ? <NetworkWarning state="checking" />
+    : network.data?.online === false
+      ? <NetworkWarning state="offline" onRetry={() => void retryNetwork()} />
+      : null;
+
+  return <AppShell activePage={activeRoute.page} runtime={runtime} version={runtime?.version} updateBanner={<>{networkWarning}<UpdateBanner /></>}>
     <main className="content-area" id="main-content" tabIndex={-1}>
       <div className="page-content"><Suspense fallback={<PageFallback />}>
         {activeRoute.page === "dashboard" && <DashboardPage />}

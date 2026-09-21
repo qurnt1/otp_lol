@@ -16,6 +16,7 @@ export type ProviderWindowStatus = {
   last_load_duration_ms?: number | null;
 };
 export type ProviderWindowAction = { ok: boolean; kind: "stats" | "live"; reason?: string | null; state: string; provider_id?: string | null };
+export type ProviderActionSource = "route_enter" | "button" | "hotkey" | "api";
 export type NetworkStatus = {
   state: "checking" | "offline" | "online";
   online: boolean;
@@ -90,8 +91,8 @@ export const api = {
   clearLastDetectedAccount: () => request<Settings>("/api/settings/last-detected-account", { method: "DELETE" }),
   importSettings: (values: SettingsImport) => request<Settings>("/api/settings/import", { method: "POST", body: JSON.stringify(values) }),
   getProviderWindowStatus: () => request<{ windows: Record<"stats" | "live", ProviderWindowStatus> }>("/api/desktop/providers/status"),
-  openProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/open`, { method: "POST" }),
-  showProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/show`, { method: "POST" }),
+  openProviderWindow: (kind: "stats" | "live", source: ProviderActionSource = "button") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/open?source=${source}`, { method: "POST" }),
+  showProviderWindow: (kind: "stats" | "live", source: ProviderActionSource = "button") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/show?source=${source}`, { method: "POST" }),
   reloadProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/reload`, { method: "POST" }),
   hideProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/hide`, { method: "POST" }),
 };

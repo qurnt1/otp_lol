@@ -19,7 +19,9 @@ from ..services.urls import is_valid_detected_account
 
 SkinMode = Literal["none", "fixed", "random"]
 Theme = Literal["darkly", "flatly"]
-Region = Literal["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
+Region = Literal[
+    "euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru", "sea"
+]
 StatsProvider = Literal["opgg", "deeplol", "dpm", "leagueofgraphs"]
 HotkeyProvider = Literal["porofessor", "deeplol", "dpm", "opgg"]
 
@@ -257,18 +259,12 @@ class PresetsResponse(BaseModel):
     slots: dict[str, PresetSlotPatch]
 
 
-class LegacyPresetSlotImport(PresetSlotPatch):
-    """Accept the removed rune toggle only while importing older settings."""
-
-    rune_auto_apply: bool | None = None
-
-
 class SettingsImport(SettingsPatch):
     """Typed current-format settings payload accepted by the import endpoint."""
 
     config_version: str | None = None
     config_schema_version: int = Field(ge=0)
-    pick_slots: dict[str, LegacyPresetSlotImport] | None = None
+    pick_slots: dict[str, PresetSlotPatch] | None = None
     auto_detected_riot_id: str | None = None
     auto_detected_region: str | None = None
     auto_detected_platform: str | None = None

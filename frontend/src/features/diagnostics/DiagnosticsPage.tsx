@@ -33,7 +33,7 @@ export function DiagnosticsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const nativeBridgeReady = useNativeBridgeReady();
-  const providerStatus = useQuery({ queryKey: ["provider-window-status"], queryFn: api.getProviderWindowStatus, staleTime: 0, retry: false, refetchInterval: (query) => query.state.data?.windows ? 1000 : false });
+  const providerStatus = useQuery({ queryKey: ["provider-window-status"], queryFn: api.getProviderWindowStatus, staleTime: 0, retry: false });
   const run = useMutation({ mutationFn: () => api.runDiagnostics(), onSuccess: async () => { setError(""); await diagnostics.refetch(); }, onError: (reason) => setError(reason instanceof Error ? reason.message : copy.runFailed) });
 
   const logs = useMemo(() => makeLogRows(diagnostics.data), [diagnostics.data]);

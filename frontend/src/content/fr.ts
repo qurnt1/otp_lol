@@ -3,8 +3,8 @@ export const fr = {
   network: {
     checking: "Vérification de la connexion Internet…",
     checkingMessage: "OTP LOL vérifie si l’ordinateur peut joindre les services nécessaires.",
-    offlineTitle: "Connexion Internet requise",
-    offlineMessage: "OTP LOL attend le retour d’Internet. L’application se déverrouillera automatiquement dès que la connexion sera disponible.",
+    warningTitle: "Connexion Internet indisponible",
+    warningMessage: "L’application reste utilisable, mais certaines images ou données peuvent manquer tant que la connexion n’est pas rétablie.",
     imageAlt: "Illustration OTP LOL hors connexion",
     retry: "Réessayer maintenant",
   },

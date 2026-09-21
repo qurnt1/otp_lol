@@ -31,6 +31,7 @@ test("statistics use a top-level provider control without an iframe", async ({ p
 
 test("provider status shows a preloaded window and the control requests it", async ({ page }) => {
   let showCalls = 0;
+  const showSources: string[] = [];
   await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
   await page.route("**/api/desktop/providers/**", async (route) => {
     const url = new URL(route.request().url());
@@ -40,6 +41,7 @@ test("provider status shows a preloaded window and the control requests it", asy
     }
     if (url.pathname.endsWith("/show")) {
       showCalls += 1;
+      showSources.push(url.searchParams.get("source") ?? "");
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, kind: "stats", state: "visible", reason: "scheduled" }) });
       return;
     }
@@ -48,9 +50,85 @@ test("provider status shows a preloaded window and the control requests it", asy
   await page.goto("/#statistics");
 
   await expect(page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans OTP LOL" })).toBeVisible();
-  await page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
   await expect.poll(() => showCalls).toBe(1);
+  await page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
+  await expect.poll(() => showCalls).toBe(2);
+  expect(showSources).toEqual(["route_enter", "button"]);
   await expect(page.locator(".statistics-frame")).toHaveCount(0);
+});
+
+test("entering live automatically requests the live provider window", async ({ page }) => {
+  let openCalls = 0;
+  await mockLocalApi(page, { connected: true, liveLink: { ...deeplolProfile, url: "https://www.deeplol.gg/summoner/euw/Player-EUW/ingame" } });
+  await page.route("**/api/desktop/providers/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/status")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ windows: { stats: { state: "not_created" }, live: { state: "not_created" } } }) });
+      return;
+    }
+    if (url.pathname.endsWith("/open")) {
+      openCalls += 1;
+      expect(url.searchParams.get("source")).toBe("route_enter");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, kind: "live", state: "loading", reason: "scheduled" }) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "not found" }) });
+  });
+  await page.goto("/#live");
+
+  await expect(page.getByRole("heading", { name: "En direct", exact: true })).toBeVisible();
+  await expect.poll(() => openCalls).toBe(1);
+});
+
+test("does not refocus a provider that is already visible on route entry", async ({ page }) => {
+  const actions: string[] = [];
+  await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
+  await page.route("**/api/desktop/providers/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/status")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ windows: { stats: { state: "visible", provider_id: "deeplol" }, live: { state: "not_created" } } }) });
+      return;
+    }
+    if (url.pathname.endsWith("/show") || url.pathname.endsWith("/open")) {
+      actions.push(url.pathname.endsWith("/show") ? "show" : "open");
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, kind: "stats", state: "visible" }) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "not found" }) });
+  });
+  await page.goto("/#statistics");
+
+  await expect(page.getByRole("heading", { name: "Statistiques", exact: true })).toBeVisible();
+  await expect.poll(() => actions).toEqual([]);
+});
+
+test("changing the provider opens the new provider without revealing a background navigation", async ({ page }) => {
+  const actions: string[] = [];
+  await mockLocalApi(page, { connected: true, statsLink: deeplolProfile });
+  await page.route("**/api/desktop/providers/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/status")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ windows: { stats: { state: "hidden", provider_id: "deeplol" }, live: { state: "not_created" } } }) });
+      return;
+    }
+    if (url.pathname.endsWith("/show")) {
+      actions.push(`show:${url.searchParams.get("source")}`);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, kind: "stats", state: "visible", reason: "scheduled", provider_id: "deeplol" }) });
+      return;
+    }
+    if (url.pathname.endsWith("/open")) {
+      actions.push(`open:${url.searchParams.get("source")}`);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, kind: "stats", state: "loading", reason: "scheduled", provider_id: "opgg" }) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "not found" }) });
+  });
+  await page.goto("/#statistics");
+  await expect(page.locator(".statistics-fallback")).toBeVisible();
+  await expect.poll(() => actions).toContain("show:route_enter");
+
+  await page.getByRole("radio", { name: "OP.GG" }).click();
+  await expect.poll(() => actions).toContain("open:route_enter");
 });
 
 test("stats provider selection persists inline without opening Settings", async ({ page }) => {
@@ -99,7 +177,6 @@ test("a rejected provider HTTP action shows an external fallback", async ({ page
   });
   await page.goto("/#statistics");
 
-  await page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
   await expect(page.getByRole("alert")).toBeVisible();
   await page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans OTP LOL" }).click();
   await expect.poll(() => attempts).toBe(2);

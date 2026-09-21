@@ -77,6 +77,11 @@ class ProviderRouteTests(unittest.TestCase):
         self.assertEqual(shown.status_code, 200)
         self.context.provider_window_manager.request_show.assert_called_once_with("stats")
 
+        self.context.provider_window_manager.request_show.reset_mock()
+        shown_from_route = self.client.post("/api/desktop/providers/stats/show?source=route_enter")
+        self.assertEqual(shown_from_route.status_code, 200)
+        self.context.provider_window_manager.request_show.assert_called_once_with("stats", source="route_enter")
+
         reloaded = self.client.post("/api/desktop/providers/stats/reload")
         self.assertEqual(reloaded.status_code, 200)
         self.context.provider_window_manager.request_reload.assert_called_once_with("stats")
@@ -352,7 +357,7 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(old_version.status_code, 422)
         self.assertEqual(current_version.status_code, 200)
 
-    def test_settings_import_migrates_the_removed_rune_toggle(self):
+    def test_settings_import_rejects_removed_rune_toggle(self):
         payload = {
             "config_schema_version": CONFIG_SCHEMA_VERSION,
             "pick_slots": {
@@ -364,15 +369,8 @@ class ApiBoundaryTests(unittest.TestCase):
                 }
             },
         }
-        disabled = self.client.post("/api/settings/import", json=payload)
-        self.assertEqual(disabled.status_code, 200)
-        self.assertEqual(disabled.json()["pick_slots"]["pick_1"]["rune_page_id"], 0)
-        self.assertNotIn("rune_auto_apply", disabled.json()["pick_slots"]["pick_1"])
-
-        payload["pick_slots"]["pick_1"]["rune_auto_apply"] = True
-        preserved = self.client.post("/api/settings/import", json=payload)
-        self.assertEqual(preserved.status_code, 200)
-        self.assertEqual(preserved.json()["pick_slots"]["pick_1"]["rune_page_id"], 123)
+        response = self.client.post("/api/settings/import", json=payload)
+        self.assertEqual(response.status_code, 422)
 
     def test_settings_export_import_and_reset_are_real_persistent_operations(self):
         self.context.params.update({
@@ -845,6 +843,7 @@ class ApiBoundaryTests(unittest.TestCase):
         })
         self.assertEqual([provider["id"] for provider in response.json()["live"]], ["porofessor", "deeplol", "dpm", "opgg"])
         self.assertIn({"id": "euw", "label": "EUW"}, response.json()["regions"])
+        self.assertIn({"id": "sea", "label": "SEA"}, response.json()["regions"])
 
     def test_provider_logo_endpoint_only_serves_known_local_assets(self):
         logo = self.client.get("/api/assets/providers/opgg")

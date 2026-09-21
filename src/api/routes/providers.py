@@ -58,18 +58,18 @@ def provider_status(request: Request) -> dict[str, Any]:
 
 
 @router.post("/{kind}/open")
-def open_provider(request: Request, kind: str) -> dict[str, Any]:
+def open_provider(request: Request, kind: str, source: str = "api") -> dict[str, Any]:
     _check_kind(kind)
     manager = _manager(request)
-    result = manager.request_open(kind)
+    result = manager.request_open(kind, **({"source": source} if source != "api" else {}))
     return _public_result(kind, result)
 
 
 @router.post("/{kind}/show")
-def show_provider(request: Request, kind: str) -> dict[str, Any]:
+def show_provider(request: Request, kind: str, source: str = "api") -> dict[str, Any]:
     _check_kind(kind)
     manager = _manager(request)
-    result = manager.request_show(kind)
+    result = manager.request_show(kind, **({"source": source} if source != "api" else {}))
     return _public_result(kind, result)
 
 

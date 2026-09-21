@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, RefreshCw, Settings2 } from "lucide-react";
 
@@ -19,7 +19,8 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const [providerWindowFailed, setProviderWindowFailed] = useState(false);
   const [providerState, setProviderState] = useState("not_created");
   const [savingProvider, setSavingProvider] = useState(false);
-  const providerStatus = useQuery({ queryKey: ["provider-window-status", kind], queryFn: api.getProviderWindowStatus, enabled: Boolean(link.data?.available), staleTime: 0, retry: false, refetchInterval: (query) => query.state.data?.windows ? 1000 : false });
+  const visibilityRequestRef = useRef<string | null>(null);
+  const providerStatus = useQuery({ queryKey: ["provider-window-status", kind], queryFn: api.getProviderWindowStatus, enabled: Boolean(link.data?.available), staleTime: 0, retry: false });
   const providerOptions = kind === "stats" ? providers.data?.stats : providers.data?.live;
   const providerInfo = providerOptions?.find((option) => option.id === link.data?.site);
   const provider = providerInfo?.label ?? link.data?.site ?? "";
@@ -29,12 +30,43 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   useEffect(() => {
     setProviderWindowFailed(false);
     setProviderState("not_created");
+    visibilityRequestRef.current = null;
   }, [kind]);
 
   useEffect(() => {
     const state = providerStatus.data?.windows?.[kind]?.state;
     if (state) setProviderState(state);
   }, [kind, providerStatus.data]);
+
+  useEffect(() => {
+    const currentLink = link.data;
+    const current = providerStatus.data?.windows?.[kind];
+    if (!currentLink?.available || !currentLink.url || !current) return;
+    const requestKey = `${kind}:${currentLink.site}:${currentLink.url}`;
+    if (visibilityRequestRef.current === requestKey) return;
+    visibilityRequestRef.current = requestKey;
+    if (current.provider_id === currentLink.site && current.state === "visible") {
+      setProviderState("visible");
+      return;
+    }
+    setProviderWindowFailed(false);
+    const sameProvider = current.provider_id === currentLink.site;
+    const request = sameProvider && ["creating", "loading", "ready", "hidden", "visible"].includes(current.state)
+      ? api.showProviderWindow(kind, "route_enter")
+      : api.openProviderWindow(kind, "route_enter");
+    void request.then((result) => {
+      setProviderState(result.state ?? (result.ok ? "loading" : "error"));
+      if (!result.ok) {
+        visibilityRequestRef.current = null;
+        setProviderWindowFailed(true);
+      }
+      return providerStatus.refetch();
+    }).catch(() => {
+      visibilityRequestRef.current = null;
+      setProviderWindowFailed(true);
+      setProviderState("error");
+    });
+  }, [kind, link.data?.available, link.data?.site, link.data?.url, providerStatus.data, providerStatus.refetch]);
 
   const refresh = async () => {
     setProviderState("loading");
@@ -74,17 +106,23 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
 
   const openInApp = async () => {
     setProviderWindowFailed(false);
+    visibilityRequestRef.current = link.data?.available && link.data.url ? `${kind}:${link.data.site}:${link.data.url}` : null;
     try {
       const current = (await providerStatus.refetch()).data?.windows?.[kind];
-      const result = current?.state === "ready" || current?.state === "hidden" || current?.state === "visible"
-        ? await api.showProviderWindow(kind)
-        : current?.state === "loading" || current?.state === "creating"
-          ? { ok: true, state: current.state }
-          : await api.openProviderWindow(kind);
+      const sameProvider = current?.provider_id === link.data?.site;
+      const result = sameProvider && (current?.state === "ready" || current?.state === "hidden" || current?.state === "visible")
+        ? await api.showProviderWindow(kind, "button")
+        : sameProvider && (current?.state === "loading" || current?.state === "creating")
+          ? await api.showProviderWindow(kind, "button")
+          : await api.openProviderWindow(kind, "button");
       setProviderState(result.state ?? (result.ok ? "loading" : "error"));
-      if (!result.ok) setProviderWindowFailed(true);
+      if (!result.ok) {
+        visibilityRequestRef.current = null;
+        setProviderWindowFailed(true);
+      }
       await providerStatus.refetch();
     } catch (error) {
+      visibilityRequestRef.current = null;
       setProviderWindowFailed(true);
       setProviderState(error instanceof ApiError && error.status === 503 ? "not_created" : "error");
     }

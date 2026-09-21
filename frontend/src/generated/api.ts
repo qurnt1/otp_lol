@@ -1215,46 +1215,6 @@ export interface components {
             count: number;
         };
         /**
-         * LegacyPresetSlotImport
-         * @description Accept the removed rune toggle only while importing older settings.
-         */
-        LegacyPresetSlotImport: {
-            /** Champion */
-            champion?: string | null;
-            /** Spell 1 */
-            spell_1?: string | null;
-            /** Spell 2 */
-            spell_2?: string | null;
-            /** Skin Mode */
-            skin_mode?: ("none" | "fixed" | "random") | null;
-            /** Skin Id */
-            skin_id?: number | null;
-            /** Skin Name */
-            skin_name?: string | null;
-            /** Skin Num */
-            skin_num?: number | null;
-            /** Random Skin Id */
-            random_skin_id?: number | null;
-            /** Random Skin Name */
-            random_skin_name?: string | null;
-            /** Random Skin Num */
-            random_skin_num?: number | null;
-            /** Random Skin Pool */
-            random_skin_pool?: components["schemas"]["SkinReference"][] | null;
-            /** Rune Page Id */
-            rune_page_id?: number | null;
-            /** Rune Page Name */
-            rune_page_name?: string | null;
-            /** Rune Keystone Id */
-            rune_keystone_id?: number | null;
-            /** Rune Keystone Path */
-            rune_keystone_path?: string | null;
-            /** Rune Sub Style Icon Path */
-            rune_sub_style_icon_path?: string | null;
-            /** Rune Auto Apply */
-            rune_auto_apply?: boolean | null;
-        };
-        /**
          * LiveLinkResponse
          * @description Validated provider link for live-game statistics.
          */
@@ -1575,7 +1535,7 @@ export interface components {
             selected_ban?: string | null;
             /** Pick Slots */
             pick_slots?: {
-                [key: string]: components["schemas"]["LegacyPresetSlotImport"];
+                [key: string]: components["schemas"]["PresetSlotPatch"];
             } | null;
             /** Theme */
             theme?: ("darkly" | "flatly") | null;
@@ -1584,7 +1544,7 @@ export interface components {
             /** Manual Summoner Name */
             manual_summoner_name?: string | null;
             /** Manual Region */
-            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru") | null;
+            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea") | null;
             /** Preferred Stats Site */
             preferred_stats_site?: ("opgg" | "deeplol" | "dpm" | "leagueofgraphs") | null;
             /** Preferred Hotkey Site */
@@ -1660,7 +1620,7 @@ export interface components {
             /** Manual Summoner Name */
             manual_summoner_name?: string | null;
             /** Manual Region */
-            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru") | null;
+            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea") | null;
             /** Preferred Stats Site */
             preferred_stats_site?: ("opgg" | "deeplol" | "dpm" | "leagueofgraphs") | null;
             /** Preferred Hotkey Site */
@@ -3179,7 +3139,9 @@ export interface operations {
     };
     open_provider_api_desktop_providers__kind__open_post: {
         parameters: {
-            query?: never;
+            query?: {
+                source?: string;
+            };
             header?: never;
             path: {
                 kind: string;
@@ -3212,7 +3174,9 @@ export interface operations {
     };
     show_provider_api_desktop_providers__kind__show_post: {
         parameters: {
-            query?: never;
+            query?: {
+                source?: string;
+            };
             header?: never;
             path: {
                 kind: string;
