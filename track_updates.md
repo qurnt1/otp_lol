@@ -43,3 +43,5 @@
 - fix: restore the compact Tk home layout and add a native Windows hotkey backend
 - fix: serve cached champion, spell, and rune assets through the local API
 - fix: preserve rune and skin fallbacks, isolate hotkey conflicts, and reload shortcuts live
+- docs: refresh production setup, architecture, and current UI screenshots
+- chore: ignore local environment files and release packaging artifacts

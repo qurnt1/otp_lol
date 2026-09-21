@@ -9,6 +9,8 @@ The release must contain these exact assets:
 
 The installer contains the onedir application and creates the desktop and Start Menu shortcuts. The checksum file contains the SHA-256 digest followed by the installer filename. The application and the public website use the exact installer asset instead of guessing from a generic `.exe` upload.
 
+The release workflow validates on `windows-latest`, runs the generated API type check only after Python dependencies are installed, executes the Playwright suite on Windows, runs the packaged `--self-test`, and builds the installer with the version read from `src/config/constants.py`.
+
 Before tagging:
 
 1. Update the application version in the project constants.
@@ -17,3 +19,5 @@ Before tagging:
 4. Create and push the `vX.Y` tag.
 
 The workflow owns GitHub Release publication. It is intentionally not triggered by ordinary branch pushes.
+
+Before broad public distribution, perform a real League/WebView2 smoke test and sign the installer with Authenticode. The current workflow produces a valid checksum but does not sign the installer.

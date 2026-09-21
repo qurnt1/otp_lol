@@ -57,7 +57,7 @@ When modifying champ select logic, work in `ChampSelectMixin` — the mixin meth
 
 - `constants.py` — immutable: version, URLs, LCU endpoints, spell maps, themes
 - `paths.py` — runtime paths: AppData for user files, TEMP for caches, `resource_path()` for PyInstaller `sys._MEIPASS`
-- `settings.py` — `DEFAULT_PARAMS`, `FIRST_LAUNCH_PARAMS`, `load_parameters()` with automatic reset on version mismatch, `_normalize_parameters()` for schema migration
+- `settings.py` — `DEFAULT_PARAMS`, `FIRST_LAUNCH_PARAMS`, `load_parameters()` with automatic reset for missing, invalid, or unsupported files, `_normalize_parameters()` for the current schema only
 - `logging_config.py` — root logger setup (file + console)
 
 ### GameState (`src/core/game_state.py`)
@@ -81,7 +81,7 @@ Central registry shared by reference everywhere — champion metadata, image cac
 
 ## Tests
 
-Framework: `unittest` (stdlib). Tests live in `tests/`. There's a `fake_lcu_server.py` that provides an `aiohttp`-based mock LCU for integration tests. The `tests/test_champ_select.py` tests are async and exercise the pick/ban/spell/skin resolution logic against a fake LCU session.
+Framework: `unittest` (stdlib). Tests live in `tests/`. There's a `fake_lcu_server.py` that provides an `aiohttp`-based mock LCU for integration tests. The `tests/test_core_champ_select.py` tests are async and exercise the pick/ban/spell/skin resolution logic against a fake LCU session.
 
 ## Commit style
 

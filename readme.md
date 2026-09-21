@@ -3,6 +3,8 @@
   <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
   <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
   <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
+  <a href="https://github.com/qurnt1/otp_lol/actions/workflows/python-ci.yml"><img src="https://github.com/qurnt1/otp_lol/actions/workflows/python-ci.yml/badge.svg" alt="Python CI"></a>
+  <a href="https://github.com/qurnt1/otp_lol/actions/workflows/frontend-ci.yml"><img src="https://github.com/qurnt1/otp_lol/actions/workflows/frontend-ci.yml/badge.svg" alt="Frontend CI"></a>
 </p>
 
 ---
@@ -11,9 +13,11 @@
 
 ---
 
-Windows desktop assistant for League of Legends, written in Python.
+Windows desktop assistant for League of Legends, written in Python with a React interface.
 
 `OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
+
+The application is local to your Windows machine. It is not endorsed by Riot Games and does not provide a cloud account or hosted dashboard.
 
 Current project version: `11.0`
 
@@ -33,6 +37,7 @@ Current project version: `11.0`
 - [Shortcuts](#shortcuts)
 - [Project Architecture](#project-architecture)
 - [Tests And Verification](#tests-and-verification)
+- [Production Readiness](#production-readiness)
 - [Documentation](#documentation)
 - [Troubleshooting](#troubleshooting)
 - [Possible Roadmap](#possible-roadmap)
@@ -135,15 +140,17 @@ The project now includes several useful safeguards:
 
 ## Screenshots
 
-### Web Command Center
+The captures below are generated from the current React/WebView2 shell with a mocked local API. They contain no real League account data.
+
+### Dashboard, 1100 x 760
 
 ![Web command center](./docs/images/dashboard-web.png)
 
-### Web Settings
+Additional responsive references are available for [1440 x 900](./docs/images/dashboard-web-1440.png) and [1920 x 1080](./docs/images/dashboard-web-1920.png).
+
+### Advanced settings, 1100 x 760
 
 ![Web settings](./docs/images/settings-web.png)
-
-The older native picker captures remain in [`docs/images/`](./docs/images/) as historical references.
 
 ## Technologies
 
@@ -173,14 +180,20 @@ Before running the project from source, you need:
 - Windows
 - Python `3.13`
 - `pip`
+- Node.js `22` and `npm`
+- Microsoft Edge WebView2 Evergreen Runtime
 - the League of Legends client installed
+- internet access for initial static-data and asset downloads (cached data is reused afterward)
 
 ## Installation From Source
 
 ```bash
 git clone https://github.com/qurnt1/otp_lol.git
 cd otp_lol
-pip install -r requirements.txt
+py -3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -c requirements-constraints.txt -r requirements.txt
 ```
 
 ## Launch
@@ -195,7 +208,7 @@ cd ..
 python launcher_web.py
 ```
 
-The desktop shell serves the compiled React interface through a local FastAPI server and WebView2.
+The desktop shell serves the compiled React interface through a local FastAPI server and WebView2. Run the commands from a Windows PowerShell with the virtual environment activated.
 
 On startup, the application:
 
@@ -215,16 +228,17 @@ cd frontend
 npm ci
 npm run build
 cd ..
-pip install -r requirements-build.txt
-python create_exe.py
+python -m pip install -c requirements-constraints.txt -r requirements-build.txt
+python create_exe.py --mode onedir --no-shortcut
 ```
 
 This script generates a portable onedir distribution:
 
 - binary location: `OTP LOL/OTP LOL.exe`
 - final location: project root
+- temporary `build/`, `dist/`, and `.spec` files are cleaned by the script
 
-The tagged release workflow embeds this distribution in the `OTP-LOL-Setup.exe` Windows installer.
+To create the installer locally, install Inno Setup 6 and compile [`installer/OTP-LOL.iss`](./installer/OTP-LOL.iss). The tagged release workflow performs this step automatically and publishes `OTP-LOL-Setup.exe` plus its SHA-256 file.
 
 The script also handles:
 
@@ -373,14 +387,16 @@ otp_lol/
 |   |-- api/
 |   |-- domain/
 |   |-- lcu/
+|   |-- integrations/
 |   |-- desktop/
 |   |-- services/
-|   `-- utils.py
 |-- config/
 |   |-- son.wav
 |   `-- images/
 |-- docs/
-|   `-- images/
+|   |-- images/
+|   `-- screenshots/
+|-- website/
 `-- tests/
     |-- test_config.py
     |-- test_core_champ_select.py
@@ -409,6 +425,10 @@ otp_lol/
   External URLs, history, updates, role data, skin modes, and single-instance handling.
 - `src/desktop/`
   Native window, system tray, audio, shortcuts, and embedded API lifecycle.
+- `docs/`
+  Architecture, security, release, development, and current screenshot references.
+- `website/`
+  Separate public Vite marketing site. It shares the current screenshot assets but not the desktop UI.
 - `create_exe.py`
   Windows build through PyInstaller.
 
@@ -448,6 +468,22 @@ npm run build
 npm run test:e2e
 ```
 
+The E2E suite runs on Windows in CI because the packaged desktop experience depends on Windows WebView2. The browser tests use a mocked local API and do not require a running League client.
+
+## Production Readiness
+
+The tagged release workflow validates the source, checks the generated OpenAPI types, runs Python and frontend tests, runs Playwright on Windows, builds the onedir executable, runs its packaged self-test, creates the Inno Setup installer, and publishes the installer with a SHA-256 checksum.
+
+Before publishing a public release:
+
+1. update `APP_VERSION` in `src/config/constants.py`
+2. run the local checks from [`docs/development.md`](./docs/development.md)
+3. validate the packaged executable on a Windows machine with WebView2 and the League client
+4. verify the installer, shortcuts, first launch, settings creation, tray behavior, global hotkeys, and clean shutdown
+5. create a matching `vX.Y` tag and let the release workflow publish the exact installer assets
+
+The installer is not Authenticode-signed yet. Public distribution should add code signing and certificate timestamping before presenting the installer as trusted software. CI and automated tests cannot replace a real League/WebView2 smoke test.
+
 ## Documentation
 
 - [Architecture](./docs/architecture.md)
@@ -465,6 +501,14 @@ Check that:
 - the League of Legends client is running
 - `lcu-driver` is properly installed
 - the application is running on the same machine as the LoL client
+
+### The First Launch Has No Settings File
+
+This is expected behavior. OTP LOL creates `%APPDATA%\OTP LOL\parameters.toml` automatically with safe starter presets and all automations disabled. If the file is missing, invalid, or uses an unsupported schema, the application backs up the previous file when possible and recreates the current defaults.
+
+### The Window Does Not Open
+
+Check that the Microsoft Edge WebView2 Evergreen Runtime is installed. Run `python launcher_web.py --self-test` from the project root to validate the packaged/runtime prerequisites without opening the main window.
 
 ### The System Tray Or Hotkeys Do Not Work
 
@@ -495,10 +539,9 @@ If something goes wrong, the first file to check is:
 Some ideas for future improvements:
 
 - profiles by game mode
-- better screenshots in the README
 - more visual presentation page
 - multi-language support
-- release automation
+- Authenticode signing for the Windows installer
 
 ## Author
 

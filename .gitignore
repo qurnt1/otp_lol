@@ -21,12 +21,22 @@ htmlcov/
 # Build artifacts
 build/
 dist/
+release/
 *.egg-info/
 *.whl
 *.spec
 OTP LOL/
 OTP LOL.exe
 *.exe
+*.pdb
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
 
 # Node / website
 node_modules/

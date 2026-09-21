@@ -1,5 +1,10 @@
 # Screenshots
 
-The current React/WebView2 captures are [`dashboard-web.png`](../images/dashboard-web.png) and [`settings-web.png`](../images/settings-web.png). They show the 1100 x 760 shell with a mocked local API, so no League account data is included.
+The current React/WebView2 captures used by the README and the public website are:
 
-The older native picker captures are kept in [`../images/`](../images/) as historical references. Do not include browser traces, test results, or generated build output in this directory.
+- [`dashboard-web.png`](../images/dashboard-web.png), the 1100 x 760 reference view;
+- [`dashboard-web-1440.png`](../images/dashboard-web-1440.png), a wide desktop view;
+- [`dashboard-web-1920.png`](../images/dashboard-web-1920.png), a large desktop view;
+- [`settings-web.png`](../images/settings-web.png), the current Advanced settings view.
+
+They use the Playwright mocked local API, so they contain no League account data. Keep browser traces, test results, and generated build output out of this directory.

@@ -1,6 +1,6 @@
 #define AppName "OTP LOL"
 #ifndef AppVersion
-  #define AppVersion "0.0.0"
+  #define AppVersion "11.0"
 #endif
 #ifndef BuildRoot
   #define BuildRoot "."
