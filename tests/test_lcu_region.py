@@ -35,7 +35,7 @@ def test_region_matrix_normalizes_provider_and_regional_values():
         "euw": ("euw1", "europe"), "eune": ("eun1", "europe"), "na": ("na1", "americas"),
         "kr": ("kr", "asia"), "jp": ("jp1", "asia"), "br": ("br1", "americas"),
         "lan": ("la1", "americas"), "las": ("la2", "americas"), "oce": ("oc1", "sea"),
-        "tr": ("tr1", "europe"), "ru": ("ru", "europe"),
+        "tr": ("tr1", "europe"), "ru": ("ru", "europe"), "sea": ("sg2", "sea"),
     }
     for region, (platform, routing) in expected.items():
         identity = normalize_region_identity(region, source="matrix")
@@ -47,6 +47,11 @@ def test_region_matrix_normalizes_provider_and_regional_values():
     assert normalize_provider_region("KR") == "kr"
     assert platform_to_provider_region("EUW1") == "euw"
     assert platform_to_regional_routing("oce") == "sea"
+    for platform in ("ph2", "sg2", "th2", "tw2", "vn2"):
+        identity = normalize_region_identity(platform, source="sea")
+        assert identity is not None
+        assert identity.provider_region == "sea"
+        assert identity.regional_routing == "sea"
 
 
 def test_detection_prefers_platform_config_over_fallbacks():
