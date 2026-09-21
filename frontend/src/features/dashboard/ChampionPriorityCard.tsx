@@ -45,16 +45,18 @@ export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, ch
       {!championName && <span className="priority-placeholder"><Swords size={26} aria-hidden="true" /></span>}
       </div>
       <div className="priority-details">
-      <div className="asset-row" aria-label="Sorts d’invocateur et rune">
+      <div className="asset-row summoner-row" aria-label="Sorts d’invocateur">
         <span className="asset-pair">
           <AssetImage src={safeImageUrl(preview?.spell_1_url ?? primarySpell?.icon_url) ?? undefined} alt={slot?.spell_1 || "Sort 1"} title={slot?.spell_1 || "Sort 1"} width="30" height="30" fallback="S1" />
           <AssetImage src={safeImageUrl(preview?.spell_2_url ?? secondarySpell?.icon_url) ?? undefined} alt={slot?.spell_2 || "Sort 2"} title={slot?.spell_2 || "Sort 2"} width="30" height="30" fallback="S2" />
         </span>
+      </div>
+      <div className="asset-row rune-row" aria-label="Runes">
         <span className="asset-pair">
           <AssetImage src={runeIcon ?? undefined} alt={slot?.rune_page_name || fr.presets.runeNoneHint} title={slot?.rune_page_name || fr.presets.runeNoneHint} width="30" height="30" loading="lazy" fallback={<CircleOff size={15} aria-hidden="true" />} />
           {subRuneIcon && <AssetImage src={subRuneIcon} alt="Rune secondaire" title="Rune secondaire" width="22" height="22" loading="lazy" fallback="" />}
         </span>
-        <span className="rune-name">{slot?.rune_page_name || fr.presets.runeNoneHint}</span>
+        <span className="rune-name" title={slot?.rune_page_name || fr.presets.runeNoneHint}>{slot?.rune_page_name || fr.presets.runeNoneHint}</span>
       </div>
       <div className="skin-preview">
         <AssetImage src={safeImageUrl(preview?.skin_preview_url) ?? undefined} alt="" width="62" height="34" loading="lazy" fallback={<Moon size={15} aria-hidden="true" />} />

@@ -45,6 +45,15 @@ const slot: PresetSlot = {
 };
 
 describe("ChampionPriorityCard skin rendering", () => {
+  it("keeps spells, runes, and skin in separate metadata rows", () => {
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
+
+    expect(container.querySelectorAll(".summoner-row")).toHaveLength(1);
+    expect(container.querySelectorAll(".rune-row")).toHaveLength(1);
+    expect(container.querySelector(".rune-row .rune-name")).toHaveTextContent("Conserver ma page actuelle");
+    expect(container.querySelectorAll(".skin-preview")).toHaveLength(1);
+  });
+
   it("uses the selected skin preview before the base splash", () => {
     const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
 

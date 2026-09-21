@@ -1,22 +1,23 @@
-# Refactor Dashboard presets
+# Dashboard UI polish
 
-## État
+## Scope
 
-- [x] Auditer le routing, le Dashboard, l’orchestration Presets, les pickers, les tests et les contrats backend.
-- [x] Confirmer qu’aucune migration de settings ni changement backend n’est nécessaire.
-- [x] Introduire les sous-routes `#dashboard`, `#dashboard/pick_1`, `#dashboard/pick_2`, `#dashboard/pick_3` et `#dashboard/ban`.
-- [x] Extraire le workflow d’édition dans `PresetEditorFlow` et le monter au-dessus du Dashboard.
-- [x] Rendre les cartes de priorité et le ban accessibles depuis le Dashboard avec restauration du focus.
-- [x] Supprimer la page Presets, sa navigation, ses tests et son code mort associé.
-- [x] Mettre à jour Quick Actions, onboarding, textes actifs, styles et documentation.
-- [x] Ajouter/transférer les tests de routing, édition, navigation, cache et accessibilité.
-- [x] Exécuter la validation frontend, backend, E2E, diff et la revue finale indépendante.
+- [x] Audit the Dashboard, sidebar, preset cards, responsive CSS, and frontend tests.
+- [x] Keep the change frontend-only. Preserve routes, interactions, API behavior, and automation logic.
 
-## Contraintes
+## Implementation
 
-- Le métier `presets` backend, le format des settings et le schéma restent inchangés.
-- Aucune route legacy `#presets` ni migration automatique n’est ajoutée.
-- `frontend/` reste distinct de `website/`.
-- Aucun commit ni push n’est effectué.
+- [x] Give the sidebar more breathing room while keeping navigation and footer placement intact.
+- [x] Stretch the Dashboard columns so Priority, Ban, and Quick Actions read as one balanced block.
+- [x] Add clear separation before Automations.
+- [x] Split preset card metadata into spell, rune, and skin rows with equal-height, overflow-safe cards.
+- [x] Preserve keyboard focus, accessible names, and existing links.
 
-Le plan détaillé fourni pour ce chantier est archivé dans `docs/archive/2026-09-dashboard-presets-refactor-plan.md`.
+## Validation
+
+- [x] Add or update focused card layout coverage.
+- [x] Manually review Dashboard screenshots at desktop and compact sizes before updating snapshots.
+- [x] Run frontend tests, typecheck, build, API contract check, E2E tests, and `git diff --check`.
+- [x] Perform an independent diff review for scope, dead code, and behavior changes.
+
+Detailed plan archived at `docs/archive/2026-09-dashboard-ui-refresh-plan.md`.
