@@ -46,7 +46,7 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
   const championId = selectedChampionData?.id
     ?? (editingSlot ? bootstrap.data?.preset_previews?.[editingSlot]?.champion_id ?? undefined : undefined);
   const skins = useQuery({ queryKey: ["skins", championId], queryFn: () => api.getSkins(championId ?? 0), enabled: picker?.kind === "skin" && Boolean(championId), staleTime: 3_600_000 });
-  const runes = useQuery({ queryKey: ["runes"], queryFn: api.getRunes, enabled: picker?.kind === "runes", staleTime: 3_600_000 });
+  const runes = useQuery({ queryKey: ["runes"], queryFn: api.getRunes, enabled: picker?.kind === "runes", staleTime: 0, refetchOnMount: "always" });
 
   useEffect(() => {
     if (!action) {
@@ -228,7 +228,6 @@ export function PresetsPage({ action, onActionClose }: { action?: PresetsAction;
       pending={updatePreset.isPending || spells.isPending}
       feedback={feedbackIsError ? "" : feedback}
       leagueConnected={Boolean(runtime?.connected)}
-      presetAutomationsEnabled={presetMaster.enabled}
       returnFocusRef={cardFocusRef}
       championChoiceRef={championChoiceFocusRef}
       onClose={() => { setEditingSlot(null); setPicker(null); if (action && action !== "ban") onActionClose?.(); }}

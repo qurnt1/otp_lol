@@ -12,7 +12,7 @@ test("priority cards summarize a preset and open its editor from anywhere on the
   await expect(cards.nth(0).locator(".preset-priority")).toHaveText("Priorité 1");
   await expect(cards.nth(1).locator(".preset-priority")).toHaveText("Priorité 2");
   await expect(cards.nth(2).locator(".preset-priority")).toHaveText("Priorité 3");
-  await expect(cards.nth(0).locator(".preset-summary-runes")).toContainText("Ma page Top · Auto");
+  await expect(cards.nth(0).locator(".preset-summary-runes")).toContainText("Ma page Top");
   await expect(cards.nth(0).locator(".preset-summary-runes").getByText("Runes", { exact: true })).toHaveCount(1);
   await expect(cards.nth(0).locator(".preset-card-art img")).toHaveAttribute("src", /\/splash\?skin_num=13/);
 
@@ -122,22 +122,19 @@ test("master gates preset children across Dashboard and Presets without clearing
   await presetsMaster.click();
   await expect(presetsMaster).toHaveAttribute("aria-checked", "false");
   await page.locator(".preset-card").first().click();
-  const runeAuto = page.getByRole("dialog").getByRole("switch", { name: "Appliquer automatiquement" });
-  await expect(runeAuto).toBeDisabled();
-  await expect(runeAuto).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("dialog").getByRole("switch", { name: "Appliquer automatiquement" })).toHaveCount(0);
   for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
     expect(state.settings[key]).toBe(true);
   }
 });
 
-test("rune page and auto mode stay together when League is unavailable", async ({ page }) => {
+test("rune page picker exposes an explicit do-nothing choice when League is unavailable", async ({ page }) => {
   await mockLocalApi(page, { configured: true });
   await page.goto("/#presets");
   const card = page.locator(".preset-card").first();
   await card.click();
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
-  const autoApply = editor.getByRole("switch", { name: "Appliquer automatiquement" });
-  await expect(autoApply).toHaveAttribute("aria-checked", "true");
+  await expect(editor.getByRole("switch", { name: "Appliquer automatiquement" })).toHaveCount(0);
   await expect(editor).toContainText("Ma page Top");
   await expect(editor).toContainText("Ta page enregistrée est conservée");
 
@@ -146,9 +143,7 @@ test("rune page and auto mode stay together when League is unavailable", async (
   await expect(runePicker).toContainText("Pages de runes indisponibles");
   await page.keyboard.press("Escape");
   await expect(editor).toBeVisible();
-  await autoApply.click();
-  await expect(autoApply).toHaveAttribute("aria-checked", "false");
-  await expect(card.locator(".preset-summary-runes")).toContainText("Ma page Top · Manuel");
+  await expect(card.locator(".preset-summary-runes")).toContainText("Ma page Top");
 });
 
 test("skin selection uses a splash preview and retains a base-splash fallback", async ({ page }) => {

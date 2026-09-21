@@ -8,16 +8,15 @@ import { fr } from "../../content/fr";
 import { cn } from "../../lib/cn";
 import { phaseLabel } from "../../domain/runtime";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { Champion, PresetsResponse, Settings, SettingsPatch } from "../../types/api";
+import type { Champion, Settings, SettingsPatch } from "../../types/api";
 import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
 import { PresetOnboardingBanner } from "../automation/PresetOnboardingBanner";
 import { AutomationBar, type AutomationItem } from "./AutomationBar";
 import { BanPanel } from "./BanPanel";
-import { ChampionPriorityCard, type SkinMode } from "./ChampionPriorityCard";
+import { ChampionPriorityCard } from "./ChampionPriorityCard";
 import { QuickActions } from "./QuickActions";
 
 const slots = ["pick_1", "pick_2", "pick_3"] as const;
-type SlotKey = typeof slots[number];
 type ToggleKey = "auto_accept_enabled" | "auto_pick_enabled" | "auto_ban_enabled" | "auto_summoners_enabled" | "auto_play_again_enabled";
 
 function relativeStatusTime(timestamp: string, now: number): string {
@@ -95,29 +94,6 @@ function DashboardPage() {
     if (currentSettings) void patchSetting(key, !currentSettings[key]);
   };
 
-  const setSkinMode = async (slot: SlotKey, mode: SkinMode) => {
-    const pendingKey = `skin_mode_${slot}`;
-    await queryClient.cancelQueries({ queryKey: ["presets"] });
-    const previous = queryClient.getQueryData<PresetsResponse>(["presets"]);
-    setPending(pendingKey, true);
-    queryClient.setQueryData<PresetsResponse>(["presets"], (current) => current ? {
-      ...current,
-      slots: { ...current.slots, [slot]: { ...current.slots[slot], skin_mode: mode } },
-    } : current);
-    try {
-      const next = await api.patchPreset(slot, { skin_mode: mode });
-      queryClient.setQueryData(["presets"], next);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["settings"] }),
-        queryClient.invalidateQueries({ queryKey: ["bootstrap"] }),
-      ]);
-    } catch {
-      if (previous) queryClient.setQueryData(["presets"], previous);
-    } finally {
-      setPending(pendingKey, false);
-    }
-  };
-
   const automationItems = useMemo<AutomationItem[]>(() => currentSettings ? [
     { id: "auto-accept", label: fr.settings.autoAccept, detail: fr.dashboard.readyCheck, enabled: currentSettings.auto_accept_enabled, pending: pendingKeys.has("auto_accept_enabled"), onToggle: () => toggle("auto_accept_enabled") },
     { id: "auto-pick", label: fr.settings.autoPick, detail: fr.dashboard.prioritizedSlots, enabled: currentSettings.auto_pick_enabled, pending: pendingKeys.has("auto_pick_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_pick_enabled") },
@@ -139,7 +115,7 @@ function DashboardPage() {
     <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">
-        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><a className="text-button" href="#presets">{fr.dashboard.edit} <ArrowUpRight size={14} aria-hidden="true" /></a></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} onSkinModeChange={(mode) => void setSkinMode(slots[index], mode)} pending={pendingKeys.has(`skin_mode_${slots[index]}`)} />)}</div></section>
+        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><a className="text-button" href="#presets">{fr.dashboard.edit} <ArrowUpRight size={14} aria-hidden="true" /></a></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} />)}</div></section>
       </div>
       <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} /><QuickActions /></aside>
     </div>

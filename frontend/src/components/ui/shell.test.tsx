@@ -12,7 +12,7 @@ describe("desktop shell", () => {
     expect(screen.getByRole("link", { name: "Presets" })).toHaveAttribute("href", "#presets");
     expect(screen.getByRole("link", { name: "Statistiques" })).toHaveAttribute("href", "#statistics");
     expect(screen.getByRole("link", { name: "En direct" })).toHaveAttribute("href", "#live");
-    expect(screen.getByRole("link", { name: "Historique" })).toHaveAttribute("href", "#history");
+    expect(screen.getByRole("link", { name: "Journal de logs" })).toHaveAttribute("href", "#history");
     expect(screen.getByRole("status", { name: "Client déconnecté" })).toBeInTheDocument();
     expect(screen.getByText("Aucun compte connecté")).toBeInTheDocument();
     expect(screen.getByText("Version")).toBeInTheDocument();

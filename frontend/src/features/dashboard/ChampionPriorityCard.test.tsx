@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 
 import type { Champion, PresetPreview, PresetSlot } from "../../types/api";
 import { ChampionPriorityCard } from "./ChampionPriorityCard";
@@ -39,34 +39,28 @@ const slot: PresetSlot = {
   random_skin_pool: [],
   rune_page_id: 0,
   rune_page_name: "",
-  rune_auto_apply: true,
+  rune_keystone_id: 0,
   rune_keystone_path: "",
   rune_sub_style_icon_path: "",
 };
 
 describe("ChampionPriorityCard skin rendering", () => {
   it("uses the selected skin preview before the base splash", () => {
-    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} onSkinModeChange={vi.fn()} />);
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={slot} index={0} spells={[]} preview={preview} champion={champion} />);
 
     expect(container.querySelector(".priority-art img")).toHaveAttribute("src", preview.skin_preview_url);
     expect(container.querySelector(".priority-card-link")).toHaveAttribute("href", "#presets/pick_1");
-    expect(screen.getByRole("combobox", { name: "Mode de skin du slot 1" })).toBeInTheDocument();
-    expect(container.querySelector(".mode-select select")).toBeNull();
-    fireEvent.click(screen.getByRole("combobox", { name: "Mode de skin du slot 1" }));
-    expect(screen.getByRole("option", { name: "Aucun" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Fixe" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Aléatoire" })).toBeInTheDocument();
-    expect(screen.queryByText("INHERIT")).not.toBeInTheDocument();
+    expect(container.querySelector(".priority-mode-select")).toBeNull();
   });
 
   it("uses the champion splash when the effective mode is none", () => {
-    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={{ ...slot, skin_mode: "none" }} index={0} spells={[]} preview={preview} champion={champion} onSkinModeChange={vi.fn()} />);
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={{ ...slot, skin_mode: "none" }} index={0} spells={[]} preview={preview} champion={champion} />);
 
     expect(container.querySelector(".priority-art img")).toHaveAttribute("src", preview.champion_splash_url);
   });
 
   it("falls back to the catalog champion splash when bootstrap has no base splash", () => {
-    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={{ ...slot, skin_mode: "none" }} index={0} spells={[]} preview={{ ...preview, champion_splash_url: null }} champion={champion} onSkinModeChange={vi.fn()} />);
+    const { container } = render(<ChampionPriorityCard slotKey="pick_1" slot={{ ...slot, skin_mode: "none" }} index={0} spells={[]} preview={{ ...preview, champion_splash_url: null }} champion={champion} />);
 
     expect(container.querySelector(".priority-art img")).toHaveAttribute("src", champion.splash_url);
   });

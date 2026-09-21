@@ -109,15 +109,15 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.manager._inventory_skin_is_owned({"owned": True}))
         self.assertFalse(self.manager._inventory_skin_is_owned({"owned": False}))
 
-    async def test_resolve_rune_selection_preserves_disabled_auto_apply(self):
+    async def test_resolve_rune_selection_uses_the_selected_slot(self):
         self.params["pick_slots"]["pick_1"].update(
-            {"rune_page_id": 100, "rune_page_name": "Fallback", "rune_auto_apply": True}
+            {"rune_page_id": 100, "rune_page_name": "Fallback"}
         )
         self.params["pick_slots"]["pick_2"].update(
-            {"rune_page_id": 200, "rune_page_name": "Mid", "rune_auto_apply": False}
+            {"rune_page_id": 200, "rune_page_name": "Mid"}
         )
 
-        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self.manager._resolve_rune_selection(
+        rune_page_id, rune_page_name, chosen_slot = self.manager._resolve_rune_selection(
             self.params,
             slot_key="pick_2",
         )
@@ -125,23 +125,48 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rune_page_id, 200)
         self.assertEqual(rune_page_name, "Mid")
         self.assertEqual(chosen_slot, "pick_2")
-        self.assertFalse(rune_auto_apply)
 
-    async def test_rune_auto_apply_requires_master_but_not_auto_summoners(self):
+    async def test_rune_selection_id_zero_keeps_the_current_page(self):
         slot = self.params["pick_slots"]["pick_1"]
-        slot.update({"rune_page_id": 100, "rune_page_name": "Top", "rune_auto_apply": True})
+        slot.update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.params["pick_slots"]["pick_2"].update({"rune_page_id": 0, "rune_page_name": ""})
         self.params["auto_summoners_enabled"] = False
 
-        page_id, page_name, slot_key, should_apply = self.manager._resolve_rune_selection(self.params, "pick_1")
+        page_id, page_name, slot_key = self.manager._resolve_rune_selection(self.params, "pick_2")
 
-        self.assertEqual((page_id, page_name, slot_key), (100, "Top", "pick_1"))
-        self.assertTrue(should_apply)
+        self.assertEqual((page_id, page_name, slot_key), (0, "", "pick_2"))
 
         self.params["presets_enabled"] = False
-        page_id, page_name, slot_key, should_apply = self.manager._resolve_rune_selection(self.params, "pick_1")
+        page_id, page_name, slot_key = self.manager._resolve_rune_selection(self.params, "pick_2")
 
-        self.assertEqual((page_id, page_name, slot_key), (100, "Top", "pick_1"))
-        self.assertFalse(should_apply)
+        self.assertEqual((page_id, page_name, slot_key), (0, "", "pick_2"))
+
+    async def test_rune_apply_aborts_when_selection_changes_to_do_nothing(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(return_value=[{"id": 100, "name": "Top"}])
+        self.manager._set_rune_page_via_perks_async = AsyncMock(return_value=True)
+        self.manager.get_params = lambda: {
+            **self.params,
+            "pick_slots": {**self.params["pick_slots"], "pick_1": {"rune_page_id": 0, "rune_page_name": ""}},
+        }
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
+    async def test_do_nothing_rune_selection_skips_fetch_put_and_confirmation(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 0, "rune_page_name": ""})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=AssertionError("must not fetch pages"))
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+        self.manager._confirm_rune_applied = AsyncMock(side_effect=AssertionError("must not confirm"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_not_awaited()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+        self.manager._confirm_rune_applied.assert_not_awaited()
 
     async def test_master_off_blocks_direct_pick_and_ban_handlers(self):
         self.params["presets_enabled"] = False

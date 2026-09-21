@@ -3,7 +3,7 @@ import type { Ref } from "react";
 
 import { AssetImage } from "../../components/game/AssetImage";
 import { fr } from "../../content/fr";
-import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
+import { safeImageUrl } from "../../domain/assets";
 import { cn } from "../../lib/cn";
 import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
 
@@ -46,7 +46,6 @@ export function PresetCard({
     : matchingPreview ?? generatedSkinSplash ?? champion?.splash_url ?? preview?.champion_splash_url;
   const spellOne = spells.find((spell) => spell.name === slot.spell_1);
   const spellTwo = spells.find((spell) => spell.name === slot.spell_2);
-  const runeUrl = runeAssetUrl(slot.rune_keystone_path, "perk");
   const skinLabel = !skin ? fr.presets.skinNone : slot.skin_mode === "random" ? fr.presets.skinRandom : skin.name || fr.presets.skinFixed;
 
   return (
@@ -78,7 +77,7 @@ export function PresetCard({
         <span className="preset-summary-row preset-summary-runes">
           <Sparkles size={14} aria-hidden="true" />
           <small>{fr.dashboard.runes}</small>
-          <span>{slot.rune_page_name || fr.common.default} · {slot.rune_auto_apply ? fr.presets.autoShort : fr.presets.manualShort}</span>
+          <span>{slot.rune_page_id > 0 ? slot.rune_page_name || fr.common.default : fr.presets.runeNoneHint}</span>
         </span>
         <span className="preset-summary-row preset-summary-skin">
           {slot.skin_mode === "random" ? <Dices size={14} aria-hidden="true" /> : <Swords size={14} aria-hidden="true" />}

@@ -5,7 +5,6 @@ import { ChevronRight, CircleOff, Sparkles, Swords, X } from "lucide-react";
 import { AssetImage } from "../../components/game/AssetImage";
 import { Select } from "../../components/ui/Select";
 import { fr } from "../../content/fr";
-import { presetAutomationCopy } from "../../content/presetAutomation";
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
 import type { Champion, PresetPreview, PresetSlot, SummonerSpell } from "../../types/api";
 import type { PresetSlotKey } from "./PresetCard";
@@ -21,7 +20,6 @@ export function PresetEditorDialog({
   pending,
   feedback,
   leagueConnected,
-  presetAutomationsEnabled,
   returnFocusRef,
   championChoiceRef,
   onClose,
@@ -39,7 +37,6 @@ export function PresetEditorDialog({
   pending: boolean;
   feedback: string;
   leagueConnected: boolean;
-  presetAutomationsEnabled: boolean;
   returnFocusRef: RefObject<HTMLButtonElement | null>;
   championChoiceRef?: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
@@ -49,7 +46,9 @@ export function PresetEditorDialog({
 }) {
   if (!slotKey || !slot) return null;
 
-  const runeIcon = runeAssetUrl(slot.rune_keystone_path, "perk");
+  const runeIcon = slot.rune_keystone_id > 0
+    ? `/api/assets/runes/perk/${slot.rune_keystone_id}.png`
+    : runeAssetUrl(slot.rune_keystone_path, "perk");
   const skinName = getSkinName(slot);
   const skinPreview = getSkinPreviewUrl(slot, preview);
   const championIcon = safeImageUrl(champion?.icon_url ?? preview?.champion_icon_url);
@@ -109,12 +108,10 @@ export function PresetEditorDialog({
               <div className="preset-editor-runes">
                 <button className="editor-choice" type="button" disabled={pending} onClick={(event) => onOpenPicker("runes", event.currentTarget)}>
                   <AssetImage src={runeIcon ?? undefined} alt="" width="28" height="28" fallback={<Sparkles size={16} aria-hidden="true" />} />
-                  <span className="editor-choice-copy"><small>{fr.presets.runePage}</small><strong>{slot.rune_page_name || fr.common.default}</strong></span>
+                  <span className="editor-choice-copy"><small>{fr.presets.runePage}</small><strong>{slot.rune_page_id > 0 ? slot.rune_page_name || fr.common.default : fr.presets.runeNone}</strong></span>
                   <ChevronRight size={15} aria-hidden="true" />
                 </button>
-                <div className="editor-switch-row"><span>{fr.presets.runeAuto}</span><button className="switch" type="button" role="switch" aria-label={fr.presets.runeAuto} aria-checked={slot.rune_auto_apply} aria-busy={pending} title={!presetAutomationsEnabled ? presetAutomationCopy.masterRequired : undefined} disabled={pending || !presetAutomationsEnabled} onClick={() => onUpdate({ rune_auto_apply: !slot.rune_auto_apply })}><span aria-hidden="true" /></button></div>
               </div>
-              {!presetAutomationsEnabled && <p className="preset-editor-note">{presetAutomationCopy.masterRequired}</p>}
               {!leagueConnected && <p className="preset-editor-note">{fr.presets.runesUnavailableHint} {fr.presets.savedRunePageHint}</p>}
             </section>
 

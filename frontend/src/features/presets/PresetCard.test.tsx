@@ -27,7 +27,7 @@ const slot: PresetSlot = {
   random_skin_pool: [],
   rune_page_id: 0,
   rune_page_name: "",
-  rune_auto_apply: true,
+  rune_keystone_id: 0,
   rune_keystone_path: "",
   rune_sub_style_icon_path: "",
 };

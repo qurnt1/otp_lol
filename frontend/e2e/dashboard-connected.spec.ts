@@ -9,23 +9,15 @@ test("dashboard connecté affiche l’identité dans la sidebar et la phase dans
   await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
   await expect(page.getByRole("heading", { name: "Garen" })).toBeVisible();
 
-  const request = page.waitForRequest((candidate) => candidate.url().endsWith("/api/presets/pick_1") && candidate.method() === "PUT");
-  const skinMode = page.getByRole("combobox", { name: "Mode de skin du slot 1" });
-  await expect(page.locator(".mode-select select")).toHaveCount(0);
-  await skinMode.click();
-  await page.getByRole("option", { name: "Aléatoire" }).click();
-  expect((await request).postDataJSON().skin_mode).toBe("random");
+  await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Presets", exact: true }).click();
-  await expect(page.locator(".preset-summary-skin").first()).toContainText("Aléatoire");
+  await expect(page.locator(".preset-summary-skin").first()).toContainText("God-King Garen");
 
-  const presetUpdate = page.waitForRequest((candidate) => candidate.url().endsWith("/api/presets/pick_1") && candidate.method() === "PUT");
   await page.locator(".preset-card").first().click();
-  await page.getByRole("radio", { name: "Aucun" }).click();
-  expect((await presetUpdate).postDataJSON().skin_mode).toBe("none");
   await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
   await page.getByRole("link", { name: "Dashboard", exact: true }).click();
-  await expect(page.getByRole("combobox", { name: "Mode de skin du slot 1" })).toContainText("Aucun");
+  await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 });
 
 test("dashboard affiche le dernier statut d’automatisation avec sa gravité et son âge", async ({ page }) => {
@@ -115,9 +107,7 @@ test("dashboard uses the selected skin splash and falls back to the champion spl
   const splash = card.locator(".priority-art img");
   await expect(splash).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13&v=test-version");
 
-  await page.getByRole("combobox", { name: "Mode de skin du slot 1" }).click();
-  await page.getByRole("option", { name: "Aucun" }).click();
-  await expect(splash).toHaveAttribute("src", "/assets/app/garen.webp");
+  await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 });
 
 for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
