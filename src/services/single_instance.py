@@ -49,6 +49,10 @@ def _is_stale_lockfile() -> bool:
             return False
         except psutil.NoSuchProcess:
             return True
+    except PermissionError:
+        # An active Windows msvcrt lock can deny a second process read access.
+        # Treat that state as owned rather than deleting a live instance's lock.
+        return False
     except (OSError, ValueError):
         return True
 

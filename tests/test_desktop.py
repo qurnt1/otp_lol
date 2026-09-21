@@ -1030,6 +1030,41 @@ class FakeApiServer:
 
 
 class EmbeddedApiServerTests(unittest.TestCase):
+    def test_server_never_runs_without_a_reserved_socket_after_bind_failure(self):
+        sockets_seen = []
+
+        class RestartProbe:
+            def __init__(self):
+                self.should_exit = False
+
+            def run(self, sockets=None):
+                sockets_seen.append(sockets)
+                if len(sockets_seen) == 2:
+                    server._stop_event.set()
+
+        first_socket = Mock()
+        second_socket = Mock()
+        server = EmbeddedApiServer(
+            object(),
+            host="127.0.0.1",
+            port=1234,
+            server_factory=RestartProbe,
+        )
+        server._socket = first_socket
+        wait = Mock(side_effect=[False, False])
+
+        with patch.object(
+            server,
+            "_bind_socket",
+            side_effect=[OSError("port busy"), second_socket],
+        ), patch.object(server._stop_event, "wait", wait):
+            server._run()
+
+        self.assertEqual(
+            sockets_seen,
+            [[first_socket], [second_socket]],
+        )
+
     def test_server_restarts_after_an_unexpected_exit_and_stops(self):
         FakeApiServer.instances = []
         server = EmbeddedApiServer(

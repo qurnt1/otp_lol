@@ -83,14 +83,27 @@ class EmbeddedApiServer:
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
+            try:
+                bound_socket = self._socket or self._bind_socket()
+            except OSError:
+                logging.exception("Embedded API server could not reserve a socket.")
+                if self._stop_event.wait(1.0):
+                    return
+                continue
+
+            if bound_socket is None:
+                logging.error("Embedded API server has no reserved socket.")
+                if self._stop_event.wait(1.0):
+                    return
+                continue
+
             server = self._server_factory()
-            bound_socket = self._socket
             with self._server_lock:
                 self._server = server
                 if self._stop_event.is_set():
                     server.should_exit = True
             try:
-                server.run(sockets=[bound_socket] if bound_socket is not None else None)
+                server.run(sockets=[bound_socket])
             except Exception:
                 logging.exception("Embedded API server stopped unexpectedly.")
             finally:
@@ -99,14 +112,12 @@ class EmbeddedApiServer:
                         self._server = None
                 self._close_socket(bound_socket)
 
-            if not self._stop_event.wait(1.0):
-                logging.warning("Embedded API server exited; restarting it.")
-                try:
-                    self._bind_socket()
-                except OSError:
-                    logging.exception("Embedded API server could not reserve a restart port.")
-                    if not self._stop_event.wait(1.0):
-                        continue
+            if self._stop_event.is_set():
+                return
+
+            logging.warning("Embedded API server exited; restarting it.")
+            if self._stop_event.wait(1.0):
+                return
 
     def stop(self) -> None:
         self._stop_event.set()
