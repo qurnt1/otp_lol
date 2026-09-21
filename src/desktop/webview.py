@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import socket
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -32,13 +31,6 @@ _NATIVE_WINDOW_HEIGHT = 760
 _HOTKEY_SETTING_KEYS = frozenset({"hotkey_toggle_window", "hotkey_open_site"})
 _PROVIDER_SETTING_KEYS = frozenset({"preferred_stats_site", "preferred_hotkey_site"})
 LOGGER = logging.getLogger("otp_lol.webview")
-
-
-def _find_free_port() -> int:
-    """Reserve a local port number for the short-lived embedded API server."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
-        probe.bind((_HOST, 0))
-        return int(probe.getsockname()[1])
 
 
 def _frontend_dist_dir() -> Path:
@@ -98,11 +90,27 @@ def _start_audio_listener(context: ApplicationContext, audio: AudioManager) -> t
 def _configure_hotkeys(context: ApplicationContext, hotkeys: HotkeyManager, window: WebViewWindow) -> bool:
     """Register the current shortcuts and keep their callbacks bound to the native window."""
     params = context.get_params()
+    stats_hotkey = str(params.get("hotkey_open_site") or "alt+p")
+
+    def open_hotkey_site() -> None:
+        LOGGER.info("hotkey_trigger action=open_live hotkey=%s", stats_hotkey)
+        manager = getattr(context, "provider_window_manager", None)
+        if manager is not None:
+            try:
+                result = manager.request_open("live", source="hotkey")
+            except (AttributeError, OSError, RuntimeError, TypeError):
+                LOGGER.exception("hotkey_provider_open_failed kind=live")
+                result = {"ok": False, "reason": "provider_manager_failed"}
+            if result.get("ok"):
+                return
+            LOGGER.info("hotkey_provider_fallback kind=live reason=%s", result.get("reason"))
+        window.open_route("live")
+
     available = hotkeys.setup(
         toggle_window=lambda: _toggle_window(window),
-        open_hotkey_site=lambda: window.open_route("live"),
+        open_hotkey_site=open_hotkey_site,
         toggle_hotkey=str(params.get("hotkey_toggle_window") or "alt+c"),
-        stats_hotkey=str(params.get("hotkey_open_site") or "alt+p"),
+        stats_hotkey=stats_hotkey,
     )
     set_status = getattr(context, "set_hotkey_status", None)
     status_getter = getattr(hotkeys, "status", None)
@@ -110,7 +118,7 @@ def _configure_hotkeys(context: ApplicationContext, hotkeys: HotkeyManager, wind
         set_status(
             status_getter(
                 str(params.get("hotkey_toggle_window") or "alt+c"),
-                str(params.get("hotkey_open_site") or "alt+p"),
+                stats_hotkey,
             )
         )
     return available
@@ -230,10 +238,9 @@ def run_webview() -> None:
         context = ApplicationContext.from_system()
         LOGGER.info("[STARTUP] T1 settings loaded=%.0fms", (time.perf_counter() - startup_started) * 1000)
         api = create_app(context, frontend_dir=frontend_dir)
-        port = _find_free_port()
-        server = EmbeddedApiServer(api, host=_HOST, port=port)
+        server = EmbeddedApiServer(api, host=_HOST, port=0)
         server.start()
-        _wait_for_server(port)
+        _wait_for_server(server.port)
         LOGGER.info("[STARTUP] T2 FastAPI ready=%.0fms", (time.perf_counter() - startup_started) * 1000)
 
         bridge = DesktopBridge(context)
@@ -241,7 +248,7 @@ def run_webview() -> None:
         window = WebViewWindow(
             WebViewWindowConfig(
                 title=APP_NAME,
-                url=f"http://{_HOST}:{port}/?desktop=1",
+                url=f"http://{_HOST}:{server.port}/?desktop=1",
                 width=int(params.get("window_width", _NATIVE_WINDOW_WIDTH)),
                 height=int(params.get("window_height", _NATIVE_WINDOW_HEIGHT)),
                 x=int(params.get("window_x", 0) or 0),

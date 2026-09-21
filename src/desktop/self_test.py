@@ -9,7 +9,6 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from socket import socket
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -25,6 +24,7 @@ def run_self_test() -> int:
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     checks = {
         "frontend_dist": (root / "frontend" / "dist" / "index.html").is_file(),
+        "frontend_assets": (root / "frontend" / "dist" / "assets").is_dir(),
         "config_assets": (root / "config").is_dir(),
         "webview2_detection": has_webview2_runtime(),
     }
@@ -37,6 +37,7 @@ def run_self_test() -> int:
             checks["settings_read"] = load_parameters() == FIRST_LAUNCH_PARAMS
         finally:
             settings_module.PARAMETERS_PATH = previous_path
+    checks["embedded_api_smoke"] = run_headless_smoke() == 0
     for name, passed in checks.items():
         logger.info("%s%s", "PASS " if passed else "FAIL ", name)
     return 0 if all(checks.values()) else 1
@@ -48,10 +49,6 @@ def run_headless_smoke() -> int:
     from ..api.context import ApplicationContext
     from .server import EmbeddedApiServer
 
-    with socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
-
     context = ApplicationContext(params=FIRST_LAUNCH_PARAMS)
 
     async def no_start() -> None:
@@ -62,20 +59,28 @@ def run_headless_smoke() -> int:
 
     context.start = no_start
     context.stop = no_stop
-    server = EmbeddedApiServer(create_app(context), host="127.0.0.1", port=port)
+    server = EmbeddedApiServer(create_app(context), host="127.0.0.1", port=0)
     server.start()
-    ready = False
+    port_ready = server.port > 0
+    health_ready = False
+    bootstrap_ready = False
     try:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             try:
                 with urllib.request.urlopen(
-                    f"http://127.0.0.1:{port}/api/health", timeout=0.5
+                    f"http://127.0.0.1:{server.port}/api/health", timeout=0.5
                 ) as response:
-                    ready = response.status == 200 and response.headers.get(
+                    health_ready = response.status == 200 and response.headers.get(
                         "content-type", ""
                     ).startswith("application/json")
-                    if ready:
+                with urllib.request.urlopen(
+                    f"http://127.0.0.1:{server.port}/api/bootstrap", timeout=0.5
+                ) as response:
+                    bootstrap_ready = response.status == 200 and response.headers.get(
+                        "content-type", ""
+                    ).startswith("application/json")
+                    if health_ready and bootstrap_ready:
                         break
             except (OSError, urllib.error.URLError):
                 time.sleep(0.1)
@@ -83,9 +88,11 @@ def run_headless_smoke() -> int:
         server.stop()
 
     stopped = server._thread is None
-    logger.info("%shealth_endpoint", "PASS " if ready else "FAIL ")
+    logger.info("%sport_reserved", "PASS " if port_ready else "FAIL ")
+    logger.info("%shealth_endpoint", "PASS " if health_ready else "FAIL ")
+    logger.info("%sbootstrap_endpoint", "PASS " if bootstrap_ready else "FAIL ")
     logger.info("%sserver_stop", "PASS " if stopped else "FAIL ")
-    return 0 if ready and stopped else 1
+    return 0 if port_ready and health_ready and bootstrap_ready and stopped else 1
 
 
 def run_provider_smoke() -> int:
@@ -103,7 +110,9 @@ def run_provider_smoke() -> int:
 
     class NativeWindow:
         def __init__(self):
-            self.events = SimpleNamespace(loaded=Signal(), shown=Signal(), closed=Signal())
+            self.events = SimpleNamespace(
+                loaded=Signal(), shown=Signal(), closed=Signal()
+            )
 
         def show(self):
             return None
@@ -148,7 +157,9 @@ def run_provider_smoke() -> int:
         "main_not_ready_reason": blocked.get("reason") == "main_not_ready",
         "provider_opened": bool(opened.get("ok")),
         "preload_opened": bool(preloaded.get("ok")),
-        "preload_window_on_screen": len(created) >= 2 and "x" not in created[1] and "y" not in created[1],
+        "preload_window_on_screen": len(created) >= 2
+        and "x" not in created[1]
+        and "y" not in created[1],
         "provider_closed": manager.status()["stats"]["state"] == "closed",
     }
     for name, passed in checks.items():

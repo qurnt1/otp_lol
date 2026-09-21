@@ -5,6 +5,8 @@ import sys
 import tempfile
 import time
 import unittest
+import socket
+import urllib.request
 from ctypes import wintypes
 from threading import Event
 from types import SimpleNamespace
@@ -217,6 +219,29 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertEqual(native.calls, ["restore", "show", ("load_url", "http://127.0.0.1:1234/#live")])
         self.assertTrue(window.visible)
 
+    def test_live_stats_hotkey_requests_provider_and_only_falls_back_when_unavailable(self):
+        params = {"preferred_hotkey_site": "porofessor", "hotkey_open_site": "alt+p"}
+        provider_manager = SimpleNamespace(request_open=Mock(return_value={"ok": True, "state": "loading"}))
+        context = SimpleNamespace(get_params=lambda: params, provider_window_manager=provider_manager)
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        native = FakeNativeWindow()
+        window.window = native
+
+        class Hotkeys:
+            def setup(self, **callbacks):
+                self.callbacks = callbacks
+                return True
+
+        hotkeys = Hotkeys()
+        self.assertTrue(_configure_hotkeys(context, hotkeys, window))
+        hotkeys.callbacks["open_hotkey_site"]()
+        provider_manager.request_open.assert_called_once_with("live", source="hotkey")
+        self.assertEqual(native.calls, [])
+
+        provider_manager.request_open.return_value = {"ok": False, "reason": "account_unavailable"}
+        hotkeys.callbacks["open_hotkey_site"]()
+        self.assertEqual(native.calls, ["show", ("load_url", "http://127.0.0.1:1234/#live")])
+
     def test_native_route_rejects_unknown_route(self):
         window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
         native = FakeNativeWindow()
@@ -421,7 +446,7 @@ class DesktopWindowTests(unittest.TestCase):
         provider_window.window = native
         native.minimized = True
 
-        self.assertTrue(provider_window.navigate("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW"))
+        self.assertTrue(provider_window.navigate("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", reveal=True))
         self.assertEqual(provider_window.provider_id, "opgg")
         self.assertEqual(provider_window.url, "https://op.gg/fr/lol/summoners/euw/Player-EUW")
         self.assertEqual(native.calls, [("load_url", "https://op.gg/fr/lol/summoners/euw/Player-EUW"), "restore", "show"])
@@ -492,7 +517,128 @@ class DesktopWindowTests(unittest.TestCase):
             self.assertTrue(bridge.open_provider_window("opgg", "stats"))
 
         provider_window.focus.assert_called_once_with()
-        provider_window.navigate.assert_called_once_with("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW")
+        provider_window.navigate.assert_called_once_with("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", reveal=True)
+
+    def test_provider_preload_is_hidden_only_once_and_user_show_stays_visible(self):
+        native = FakeNativeWindow()
+        events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+        native.events = events
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+        )
+        with patch.dict(sys.modules, {"webview": SimpleNamespace(settings={}, create_window=lambda *_args, **_kwargs: native)}):
+            self.assertTrue(provider_window.open(preload=True))
+        events.shown.fire()
+        self.assertEqual(provider_window.state, "hidden")
+        events.loaded.fire()
+        self.assertEqual(provider_window.state, "hidden")
+
+        provider_window.focus()
+        events.shown.fire()
+        self.assertEqual(provider_window.state, "visible")
+        self.assertEqual(native.calls.count("hide"), 1)
+
+    def test_provider_show_during_loading_is_revealed_after_load(self):
+        native = FakeNativeWindow()
+        events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+        native.events = events
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+        )
+        with patch.dict(sys.modules, {"webview": SimpleNamespace(settings={}, create_window=lambda *_args, **_kwargs: native)}):
+            self.assertTrue(provider_window.open(preload=True))
+        events.shown.fire()
+        provider_window.request_reveal()
+        events.loaded.fire()
+        self.assertEqual(provider_window.state, "visible")
+        self.assertIn("show", native.calls)
+
+    def test_provider_reused_window_becomes_visible_when_show_has_no_second_shown_event(self):
+        native = FakeNativeWindow()
+        shown = Mock()
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+            on_shown=shown,
+        )
+        provider_window.window = native
+        provider_window.state = "hidden"
+        provider_window.last_loaded_url = provider_window.url
+
+        self.assertTrue(provider_window.focus())
+        self.assertEqual(provider_window.state, "visible")
+        shown.assert_called_once_with()
+
+    def test_provider_background_navigation_does_not_focus_hidden_window(self):
+        native = FakeNativeWindow()
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+        )
+        provider_window.window = native
+        provider_window.state = "hidden"
+        self.assertTrue(provider_window.navigate("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW"))
+        self.assertEqual(native.calls, [("load_url", "https://op.gg/fr/lol/summoners/euw/Player-EUW")])
+        provider_window._on_loaded()
+        self.assertEqual(provider_window.state, "hidden")
+
+    def test_provider_background_navigation_preserves_visible_window(self):
+        native = FakeNativeWindow()
+        events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+        native.events = events
+        provider_window = ProviderBrowserWindow(
+            "deeplol",
+            "https://www.deeplol.gg/summoner/euw/Player-EUW",
+            Mock(),
+        )
+        provider_window.window = native
+        provider_window.state = "visible"
+        provider_window._visible_requested = True
+        provider_window._native_shown = True
+        native.set_title = lambda title: native.calls.append(("set_title", title))
+        self.assertTrue(provider_window.navigate("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW"))
+        self.assertEqual(native.calls, [("set_title", "OP.GG | OTP LOL"), ("load_url", "https://op.gg/fr/lol/summoners/euw/Player-EUW")])
+        provider_window._on_loaded()
+        self.assertEqual(provider_window.state, "visible")
+
+    def test_closed_provider_window_can_be_reopened(self):
+        class ProviderNative(FakeNativeWindow):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(loaded=FakeEventSignal(), shown=FakeEventSignal(), closed=FakeEventSignal())
+
+            def set_title(self, _title):
+                pass
+
+        params = {
+            "preferred_stats_site": "opgg",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        created: list[ProviderNative] = []
+        fake_webview = SimpleNamespace(settings={}, create_window=lambda *_args, **_kwargs: created.append(ProviderNative()) or created[-1])
+        manager = ProviderWindowManager(context)
+        old = ProviderBrowserWindow("opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", Mock())
+        old.window = ProviderNative()
+        manager._windows["stats"] = old
+        old.close()
+        manager.mark_main_window_shown(preload=False)
+
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            result = manager.open_result("opgg", "stats")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(created), 1)
+        self.assertEqual(manager.status()["stats"]["state"], "loading")
 
     def test_provider_manager_waits_for_main_window_and_reuses_each_kind(self):
         class ProviderNative(FakeNativeWindow):
@@ -536,7 +682,7 @@ class DesktopWindowTests(unittest.TestCase):
             manager.mark_main_window_shown(preload=False)
             self.assertTrue(manager.open("deeplol", "stats"))
             created[0].events.loaded.fire()
-            self.assertEqual(manager.status()["stats"]["state"], "ready")
+            self.assertEqual(manager.status()["stats"]["state"], "visible")
             self.assertTrue(manager.reload("stats"))
             self.assertIn("reload", created[0].calls)
             params["preferred_stats_site"] = "opgg"
@@ -624,6 +770,134 @@ class DesktopWindowTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["reason"], "network_unavailable")
+
+    def test_provider_manager_can_show_existing_window_when_network_is_lost(self):
+        context = SimpleNamespace(
+            get_params=lambda: {},
+            network_status=SimpleNamespace(is_online=lambda: False),
+        )
+        manager = ProviderWindowManager(context)
+        native = FakeNativeWindow()
+        window = ProviderBrowserWindow("opgg", "https://op.gg/", Mock())
+        window.window = native
+        window.state = "hidden"
+        manager._windows["stats"] = window
+        manager.mark_main_window_shown(preload=False)
+
+        result = manager.request_show("stats")
+
+        self.assertTrue(result["ok"])
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline and "show" not in native.calls:
+            time.sleep(0.01)
+        self.assertIn("show", native.calls)
+
+    def test_provider_manager_can_open_existing_window_when_network_is_lost(self):
+        params = {
+            "preferred_stats_site": "opgg",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock()),
+            network_status=SimpleNamespace(is_online=lambda: False),
+        )
+        manager = ProviderWindowManager(context)
+        native = FakeNativeWindow()
+        url = "https://op.gg/fr/lol/summoners/euw/Player-EUW"
+        window = ProviderBrowserWindow("opgg", url, Mock())
+        window.window = native
+        window.state = "hidden"
+        window.last_loaded_url = url
+        manager._windows["stats"] = window
+        manager.mark_main_window_shown(preload=False)
+
+        result = manager.request_open("stats")
+
+        self.assertTrue(result["ok"])
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline and "show" not in native.calls:
+            time.sleep(0.01)
+        self.assertIn("show", native.calls)
+
+    def test_provider_window_survives_disconnect_and_reconnect(self):
+        params = {
+            "preferred_stats_site": "opgg",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        network = {"online": True}
+        context = SimpleNamespace(
+            get_params=lambda: params,
+            runtime=SimpleNamespace(snapshot=Mock()),
+            network_status=SimpleNamespace(is_online=lambda: network["online"]),
+        )
+        manager = ProviderWindowManager(context)
+        manager.mark_main_window_shown(preload=False)
+        native = FakeNativeWindow()
+        window = ProviderBrowserWindow(
+            "opgg", "https://op.gg/fr/lol/summoners/euw/Player-EUW", Mock()
+        )
+        window.window = native
+        window.state = "hidden"
+        window.last_loaded_url = window.url
+        manager._windows["stats"] = window
+
+        network["online"] = False
+        result = manager.request_open("stats")
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline and "show" not in native.calls:
+            time.sleep(0.01)
+        self.assertTrue(result["ok"])
+        self.assertIn("show", native.calls)
+
+        network["online"] = True
+        params["manual_summoner_name"] = "Reconnect#EUW"
+        manager.preload()
+        self.assertIn(
+            ("load_url", "https://op.gg/fr/lol/summoners/euw/Reconnect-EUW"),
+            native.calls,
+        )
+
+    def test_provider_shutdown_closes_every_window_and_stops_preload_timer(self):
+        class ProviderNative(FakeNativeWindow):
+            def __init__(self):
+                super().__init__()
+                self.events = SimpleNamespace(
+                    loaded=FakeEventSignal(),
+                    shown=FakeEventSignal(),
+                    closed=FakeEventSignal(),
+                )
+
+        params = {
+            "preferred_stats_site": "opgg",
+            "preferred_hotkey_site": "porofessor",
+            "summoner_name_auto_detect": False,
+            "manual_summoner_name": "Player#EUW",
+            "manual_region": "euw",
+        }
+        context = SimpleNamespace(get_params=lambda: params, runtime=SimpleNamespace(snapshot=Mock()))
+        created = []
+        fake_webview = SimpleNamespace(
+            settings={},
+            create_window=lambda *_args, **_kwargs: created.append(ProviderNative()) or created[-1],
+        )
+        manager = ProviderWindowManager(context)
+        manager.mark_main_window_shown(preload=False)
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            self.assertTrue(manager.create("stats", "opgg"))
+            self.assertTrue(manager.create("live", "porofessor"))
+            manager.schedule_preload(delay=60)
+            manager.shutdown()
+
+        self.assertEqual(len(created), 2)
+        self.assertTrue(all("destroy" in native.calls for native in created))
+        self.assertTrue(manager.shutting_down)
+        self.assertIsNone(manager._preload_timer)
 
     def test_diagnostics_export_native_success_cancel_and_write_error(self):
         class ReadyNative(FakeNativeWindow):
@@ -745,7 +1019,9 @@ class FakeApiServer:
         self.run_count = 0
         self.instances.append(self)
 
-    def run(self):
+    def run(self, sockets=None):
+        self.sockets = sockets or []
+        self.socket_name = self.sockets[0].getsockname() if self.sockets else None
         self.run_count += 1
         if self.run_count == 1:
             return
@@ -770,6 +1046,71 @@ class EmbeddedApiServerTests(unittest.TestCase):
         server.stop()
 
         self.assertGreaterEqual(len(FakeApiServer.instances), 2)
+
+    def test_ephemeral_port_is_reserved_before_server_thread_runs(self):
+        FakeApiServer.instances = []
+        server = EmbeddedApiServer(
+            object(), host="127.0.0.1", port=0, server_factory=FakeApiServer
+        )
+
+        server.start()
+        try:
+            self.assertGreater(server.port, 0)
+            deadline = time.monotonic() + 1
+            while (
+                (not FakeApiServer.instances or not hasattr(FakeApiServer.instances[0], "socket_name"))
+                and time.monotonic() < deadline
+            ):
+                time.sleep(0.01)
+            self.assertTrue(FakeApiServer.instances)
+            bound = FakeApiServer.instances[0]
+            self.assertEqual(bound.socket_name[1], server.port)
+        finally:
+            server.stop()
+
+    def test_port_is_released_after_stop_and_start_stop_can_repeat(self):
+        FakeApiServer.instances = []
+        server = EmbeddedApiServer(
+            object(), host="127.0.0.1", port=0, server_factory=FakeApiServer
+        )
+
+        for _ in range(2):
+            server.start()
+            port = server.port
+            self.assertGreater(port, 0)
+            server.stop()
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind(("127.0.0.1", port))
+
+    def test_health_endpoint_responds_on_reserved_port(self):
+        from fastapi import FastAPI
+
+        app = FastAPI()
+
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
+        server = EmbeddedApiServer(app, host="127.0.0.1", port=0)
+        server.start()
+        try:
+            deadline = time.monotonic() + 5
+            response = None
+            while time.monotonic() < deadline:
+                try:
+                    response = urllib.request.urlopen(
+                        f"http://127.0.0.1:{server.port}/health", timeout=0.5
+                    )
+                    break
+                except OSError:
+                    time.sleep(0.05)
+            self.assertIsNotNone(response)
+            assert response is not None
+            with response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.read()), {"status": "ok"})
+        finally:
+            server.stop()
 
 
 if __name__ == "__main__":

@@ -17,11 +17,12 @@ LOGGER = logging.getLogger("otp_lol.provider")
 class ProviderBrowserWindow:
     """One provider window with explicit lifecycle state."""
 
-    def __init__(self, provider_id: str, url: str, on_closed: Callable[[], None], *, on_loaded: Callable[[], None] | None = None) -> None:
+    def __init__(self, provider_id: str, url: str, on_closed: Callable[[], None], *, on_loaded: Callable[[], None] | None = None, on_shown: Callable[[], None] | None = None) -> None:
         self.provider_id = provider_id
         self.url = url
         self.on_closed = on_closed
         self.on_loaded = on_loaded
+        self.on_shown = on_shown
         self.window: Any = None
         self.state = "not_created"
         self.last_loaded_url: str | None = None
@@ -30,7 +31,11 @@ class ProviderBrowserWindow:
         self.last_transition_at: float | None = None
         self.load_started_at: float | None = None
         self.last_load_duration_ms: float | None = None
-        self._preload = True
+        self._hide_after_initial_show = True
+        self._visible_requested = False
+        self._reveal_requested = False
+        self._native_shown = False
+        self._was_hidden_before_load = False
 
     def _transition(self, state: str, action: str, error: str | None = None) -> None:
         self.state = state
@@ -48,7 +53,12 @@ class ProviderBrowserWindow:
         )
 
     def open(self, *, preload: bool = True) -> bool:
-        self._preload = preload
+        reveal_requested = self._reveal_requested
+        self._hide_after_initial_show = preload and not reveal_requested
+        self._visible_requested = not preload or reveal_requested
+        self._reveal_requested = False
+        self._native_shown = False
+        self._was_hidden_before_load = not self._visible_requested
         provider = get_provider(self.provider_id)
         if provider is None or not is_allowed_provider_url(self.provider_id, self.url):
             self._transition("error", "create", "url_unavailable")
@@ -95,10 +105,19 @@ class ProviderBrowserWindow:
             return False
 
     def _on_loaded(self, *_args: Any, **_kwargs: Any) -> None:
+        self._reveal_requested = False
         self.last_loaded_url = self.url
         if self.load_started_at is not None:
             self.last_load_duration_ms = round((time.time() - self.load_started_at) * 1000, 1)
-        self._transition("visible" if self.state == "visible" else "ready", "loaded")
+        should_be_visible = self._visible_requested
+        was_hidden = self.state == "hidden" or self._was_hidden_before_load
+        self._was_hidden_before_load = False
+        self._transition("hidden" if was_hidden and not should_be_visible else "ready", "loaded")
+        if should_be_visible:
+            if self._native_shown:
+                self._transition("visible", "loaded_visible")
+            else:
+                self.focus()
         LOGGER.info(
             "provider_loaded provider=%s state=%s duration_ms=%s",
             self.provider_id,
@@ -111,15 +130,30 @@ class ProviderBrowserWindow:
     def _on_closed(self, *_args: Any, **_kwargs: Any) -> None:
         self._transition("closed", "close")
         self.window = None
+        self._visible_requested = False
+        self._reveal_requested = False
+        self._native_shown = False
+        self._was_hidden_before_load = False
         self.on_closed()
 
     def _on_shown(self, *_args: Any, **_kwargs: Any) -> None:
-        if self._preload:
+        already_native_shown = self._native_shown
+        self._native_shown = True
+        LOGGER.info(
+            "provider_shown provider=%s preload_hide=%s state_before=%s",
+            self.provider_id,
+            self._hide_after_initial_show,
+            self.state,
+        )
+        if self._hide_after_initial_show:
+            self._hide_after_initial_show = False
             self.hide()
         elif self.last_loaded_url == self.url and self.state in {"ready", "hidden"}:
             self._transition("visible", "show")
+        if self.on_shown is not None and not already_native_shown:
+            self.on_shown()
 
-    def navigate(self, provider_id: str, url: str) -> bool:
+    def navigate(self, provider_id: str, url: str, *, reveal: bool = False) -> bool:
         provider = get_provider(provider_id)
         if provider is None or not is_allowed_provider_url(provider_id, url) or self.window is None:
             self._transition("error", "navigate", "url_unavailable")
@@ -128,9 +162,14 @@ class ProviderBrowserWindow:
         if not callable(load_url):
             self._transition("error", "navigate", "bridge_not_ready")
             return False
+        was_visible = self._visible_requested
         self.provider_id = provider_id
         self.url = url
         self.last_loaded_url = None
+        self._hide_after_initial_show = False
+        self._visible_requested = was_visible or reveal
+        self._native_shown = was_visible
+        self._was_hidden_before_load = not was_visible
         self._transition("loading", "navigate")
         try:
             set_title = getattr(self.window, "set_title", None)
@@ -142,7 +181,7 @@ class ProviderBrowserWindow:
         except (AttributeError, OSError, RuntimeError, TypeError):
             self._transition("error", "navigate", "navigate_failed")
             return False
-        if not self.focus():
+        if reveal and not self.focus():
             self._transition("error", "navigate", "show_failed")
             return False
         return True
@@ -151,6 +190,7 @@ class ProviderBrowserWindow:
         if self.window is None or not self.url:
             self.last_error = "not_created"
             return False
+        self._was_hidden_before_load = not self._visible_requested
         reload_view = getattr(self.window, "reload", None)
         load_url = getattr(self.window, "load_url", None)
         try:
@@ -173,6 +213,10 @@ class ProviderBrowserWindow:
             self.last_error = "not_created"
             return False
         try:
+            self._hide_after_initial_show = False
+            self._visible_requested = True
+            self._reveal_requested = False
+            self._was_hidden_before_load = False
             if getattr(self.window, "minimized", False):
                 restore = getattr(self.window, "restore", None)
                 if callable(restore):
@@ -188,8 +232,22 @@ class ProviderBrowserWindow:
             bring_to_front = getattr(self.window, "bring_to_front", None)
             if callable(bring_to_front):
                 bring_to_front()
-            if self.state in {"ready", "hidden"}:
+            # pywebview's WinForms shown event is one-shot for a reused window;
+            # a successful native show call is the only confirmation available.
+            already_native_shown = self._native_shown
+            state_before = self.state
+            preload_hide = self._hide_after_initial_show
+            self._native_shown = True
+            if self.last_loaded_url == self.url and self.state in {"ready", "hidden"}:
                 self._transition("visible", "show")
+            if self.on_shown is not None and not already_native_shown:
+                LOGGER.info(
+                    "provider_shown provider=%s preload_hide=%s state_before=%s",
+                    self.provider_id,
+                    preload_hide,
+                    state_before,
+                )
+                self.on_shown()
             return True
         except (AttributeError, OSError, RuntimeError, TypeError):
             self._transition("error", "show", "show_failed")
@@ -208,12 +266,28 @@ class ProviderBrowserWindow:
         except (AttributeError, OSError, RuntimeError, TypeError):
             self._transition("error", "hide", "hide_failed")
             return False
+        was_loading = self.state in {"creating", "loading"}
+        self._visible_requested = False
+        self._native_shown = False
+        self._was_hidden_before_load = was_loading
         self._transition("hidden", "hide")
+        LOGGER.info("provider_hidden provider=%s state=%s", self.provider_id, self.state)
         return True
+
+    def request_reveal(self) -> None:
+        """Remember a user show request while the page is still loading."""
+        self._hide_after_initial_show = False
+        self._visible_requested = True
+        self._reveal_requested = True
+        self._was_hidden_before_load = False
 
     def close(self) -> None:
         window = self.window
         self.window = None
+        self._visible_requested = False
+        self._reveal_requested = False
+        self._native_shown = False
+        self._was_hidden_before_load = False
         self._transition("closed", "close")
         if window is None:
             return
@@ -364,6 +438,12 @@ class ProviderWindowManager:
         if callable(publish):
             publish("provider_window", {"kind": kind, **self._public_status(kind)})
 
+    def _log_user_action(self, kind: str, action: str, source: str) -> None:
+        with self._lock:
+            window = self._windows.get(kind)
+            state = window.state if window is not None else "not_created"
+        LOGGER.info("provider_user_action kind=%s action=%s source=%s state=%s", kind, action, source, state)
+
     def _record_result(self, kind: str, window: ProviderBrowserWindow | None, *, action: str, ok: bool, reason: str | None = None) -> dict[str, Any]:
         with self._lock:
             if kind in self._last_action:
@@ -395,8 +475,6 @@ class ProviderWindowManager:
                 return self._record_result(kind, None, action="open", ok=False, reason="shutting_down")
             if not self._main_window_ready:
                 return self._record_result(kind, None, action="open", ok=False, reason="main_not_ready")
-        if not self._network_ready():
-            return self._record_result(kind, self._windows.get(kind), action="open", ok=False, reason="network_unavailable")
         resolved, reason = self._resolve_with_reason(kind, provider_id)
         if resolved is None:
             return self._record_result(kind, None, action="open", ok=False, reason=reason)
@@ -405,9 +483,12 @@ class ProviderWindowManager:
             existing = self._windows.get(kind)
         if existing is not None and existing.window is not None and existing.state != "closed":
             if existing.provider_id != selected or existing.url != url:
-                ok = existing.navigate(selected, url)
+                if not self._network_ready():
+                    return self._record_result(kind, existing, action="navigate", ok=False, reason="network_unavailable")
+                ok = existing.navigate(selected, url, reveal=True)
                 return self._record_result(kind, existing, action="navigate", ok=ok, reason=None if ok else existing.last_error or "navigate_failed")
             if existing.state in {"creating", "loading"}:
+                existing.request_reveal()
                 return self._record_result(kind, existing, action="open", ok=True, reason="already_loading")
             ok = existing.focus()
             return self._record_result(kind, existing, action="show", ok=ok, reason=None if ok else existing.last_error or "show_failed")
@@ -433,30 +514,40 @@ class ProviderWindowManager:
         with self._lock:
             existing = self._windows.get(kind)
             if existing is not None and existing.state in {"creating", "loading", "ready", "hidden", "visible"}:
+                if not preload:
+                    existing.request_reveal()
                 return self._record_result(kind, existing, action="create", ok=True)
             window = ProviderBrowserWindow(
                 selected,
                 url,
                 lambda: self._on_closed(kind),
                 on_loaded=lambda: self._publish_provider_event(kind),
+                on_shown=lambda: self._publish_provider_event(kind),
             )
+            window._transition("creating", "create")
             self._windows[kind] = window
         ok = window.open(preload=preload)
         if not ok:
             return self._record_result(kind, window, action="create", ok=False, reason=window.last_error or "create_failed")
         return self._record_result(kind, window, action="create", ok=True)
 
-    def request_open(self, kind: str) -> dict[str, Any]:
+    def request_open(self, kind: str, *, source: str = "api") -> dict[str, Any]:
         """Schedule an open/show action without waiting on native WebView callbacks."""
         if kind not in _WINDOW_KINDS:
             return self.open_result("", kind)
+        self._log_user_action(kind, "open", source)
         with self._lock:
             if self._shutting_down:
                 return self._record_result(kind, None, action="open", ok=False, reason="shutting_down")
             if not self._main_window_ready:
                 return self._record_result(kind, None, action="open", ok=False, reason="main_not_ready")
-        if not self._network_ready():
-            return self._record_result(kind, self._windows.get(kind), action="open", ok=False, reason="network_unavailable")
+            existing = self._windows.get(kind)
+        if not self._network_ready() and not (
+            existing is not None
+            and existing.window is not None
+            and existing.state != "closed"
+        ):
+            return self._record_result(kind, existing, action="open", ok=False, reason="network_unavailable")
         resolved, reason = self._resolve_with_reason(kind)
         if resolved is None:
             return self._record_result(kind, None, action="open", ok=False, reason=reason)
@@ -464,9 +555,21 @@ class ProviderWindowManager:
         old_window: ProviderBrowserWindow | None = None
         with self._lock:
             existing = self._windows.get(kind)
+            reusable = (
+                existing is not None
+                and existing.provider_id == selected
+                and existing.url == url
+                and existing.state != "closed"
+            )
+        if not self._network_ready() and not reusable:
+            return self._record_result(kind, existing, action="open", ok=False, reason="network_unavailable")
+        with self._lock:
             if kind in self._pending_actions:
+                if existing is not None:
+                    existing.request_reveal()
                 return self._record_result(kind, existing, action="open", ok=True, reason="already_loading")
             if existing is not None and existing.provider_id == selected and existing.url == url and existing.state in {"creating", "loading"}:
+                existing.request_reveal()
                 return self._record_result(kind, existing, action="open", ok=True, reason="already_loading")
             if existing is not None and existing.provider_id == selected and existing.url == url:
                 window = existing
@@ -477,6 +580,7 @@ class ProviderWindowManager:
                     url,
                     lambda: self._on_closed(kind),
                     on_loaded=lambda: self._publish_provider_event(kind),
+                    on_shown=lambda: self._publish_provider_event(kind),
                 )
                 window._transition("creating", "open")
                 self._windows[kind] = window
@@ -496,7 +600,7 @@ class ProviderWindowManager:
             if window.window is None:
                 window.open(preload=False)
             elif window.provider_id != provider_id or window.url != url:
-                window.navigate(provider_id, url)
+                window.navigate(provider_id, url, reveal=True)
             elif window.state in {"loading", "creating"}:
                 pass
             else:
@@ -532,9 +636,8 @@ class ProviderWindowManager:
             with self._lock:
                 self._pending_actions.discard(kind)
 
-    def request_show(self, kind: str) -> dict[str, Any]:
-        if not self._network_ready():
-            return self._record_result(kind, self._windows.get(kind), action="show", ok=False, reason="network_unavailable")
+    def request_show(self, kind: str, *, source: str = "api") -> dict[str, Any]:
+        self._log_user_action(kind, "show", source)
         with self._lock:
             window = self._windows.get(kind)
             if self._shutting_down:
@@ -542,8 +645,11 @@ class ProviderWindowManager:
             if window is None:
                 return self._record_result(kind, None, action="show", ok=False, reason="not_created")
             if window.state in {"creating", "loading"}:
-                return self._record_result(kind, window, action="show", ok=True, reason="already_loading")
+                window.request_reveal()
+                if window.window is None:
+                    return self._record_result(kind, window, action="show", ok=True, reason="reveal_when_ready")
             if kind in self._pending_actions:
+                window.request_reveal()
                 return self._record_result(kind, window, action="show", ok=True, reason="already_loading")
             self._pending_actions.add(kind)
         Thread(target=self._run_show_request, args=(kind, window), name=f"otp-lol-provider-{kind}-show", daemon=True).start()
@@ -552,7 +658,6 @@ class ProviderWindowManager:
     def _run_show_request(self, kind: str, window: ProviderBrowserWindow) -> None:
         try:
             window.focus()
-            self._publish_provider_event(kind)
         finally:
             with self._lock:
                 self._pending_actions.discard(kind)
@@ -607,7 +712,7 @@ class ProviderWindowManager:
                 existing = self._windows.get(kind)
             if existing is not None and existing.window is not None and existing.state != "closed":
                 if existing.provider_id != selected or existing.url != url:
-                    existing.navigate(selected, url)
+                    existing.navigate(selected, url, reveal=False)
                 continue
             self.create_result(kind, selected, preload=True)
 
@@ -621,8 +726,6 @@ class ProviderWindowManager:
         return window.reload() if window is not None else False
 
     def show(self, kind: str) -> bool:
-        if not self._network_ready():
-            return False
         with self._lock:
             if self._shutting_down:
                 return False
@@ -665,10 +768,14 @@ class ProviderWindowManager:
             self._preload_cancel.set()
             if self._preload_timer is not None:
                 self._preload_timer.cancel()
+                self._preload_timer = None
             windows = [window for window in self._windows.values() if window is not None]
             preload_thread = self._preload_thread
         if preload_thread is not None and preload_thread.is_alive():
             preload_thread.join(timeout=1)
+        with self._lock:
+            if self._preload_thread is preload_thread:
+                self._preload_thread = None
         for window in windows:
             window.close()
 
