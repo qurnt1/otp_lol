@@ -9,7 +9,7 @@ Ce document sert de contrat de non-régression pour la migration vers le shell W
 | Presets 1 → 2 → 3 | Essaie les slots dans l’ordre | Éditeur Presets | Couvert | `tests/test_api.py` | Conserver |
 | Auto-Pick / Auto-Ban | Verrouille pick ou ban configuré | Switches Dashboard | Couvert | `tests/test_core_champ_select.py` | Conserver |
 | Auto-Summs / Auto-Runes | Applique les réglages du slot | Preset slot + runtime | Couvert | `tests/test_lcu_runtime.py` | Conserver |
-| `rune_page_id = 0` | Conserver la page actuelle | Éditeur Runes | Couvert | `tests/test_api.py`, `frontend/src/features/presets/RunePicker.tsx` | Legacy bool import only |
+| `rune_page_id = 0` | Conserver la page actuelle | Éditeur Runes | Couvert | `tests/test_api.py`, `frontend/src/features/presets/RunePicker.tsx` | Les champs legacy ne sont pas interprétés |
 | Skin fixe / pool aléatoire | Sélection et fallback LCU | Skin picker différé | Couvert | `tests/test_datadragon.py` | Conserver |
 | Skins possédés | Inventaire LCU puis fallback pickable | Skin picker | Couvert | `tests/test_api.py` | Conserver |
 | Modes de skin | Override global historique | Modes par preset `none`, `fixed`, `random`, identiques sur Dashboard et Presets | Couvert | `tests/test_config.py`, `tests/test_skin_modes.py`, `tests/test_core_champ_select.py`, E2E Dashboard | Aucun mode hérité ni override global |

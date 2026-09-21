@@ -30,7 +30,7 @@ The assistant runs on Windows in a native pywebview window backed by a local Fas
 - Preset previews must retain champion, spell, rune, skin, and website imagery when those assets are available.
 - When League is unavailable, the interface must remain useful as a configuration surface and state the offline condition clearly.
 - When the Internet or the configured asset origin is unavailable, the desktop interface must remain on a bundled blocking screen until connectivity returns.
-- The Statistics and Live pages expose their provider choices directly. Each selected site opens in a reusable top-level WebView, with the system browser as fallback and no provider iframe.
+- The Statistics and Live pages expose their provider choices directly and request the selected provider window on route entry. Each selected site opens in a reusable top-level WebView, with the system browser as fallback and no provider iframe; Alt+P targets the Live provider directly.
 
 ## Brand Commitments
 
