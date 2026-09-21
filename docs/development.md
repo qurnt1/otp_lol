@@ -5,6 +5,7 @@
 Backend tests:
 
 ```powershell
+python -m pip install -c requirements-constraints.txt -r requirements-test.txt
 python -m unittest discover -s tests -p "test_*.py"
 python -m compileall -q launcher_web.py src tests
 ```
@@ -27,6 +28,7 @@ Security and quality checks:
 
 ```powershell
 python -m pip_audit -r requirements.txt
+python -m pip_audit -r requirements-test.txt
 python -m pip_audit -r requirements-build.txt
 cd frontend; npm audit --omit=dev
 cd ..; python -m ruff check launcher_web.py src/api/schemas.py src/desktop/self_test.py src/integrations/communitydragon.py src/lcu/runtime.py

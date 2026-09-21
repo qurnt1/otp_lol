@@ -28,6 +28,12 @@ class ReleaseMetadataTests(unittest.TestCase):
         build_text = (ROOT_DIR / "create_exe.py").read_text(encoding="utf-8")
         self.assertIn("from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION", build_text)
 
+    def test_test_dependencies_are_separate_from_packaging_dependencies(self):
+        test_requirements = (ROOT_DIR / "requirements-test.txt").read_text(encoding="utf-8")
+        build_requirements = (ROOT_DIR / "requirements-build.txt").read_text(encoding="utf-8")
+        self.assertIn("httpx", test_requirements)
+        self.assertNotIn("httpx", build_requirements)
+
 
 if __name__ == "__main__":
     unittest.main()

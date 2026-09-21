@@ -1,6 +1,7 @@
 # Reproducible direct-dependency constraints for CI and release builds.
 aiohttp==3.12.15
 fastapi==0.135.1
+httpx==0.28.1
 keyboard==0.13.5
 lcu-driver==3.0.2
 packaging==25.0
