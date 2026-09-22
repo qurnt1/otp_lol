@@ -1,13 +1,14 @@
 import ctypes
 import json
 import os
+import socket
 import sys
 import tempfile
 import time
 import unittest
-import socket
 import urllib.request
 from ctypes import wintypes
+from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -19,14 +20,15 @@ from src.desktop.hotkeys import (
     parse_windows_hotkey,
 )
 from src.desktop.provider_browser import ProviderBrowserWindow, ProviderWindowManager
+from src.desktop.self_test import run_self_test
 from src.desktop.server import EmbeddedApiServer
 from src.desktop.tray import TrayController
 from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
 from src.desktop.window import (
+    WEBVIEW2_DOWNLOAD_URL,
+    WEBVIEW_STORAGE_DIR,
     WebViewWindow,
     WebViewWindowConfig,
-    WEBVIEW_STORAGE_DIR,
-    WEBVIEW2_DOWNLOAD_URL,
     _valid_window_position,
     get_webview2_runtime_version,
     has_webview2_runtime,
@@ -72,6 +74,20 @@ class FakeEventSignal:
 
 
 class DesktopWindowTests(unittest.TestCase):
+    def test_packaged_self_test_can_skip_missing_webview2_only_when_explicit(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "frontend" / "dist" / "assets").mkdir(parents=True)
+            (root / "frontend" / "dist" / "index.html").write_text("<html />", encoding="utf-8")
+            (root / "config").mkdir()
+            with (
+                patch.object(sys, "_MEIPASS", str(root), create=True),
+                patch("src.desktop.self_test.has_webview2_runtime", return_value=False),
+                patch("src.desktop.self_test.run_headless_smoke", return_value=0),
+            ):
+                self.assertEqual(run_self_test(require_webview2=False), 0)
+                self.assertEqual(run_self_test(require_webview2=True), 1)
+
     @patch("src.desktop.window.sys.platform", "win32")
     def test_saved_window_position_accepts_a_monitor_left_of_primary(self):
         class MonitorInfo(ctypes.Structure):

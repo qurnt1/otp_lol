@@ -19,15 +19,19 @@ from .window import has_webview2_runtime
 logger = logging.getLogger(__name__)
 
 
-def run_self_test() -> int:
-    """Check the packaged resources and persistence boundary without opening a window."""
+def run_self_test(*, require_webview2: bool = True) -> int:
+    """Check packaged resources and persistence without opening a window."""
     root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     checks = {
         "frontend_dist": (root / "frontend" / "dist" / "index.html").is_file(),
         "frontend_assets": (root / "frontend" / "dist" / "assets").is_dir(),
         "config_assets": (root / "config").is_dir(),
-        "webview2_detection": has_webview2_runtime(),
     }
+    webview2_available = has_webview2_runtime()
+    if webview2_available or require_webview2:
+        checks["webview2_detection"] = webview2_available
+    else:
+        logger.info("SKIP webview2_detection (runtime prerequisite is checked by the installer)")
     with tempfile.TemporaryDirectory(prefix="otp-lol-self-test-") as temp_dir:
         temp_path = Path(temp_dir) / "parameters.toml"
         previous_path = settings_module.PARAMETERS_PATH

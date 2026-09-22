@@ -3,7 +3,6 @@ from pathlib import Path
 
 from src.config.constants import CURRENT_VERSION, GITHUB_REPO_NAME
 
-
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -60,7 +59,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("pull_request:", workflow_text)
         self.assertIn("push:", workflow_text)
         self.assertIn("python create_exe.py --mode onedir --no-shortcut", workflow_text)
-        self.assertIn('OTP LOL\\OTP LOL.exe" --self-test', workflow_text)
+        self.assertIn('OTP LOL\\OTP LOL.exe" --self-test --allow-missing-webview2', workflow_text)
 
     def test_installer_blocks_missing_webview2_with_official_download_guidance(self):
         installer_text = (ROOT_DIR / "installer/OTP-LOL.iss").read_text(encoding="utf-8")

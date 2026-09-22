@@ -37,7 +37,7 @@ cd ..; python -m ruff check launcher_web.py src/api/schemas.py src/desktop/self_
 python -m ruff format --check launcher_web.py src/api/schemas.py src/desktop/self_test.py src/integrations/communitydragon.py src/lcu/runtime.py
 ```
 
-The full local LCU, WebView2, tray, hotkey, and packaged-EXE paths require Windows runtime validation. A real League client is not required for the headless smoke test. The GitHub `Package Windows smoke` workflow installs the official WebView2 Evergreen Bootstrapper before running the packaged self-test; the equivalent local command requires WebView2 to already be installed.
+The full local LCU, WebView2, tray, hotkey, and packaged-EXE paths require Windows runtime validation. A real League client is not required for the headless smoke test. The strict local packaged self-test requires WebView2; CI uses `--allow-missing-webview2` because the installer and the real smoke test validate that machine prerequisite separately.
 
 ## Windows package smoke
 

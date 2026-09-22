@@ -23,7 +23,7 @@ def main() -> int:
     if "--self-test" in sys.argv:
         from src.desktop.self_test import run_self_test
 
-        return run_self_test()
+        return run_self_test(require_webview2="--allow-missing-webview2" not in sys.argv)
     if "--headless-smoke" in sys.argv:
         from src.desktop.self_test import run_headless_smoke
 

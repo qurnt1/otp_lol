@@ -21,7 +21,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 - [x] Construire PyInstaller avec `python create_exe.py --mode onedir --no-shortcut`.
 - [x] Vérifier `OTP LOL\OTP LOL.exe`.
 - [x] Exécuter le self-test packagé.
-- [x] Installer le runtime WebView2 Evergreen officiel sur le runner avant le self-test packagé.
+- [x] Permettre au smoke packaging headless de fonctionner sans runtime machine, tout en conservant le contrôle WebView2 strict par défaut.
 - [x] Ne pas publier d’installateur depuis ce workflow.
 - [ ] Vérifier le nouveau workflow sur GitHub Actions après push.
 - [x] Valider localement la syntaxe YAML de tous les workflows.

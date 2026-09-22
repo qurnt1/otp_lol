@@ -154,7 +154,7 @@ jobs:
       - name: Run packaged onedir self-test
         shell: pwsh
         run: |
-          & ".\OTP LOL\OTP LOL.exe" --self-test
+          & ".\OTP LOL\OTP LOL.exe" --self-test --allow-missing-webview2
           if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed." }
 
       - name: Install Inno Setup
