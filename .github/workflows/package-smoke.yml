@@ -86,8 +86,12 @@ jobs:
       - name: Run packaged self-test
         shell: pwsh
         run: |
-          & ".\OTP LOL\OTP LOL.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed." }
+          $log = Join-Path $env:RUNNER_TEMP "otp-lol-self-test.log"
+          & ".\OTP LOL\OTP LOL.exe" --self-test 2>&1 | Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+          "### Packaged self-test output" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          Get-Content -LiteralPath $log | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          if ($exitCode -ne 0) { throw "Packaged self-test failed with exit code $exitCode." }
 
       - name: Upload package diagnostics on failure
         if: ${{ failure() }}
