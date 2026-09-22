@@ -23,7 +23,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 - [x] Exécuter le self-test packagé.
 - [x] Permettre au smoke packaging headless de fonctionner sans runtime machine, tout en conservant le contrôle WebView2 strict par défaut.
 - [x] Ne pas publier d’installateur depuis ce workflow.
-- [ ] Vérifier le nouveau workflow sur GitHub Actions après push.
+- [x] Vérifier le nouveau workflow sur GitHub Actions après push (`f4f0b09`, run `Package Windows smoke #4`, succès).
 - [x] Valider localement la syntaxe YAML de tous les workflows.
 - [x] Construire localement le package PyInstaller et exécuter `--self-test`.
 - [x] Exécuter localement `--headless-smoke` et `--provider-smoke` sur l’exécutable.
@@ -59,7 +59,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 
 - [x] Mettre à jour les actions officielles vers les versions Node.js 24 compatibles vérifiées.
 - [x] Vérifier localement la syntaxe YAML après mise à jour.
-- [ ] Vérifier les workflows après mise à jour sur GitHub Actions.
+- [x] Vérifier les workflows CI après mise à jour sur GitHub Actions (`eff2eea`, Frontend, Python et Security en succès).
 
 ### P1 — nettoyage du dépôt
 
@@ -83,7 +83,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 
 ## Gates externes restant à exécuter
 
-- Le workflow GitHub Actions doit être lancé après publication de cette branche.
+- Le smoke packaging GitHub Actions est validé sur `f4f0b09`; une release taguée reste nécessaire pour valider le job release complet.
 - Les secrets de signature Authenticode doivent être configurés par le mainteneur, puis une release taguée doit vérifier l’exécutable et l’installateur avec `signtool`.
 - Le smoke League/WebView2 doit être réalisé avec le client League réel et une session de test. Le contrôle Windows disponible dans cet environnement ne permet pas de cibler une fenêtre native OTP LOL, donc cette preuve ne peut pas être fabriquée localement.
 
