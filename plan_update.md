@@ -32,7 +32,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 
 - [x] Ajouter la checklist de release dans `docs/release.md`.
 - [ ] Exécuter la checklist sur l’installateur final signé et le client League réel.
-- [ ] Conserver uniquement des preuves redigées, sans cookies, tokens ou données de compte.
+- [x] Conserver uniquement des preuves redigées, sans cookies, tokens ou données de compte.
 
 ### P1 — WebView2 actionnable
 
@@ -79,7 +79,7 @@ La section d’audit conservée plus bas est historique : la checklist ci-dessus
 - [x] Build Inno Setup.
 - [x] `git diff --check` et revue des fichiers suivis.
 - [ ] Smoke réel League/WebView2.
-- [ ] Revue finale des secrets et artefacts avant publication.
+- [x] Revue finale des secrets et artefacts avant publication, aucun secret-like file ou artefact généré ciblé ne reste suivi par Git.
 
 ## Gates externes restant à exécuter
 
