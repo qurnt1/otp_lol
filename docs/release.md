@@ -9,7 +9,7 @@ The release must contain these exact assets:
 
 The installer contains the onedir application and creates the desktop and Start Menu shortcuts. The checksum file contains the SHA-256 digest followed by the installer filename. The application and the public website use the exact installer asset instead of guessing from a generic `.exe` upload.
 
-The release workflow validates on `windows-latest`, runs the generated API type check only after Python dependencies are installed, executes the Playwright suite on Windows, runs the packaged `--self-test`, and builds the installer with the version read from `src/config/constants.py`. The `Package Windows smoke` workflow performs the frontend build, PyInstaller onedir build, and packaged self-test on pull requests and important branch pushes without publishing a release.
+The release workflow validates on `windows-latest`, runs the generated API type check only after Python dependencies are installed, executes the Playwright suite on Windows, runs the packaged `--self-test`, and builds the installer with the version read from `src/config/constants.py`. The `Package Windows smoke` workflow performs the frontend build, PyInstaller onedir build, installs the official WebView2 Evergreen Bootstrapper for the runner, and runs the packaged self-test on pull requests and important branch pushes without publishing a release.
 
 Before tagging:
 

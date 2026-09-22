@@ -73,6 +73,16 @@ jobs:
             throw "Expected onedir executable was not produced."
           }
 
+      - name: Install WebView2 runtime for packaged smoke
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "MicrosoftEdgeWebView2Setup.exe"
+          Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/?linkid=2124703" -OutFile $installer
+          $process = Start-Process -FilePath $installer -ArgumentList @('/silent', '/install') -Wait -PassThru
+          if ($process.ExitCode -notin @(0, 3010)) {
+            throw "WebView2 runtime installation failed with exit code $($process.ExitCode)."
+          }
+
       - name: Run packaged self-test
         shell: pwsh
         run: |
