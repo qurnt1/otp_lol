@@ -38,3 +38,19 @@ python -m ruff format --check launcher_web.py src/api/schemas.py src/desktop/sel
 ```
 
 The full local LCU, WebView2, tray, hotkey, and packaged-EXE paths require Windows runtime validation. A real League client is not required for the headless smoke test.
+
+## Windows package smoke
+
+The release source checks do not prove that PyInstaller can freeze the current frontend and desktop runtime. Run the same package smoke locally from a Windows checkout after building the frontend:
+
+```powershell
+cd frontend
+npm ci
+npm run build
+cd ..
+python -m pip install -c requirements-constraints.txt -r requirements-build.txt
+python create_exe.py --mode onedir --no-shortcut
+& ".\OTP LOL\OTP LOL.exe" --self-test
+```
+
+The `Package Windows smoke` GitHub Actions workflow runs these package checks on pull requests and important branch pushes. It does not create an installer or publish a release.

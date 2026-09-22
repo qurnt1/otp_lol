@@ -55,6 +55,32 @@ class ReleaseMetadataTests(unittest.TestCase):
             workflow_text.index("python -m pip install"),
         )
 
+    def test_package_smoke_workflow_builds_and_self_tests_the_windows_executable(self):
+        workflow_text = (ROOT_DIR / ".github/workflows/package-smoke.yml").read_text(encoding="utf-8")
+        self.assertIn("pull_request:", workflow_text)
+        self.assertIn("push:", workflow_text)
+        self.assertIn("python create_exe.py --mode onedir --no-shortcut", workflow_text)
+        self.assertIn('OTP LOL\\OTP LOL.exe" --self-test', workflow_text)
+
+    def test_installer_blocks_missing_webview2_with_official_download_guidance(self):
+        installer_text = (ROOT_DIR / "installer/OTP-LOL.iss").read_text(encoding="utf-8")
+        self.assertIn("PrepareToInstall", installer_text)
+        self.assertIn("developer.microsoft.com/microsoft-edge/webview2", installer_text)
+
+    def test_release_workflow_requires_signing_secrets_before_publishing(self):
+        workflow_text = (ROOT_DIR / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("OTP_LOL_SIGNING_CERT_BASE64", workflow_text)
+        self.assertIn("signtool", workflow_text)
+        self.assertIn("Verify Authenticode signatures", workflow_text)
+        self.assertLess(
+            workflow_text.index("Verify Authenticode signatures"),
+            workflow_text.index("Generate SHA-256 checksum"),
+        )
+        self.assertLess(
+            workflow_text.index("Generate SHA-256 checksum"),
+            workflow_text.index("Publish GitHub Release"),
+        )
+
     def test_documentation_screenshots_are_current_and_shared_with_website(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
         screenshot_names = (

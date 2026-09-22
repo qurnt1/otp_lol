@@ -14,10 +14,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -32,7 +32,7 @@ jobs:
           npm run build
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -79,10 +79,10 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -95,7 +95,7 @@ jobs:
           npm run build
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -118,6 +118,39 @@ jobs:
             throw "Expected onedir executable was not produced."
           }
 
+      - name: Prepare Authenticode signing
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_BASE64: ${{ secrets.OTP_LOL_SIGNING_CERT_BASE64 }}
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:OTP_LOL_SIGNING_CERT_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:OTP_LOL_SIGNING_CERT_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:OTP_LOL_TIMESTAMP_URL)) {
+            throw "Authenticode secrets are required for tagged public releases."
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "otp-lol-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certPath,
+            [Convert]::FromBase64String($env:OTP_LOL_SIGNING_CERT_BASE64)
+          )
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "Windows SDK signtool.exe was not found." }
+          "OTP_LOL_SIGNING_CERT_PATH=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OTP_LOL_SIGNTOOL_PATH=$($signtool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Sign packaged executable
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          & $env:OTP_LOL_SIGNTOOL_PATH sign /fd SHA256 /f $env:OTP_LOL_SIGNING_CERT_PATH /p $env:OTP_LOL_SIGNING_CERT_PASSWORD /tr $env:OTP_LOL_TIMESTAMP_URL /td SHA256 "OTP LOL\OTP LOL.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Executable signing failed." }
+
       - name: Run packaged onedir self-test
         shell: pwsh
         run: |
@@ -138,6 +171,27 @@ jobs:
           & $iscc "/DAppVersion=$($version.Trim())" "/DBuildRoot=$(Get-Location)" "installer\OTP-LOL.iss"
           if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
 
+      - name: Verify Authenticode signatures for installer
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          & $env:OTP_LOL_SIGNTOOL_PATH sign /fd SHA256 /f $env:OTP_LOL_SIGNING_CERT_PATH /p $env:OTP_LOL_SIGNING_CERT_PASSWORD /tr $env:OTP_LOL_TIMESTAMP_URL /td SHA256 "release\OTP-LOL-Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed." }
+          & $env:OTP_LOL_SIGNTOOL_PATH verify /pa /all "OTP LOL\OTP LOL.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Executable Authenticode verification failed." }
+          & $env:OTP_LOL_SIGNTOOL_PATH verify /pa /all "release\OTP-LOL-Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Installer Authenticode verification failed." }
+
+      - name: Remove signing certificate
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if ($env:OTP_LOL_SIGNING_CERT_PATH -and (Test-Path -LiteralPath $env:OTP_LOL_SIGNING_CERT_PATH)) {
+            Remove-Item -LiteralPath $env:OTP_LOL_SIGNING_CERT_PATH -Force
+          }
+
       - name: Generate SHA-256 checksum
         shell: pwsh
         run: |
@@ -152,7 +206,7 @@ jobs:
           gh release create "${{ github.ref_name }}" "release/OTP-LOL-Setup.exe" "release/OTP-LOL-Setup.exe.sha256" --verify-tag --generate-notes
 
       - name: Upload release candidate artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: OTP-LOL-${{ github.ref_name }}
           path: release

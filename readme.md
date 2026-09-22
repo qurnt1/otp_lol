@@ -472,7 +472,7 @@ The E2E suite runs on Windows in CI because the packaged desktop experience depe
 
 ## Production Readiness
 
-The tagged release workflow validates the source, checks the generated OpenAPI types, runs Python and frontend tests, runs Playwright on Windows, builds the onedir executable, runs its packaged self-test, creates the Inno Setup installer, and publishes the installer with a SHA-256 checksum.
+The tagged release workflow validates the source, checks the generated OpenAPI types, runs Python and frontend tests, runs Playwright on Windows, builds the onedir executable, signs and verifies the executable and installer, runs its packaged self-test, creates the Inno Setup installer, and publishes the installer with a SHA-256 checksum. Pull requests and important branch pushes also run the package smoke workflow without publishing.
 
 Before publishing a public release:
 
@@ -480,9 +480,10 @@ Before publishing a public release:
 2. run the local checks from [`docs/development.md`](./docs/development.md)
 3. validate the packaged executable on a Windows machine with WebView2 and the League client
 4. verify the installer, shortcuts, first launch, settings creation, tray behavior, global hotkeys, and clean shutdown
-5. create a matching `vX.Y` tag and let the release workflow publish the exact installer assets
+5. confirm the Authenticode secrets are configured in GitHub Actions
+6. create a matching `vX.Y` tag and let the release workflow publish the exact installer assets
 
-The installer is not Authenticode-signed yet. Public distribution should add code signing and certificate timestamping before presenting the installer as trusted software. CI and automated tests cannot replace a real League/WebView2 smoke test.
+The release workflow requires Authenticode signing and certificate timestamping. CI and automated tests cannot replace a real League/WebView2 smoke test.
 
 ## Documentation
 
@@ -541,7 +542,6 @@ Some ideas for future improvements:
 - profiles by game mode
 - more visual presentation page
 - multi-language support
-- Authenticode signing for the Windows installer
 
 ## Author
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 import re
 import sys
+import webbrowser
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +20,13 @@ _WEBVIEW2_CLIENT_GUIDS = (
     "{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}",
     "{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}",
     "{65C35B14-6C1D-4122-AC46-7148CC9D6497}",
+)
+WEBVIEW2_DOWNLOAD_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
+WEBVIEW2_REQUIRED_MESSAGE = (
+    "OTP LOL nécessite Microsoft Edge WebView2 Runtime pour afficher son interface.\n\n"
+    "Installez le runtime Evergreen depuis la page officielle, puis relancez OTP LOL.\n\n"
+    f"{WEBVIEW2_DOWNLOAD_URL}\n\n"
+    "Voulez-vous ouvrir cette page maintenant ?"
 )
 _APP_ROUTES = frozenset({
     "dashboard",
@@ -66,6 +75,23 @@ def get_webview2_runtime_version() -> str | None:
                 except OSError:
                     continue
     return None
+
+
+def show_webview2_required_message() -> None:
+    """Explain the missing Windows runtime and offer its official download page."""
+    if sys.platform != "win32":
+        return
+    try:
+        result = ctypes.windll.user32.MessageBoxW(
+            None,
+            WEBVIEW2_REQUIRED_MESSAGE,
+            "OTP LOL",
+            0x00000004 | 0x00000010,
+        )
+        if result == 6:
+            webbrowser.open(WEBVIEW2_DOWNLOAD_URL)
+    except (AttributeError, OSError, TypeError, ValueError) as error:
+        LOGGER.warning("Unable to show WebView2 prerequisite dialog: %s", error)
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +245,7 @@ class WebViewWindow:
 
     def start(self) -> None:
         if not has_webview2_runtime():
+            show_webview2_required_message()
             raise RuntimeError("Microsoft Edge WebView2 Runtime is required to open OTP LOL.")
 
         import webview

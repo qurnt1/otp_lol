@@ -26,9 +26,11 @@ from src.desktop.window import (
     WebViewWindow,
     WebViewWindowConfig,
     WEBVIEW_STORAGE_DIR,
+    WEBVIEW2_DOWNLOAD_URL,
     _valid_window_position,
     get_webview2_runtime_version,
     has_webview2_runtime,
+    show_webview2_required_message,
 )
 
 
@@ -1110,6 +1112,17 @@ class DesktopWindowTests(unittest.TestCase):
         registry.QueryValueEx.return_value = ("145.0.1.2", None)
         with patch.dict(sys.modules, {"winreg": registry}):
             self.assertEqual(get_webview2_runtime_version(), "145.0.1.2")
+
+    @patch("src.desktop.window.sys.platform", "win32")
+    def test_missing_webview2_offers_the_official_download_page(self):
+        user32 = SimpleNamespace(MessageBoxW=Mock(return_value=6))
+        with (
+            patch.object(ctypes, "windll", SimpleNamespace(user32=user32), create=True),
+            patch("src.desktop.window.webbrowser.open", return_value=True) as open_browser,
+        ):
+            show_webview2_required_message()
+
+        open_browser.assert_called_once_with(WEBVIEW2_DOWNLOAD_URL)
 
 
 class FakeApiServer:

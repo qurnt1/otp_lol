@@ -22,7 +22,12 @@ from .bridge import DesktopBridge
 from .hotkeys import HotkeyManager
 from .server import EmbeddedApiServer
 from .tray import TrayController
-from .window import WebViewWindow, WebViewWindowConfig, has_webview2_runtime
+from .window import (
+    WebViewWindow,
+    WebViewWindowConfig,
+    has_webview2_runtime,
+    show_webview2_required_message,
+)
 
 _HOST = "127.0.0.1"
 _SERVER_READY_TIMEOUT_S = 15.0
@@ -234,6 +239,7 @@ def run_webview() -> None:
     try:
         frontend_dir = _frontend_dist_dir()
         if not has_webview2_runtime():
+            show_webview2_required_message()
             raise RuntimeError("Microsoft Edge WebView2 Runtime is required to open OTP LOL.")
         context = ApplicationContext.from_system()
         LOGGER.info("[STARTUP] T1 settings loaded=%.0fms", (time.perf_counter() - startup_started) * 1000)
