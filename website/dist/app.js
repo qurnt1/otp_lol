@@ -2,23 +2,26 @@
   const screenshots = [
     {
       src: "assets/screenshots/dashboard-web.png",
-      alt: "Tableau de bord OTP LOL avec les presets de champions et les automatismes configurables",
+      alt: "Tableau de bord OTP LOL avec les champions prioritaires et les réglages de partie",
       label: "TABLEAU DE BORD",
-      caption: "du tableau de bord",
-      note: "Retrouve tes presets, les actions activées et l’état du client dans une vue simple.",
+      title: "Tableau de bord",
+      caption: "Capture du tableau de bord",
+      note: "Retrouve tes priorités, les actions activées et l’état de League dans ton tableau de bord.",
     },
     {
       src: "assets/screenshots/settings-web.png",
       alt: "Réglages OTP LOL pour les automatismes et la configuration locale",
       label: "RÉGLAGES",
-      caption: "des réglages",
+      title: "Réglages",
+      caption: "Capture des réglages",
       note: "Choisis les automatismes et les options qui correspondent à ta façon de jouer.",
     },
     {
       src: "assets/screenshots/statistics-web.png",
       alt: "Statistiques OTP LOL avec le compte League et les fournisseurs disponibles",
       label: "STATISTIQUES",
-      caption: "des statistiques",
+      title: "Statistiques",
+      caption: "Capture de l’écran des statistiques",
       note: "Retrouve le compte utilisé et ouvre tes services de statistiques depuis l’application.",
     },
   ];
@@ -46,7 +49,7 @@
 
         image.alt = screenshot.alt;
         label.textContent = screenshot.label;
-        caption.textContent = "Capture " + screenshot.caption;
+        caption.textContent = screenshot.caption;
         note.textContent = screenshot.note;
 
         tabs.forEach((item) => {
@@ -66,7 +69,7 @@
     if (expandButton && dialog && dialogTitle && dialogImage && closeButton) {
       expandButton.addEventListener("click", () => {
         const selected = screenshots.find((screenshot) => screenshot.src === image.getAttribute("src")) ?? screenshots[0];
-        dialogTitle.textContent = "Capture " + selected.caption;
+        dialogTitle.textContent = selected.title;
         dialogImage.src = selected.src;
         dialogImage.alt = selected.alt;
         if (typeof dialog.showModal === "function") dialog.showModal();
@@ -78,19 +81,4 @@
     }
   }
 
-  const revealItems = document.querySelectorAll("[data-reveal]");
-  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  if (revealItems.length && "IntersectionObserver" in window && !reducedMotion) {
-    document.body.classList.add("reveal-ready");
-    const revealObserver = new IntersectionObserver((entries, observer) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return;
-        entry.target.classList.add("is-visible");
-        observer.unobserve(entry.target);
-      });
-    }, { threshold: 0.12, rootMargin: "0px 0px -4% 0px" });
-
-    revealItems.forEach((item) => revealObserver.observe(item));
-  }
 })();
