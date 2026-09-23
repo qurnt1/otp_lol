@@ -70,6 +70,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             "auto_pick_enabled": True,
             "auto_ban_enabled": True,
             "auto_summoners_enabled": False,
+            "skin_automation_enabled": True,
             "presets_enabled": True,
             "selected_pick_1": "Garen",
             "selected_pick_2": "Lux",
@@ -82,7 +83,7 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             },
         }
         self.manager = WebSocketManager(
-            ui_callback=lambda event_type, data=None: self.events.append((event_type, data)),
+            event_callback=lambda event_type, data=None: self.events.append((event_type, data)),
             dd=DummyDataDragon(
                 {
                     "Garen": 86,
@@ -94,21 +95,29 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
             get_params=lambda: self.params.copy(),
         )
 
+    def test_status_events_have_a_localizable_action_payload(self):
+        self.manager._notify_status("ban_confirmed", level="BAN", champion="Teemo")
+
+        self.assertEqual(self.events[-1], (
+            "status",
+            {"action": "ban_confirmed", "level": "BAN", "params": {"champion": "Teemo"}},
+        ))
+
     async def test_inventory_skin_is_owned_uses_explicit_fields(self):
         self.assertTrue(self.manager._inventory_skin_is_owned({"ownershipType": "OWNED"}))
         self.assertFalse(self.manager._inventory_skin_is_owned({"ownershipType": "UNOWNED"}))
         self.assertTrue(self.manager._inventory_skin_is_owned({"owned": True}))
         self.assertFalse(self.manager._inventory_skin_is_owned({"owned": False}))
 
-    async def test_resolve_rune_selection_preserves_disabled_auto_apply(self):
+    async def test_resolve_rune_selection_uses_the_selected_slot(self):
         self.params["pick_slots"]["pick_1"].update(
-            {"rune_page_id": 100, "rune_page_name": "Fallback", "rune_auto_apply": True}
+            {"rune_page_id": 100, "rune_page_name": "Fallback"}
         )
         self.params["pick_slots"]["pick_2"].update(
-            {"rune_page_id": 200, "rune_page_name": "Mid", "rune_auto_apply": False}
+            {"rune_page_id": 200, "rune_page_name": "Mid"}
         )
 
-        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self.manager._resolve_rune_selection(
+        rune_page_id, rune_page_name, chosen_slot = self.manager._resolve_rune_selection(
             self.params,
             slot_key="pick_2",
         )
@@ -116,7 +125,116 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rune_page_id, 200)
         self.assertEqual(rune_page_name, "Mid")
         self.assertEqual(chosen_slot, "pick_2")
-        self.assertFalse(rune_auto_apply)
+
+    async def test_rune_selection_id_zero_keeps_the_current_page(self):
+        slot = self.params["pick_slots"]["pick_1"]
+        slot.update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.params["pick_slots"]["pick_2"].update({"rune_page_id": 0, "rune_page_name": ""})
+        self.params["auto_summoners_enabled"] = False
+
+        page_id, page_name, slot_key = self.manager._resolve_rune_selection(self.params, "pick_2")
+
+        self.assertEqual((page_id, page_name, slot_key), (0, "", "pick_2"))
+
+        self.params["presets_enabled"] = False
+        page_id, page_name, slot_key = self.manager._resolve_rune_selection(self.params, "pick_2")
+
+        self.assertEqual((page_id, page_name, slot_key), (0, "", "pick_2"))
+
+    async def test_rune_apply_aborts_when_selection_changes_to_do_nothing(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(return_value=[{"id": 100, "name": "Top"}])
+        self.manager._set_rune_page_via_perks_async = AsyncMock(return_value=True)
+        self.manager.get_params = lambda: {
+            **self.params,
+            "pick_slots": {**self.params["pick_slots"], "pick_1": {"rune_page_id": 0, "rune_page_name": ""}},
+        }
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
+    async def test_rune_apply_is_skipped_when_auto_summoners_are_disabled(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=AssertionError("must not fetch pages"))
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_not_awaited()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
+    async def test_rune_apply_aborts_if_auto_summoners_are_disabled_while_loading_pages(self):
+        self.params["auto_summoners_enabled"] = True
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+
+        async def fetch_pages_then_disable_auto_summoners():
+            self.params["auto_summoners_enabled"] = False
+            return [{"id": 100, "name": "Top"}]
+
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=fetch_pages_then_disable_auto_summoners)
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_awaited_once()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
+    async def test_do_nothing_rune_selection_skips_fetch_put_and_confirmation(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 0, "rune_page_name": ""})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=AssertionError("must not fetch pages"))
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+        self.manager._confirm_rune_applied = AsyncMock(side_effect=AssertionError("must not confirm"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_not_awaited()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+        self.manager._confirm_rune_applied.assert_not_awaited()
+
+    async def test_master_off_blocks_direct_pick_and_ban_handlers(self):
+        self.params["presets_enabled"] = False
+        self.manager._lock_in_champion = AsyncMock()
+        self.manager._fetch_pickable_ids = AsyncMock(side_effect=AssertionError("must not fetch pickables"))
+
+        await self.manager._logic_do_pick({"id": 123}, self.params)
+        await self.manager._logic_do_ban({"id": 456}, self.params)
+
+        self.manager._lock_in_champion.assert_not_awaited()
+        self.manager._fetch_pickable_ids.assert_not_awaited()
+
+    async def test_auto_ban_child_off_blocks_direct_ban_handler(self):
+        self.params["auto_ban_enabled"] = False
+        self.manager._lock_in_champion = AsyncMock()
+
+        await self.manager._logic_do_ban({"id": 456}, self.params)
+
+        self.manager._lock_in_champion.assert_not_awaited()
+
+    async def test_effective_champ_select_config_preserves_auto_ban_child_toggle(self):
+        self.manager._lock_in_champion = AsyncMock(return_value=True)
+        effective = self.manager._get_effective_champ_select_config(self.params)
+
+        self.assertTrue(effective["auto_ban_enabled"])
+        await self.manager._logic_do_ban({"id": 456}, effective)
+
+        self.manager._lock_in_champion.assert_awaited_once_with(456, 17, action_type="ban")
+
+    async def test_master_off_blocks_direct_spell_application_without_changing_child_flag(self):
+        self.params["presets_enabled"] = False
+        self.params["auto_summoners_enabled"] = True
+        connection = type("Connection", (), {})()
+        connection.request = AsyncMock(side_effect=AssertionError("must not patch summoner spells"))
+        self.manager.connection = connection
+
+        await self.manager._set_spells(self.params, "pick_1")
+
+        connection.request.assert_not_awaited()
+        self.assertTrue(self.params["auto_summoners_enabled"])
 
     async def test_fetch_owned_skins_falls_back_to_pickable_when_inventory_fails(self):
         self.manager.state.summoner_id = 12345
@@ -252,12 +370,11 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.manager.state.last_locked_pick_slot, "pick_2")
         self.assertIn((WebSocketManager.EVENT_CHAMPION_PICKED, "Lux"), self.events)
 
-    async def test_resolve_skin_selection_respects_main_skin_mode_override(self):
+    async def test_resolve_skin_selection_uses_preset_skin_mode(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "fixed", "pick_2": "inherit", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_1"].update(
             {
-                "skin_mode": "random",
+                "skin_mode": "fixed",
                 "skin_id": 86000,
                 "skin_name": "Default Garen",
                 "skin_num": 0,
@@ -275,9 +392,20 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(skin_selection["mode"], "fixed")
         self.assertEqual(skin_selection["skin_id"], 86000)
 
-    async def test_resolve_skin_selection_returns_none_when_override_is_none(self):
+    async def test_resolve_skin_selection_returns_none_when_preset_mode_is_none(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "inherit", "pick_3": "inherit"}
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "none", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_returns_none_when_automation_is_disabled(self):
+        self.manager.state.assigned_position = "TOP"
+        self.params["skin_automation_enabled"] = False
         self.params["pick_slots"]["pick_1"].update(
             {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
         )
@@ -287,11 +415,32 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(skin_selection)
         self.assertEqual(chosen_slot, "pick_1")
 
-    async def test_resolve_skin_selection_uses_slot_specific_override_only_for_target_slot(self):
+    async def test_resolve_skin_selection_is_blocked_when_preset_master_is_disabled(self):
+        self.params["presets_enabled"] = False
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_remains_blocked_when_skin_child_is_disabled(self):
+        self.params["skin_automation_enabled"] = False
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86000, "skin_name": "Default Garen", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_1")
+
+        self.assertIsNone(skin_selection)
+        self.assertEqual(chosen_slot, "pick_1")
+
+    async def test_resolve_skin_selection_uses_only_the_target_preset_slot(self):
         self.manager.state.assigned_position = "TOP"
-        self.params["main_skin_mode_overrides"] = {"pick_1": "none", "pick_2": "fixed", "pick_3": "inherit"}
         self.params["pick_slots"]["pick_2"].update(
-            {"skin_mode": "random", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
+            {"skin_mode": "fixed", "skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}
         )
 
         skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_2")
@@ -300,6 +449,20 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(skin_selection)
         self.assertEqual(skin_selection["mode"], "fixed")
         self.assertEqual(skin_selection["skin_id"], 99010)
+
+    async def test_resolve_skin_selection_does_not_inherit_pick_1_skin_mode_or_skin(self):
+        self.params["selected_pick_2"] = "Lux"
+        self.params["pick_slots"]["pick_1"].update(
+            {"skin_mode": "fixed", "skin_id": 86013, "skin_name": "God-King Garen", "skin_num": 13}
+        )
+        self.params["pick_slots"]["pick_2"].update(
+            {"skin_mode": "none", "skin_id": 0, "skin_name": "", "skin_num": 0}
+        )
+
+        skin_selection, chosen_slot = self.manager._resolve_skin_selection(self.params, slot_key="pick_2")
+
+        self.assertEqual(chosen_slot, "pick_2")
+        self.assertIsNone(skin_selection)
 
     async def test_prepick_uses_first_pickable_champion_in_priority(self):
         self.manager.state.assigned_position = "MID"
@@ -533,6 +696,48 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
         await self.manager._set_skin(self.params)
 
         self.assertEqual(self.manager.state.last_confirmed_skin_id, 99010)
+
+    async def test_set_skin_allows_only_one_concurrent_application(self):
+        self.manager.state.last_locked_pick_slot = "pick_2"
+        self.manager.connection = type("Connection", (), {})()
+        self.manager.connection.request = AsyncMock(return_value=FakeResponse(200, {}))
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def fetch_session(*, area):
+            started.set()
+            await release.wait()
+            return {
+                "localPlayerCellId": 1,
+                "myTeam": [{"cellId": 1, "championId": 99, "selectedSkinId": 0}],
+            }
+
+        self.manager._fetch_current_champ_select_session = fetch_session
+        self.manager._fetch_pickable_skins = AsyncMock(return_value=[{"skin_id": 99010, "skin_name": "Battle Academia Lux", "skin_num": 10}])
+        self.manager._confirm_skin_applied = AsyncMock(return_value=True)
+
+        first = asyncio.create_task(self.manager._set_skin(self.params, slot_key="pick_2"))
+        await started.wait()
+        second = asyncio.create_task(self.manager._set_skin(self.params, slot_key="pick_2"))
+        await asyncio.sleep(0)
+        self.assertTrue(second.done())
+        self.assertEqual(self.manager.connection.request.await_count, 0)
+
+        release.set()
+        await asyncio.gather(first, second)
+
+        self.assertEqual(self.manager.connection.request.await_count, 1)
+        self.assertFalse(self.manager.state.skin_apply_in_progress)
+
+    async def test_set_skin_releases_concurrent_guard_after_error(self):
+        self.manager.state.last_locked_pick_slot = "pick_2"
+        self.manager.connection = type("Connection", (), {})()
+        self.manager._fetch_current_champ_select_session = AsyncMock(side_effect=RuntimeError("session unavailable"))
+
+        with self.assertRaises(RuntimeError):
+            await self.manager._set_skin(self.params, slot_key="pick_2")
+
+        self.assertFalse(self.manager.state.skin_apply_in_progress)
 
     async def test_set_skin_fixed_skips_non_pickable_skin(self):
         self.manager.state.assigned_position = "MID"

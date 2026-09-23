@@ -14,36 +14,88 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test
+          npm run typecheck
+          npm run build
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: |
             requirements.txt
+            requirements-test.txt
             requirements-constraints.txt
 
       - name: Install dependencies
-        run: python -m pip install -c requirements-constraints.txt -r requirements.txt
+        run: python -m pip install -c requirements-constraints.txt -r requirements-test.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q launcher.py src tests create_exe.py
+        run: python -m compileall -q launcher_web.py src tests create_exe.py
 
       - name: Run unittest suite
         run: python -m unittest discover -s tests -v
+
+      - name: Check generated API types
+        working-directory: frontend
+        run: npm run api:check
+
+      - name: Install Playwright Chromium
+        working-directory: frontend
+        run: npx playwright install chromium
+
+      - name: Run browser smoke tests
+        working-directory: frontend
+        run: npm run test:e2e
+
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          $version = python -c "from src.config import CURRENT_VERSION; print(CURRENT_VERSION)"
+          $expected = "${{ github.ref_name }}".Substring(1)
+          if ($version.Trim() -ne $expected) {
+            throw "Application version $($version.Trim()) does not match tag $expected."
+          }
 
   package:
     name: Package Windows executable
     needs: validate
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -54,21 +106,108 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -c requirements-constraints.txt -r requirements-build.txt
 
-      - name: Build executable without desktop side effects
+      - name: Build onedir distribution without desktop side effects
         shell: pwsh
         run: |
-          "n" | python create_exe.py
+          python create_exe.py --mode onedir --no-shortcut
 
-      - name: Verify executable
+      - name: Verify onedir distribution
         shell: pwsh
         run: |
-          if (-not (Test-Path -LiteralPath "OTP LOL.exe" -PathType Leaf)) {
-            throw "Expected OTP LOL.exe was not produced."
+          if (-not (Test-Path -LiteralPath "OTP LOL\OTP LOL.exe" -PathType Leaf)) {
+            throw "Expected onedir executable was not produced."
           }
 
+      - name: Prepare Authenticode signing
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_BASE64: ${{ secrets.OTP_LOL_SIGNING_CERT_BASE64 }}
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:OTP_LOL_SIGNING_CERT_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:OTP_LOL_SIGNING_CERT_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:OTP_LOL_TIMESTAMP_URL)) {
+            throw "Authenticode secrets are required for tagged public releases."
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "otp-lol-signing.pfx"
+          [IO.File]::WriteAllBytes(
+            $certPath,
+            [Convert]::FromBase64String($env:OTP_LOL_SIGNING_CERT_BASE64)
+          )
+          $signtool = Get-ChildItem -Path "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signtool) { throw "Windows SDK signtool.exe was not found." }
+          "OTP_LOL_SIGNING_CERT_PATH=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "OTP_LOL_SIGNTOOL_PATH=$($signtool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Sign packaged executable
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          & $env:OTP_LOL_SIGNTOOL_PATH sign /fd SHA256 /f $env:OTP_LOL_SIGNING_CERT_PATH /p $env:OTP_LOL_SIGNING_CERT_PASSWORD /tr $env:OTP_LOL_TIMESTAMP_URL /td SHA256 "OTP LOL\OTP LOL.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Executable signing failed." }
+
+      - name: Run packaged onedir self-test
+        shell: pwsh
+        run: |
+          & ".\OTP LOL\OTP LOL.exe" --self-test --allow-missing-webview2
+          if ($LASTEXITCODE -ne 0) { throw "Packaged self-test failed." }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "Inno Setup compiler was not found." }
+          $version = python -c "from src.config import CURRENT_VERSION; print(CURRENT_VERSION)"
+          & $iscc "/DAppVersion=$($version.Trim())" "/DBuildRoot=$(Get-Location)" "installer\OTP-LOL.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
+
+      - name: Verify Authenticode signatures for installer
+        shell: pwsh
+        env:
+          OTP_LOL_SIGNING_CERT_PASSWORD: ${{ secrets.OTP_LOL_SIGNING_CERT_PASSWORD }}
+          OTP_LOL_TIMESTAMP_URL: ${{ secrets.OTP_LOL_TIMESTAMP_URL }}
+        run: |
+          & $env:OTP_LOL_SIGNTOOL_PATH sign /fd SHA256 /f $env:OTP_LOL_SIGNING_CERT_PATH /p $env:OTP_LOL_SIGNING_CERT_PASSWORD /tr $env:OTP_LOL_TIMESTAMP_URL /td SHA256 "release\OTP-LOL-Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed." }
+          & $env:OTP_LOL_SIGNTOOL_PATH verify /pa /all "OTP LOL\OTP LOL.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Executable Authenticode verification failed." }
+          & $env:OTP_LOL_SIGNTOOL_PATH verify /pa /all "release\OTP-LOL-Setup.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Installer Authenticode verification failed." }
+
+      - name: Remove signing certificate
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if ($env:OTP_LOL_SIGNING_CERT_PATH -and (Test-Path -LiteralPath $env:OTP_LOL_SIGNING_CERT_PATH)) {
+            Remove-Item -LiteralPath $env:OTP_LOL_SIGNING_CERT_PATH -Force
+          }
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "release\OTP-LOL-Setup.exe").Hash.ToLowerInvariant()
+          "$hash  OTP-LOL-Setup.exe" | Set-Content -LiteralPath "release\OTP-LOL-Setup.exe.sha256" -Encoding ascii
+
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          gh release create "${{ github.ref_name }}" "release/OTP-LOL-Setup.exe" "release/OTP-LOL-Setup.exe.sha256" --verify-tag --generate-notes --draft
+
       - name: Upload release candidate artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: OTP-LOL-${{ github.ref_name }}
-          path: OTP LOL.exe
+          path: release
           if-no-files-found: error

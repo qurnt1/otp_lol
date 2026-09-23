@@ -1,6 +1,15 @@
 import unittest
 from unittest.mock import Mock, patch
 
+from src.config.constants import (
+    HOTKEY_PROVIDERS,
+    HOTKEY_SITE_LABELS,
+    HOTKEY_SITE_ORDER,
+    STATS_PROVIDERS,
+    STATS_SITE_LABELS,
+    STATS_SITE_ORDER,
+)
+from src.domain.providers import LIVE_PROVIDER_IDS, PROVIDER_REGISTRY, STATS_PROVIDER_IDS
 from src.services.updates import (
     check_for_updates,
     extract_highlights_section,
@@ -13,15 +22,39 @@ from src.services.urls import (
     build_dpm_url,
     build_deeplol_url,
     build_hotkey_site_url,
+    build_hotkey_provider_home_url,
     build_leagueofgraphs_url,
     build_opgg_url,
     build_porofessor_url,
     build_stats_site_url,
     is_valid_riot_id,
+    provider_catalog_options,
 )
 
 
 class UtilsTests(unittest.TestCase):
+    def test_provider_settings_and_catalog_views_derive_from_the_registry(self):
+        self.assertEqual(tuple(STATS_PROVIDERS), STATS_PROVIDER_IDS)
+        self.assertEqual(tuple(STATS_SITE_ORDER), STATS_PROVIDER_IDS)
+        self.assertEqual(tuple(HOTKEY_PROVIDERS), LIVE_PROVIDER_IDS)
+        self.assertEqual(tuple(HOTKEY_SITE_ORDER), LIVE_PROVIDER_IDS)
+        self.assertEqual(
+            STATS_SITE_LABELS,
+            {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in STATS_PROVIDER_IDS},
+        )
+        self.assertEqual(
+            HOTKEY_SITE_LABELS,
+            {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in LIVE_PROVIDER_IDS},
+        )
+        self.assertEqual(
+            [option["id"] for option in provider_catalog_options("stats")],
+            list(STATS_PROVIDER_IDS),
+        )
+        self.assertEqual(
+            [option["id"] for option in provider_catalog_options("live")],
+            list(LIVE_PROVIDER_IDS),
+        )
+
     def test_semantic_version_comparison(self):
         self.assertFalse(is_newer_version("6.1.0", "6.1"))
         self.assertFalse(is_newer_version("v6.1", "6.1.0"))
@@ -31,6 +64,10 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(
             build_opgg_url("euw", "MonCompte#EUW"),
             "https://op.gg/fr/lol/summoners/euw/MonCompte-EUW",
+        )
+        self.assertEqual(
+            build_opgg_url("euw", " Mon Compte # EUW "),
+            "https://op.gg/fr/lol/summoners/euw/Mon%20Compte-EUW",
         )
         self.assertEqual(
             build_porofessor_url("euw", "MonCompte#EUW"),
@@ -100,10 +137,10 @@ class UtilsTests(unittest.TestCase):
             build_hotkey_site_url("dpm", "euw", "MonCompte#EUW"),
             "https://dpm.lol/MonCompte-EUW/live",
         )
-        self.assertEqual(
-            build_hotkey_site_url("leagueofgraphs", "euw", "MonCompte#EUW"),
-            "https://porofessor.gg/fr/live/euw/MonCompte-EUW/ranked-only",
-        )
+        self.assertEqual(build_hotkey_site_url("porofessor", "", ""), "https://porofessor.gg/")
+        self.assertEqual(build_hotkey_site_url("opgg", "", "invalid"), "https://op.gg/")
+        self.assertEqual(build_hotkey_site_url("deeplol", "invalid", "Player#TAG"), "https://www.deeplol.gg/")
+        self.assertIsNone(build_hotkey_site_url("unknown", "euw", "Player#TAG"))
 
     def test_riot_id_validation(self):
         self.assertTrue(is_valid_riot_id("MonCompte#EUW"))
@@ -147,8 +184,12 @@ class UtilsTests(unittest.TestCase):
             "html_url": "https://github.com/qurnt1/otp_lol/releases/tag/v12.0",
             "assets": [
                 {
-                    "name": "OTP-LOL-12.0.exe",
-                    "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-12.0.exe",
+            "name": "OTP-LOL-Setup.exe",
+            "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-Setup.exe",
+                },
+                {
+            "name": "OTP-LOL-Setup.exe.sha256",
+            "browser_download_url": "https://github.com/qurnt1/otp_lol/releases/download/v12.0/OTP-LOL-Setup.exe.sha256",
                 }
             ],
         }
@@ -160,6 +201,8 @@ class UtilsTests(unittest.TestCase):
         self.assertEqual(update_info["version"], normalize_version("12.0"))
         self.assertEqual(update_info["release_url"], response.json.return_value["html_url"])
         self.assertEqual(update_info["asset_url"], response.json.return_value["assets"][0]["browser_download_url"])
+        self.assertEqual(update_info["checksum_name"], "OTP-LOL-Setup.exe.sha256")
+        self.assertEqual(update_info["checksum_url"], response.json.return_value["assets"][1]["browser_download_url"])
         self.assertIn("`Feature A`", update_info["highlights"])
         self.assertIn("Description A.", update_info["highlights"])
 

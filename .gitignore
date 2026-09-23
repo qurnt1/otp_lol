@@ -13,20 +13,54 @@ ENV/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
 
 # Build artifacts
 build/
 dist/
+release/
+*.egg-info/
+*.whl
 *.spec
 OTP LOL/
 OTP LOL.exe
 *.exe
+*.pdb
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
 
 # Node / website
 node_modules/
-website/dist/
+# Sites static source
+!website/dist/
+!website/dist/**
 website/*-qa.png
 website/tsconfig.tsbuildinfo
+*.tsbuildinfo
+coverage/
+
+# Browser verification artifacts
+.playwright-cli/
+.playwright-mcp/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vite/
+frontend-dashboard.png
+exemple.png
+
+# Generated reports, screenshots and local design tooling
+output/
+build-benchmark/
+.impeccable/
 
 # Logs
 *.log

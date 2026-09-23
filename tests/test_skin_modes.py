@@ -1,27 +1,20 @@
 import unittest
 
 from src.services.skin_modes import (
-    build_main_skin_overrides,
     get_effective_skin_mode,
     get_effective_skin_mode_for_slot,
     get_skin_cycle_modes,
     has_fixed_skin,
     has_random_skin,
     normalize_skin_mode,
-    normalize_skin_override,
 )
 
 
 class SkinModesTests(unittest.TestCase):
-    def test_normalize_skin_mode_accepts_known_modes(self):
+    def test_normalize_skin_mode_accepts_only_preset_modes(self):
         self.assertEqual(normalize_skin_mode(" FIXED "), "fixed")
         self.assertEqual(normalize_skin_mode("random"), "random")
         self.assertEqual(normalize_skin_mode("bad"), "none")
-
-    def test_normalize_skin_override_accepts_inherit_and_modes(self):
-        self.assertEqual(normalize_skin_override(" INHERIT "), "inherit")
-        self.assertEqual(normalize_skin_override("none"), "none")
-        self.assertEqual(normalize_skin_override("bad"), "inherit")
 
     def test_has_fixed_skin_checks_id_or_name(self):
         self.assertTrue(has_fixed_skin({"skin_id": "123"}))
@@ -34,21 +27,7 @@ class SkinModesTests(unittest.TestCase):
         self.assertTrue(has_random_skin({"random_skin_pool": [{"skin_id": 123}]}))
         self.assertFalse(has_random_skin({"random_skin_id": "bad", "random_skin_name": "", "random_skin_pool": []}))
 
-    def test_build_main_skin_overrides_uses_legacy_then_slot_values(self):
-        overrides = build_main_skin_overrides(
-            {
-                "main_skin_mode_override": "fixed",
-                "main_skin_mode_overrides": {
-                    "pick_1": "inherit",
-                    "pick_2": "random",
-                    "pick_3": "bad",
-                },
-            }
-        )
-
-        self.assertEqual(overrides, {"pick_1": "inherit", "pick_2": "random", "pick_3": "inherit"})
-
-    def test_get_effective_skin_mode_for_slot_uses_override_before_slot_mode(self):
+    def test_get_effective_skin_mode_reads_the_preset_slot_directly(self):
         effective = {
             "pick_slots": {
                 "pick_1": {"skin_mode": "random"},
@@ -56,42 +35,22 @@ class SkinModesTests(unittest.TestCase):
             }
         }
 
+        self.assertEqual(get_effective_skin_mode_for_slot("pick_1", effective), "random")
+        self.assertEqual(get_effective_skin_mode_for_slot("pick_2", effective), "fixed")
+        self.assertEqual(get_effective_skin_mode_for_slot("pick_3", effective), "none")
+
+    def test_get_effective_skin_mode_does_not_inherit_from_pick_1(self):
+        effective = {"pick_slots": {"pick_1": {"skin_mode": "random"}, "pick_2": {}}}
+
         self.assertEqual(
-            get_effective_skin_mode_for_slot("pick_1", effective, {"pick_1": "none"}),
+            get_effective_skin_mode_for_slot("pick_2", effective),
             "none",
-        )
-        self.assertEqual(
-            get_effective_skin_mode_for_slot("pick_1", effective, {"pick_1": "fixed"}),
-            "fixed",
-        )
-        self.assertEqual(
-            get_effective_skin_mode_for_slot("pick_2", effective, {"pick_2": "inherit"}),
-            "fixed",
-        )
-
-    def test_get_effective_skin_mode_for_slot_can_fallback_to_pick_1(self):
-        effective = {
-            "pick_slots": {
-                "pick_1": {"skin_mode": "random"},
-                "pick_2": {},
-            }
-        }
-
-        self.assertEqual(
-            get_effective_skin_mode_for_slot(
-                "pick_2",
-                effective,
-                {"pick_2": "inherit"},
-                fallback_slot_key="pick_1",
-            ),
-            "random",
         )
 
     def test_get_effective_skin_mode_summarizes_slots(self):
         self.assertEqual(
             get_effective_skin_mode(
-                {"pick_slots": {"pick_1": {"skin_mode": "none"}, "pick_2": {}, "pick_3": {}}},
-                {},
+                {"pick_slots": {"pick_1": {"skin_mode": "none"}, "pick_2": {}, "pick_3": {}}}
             ),
             "none",
         )
@@ -103,8 +62,7 @@ class SkinModesTests(unittest.TestCase):
                         "pick_2": {"skin_mode": "fixed"},
                         "pick_3": {"skin_mode": "fixed"},
                     }
-                },
-                {},
+                }
             ),
             "fixed",
         )
@@ -116,8 +74,7 @@ class SkinModesTests(unittest.TestCase):
                         "pick_2": {"skin_mode": "random"},
                         "pick_3": {"skin_mode": "none"},
                     }
-                },
-                {},
+                }
             ),
             "mixed",
         )

@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 from src.services import history
-from src.services.history import MAX_HISTORY_ENTRIES, format_history_entry
+from src.services.history import MAX_HISTORY_ENTRIES, format_history_entry, get_history_entries
 
 
 class HistoryFormattingTests(unittest.TestCase):
@@ -45,6 +45,10 @@ class HistoryFormattingTests(unittest.TestCase):
 
 
 class HistoryPersistenceTests(unittest.TestCase):
+    def test_get_history_entries_zero_returns_empty(self):
+        with patch("src.services.history._read_history", return_value=[{"type": "test"}]):
+            self.assertEqual(get_history_entries(0), [])
+
     def test_write_history_keeps_bounded_json_format(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             history_path = os.path.join(temp_dir, "history.json")

@@ -50,7 +50,9 @@ def test_persistent_fields_are_not_reset():
     state.summoner = "TestPlayer"
     state.summoner_id = 12345
     state.platform_routing = "na1"
+    state.provider_region = "na"
     state.region_routing = "americas"
+    state.routing_source = "platform_config"
 
     state.reset_between_games()
 
@@ -58,7 +60,18 @@ def test_persistent_fields_are_not_reset():
     assert state.summoner == "TestPlayer"
     assert state.summoner_id == 12345
     assert state.platform_routing == "na1"
+    assert state.provider_region == "na"
     assert state.region_routing == "americas"
+    assert state.routing_source == "platform_config"
+
+
+def test_region_is_unknown_until_the_lcu_reports_it():
+    state = GameState()
+
+    assert state.platform_routing == ""
+    assert state.provider_region == ""
+    assert state.region_routing == ""
+    assert state.routing_source == ""
 
 
 def test_reset_between_games_covers_all_fields():
@@ -73,7 +86,9 @@ def test_reset_between_games_covers_all_fields():
         "auto_game_name",
         "auto_tag_line",
         "platform_routing",
+        "provider_region",
         "region_routing",
+        "routing_source",
         "last_game_start_notify_ts",
         "last_reported_summoner",
         "cache_lock",

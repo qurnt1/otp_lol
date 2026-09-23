@@ -17,7 +17,7 @@ Developers working on filesystem access, caching, packaging, or resource loading
 
 DEPENDENCIES:
 Used by:
-- src.config, src.core, src.services, and src.ui modules that read files or write caches.
+- src.config, src.core, src.services, and src.desktop modules that read files or write caches.
 Uses:
 - Standard library: os, sys, tempfile
 """
@@ -64,7 +64,6 @@ def get_appdata_path(filename: str) -> str:
 
 
 PARAMETERS_PATH: str = get_appdata_path("parameters.toml")
-PARAMETERS_JSON_PATH: str = get_appdata_path("parameters.json")
 HISTORY_PATH: str = get_appdata_path("history.json")
 LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}.lock")
 DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json")
@@ -72,3 +71,6 @@ ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_i
 SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
 SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")
 RUNES_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes")
+WEBVIEW_STORAGE_DIR: str = get_appdata_path("webview-data")
+LCU_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "lcu"))
+ACCOUNT_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "account"))

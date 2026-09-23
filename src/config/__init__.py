@@ -18,7 +18,7 @@ Developers importing configuration values, settings helpers, or resource paths.
 
 DEPENDENCIES:
 Used by:
-- launcher.py and most runtime modules under `src`.
+- launcher_web.py and most runtime modules under `src`.
 Uses:
 - Local modules: src.config.constants, src.config.logging_config, src.config.paths, src.config.settings
 """
@@ -57,6 +57,8 @@ from .constants import (
     PICK_SLOT_LABELS,
     PICK_SLOT_ORDER,
     PLATFORM_TO_REGION,
+    REGION_TO_PLATFORM,
+    PLATFORM_TO_REGIONAL_ROUTING,
     PRESET_ENABLED_QUEUE_IDS,
     PRACTICE_TOOL_GAME_MODE,
     QUEUE_ID_LABELS,
@@ -66,12 +68,11 @@ from .constants import (
     THEME_LABELS,
     THEME_ORDER,
     THEME_PALETTE,
-    WEBSITE_LOGO_FILES,
     SUMMONER_SPELL_LIST,
-    SETTINGS_SCHEMA_VERSION,
     SUMMONER_SPELL_MAP,
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
+    URL_DD_IMG_ITEM,
     URL_DD_IMG_SPELL,
     URL_DD_CHAMPION_DETAIL,
     URL_DD_SKIN_SPLASH,
@@ -84,18 +85,29 @@ from .constants import (
 )
 from .logging_config import LOG_FILE_PATH
 from .paths import (
+    ACCOUNT_CACHE_DIR,
     DDRAGON_CACHE_FILE,
     HISTORY_PATH,
     ICONS_CACHE_DIR,
+    LCU_CACHE_DIR,
     LOCKFILE_PATH,
     PARAMETERS_PATH,
     SPELLS_CACHE_DIR,
     SKINS_CACHE_DIR,
     RUNES_CACHE_DIR,
+    WEBVIEW_STORAGE_DIR,
     get_appdata_path,
     resource_path,
 )
-from .settings import DEFAULT_PARAMS, FIRST_LAUNCH_PARAMS
+from .settings import (
+    DEFAULT_PARAMS,
+    DEMO_PARAMS,
+    DEMO_PRESETS,
+    FACTORY_DEFAULT_SETTINGS,
+    FIRST_LAUNCH_PARAMS,
+    STARTER_PRESET_CONFIG,
+    build_pick_slot_defaults,
+)
 
 
 def load_parameters():
@@ -106,6 +118,11 @@ def load_parameters():
 def save_parameters(params):
     """Persist application parameters to the TOML settings file."""
     return _settings.save_parameters(params)
+
+
+def normalize_parameters(params):
+    """Return normalized application parameters without persisting them."""
+    return _settings.normalize_parameters(params)
 
 
 def export_parameters_to_file(path, params):
@@ -131,7 +148,7 @@ __all__ = [
     "CURRENT_VERSION",
     "APP_VERSION",
     "CONFIG_SCHEMA_VERSION",
-    "SETTINGS_SCHEMA_VERSION",
+    "normalize_parameters",
     "GITHUB_REPO_URL",
     "GITHUB_REPO_API",
     "GITHUB_DOWNLOAD_ZIP_URL",
@@ -141,6 +158,7 @@ __all__ = [
     "URL_DD_SUMMONERS",
     "URL_DD_IMG_CHAMP",
     "URL_DD_IMG_SPELL",
+    "URL_DD_IMG_ITEM",
     "URL_DD_CHAMPION_DETAIL",
     "URL_DD_SKIN_SPLASH",
     "URL_CDRAGON_CHAMPION_DETAIL",
@@ -166,13 +184,14 @@ __all__ = [
     "SUMMONER_SPELL_MAP",
     "SUMMONER_SPELL_LIST",
     "PLATFORM_TO_REGION",
+    "REGION_TO_PLATFORM",
+    "PLATFORM_TO_REGIONAL_ROUTING",
     "PICK_SLOT_ORDER",
     "PICK_SLOT_LABELS",
     "PRESET_ENABLED_QUEUE_IDS",
     "PRACTICE_TOOL_GAME_MODE",
     "QUEUE_ID_LABELS",
     "PHASE_DISPLAY_MAP",
-    "WEBSITE_LOGO_FILES",
     "STATS_SITE_LABELS",
     "STATS_SITE_ORDER",
     "HOTKEY_SITE_LABELS",
@@ -184,14 +203,22 @@ __all__ = [
     "get_appdata_path",
     "PARAMETERS_PATH",
     "HISTORY_PATH",
+    "LCU_CACHE_DIR",
+    "ACCOUNT_CACHE_DIR",
     "LOCKFILE_PATH",
     "DDRAGON_CACHE_FILE",
     "ICONS_CACHE_DIR",
     "SPELLS_CACHE_DIR",
     "SKINS_CACHE_DIR",
     "RUNES_CACHE_DIR",
+    "WEBVIEW_STORAGE_DIR",
     "DEFAULT_PARAMS",
+    "DEMO_PARAMS",
+    "DEMO_PRESETS",
+    "FACTORY_DEFAULT_SETTINGS",
     "FIRST_LAUNCH_PARAMS",
+    "STARTER_PRESET_CONFIG",
+    "build_pick_slot_defaults",
     "load_parameters",
     "save_parameters",
     "export_parameters_to_file",
