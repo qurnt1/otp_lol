@@ -1,20 +1,22 @@
+import re
 import unittest
 from pathlib import Path
 
 from src.config.constants import CURRENT_VERSION, GITHUB_REPO_NAME
+from src.desktop.window import _WEBVIEW2_EVERGREEN_CLIENT_GUID
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_current_version_targets_v11(self):
-        self.assertEqual(CURRENT_VERSION, "11.0")
+    def test_current_version_targets_v11_1(self):
+        self.assertEqual(CURRENT_VERSION, "11.1")
 
-    def test_readme_mentions_current_version(self):
+    def test_readme_leads_with_product_benefits_and_screenshots(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
-        self.assertIn(f"Current project version: `{CURRENT_VERSION}`", readme_text)
-        self.assertIn(f"https://img.shields.io/badge/version-{CURRENT_VERSION}-", readme_text)
-        self.assertIn(f"## Version {CURRENT_VERSION} Highlights", readme_text)
+        self.assertIn("Spend less time on the same setup", readme_text)
+        self.assertIn("Get OTP LOL for Windows", readme_text)
+        self.assertIn("See it in action", readme_text)
         self.assertIn(f"https://github.com/{GITHUB_REPO_NAME}.git", readme_text)
 
     def test_readme_has_no_conflict_markers(self):
@@ -66,6 +68,16 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("PrepareToInstall", installer_text)
         self.assertIn("developer.microsoft.com/microsoft-edge/webview2", installer_text)
 
+    def test_installer_preflight_matches_the_evergreen_runtime_detection(self):
+        installer_text = (ROOT_DIR / "installer/OTP-LOL.iss").read_text(encoding="utf-8")
+        installer_code = installer_text.split("[Code]", maxsplit=1)[1]
+        installer_guids = re.findall(r"\{[0-9A-F-]{36}\}", installer_code, flags=re.IGNORECASE)
+
+        self.assertEqual(installer_guids, [_WEBVIEW2_EVERGREEN_CLIENT_GUID])
+        self.assertIn("function IsValidWebView2Version", installer_code)
+        self.assertIn("(PartCount = 4)", installer_code)
+        self.assertIn("(Version <> '0.0.0.0')", installer_code)
+
     def test_release_workflow_requires_signing_secrets_before_publishing(self):
         workflow_text = (ROOT_DIR / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertIn("OTP_LOL_SIGNING_CERT_BASE64", workflow_text)
@@ -77,8 +89,14 @@ class ReleaseMetadataTests(unittest.TestCase):
         )
         self.assertLess(
             workflow_text.index("Generate SHA-256 checksum"),
-            workflow_text.index("Publish GitHub Release"),
+            workflow_text.index("Create draft GitHub Release"),
         )
+
+    def test_release_workflow_creates_a_draft_until_manual_smoke_passes(self):
+        workflow_text = (ROOT_DIR / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        release_command = next(line for line in workflow_text.splitlines() if "gh release create" in line)
+
+        self.assertIn("--draft", release_command)
 
     def test_documentation_screenshots_are_current_and_shared_with_website(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")

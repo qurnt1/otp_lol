@@ -61,7 +61,11 @@ class ProviderRouteTests(unittest.TestCase):
             request_reload=Mock(return_value={"ok": True, "reason": "scheduled", "state": "loading", "provider_id": "opgg"}),
             request_hide=Mock(return_value={"ok": True, "reason": "scheduled", "state": "hidden", "provider_id": "opgg"}),
         )
-        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+        self.client = TestClient(
+            create_app(self.context),
+            base_url="http://127.0.0.1",
+            headers={"Origin": "http://127.0.0.1"},
+        )
 
     def test_provider_routes_use_manager_and_redact_urls(self):
         status = self.client.get("/api/desktop/providers/status")
@@ -109,7 +113,11 @@ class NetworkRouteTests(unittest.TestCase):
                 "source": "ddragon",
             })
         )
-        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+        self.client = TestClient(
+            create_app(self.context),
+            base_url="http://127.0.0.1",
+            headers={"Origin": "http://127.0.0.1"},
+        )
 
     def test_status_and_manual_check_are_local_routes(self):
         status = self.client.get("/api/network/status")
@@ -143,7 +151,11 @@ class ApiBoundaryTests(unittest.TestCase):
         self.context.data_dragon.summoner_loaded = True
         self.context.data_dragon.summoner_data = {"Flash": "SummonerFlash.png"}
         self.context.save = lambda: True
-        self.client = TestClient(create_app(self.context), headers={"Origin": "http://testserver"})
+        self.client = TestClient(
+            create_app(self.context),
+            base_url="http://127.0.0.1",
+            headers={"Origin": "http://127.0.0.1"},
+        )
 
     def test_cross_origin_cannot_trigger_settings_reset(self):
         before = self.context.get_params()
@@ -668,6 +680,38 @@ class ApiBoundaryTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
 
+    def test_concurrent_partial_preset_patches_cannot_create_duplicate_spells(self):
+        pick_slots = self.context.get_params()["pick_slots"]
+        pick_slots["pick_1"].update({"spell_1": "Flash", "spell_2": "Heal"})
+        self.context.update_parameters({"pick_slots": pick_slots})
+
+        original_persist = self.context.persist_preset_slot
+        both_requests_validated = threading.Barrier(2)
+
+        def wait_for_both_validated(*args, **kwargs):
+            both_requests_validated.wait(timeout=5)
+            return original_persist(*args, **kwargs)
+
+        self.context.persist_preset_slot = wait_for_both_validated
+        responses = {}
+
+        def patch_spell(name, payload):
+            responses[name] = self.client.put("/api/presets/pick_1", json=payload)
+
+        threads = [
+            threading.Thread(target=patch_spell, args=("spell_1", {"spell_1": "Smite"})),
+            threading.Thread(target=patch_spell, args=("spell_2", {"spell_2": "Smite"})),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+
+        self.assertFalse(any(thread.is_alive() for thread in threads))
+        self.assertEqual(sorted(response.status_code for response in responses.values()), [200, 422])
+        saved_slot = self.context.get_params()["pick_slots"]["pick_1"]
+        self.assertNotEqual(saved_slot["spell_1"], saved_slot["spell_2"])
+
     def test_events_websocket_receives_runtime_events(self):
         with self.client.websocket_connect("/api/events") as websocket:
             snapshot = websocket.receive_json()
@@ -1011,7 +1055,7 @@ class ApiBoundaryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "index.html").write_text("<h1>OTP LOL</h1>", encoding="utf-8")
             app = create_app(self.context, frontend_dir=directory)
-            response = TestClient(app).get("/")
+            response = TestClient(app, base_url="http://127.0.0.1").get("/")
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("OTP LOL", response.text)

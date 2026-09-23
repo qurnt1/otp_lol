@@ -217,7 +217,7 @@ export interface DiagnosticErrorEntry { timestamp: string; source: string; error
 export interface DiagnosticEndpoint { id: string; label: string; path: string; method: string }
 export interface DiagnosticCheckResult extends DiagnosticEndpoint { status: number | null; duration_ms: number; success: boolean; error: string | null; summary: string }
 export interface HotkeyStatus { hotkey: string; backend: "keyboard_hook" | "register_hotkey" | "unavailable"; active: boolean }
-export interface DiagnosticsResponse { runtime: RuntimeSnapshot; account_identity: AccountIdentity; hotkeys?: Record<"window" | "site", HotkeyStatus>; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
+export interface DiagnosticsResponse { runtime: Omit<RuntimeSnapshot, "riot_id">; account_identity: AccountIdentity; hotkeys?: Record<"window" | "site", HotkeyStatus>; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
 export interface DiagnosticsRunResponse { results: DiagnosticCheckResult[] }
 
 export interface ProviderOption {

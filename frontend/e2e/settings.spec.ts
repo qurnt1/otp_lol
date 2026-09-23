@@ -310,6 +310,28 @@ test("first-run onboarding closes permanently after editing a preset", async ({ 
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeHidden();
 });
 
+test("failed dashboard automation updates show feedback and restore the saved value", async ({ page }) => {
+  await mockLocalApi(page, { configured: true, rejectSettingsPatch: true });
+  await page.goto("/#dashboard");
+
+  const toggle = page.getByRole("switch", { name: "Auto-Accept" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await toggle.click();
+
+  await expect(page.getByRole("alert")).toContainText("Impossible d’enregistrer ce réglage.");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+});
+
+test("failed settings export explains that the download could not be created", async ({ page }) => {
+  await mockLocalApi(page);
+  await page.route("**/api/settings/export", (route) => route.fulfill({ status: 500, body: "export failed" }));
+  await page.goto("/#settings");
+  await page.getByRole("button", { name: "Avancé" }).click();
+  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
+
+  await expect(page.getByRole("alert")).toContainText("Impossible de télécharger la configuration.");
+});
+
 test("first-run onboarding targets the first empty priority", async ({ page }) => {
   const state = await mockLocalApi(page, { configured: true, onboardingCompleted: false });
   state.presets.slots.pick_2.champion = "";

@@ -31,7 +31,9 @@ def run_self_test(*, require_webview2: bool = True) -> int:
     if webview2_available or require_webview2:
         checks["webview2_detection"] = webview2_available
     else:
-        logger.info("SKIP webview2_detection (runtime prerequisite is checked by the installer)")
+        logger.info(
+            "SKIP webview2_detection (runtime prerequisite is checked by the installer)"
+        )
     with tempfile.TemporaryDirectory(prefix="otp-lol-self-test-") as temp_dir:
         temp_path = Path(temp_dir) / "parameters.toml"
         previous_path = settings_module.PARAMETERS_PATH

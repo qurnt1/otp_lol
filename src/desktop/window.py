@@ -15,12 +15,7 @@ from ..config.paths import WEBVIEW_STORAGE_DIR
 
 LOGGER = logging.getLogger("otp_lol.window")
 
-_WEBVIEW2_CLIENT_GUIDS = (
-    "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
-    "{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}",
-    "{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}",
-    "{65C35B14-6C1D-4122-AC46-7148CC9D6497}",
-)
+_WEBVIEW2_EVERGREEN_CLIENT_GUID = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 WEBVIEW2_DOWNLOAD_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 WEBVIEW2_REQUIRED_MESSAGE = (
     "OTP LOL nécessite Microsoft Edge WebView2 Runtime pour afficher son interface.\n\n"
@@ -47,7 +42,7 @@ _APP_ROUTES = frozenset({
 
 
 def has_webview2_runtime() -> bool:
-    """Return whether a registered Microsoft Edge WebView2 runtime is available."""
+    """Return whether the Evergreen WebView2 Runtime is registered."""
     if sys.platform != "win32":
         return True
 
@@ -55,25 +50,24 @@ def has_webview2_runtime() -> bool:
 
 
 def get_webview2_runtime_version() -> str | None:
-    """Return the registered WebView2 runtime version when Windows exposes it."""
+    """Return the registered Evergreen WebView2 version when Windows exposes it."""
     if sys.platform != "win32":
         return None
 
     import winreg
 
     for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
-        for guid in _WEBVIEW2_CLIENT_GUIDS:
-            for suffix in ("", r"WOW6432Node"):
-                registry_prefix = r"SOFTWARE\Microsoft" if not suffix else rf"SOFTWARE\{suffix}\Microsoft"
-                path = rf"{registry_prefix}\EdgeUpdate\Clients\{guid}"
-                try:
-                    with winreg.OpenKey(root, path) as key:
-                        version, _ = winreg.QueryValueEx(key, "pv")
-                    normalized = str(version).strip()
-                    if re.fullmatch(r"\d+(?:\.\d+){3}", normalized) and normalized != "0.0.0.0":
-                        return normalized
-                except OSError:
-                    continue
+        for suffix in ("", r"WOW6432Node"):
+            registry_prefix = r"SOFTWARE\Microsoft" if not suffix else rf"SOFTWARE\{suffix}\Microsoft"
+            path = rf"{registry_prefix}\EdgeUpdate\Clients\{_WEBVIEW2_EVERGREEN_CLIENT_GUID}"
+            try:
+                with winreg.OpenKey(root, path) as key:
+                    version, _ = winreg.QueryValueEx(key, "pv")
+                normalized = str(version).strip()
+                if re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}", normalized) and normalized != "0.0.0.0":
+                    return normalized
+            except OSError:
+                continue
     return None
 
 

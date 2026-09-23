@@ -2,17 +2,7 @@ name: Security checks
 
 on:
   push:
-    paths:
-      - "requirements*.txt"
-      - "frontend/package-lock.json"
-      - "website/package-lock.json"
-      - ".github/workflows/security.yml"
   pull_request:
-    paths:
-      - "requirements*.txt"
-      - "frontend/package-lock.json"
-      - "website/package-lock.json"
-      - ".github/workflows/security.yml"
   schedule:
     - cron: "23 3 * * 1"
   workflow_dispatch:

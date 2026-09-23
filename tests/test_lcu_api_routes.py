@@ -59,7 +59,7 @@ class LcuApiRouteTests(unittest.TestCase):
             self._request_json,
             get_riot_id=lambda: "Test#EUW",
         )
-        self.client = TestClient(create_app(self.context))
+        self.client = TestClient(create_app(self.context), base_url="http://127.0.0.1")
 
     async def _request_json(self, path: str) -> LcuResponse:
         if path == "/lol-gameflow/v1/gameflow-phase":
@@ -167,12 +167,12 @@ class LcuApiRouteTests(unittest.TestCase):
         run = self.client.post(
             "/api/diagnostics/run",
             json={"endpoint_ids": ["gameflow_phase"]},
-            headers={"Origin": "http://testserver"},
+            headers={"Origin": "http://127.0.0.1"},
         )
         rejected = self.client.post(
             "/api/diagnostics/run",
             json={"endpoint_ids": ["/lol-secret/path"]},
-            headers={"Origin": "http://testserver"},
+            headers={"Origin": "http://127.0.0.1"},
         )
 
         self.assertEqual(overview.status_code, 200)
@@ -187,7 +187,7 @@ class LcuApiRouteTests(unittest.TestCase):
         self.client.post(
             "/api/diagnostics/run",
             json={"endpoint_ids": ["gameflow_phase"]},
-            headers={"Origin": "http://testserver"},
+            headers={"Origin": "http://127.0.0.1"},
         )
         with patch("src.api.routes.diagnostics.get_webview2_runtime_version", return_value="145.0.1.2"):
             redacted = self.client.get("/api/diagnostics/export")

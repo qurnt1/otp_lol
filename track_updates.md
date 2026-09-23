@@ -1,5 +1,15 @@
 # OTP LOL — Changelog
 
+## Version 11.1
+
+- fix: stop rune-page reconciliation when Auto-Summs is disabled, including after asynchronous page loading
+- fix: validate the merged preset state under the settings persistence lock to reject conflicting concurrent edits
+- fix: align app and installer WebView2 checks on the Evergreen runtime and valid registry versions
+- fix: show failed automation, provider, and settings-export requests in the interface
+- fix: reset older or schema-less settings without migrating them or creating a `.bak`; keep schema version 6
+- chore: run security scans for all code changes, not only dependency-file changes
+- chore: create tagged GitHub Releases as drafts until the required League/WebView2 smoke test is complete
+
 ## Version 11.0
 
 - feat: enable presets for Clash (700) and Practice Tool via gameMode check

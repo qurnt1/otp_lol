@@ -117,7 +117,7 @@ The palette is a restrained League-inspired system: cool ink and panels carry th
 
 The desktop shell uses a 214px command rail and a flexible content canvas. The dashboard first shows a status strip and the priority board, with the configuration column beside it and the automation rail underneath. Secondary screens reuse the same rail/header language and shift to a denser single content column where controls need more width.
 
-At widths below 900px the right column moves below the priority board. Below 680px the command rail becomes a horizontal navigation band, slot cards stack, and action groups wrap without horizontal scrolling. Spacing follows a compact 4/8/12/20px rhythm; the first heading gets more breathing room than its supporting copy.
+At widths below 900px the right column moves below the priority board. The command rail stays vertical and collapses to icons below 1100px; below 820px the settings navigation moves into the content column, and below 680px slot cards stack and action groups wrap without horizontal scrolling. Spacing follows a compact 4/8/12/20px rhythm; the first heading gets more breathing room than its supporting copy.
 
 ## Elevation & Depth
 
@@ -161,7 +161,7 @@ The interface uses square-ish control-room geometry: 4px for controls and small 
 
 ### Navigation
 
-The command rail uses the Garen asset and OTP LOL lockup at the top, four icon-plus-label links in the middle, and client status/version at the bottom. Active navigation uses a blue edge or tonal fill, never an oversized pill. On smaller screens it becomes a compact row while keeping the same order and labels.
+The command rail uses the Garen asset and OTP LOL lockup at the top, four icon-plus-label links in the middle, and client status/version at the bottom. Active navigation uses a blue edge or tonal fill, never an oversized pill. On narrower screens it becomes a compact vertical icon rail while keeping the same order; labels remain available as tooltips and accessible names.
 
 ### Priority Slot
 

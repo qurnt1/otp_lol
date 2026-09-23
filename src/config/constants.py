@@ -35,7 +35,7 @@ from ..domain.providers import (
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-APP_VERSION: str = "11.0"
+APP_VERSION: str = "11.1"
 CURRENT_VERSION: str = APP_VERSION
 CONFIG_SCHEMA_VERSION: int = 6
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"

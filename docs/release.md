@@ -1,6 +1,6 @@
 # Release
 
-Releases are created from tags matching `v*`. The workflow runs backend checks, frontend API/type/build checks, builds the Windows executable, signs and verifies the executable and installer, runs the packaged self-test, computes SHA-256, then creates a GitHub Release. The HTTP smoke test remains a source/integration check because the release binary is intentionally windowed and does not expose a console.
+Release candidates are built from tags matching `v*`. The workflow runs backend checks, frontend API/type/build checks, builds the Windows executable, signs and verifies the executable and installer, runs the packaged self-test, computes SHA-256, then creates a **draft** GitHub Release. Keep the release in draft until the required manual League/WebView2 smoke test below passes, then publish it in GitHub. The HTTP smoke test remains a source/integration check because the release binary is intentionally windowed and does not expose a console.
 
 The release must contain these exact assets:
 
@@ -18,7 +18,9 @@ Before tagging:
 3. Confirm the tag version matches the application version.
 4. Create and push the `vX.Y` tag.
 
-The workflow owns GitHub Release publication. It is intentionally not triggered by ordinary branch pushes.
+The release workflow does not publish the draft automatically. After the smoke test, publish the draft manually. Older or schema-less settings files are intentionally replaced by defaults without migration or a `.bak`; include that behavior in the upgrade check before distribution.
+
+The workflow creates the draft GitHub Release for each pushed tag. After the required smoke test passes, a maintainer publishes the draft manually. The workflow is intentionally not triggered by ordinary branch pushes.
 
 Tagged releases require these GitHub Actions secrets:
 
@@ -48,5 +50,6 @@ Run this checklist on the exact signed installer built from the release tag:
 10. Close and reopen OTP LOL, then close and reconnect League.
 11. Verify settings, provider sessions, window geometry, and account state persist.
 12. Exit through the tray and confirm there is no remaining OTP LOL process or lock file.
+13. With a disposable profile containing an older or schema-less settings file, confirm the app resets it to current defaults and does not create a `.bak`.
 
 Record the application version, release tag, pass/fail result, and redacted logs. Do not commit cookies, tokens, account identifiers, or screenshots containing personal data.

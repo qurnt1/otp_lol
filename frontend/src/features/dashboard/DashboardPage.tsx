@@ -70,6 +70,7 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
   const needsChampionCatalog = slots.some((key) => Boolean(currentPresets?.slots[key]?.champion && !previews[key]?.champion_id)) || Boolean(banName !== fr.dashboard.noBan && !bootstrap.data?.ban_preview?.champion_id);
   const championCatalog = useQuery({ queryKey: ["champions", "dashboard"], queryFn: () => api.getChampions(), enabled: needsChampionCatalog, staleTime: 3_600_000 });
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+  const [automationErrors, setAutomationErrors] = useState<Record<string, string>>({});
   const cardTriggerRefs = useRef<Record<PresetSlotKey, HTMLElement | null>>({ pick_1: null, pick_2: null, pick_3: null });
   const banTriggerRef = useRef<HTMLElement | null>(null);
   const activeTriggerRef = useRef<HTMLElement | null>(null);
@@ -86,6 +87,7 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
   const patchSetting = async (key: string, value: unknown) => {
     const previous = queryClient.getQueryData<Settings>(["settings"]);
     setPending(key, true);
+    setAutomationErrors((current) => { const next = { ...current }; delete next[key]; return next; });
     queryClient.setQueryData<Settings>(["settings"], (current) => current ? { ...current, [key]: value } : current);
     try {
       const next = await api.patchSettings({ [key]: value } as SettingsPatch);
@@ -94,6 +96,7 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
       await queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
     } catch {
       if (previous) queryClient.setQueryData<Settings>(["settings"], (current) => current ? { ...current, [key]: previous[key as keyof Settings] } : previous);
+      setAutomationErrors((current) => ({ ...current, [key]: fr.settings.failed }));
     } finally {
       setPending(key, false);
     }
@@ -104,13 +107,13 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
   };
 
   const automationItems = useMemo<AutomationItem[]>(() => currentSettings ? [
-    { id: "auto-accept", label: fr.settings.autoAccept, detail: fr.dashboard.readyCheck, enabled: currentSettings.auto_accept_enabled, pending: pendingKeys.has("auto_accept_enabled"), onToggle: () => toggle("auto_accept_enabled") },
-    { id: "auto-pick", label: fr.settings.autoPick, detail: fr.dashboard.prioritizedSlots, enabled: currentSettings.auto_pick_enabled, pending: pendingKeys.has("auto_pick_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_pick_enabled") },
-    { id: "auto-ban", label: fr.settings.autoBan, detail: currentPresets?.selected_ban || fr.dashboard.noBan, enabled: currentSettings.auto_ban_enabled, pending: pendingKeys.has("auto_ban_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_ban_enabled") },
-    { id: "auto-summoners", label: fr.settings.autoSummoners, detail: fr.dashboard.summonersAndRunes, enabled: currentSettings.auto_summoners_enabled, pending: pendingKeys.has("auto_summoners_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => toggle("auto_summoners_enabled") },
-    { id: "auto-skin", label: fr.dashboard.skin, detail: currentSettings.skin_automation_enabled ? fr.dashboard.enabled : fr.dashboard.disabled, enabled: currentSettings.skin_automation_enabled, pending: pendingKeys.has("skin_automation_enabled"), disabledByMaster: !presetMaster.enabled, onToggle: () => void patchSetting("skin_automation_enabled", !currentSettings.skin_automation_enabled) },
-    { id: "auto-play-again", label: fr.settings.playAgain, detail: fr.dashboard.returnToLobby, enabled: currentSettings.auto_play_again_enabled, pending: pendingKeys.has("auto_play_again_enabled"), onToggle: () => toggle("auto_play_again_enabled") },
-  ] : [], [currentPresets?.selected_ban, currentSettings, pendingKeys, presetMaster.enabled]);
+    { id: "auto-accept", label: fr.settings.autoAccept, detail: fr.dashboard.readyCheck, enabled: currentSettings.auto_accept_enabled, pending: pendingKeys.has("auto_accept_enabled"), error: automationErrors.auto_accept_enabled, onToggle: () => toggle("auto_accept_enabled") },
+    { id: "auto-pick", label: fr.settings.autoPick, detail: fr.dashboard.prioritizedSlots, enabled: currentSettings.auto_pick_enabled, pending: pendingKeys.has("auto_pick_enabled"), disabledByMaster: !presetMaster.enabled, error: automationErrors.auto_pick_enabled, onToggle: () => toggle("auto_pick_enabled") },
+    { id: "auto-ban", label: fr.settings.autoBan, detail: currentPresets?.selected_ban || fr.dashboard.noBan, enabled: currentSettings.auto_ban_enabled, pending: pendingKeys.has("auto_ban_enabled"), disabledByMaster: !presetMaster.enabled, error: automationErrors.auto_ban_enabled, onToggle: () => toggle("auto_ban_enabled") },
+    { id: "auto-summoners", label: fr.settings.autoSummoners, detail: fr.dashboard.summonersAndRunes, enabled: currentSettings.auto_summoners_enabled, pending: pendingKeys.has("auto_summoners_enabled"), disabledByMaster: !presetMaster.enabled, error: automationErrors.auto_summoners_enabled, onToggle: () => toggle("auto_summoners_enabled") },
+    { id: "auto-skin", label: fr.dashboard.skin, detail: currentSettings.skin_automation_enabled ? fr.dashboard.enabled : fr.dashboard.disabled, enabled: currentSettings.skin_automation_enabled, pending: pendingKeys.has("skin_automation_enabled"), disabledByMaster: !presetMaster.enabled, error: automationErrors.skin_automation_enabled, onToggle: () => void patchSetting("skin_automation_enabled", !currentSettings.skin_automation_enabled) },
+    { id: "auto-play-again", label: fr.settings.playAgain, detail: fr.dashboard.returnToLobby, enabled: currentSettings.auto_play_again_enabled, pending: pendingKeys.has("auto_play_again_enabled"), error: automationErrors.auto_play_again_enabled, onToggle: () => toggle("auto_play_again_enabled") },
+  ] : [], [automationErrors, currentPresets?.selected_ban, currentSettings, pendingKeys, presetMaster.enabled]);
 
   if (presets.isPending && !currentPresets) return <div className="page-loading">{fr.common.loading}</div>;
   if (presets.isError && !currentPresets) return <div className="state-error"><strong>{fr.presets.championLoadError}</strong><span>{fr.app.localServerError}</span><Button variant="primary" type="button" onClick={() => void presets.refetch()}>{fr.common.retry}</Button></div>;

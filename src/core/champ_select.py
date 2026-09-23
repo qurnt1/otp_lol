@@ -1354,6 +1354,8 @@ class ChampSelectMixin:
         slot_key: Optional[str] = None,
     ) -> None:
         """Re-apply the rune page when the live session state does not match the expected value."""
+        if not self.get_params().get("auto_summoners_enabled", False):
+            return
         if self.state.rune_applied_for_session:
             return
         if self.state.rune_apply_in_progress or not self.connection:
@@ -1409,7 +1411,11 @@ class ChampSelectMixin:
         return False
 
     async def _set_rune_page(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if not self.connection or self.state.rune_apply_in_progress:
+        if (
+            not self.connection
+            or self.state.rune_apply_in_progress
+            or not self.get_params().get("auto_summoners_enabled", False)
+        ):
             return
 
         self.state.rune_apply_in_progress = True
@@ -1431,6 +1437,9 @@ class ChampSelectMixin:
             # Fetch the target page's full data from the list so we can PUT it back.
             all_pages = await self._fetch_rune_pages_async()
             current_params = self.get_params()
+            if not current_params.get("auto_summoners_enabled", False):
+                logging.debug("[RUNES] Auto-Summs disabled while loading rune pages; skipping.")
+                return
             current_page_id, current_page_name, current_slot = self._resolve_rune_selection(
                 current_params,
                 slot_key=chosen_slot,

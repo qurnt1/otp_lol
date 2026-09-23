@@ -198,12 +198,12 @@ jobs:
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "release\OTP-LOL-Setup.exe").Hash.ToLowerInvariant()
           "$hash  OTP-LOL-Setup.exe" | Set-Content -LiteralPath "release\OTP-LOL-Setup.exe.sha256" -Encoding ascii
 
-      - name: Publish GitHub Release
+      - name: Create draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release create "${{ github.ref_name }}" "release/OTP-LOL-Setup.exe" "release/OTP-LOL-Setup.exe.sha256" --verify-tag --generate-notes
+          gh release create "${{ github.ref_name }}" "release/OTP-LOL-Setup.exe" "release/OTP-LOL-Setup.exe.sha256" --verify-tag --generate-notes --draft
 
       - name: Upload release candidate artifact
         uses: actions/upload-artifact@v6

@@ -29,6 +29,7 @@ from src.desktop.window import (
     WEBVIEW_STORAGE_DIR,
     WebViewWindow,
     WebViewWindowConfig,
+    _WEBVIEW2_EVERGREEN_CLIENT_GUID,
     _valid_window_position,
     get_webview2_runtime_version,
     has_webview2_runtime,
@@ -74,6 +75,25 @@ class FakeEventSignal:
 
 
 class DesktopWindowTests(unittest.TestCase):
+    @staticmethod
+    def _webview_registry(registrations):
+        registry = MagicMock()
+        registry.HKEY_CURRENT_USER = 1
+        registry.HKEY_LOCAL_MACHINE = 2
+
+        def open_key(root, path):
+            key_id = (root, path)
+            if key_id not in registrations:
+                raise FileNotFoundError(path)
+            key = MagicMock()
+            key.__enter__.return_value = key
+            key.version = registrations[key_id]
+            return key
+
+        registry.OpenKey.side_effect = open_key
+        registry.QueryValueEx.side_effect = lambda key, _name: (key.version, None)
+        return registry
+
     def test_packaged_self_test_can_skip_missing_webview2_only_when_explicit(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -1120,14 +1140,32 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertIsNone(get_webview2_runtime_version())
 
     @patch("src.desktop.window.sys.platform", "win32")
-    def test_webview2_version_reads_only_a_valid_registered_version(self):
-        registry = MagicMock()
-        registry.HKEY_CURRENT_USER = 1
-        registry.HKEY_LOCAL_MACHINE = 2
-        registry.OpenKey.return_value.__enter__.return_value = object()
-        registry.QueryValueEx.return_value = ("145.0.1.2", None)
+    def test_webview2_version_reads_only_a_valid_evergreen_registration(self):
+        path = rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{_WEBVIEW2_EVERGREEN_CLIENT_GUID}"
+        registry = self._webview_registry({(1, path): "145.0.1.2"})
         with patch.dict(sys.modules, {"winreg": registry}):
             self.assertEqual(get_webview2_runtime_version(), "145.0.1.2")
+            self.assertTrue(has_webview2_runtime())
+
+    @patch("src.desktop.window.sys.platform", "win32")
+    def test_webview2_detection_returns_false_when_no_runtime_is_registered(self):
+        registry = self._webview_registry({})
+        with patch.dict(sys.modules, {"winreg": registry}):
+            self.assertIsNone(get_webview2_runtime_version())
+            self.assertFalse(has_webview2_runtime())
+
+    @patch("src.desktop.window.sys.platform", "win32")
+    def test_webview2_detection_ignores_edge_preview_channels_without_evergreen(self):
+        path = r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{}"
+        registrations = {
+            (1, path.format("{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}")): "145.0.1.2",
+            (1, path.format("{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}")): "145.0.1.2",
+            (1, path.format("{65C35B14-6C1D-4122-AC46-7148CC9D6497}")): "145.0.1.2",
+        }
+        registry = self._webview_registry(registrations)
+        with patch.dict(sys.modules, {"winreg": registry}):
+            self.assertIsNone(get_webview2_runtime_version())
+            self.assertFalse(has_webview2_runtime())
 
     @patch("src.desktop.window.sys.platform", "win32")
     def test_missing_webview2_offers_the_official_download_page(self):

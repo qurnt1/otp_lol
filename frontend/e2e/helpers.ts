@@ -129,19 +129,19 @@ export function createState(connected = false, configured = false) {
   if (configured) Object.assign(slot, { rune_page_id: 7, rune_page_name: "Ma page Top" });
   const pickSlots = { pick_1: slot, pick_2: slotTwo, pick_3: slotThree };
   const settings = {
-    config_version: "11.0", config_schema_version: 6, auto_accept_enabled: false, auto_pick_enabled: false,
+    config_version: "11.1", config_schema_version: 6, auto_accept_enabled: false, auto_pick_enabled: false,
     auto_ban_enabled: false, auto_summoners_enabled: false, presets_enabled: configured, onboarding_completed: true, selected_pick_1: configured ? "Garen" : "",
     selected_pick_2: configured ? "Lux" : "", selected_pick_3: configured ? "Ashe" : "", selected_ban: configured ? "Teemo" : "", pick_slots: pickSlots,
     theme: "darkly", summoner_name_auto_detect: true, manual_summoner_name: "", manual_region: "euw", auto_detected_riot_id: "", auto_detected_region: "", auto_detected_platform: "", auto_detected_account_valid: false, preferred_stats_site: "opgg", preferred_hotkey_site: "porofessor", hotkey_toggle_window: "alt+c", hotkey_open_site: "alt+p", auto_play_again_enabled: false, auto_hide_on_connect: true, close_app_on_lol_exit: true, ignored_update_version: "", skin_automation_enabled: configured, window_x: 0, window_y: 0, window_width: 1100, window_height: 760, window_maximized: false,
   };
-  const runtime = { version: "11.0", connected, phase: connected ? "Lobby" : "None", riot_id: connected ? "Player#EUW" : "", region: connected ? "euw" : "", queue_id: 0, assigned_position: "", presets_enabled: configured, auto_accept_enabled: false, auto_pick_enabled: false, auto_ban_enabled: false, auto_summoners_enabled: false };
+  const runtime = { version: "11.1", connected, phase: connected ? "Lobby" : "None", riot_id: connected ? "Player#EUW" : "", region: connected ? "euw" : "", queue_id: 0, assigned_position: "", presets_enabled: configured, auto_accept_enabled: false, auto_pick_enabled: false, auto_ban_enabled: false, auto_summoners_enabled: false };
   const preview = (id: number, name: string, skinName: string, skinId: number, skinNum: number) => ({ champion_id: id, champion_name: name, champion_icon_url: demoAsset, champion_splash_url: demoAsset, spell_1_url: demoAsset, spell_2_url: demoAsset, skin_name: skinName, skin_preview_url: skinNum > 0 ? "/api/assets/skins/" + id + "/" + skinId + "/splash?skin_num=" + skinNum + "&v=" + DATA_DRAGON_VERSION : null });
   return { settings, runtime, presets: { presets_enabled: configured, selected_ban: settings.selected_ban, slots: settings.pick_slots }, preset_previews: configured ? { pick_1: preview(86, "Garen", "God-King Garen", 86013, 13), pick_2: preview(99, "Lux", "Battle Academia Lux", 99010, 10), pick_3: preview(22, "Ashe", "PROJECT: Ashe", 22013, 13) } : {}, ban_preview: configured ? preview(17, "Teemo", "", 0, 0) : null };
 }
 
 type NetworkStatusOption = "online" | "offline" | { value: "online" | "offline" };
 
-export async function mockLocalApi(page: Page, options: { connected?: boolean; configured?: boolean; onboardingCompleted?: boolean; assignedPosition?: string; phase?: string; historyItems?: unknown[]; rejectPresetActivation?: boolean; randomSkinPreview?: boolean; alternateSkin?: boolean; autoDetect?: boolean; autoDetectedRiotId?: string; autoDetectedRegion?: string; autoDetectedPlatform?: string; manualRiotId?: string; riotId?: string; region?: string; networkStatus?: NetworkStatusOption; statsLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }>; liveLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }> } = {}) {
+export async function mockLocalApi(page: Page, options: { connected?: boolean; configured?: boolean; onboardingCompleted?: boolean; assignedPosition?: string; phase?: string; historyItems?: unknown[]; rejectPresetActivation?: boolean; rejectSettingsPatch?: boolean; randomSkinPreview?: boolean; alternateSkin?: boolean; autoDetect?: boolean; autoDetectedRiotId?: string; autoDetectedRegion?: string; autoDetectedPlatform?: string; manualRiotId?: string; riotId?: string; region?: string; networkStatus?: NetworkStatusOption; statsLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }>; liveLink?: Partial<{ available: boolean; site: string; url: string | null; homepage_url: string; riot_id: string | null; region: string | null; account_source: "connected" | "saved" | "manual" | "unavailable" }> } = {}) {
   const state = createState(options.connected, options.configured);
   let diagnosticResults: unknown[] = [];
   state.settings.onboarding_completed = options.onboardingCompleted ?? true;
@@ -236,6 +236,10 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     else if (url.pathname === "/api/settings") {
       if (method === "PATCH") {
         const changes = route.request().postDataJSON() as Record<string, unknown>;
+        if (options.rejectSettingsPatch) {
+          await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "save failed" }) });
+          return;
+        }
         const onboardingWasCompleted = state.settings.onboarding_completed;
         if (options.rejectPresetActivation && changes.presets_enabled === true && !state.settings.selected_pick_1 && !state.settings.selected_pick_2 && !state.settings.selected_pick_3) {
           await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "Configure au moins un champion avant d'activer les presets." }) });
@@ -296,15 +300,18 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
     else if (/^\/api\/account\/matches\/\d+\/timeline$/.test(url.pathname)) payload = { data: { game_id: "12345", events: [{ type: "CHAMPION_KILL", timestamp: 650000, killer_id: 2, victim_id: 7, assisting_participant_ids: [] }, { type: "ITEM_PURCHASED", timestamp: 660000, item_id: 1055, participant_id: 1, assisting_participant_ids: [] }], item_names: { "1055": "Doran Blade" } }, available: true, stale: false, last_synced: "2026-09-18T10:00:00Z", error: null, source: "lcu", from_cache: false, errors: {} };
     else if (/^\/api\/account\/matches\/\d+$/.test(url.pathname)) payload = { data: { game_id: url.pathname.split("/").pop(), participants: [{ champion_id: 86, team_id: 100, win: true, kills: 8, deaths: 2, assists: 5, items: [1055, 3006] }], item_names: { "1055": "Doran Blade", "3006": "Berserker Greaves" } }, available: true, stale: false, last_synced: "2026-09-18T10:00:00Z", error: null, source: "lcu", from_cache: false, errors: {} };
     else if (url.pathname === "/api/game-data/status") payload = { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } };
-    else if (url.pathname === "/api/diagnostics") payload = { runtime: state.runtime, account_identity: {
-      riot_id: state.runtime.riot_id || null,
-      region: state.runtime.region || null,
-      platform_id: state.settings.auto_detected_platform || null,
-      regional_routing: state.runtime.region ? "europe" : null,
-      routing_source: options.connected ? "region_locale" : "unavailable",
-      source: options.connected ? "connected" : "unavailable",
-      connected: Boolean(options.connected),
-    }, game_data: { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } }, requests: [{ timestamp: "2026-09-18T10:00:00Z", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null }], events: [], errors: [], endpoint_checks: [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase" }], endpoint_results: diagnosticResults };
+    else if (url.pathname === "/api/diagnostics") {
+      const { riot_id, ...diagnosticsRuntime } = state.runtime;
+      payload = { runtime: diagnosticsRuntime, account_identity: {
+        riot_id: riot_id || null,
+        region: state.runtime.region || null,
+        platform_id: state.settings.auto_detected_platform || null,
+        regional_routing: state.runtime.region ? "europe" : null,
+        routing_source: options.connected ? "region_locale" : "unavailable",
+        source: options.connected ? "connected" : "unavailable",
+        connected: Boolean(options.connected),
+      }, game_data: { source: "cache", game_version: "16.18.1", connected: options.connected ?? false, cache_available: true, cache_version: "16.18.1", fallback: null, catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true } }, requests: [{ timestamp: "2026-09-18T10:00:00Z", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null }], events: [], errors: [], endpoint_checks: [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase" }], endpoint_results: diagnosticResults };
+    }
     else if (url.pathname === "/api/diagnostics/run" && method === "POST") {
       const results = [{ id: "gameflow_phase", label: "Game phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase", status: 200, duration_ms: 2.4, success: true, error: null, summary: "InProgress" }];
       diagnosticResults = results;

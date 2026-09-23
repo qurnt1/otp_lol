@@ -18,7 +18,7 @@ La matrice couvre les réglages éditables par l’interface. Le test API vérif
 
 Validation UI de référence : `npm run test:e2e`, dont `settings.spec.ts` vérifie un toggle immédiat et les scénarios de navigation/layout vérifient le shell. Les tests locaux ne prouvent pas la disponibilité réelle du client League ni le comportement de chaque backend WebView2.
 
-Le fichier de réglages utilise le schéma 6. Le premier lancement crée et persiste les valeurs d'usine et les presets de départ; un schéma différent n'est pas migré, il est sauvegardé puis remplacé par cet état sûr. L'import exige aussi la version courante.
+Le fichier de réglages utilise le schéma 6. Le premier lancement crée et persiste les valeurs d'usine et les presets de départ. Un schéma absent ou plus ancien n'est pas migré et est remplacé par ces valeurs sans créer de `.bak`; un fichier invalide ou issu d'un schéma plus récent est conservé en `.bak` avant le remplacement. L'import exige aussi la version courante.
 
 Les champs `auto_detected_*` sont locaux à l'installation, absents de l'export portable et ignorés à l'import. La réinitialisation complète les efface; les actions de reset/clear des seuls presets les conservent.
 

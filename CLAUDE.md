@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-OTP LOL v11.0 — a Windows desktop assistant for League of Legends champion select automation. Connects to the LCU API via `lcu-driver`, auto-accepts queues, pre-picks/locks champions, bans, sets summoner spells, applies rune pages, and selects skins. Built with Python 3.13, FastAPI, React, and pywebview, then shipped as a PyInstaller executable.
+OTP LOL v11.1 — a Windows desktop assistant for League of Legends champion select automation. Connects to the LCU API via `lcu-driver`, auto-accepts queues, pre-picks/locks champions, bans, sets summoner spells, applies rune pages, and selects skins. Built with Python 3.13, FastAPI, React, and pywebview, then shipped as a PyInstaller executable.
 
 ## Commands
 

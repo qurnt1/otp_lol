@@ -22,6 +22,7 @@ from ..config import (
 from ..core.datadragon import DataDragon
 from ..domain.events import EventBroker
 from ..domain.hotkeys import validate_hotkey_pair
+from ..domain.presets import PRESET_VALIDATION_KEYS, validate_preset_invariants
 from ..lcu.account_stats import AccountStatsService
 from ..lcu.assets import LcuAssetService
 from ..lcu.diagnostics import DiagnosticsService
@@ -275,7 +276,12 @@ class ApplicationContext:
             if not persisted:
                 self.params = previous
 
-    def persist_parameters(self, values: Mapping[str, Any]) -> Dict[str, Any] | None:
+    def persist_parameters(
+        self,
+        values: Mapping[str, Any],
+        *,
+        validate_pick_selection: bool = False,
+    ) -> Dict[str, Any] | None:
         """Atomically merge, persist, and install a new settings snapshot."""
         with self._params_lock:
             candidate = copy.deepcopy(self.params)
@@ -283,6 +289,12 @@ class ApplicationContext:
                 candidate[key] = copy.deepcopy(value)
             validate_hotkey_pair(candidate["hotkey_toggle_window"], candidate["hotkey_open_site"])
             candidate = normalize_parameters(candidate)
+            if PRESET_VALIDATION_KEYS.intersection(values):
+                validate_preset_invariants(
+                    candidate,
+                    changed_keys=set(values),
+                    validate_pick_selection=validate_pick_selection,
+                )
             return self._commit_candidate_locked(candidate)
 
     def persist_preset_slot(
@@ -305,6 +317,10 @@ class ApplicationContext:
                 candidate[f"selected_pick_{slot_number}"] = selected_champion
             candidate["onboarding_completed"] = True
             candidate = normalize_parameters(candidate)
+            changed_keys = set(values)
+            if selected_champion is not None:
+                changed_keys.add(f"selected_pick_{slot_number}")
+            validate_preset_invariants(candidate, changed_keys=changed_keys)
             return self._commit_candidate_locked(candidate)
 
     async def ensure_data_dragon(self) -> None:

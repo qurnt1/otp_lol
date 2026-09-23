@@ -17,6 +17,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const queryClient = useQueryClient();
   const [externalFailed, setExternalFailed] = useState(false);
   const [providerWindowFailed, setProviderWindowFailed] = useState(false);
+  const [providerSaveFailed, setProviderSaveFailed] = useState(false);
   const [providerState, setProviderState] = useState("not_created");
   const [savingProvider, setSavingProvider] = useState(false);
   const visibilityRequestRef = useRef<string | null>(null);
@@ -29,6 +30,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
 
   useEffect(() => {
     setProviderWindowFailed(false);
+    setProviderSaveFailed(false);
     setProviderState("not_created");
     visibilityRequestRef.current = null;
   }, [kind]);
@@ -87,13 +89,15 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const chooseProvider = async (providerId: string) => {
     if (providerId === link.data?.site || savingProvider) return;
     setSavingProvider(true);
-    setProviderWindowFailed(false);
+    setProviderSaveFailed(false);
     try {
       await api.patchSettings({ [settingKey]: providerId });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["settings"] }),
         queryClient.invalidateQueries({ queryKey: [kind === "stats" ? "stats-link" : "live-stats-link"] }),
       ]);
+    } catch {
+      setProviderSaveFailed(true);
     } finally {
       setSavingProvider(false);
     }
@@ -137,7 +141,7 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
       <section className="surface statistics-summary" aria-label={copy.title}>
         <div className="statistics-summary-copy"><span className="section-label">{copy.provider}</span><div className="provider-choice-list" role="radiogroup" aria-label={copy.provider}>
           {providerOptions?.map((option) => <button key={option.id} className={`provider-choice ${option.id === link.data?.site ? "is-selected" : ""}`} type="button" role="radio" aria-checked={option.id === link.data?.site} disabled={savingProvider} onClick={() => void chooseProvider(option.id)}><img src={option.logo_url} alt="" aria-hidden="true" />{option.label}</button>)}
-        </div></div>
+        </div>{providerSaveFailed && <small className="inline-error" role="alert">{fr.settings.failed}</small>}</div>
         <div className="statistics-summary-copy"><span className="section-label">{copy.account}</span><strong>{copy.accountSource[link.data.account_source]}</strong></div>
         {link.data.available && link.data.riot_id && <div className="statistics-summary-copy"><span className="section-label">{copy.profile}</span><strong>{link.data.riot_id}</strong></div>}
         {link.data.region && <span className="status-pill">{link.data.region.toUpperCase()}</span>}

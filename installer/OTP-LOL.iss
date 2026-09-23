@@ -1,6 +1,6 @@
 #define AppName "OTP LOL"
 #ifndef AppVersion
-  #define AppVersion "11.0"
+  #define AppVersion "11.1"
 #endif
 #ifndef BuildRoot
   #define BuildRoot "."
@@ -34,51 +34,61 @@ Filename: "{app}\OTP LOL.exe"; Description: "Lancer OTP LOL"; Flags: nowait post
 
 [Code]
 const
-  WebView2ClientGuid1 = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
-  WebView2ClientGuid2 = '{2CD8A007-E189-409D-A2C8-9AF4EF3C72AA}';
-  WebView2ClientGuid3 = '{0D50BFEC-CD6A-4F9A-964C-C7416E3ACB10}';
-  WebView2ClientGuid4 = '{65C35B14-6C1D-4122-AC46-7148CC9D6497}';
+  WebView2EvergreenClientGuid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}';
+
+function IsValidWebView2Version(const Version: String): Boolean;
+var
+  Index, PartCount, DigitsInPart: Integer;
+begin
+  Result := False;
+  if Version = '' then
+    exit;
+
+  PartCount := 1;
+  DigitsInPart := 0;
+  for Index := 1 to Length(Version) do begin
+    if Version[Index] = '.' then begin
+      if DigitsInPart = 0 then
+        exit;
+      Inc(PartCount);
+      DigitsInPart := 0;
+    end else begin
+      if (Version[Index] < '0') or (Version[Index] > '9') then
+        exit;
+      Inc(DigitsInPart);
+    end;
+  end;
+
+  Result := (DigitsInPart > 0) and (PartCount = 4) and (Version <> '0.0.0.0');
+end;
 
 function HasWebView2Value(RootKey: Integer; const KeyPath: String): Boolean;
 var
   Version: String;
 begin
-  Result := RegQueryStringValue(RootKey, KeyPath, 'pv', Version) and
-    (Trim(Version) <> '') and (Version <> '0.0.0.0');
+  Result := False;
+  if not RegQueryStringValue(RootKey, KeyPath, 'pv', Version) then
+    exit;
+  Result := IsValidWebView2Version(Trim(Version));
 end;
 
-function HasWebView2Client(RootKey: Integer; const ClientGuid: String): Boolean;
+function HasWebView2Client(RootKey: Integer): Boolean;
 begin
   Result := HasWebView2Value(
     RootKey,
-    'Software\Microsoft\EdgeUpdate\Clients\' + ClientGuid
+    'Software\Microsoft\EdgeUpdate\Clients\' + WebView2EvergreenClientGuid
   ) or HasWebView2Value(
     RootKey,
-    'Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\' + ClientGuid
+    'Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\' + WebView2EvergreenClientGuid
   );
 end;
 
 function HasWebView2Runtime: Boolean;
 begin
-  Result :=
-    HasWebView2Client(HKCU, WebView2ClientGuid1) or
-    HasWebView2Client(HKCU, WebView2ClientGuid2) or
-    HasWebView2Client(HKCU, WebView2ClientGuid3) or
-    HasWebView2Client(HKCU, WebView2ClientGuid4) or
-    HasWebView2Client(HKLM, WebView2ClientGuid1) or
-    HasWebView2Client(HKLM, WebView2ClientGuid2) or
-    HasWebView2Client(HKLM, WebView2ClientGuid3) or
-    HasWebView2Client(HKLM, WebView2ClientGuid4);
+  Result := HasWebView2Client(HKCU) or HasWebView2Client(HKLM);
   if (not Result) and IsWin64 then begin
     Result :=
-      HasWebView2Client(HKCU64, WebView2ClientGuid1) or
-      HasWebView2Client(HKCU64, WebView2ClientGuid2) or
-      HasWebView2Client(HKCU64, WebView2ClientGuid3) or
-      HasWebView2Client(HKCU64, WebView2ClientGuid4) or
-      HasWebView2Client(HKLM64, WebView2ClientGuid1) or
-      HasWebView2Client(HKLM64, WebView2ClientGuid2) or
-      HasWebView2Client(HKLM64, WebView2ClientGuid3) or
-      HasWebView2Client(HKLM64, WebView2ClientGuid4);
+      HasWebView2Client(HKCU64) or HasWebView2Client(HKLM64);
   end;
 end;
 

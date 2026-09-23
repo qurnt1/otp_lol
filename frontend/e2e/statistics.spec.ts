@@ -131,6 +131,17 @@ test("changing the provider opens the new provider without revealing a backgroun
   await expect.poll(() => actions).toContain("open:route_enter");
 });
 
+test("failed provider selection shows feedback and keeps the current provider selected", async ({ page }) => {
+  await mockLocalApi(page, { connected: true, statsLink: deeplolProfile, rejectSettingsPatch: true });
+  await page.goto("/#statistics");
+
+  await page.getByRole("radio", { name: "DPM.LOL" }).click();
+
+  await expect(page.getByRole("alert")).toContainText("Impossible d’enregistrer ce réglage.");
+  await expect(page.getByRole("radio", { name: "DPM.LOL" })).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("radio", { name: "DeepLOL" })).toHaveAttribute("aria-checked", "true");
+});
+
 test("stats provider selection persists inline without opening Settings", async ({ page }) => {
   const patches: Array<Record<string, unknown>> = [];
   page.on("request", (request) => {

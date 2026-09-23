@@ -155,6 +155,34 @@ class ChampSelectLogicTests(unittest.IsolatedAsyncioTestCase):
 
         self.manager._set_rune_page_via_perks_async.assert_not_awaited()
 
+    async def test_rune_apply_is_skipped_when_auto_summoners_are_disabled(self):
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=AssertionError("must not fetch pages"))
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_not_awaited()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
+    async def test_rune_apply_aborts_if_auto_summoners_are_disabled_while_loading_pages(self):
+        self.params["auto_summoners_enabled"] = True
+        self.params["pick_slots"]["pick_1"].update({"rune_page_id": 100, "rune_page_name": "Top"})
+        self.manager.connection = object()
+
+        async def fetch_pages_then_disable_auto_summoners():
+            self.params["auto_summoners_enabled"] = False
+            return [{"id": 100, "name": "Top"}]
+
+        self.manager._fetch_rune_pages_async = AsyncMock(side_effect=fetch_pages_then_disable_auto_summoners)
+        self.manager._set_rune_page_via_perks_async = AsyncMock(side_effect=AssertionError("must not put"))
+
+        await self.manager._set_rune_page(self.params, slot_key="pick_1")
+
+        self.manager._fetch_rune_pages_async.assert_awaited_once()
+        self.manager._set_rune_page_via_perks_async.assert_not_awaited()
+
     async def test_do_nothing_rune_selection_skips_fetch_put_and_confirmation(self):
         self.params["pick_slots"]["pick_1"].update({"rune_page_id": 0, "rune_page_name": ""})
         self.manager.connection = object()

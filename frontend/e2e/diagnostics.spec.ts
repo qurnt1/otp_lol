@@ -24,6 +24,7 @@ test("diagnostics is hidden from permanent navigation and reachable from advance
   await expect(page).toHaveURL(/#diagnostics$/);
   await expect(page.getByRole("heading", { name: "Diagnostics LCU" })).toBeVisible();
   await expect(page.getByText("Cache local")).toBeVisible();
+  await expect(page.locator("#diagnostics-account-heading")).toHaveText("Player#EUW");
   await expect(page.locator(".diagnostics-test-list code").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" })).toBeVisible();
 });
 

@@ -1,6 +1,6 @@
 """Opt-in, read-only provider probes for a currently active League match.
 
-Run with ``OTP_LOL_LIVE_PROVIDER_AUDIT=1 python -m pytest -s tests/test_live_provider_audit.py``.
+Run with ``OTP_LOL_LIVE_PROVIDER_AUDIT=1 python -m unittest discover -s tests -p test_live_provider_audit.py -v``.
 The probe refuses to contact providers unless the LCU reports ``InProgress``.
 """
 

@@ -217,7 +217,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 42)
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 8005)
 
-    def test_load_parameters_resets_and_backs_up_old_schema(self):
+    def test_load_parameters_resets_old_schema_without_backup(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
@@ -229,10 +229,10 @@ class ConfigTests(unittest.TestCase):
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
-            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
+            backup_exists = Path(f"{params_path}.bak").exists()
             persisted = tomllib.loads(params_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(backup_content, original)
+        self.assertFalse(backup_exists)
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
         self.assertEqual(persisted["config_schema_version"], config._settings.CONFIG_SCHEMA_VERSION)
         self.assertNotEqual(persisted["selected_pick_1"], "LegacyChampion")
@@ -251,7 +251,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(backup_content, original)
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
 
-    def test_load_parameters_resets_and_backs_up_absent_schema(self):
+    def test_load_parameters_resets_absent_schema_without_backup(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             params_path = Path(tmpdir) / "parameters.toml"
             payload = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
@@ -262,9 +262,9 @@ class ConfigTests(unittest.TestCase):
             with patch.object(config._settings, "PARAMETERS_PATH", str(params_path)):
                 loaded = config.load_parameters()
 
-            backup_content = Path(f"{params_path}.bak").read_text(encoding="utf-8")
+            backup_exists = Path(f"{params_path}.bak").exists()
 
-        self.assertEqual(backup_content, original)
+        self.assertFalse(backup_exists)
         self.assertEqual(loaded, config.FIRST_LAUNCH_PARAMS)
 
     def test_normalize_parameters_recovers_from_invalid_or_duplicate_hotkeys(self):

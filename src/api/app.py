@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from ..config import CURRENT_VERSION
 from .context import ApplicationContext
@@ -50,6 +51,7 @@ def create_app(
     app.state.context = app_context
     allow_dev_origins = frontend_dir is None or os.environ.get("OTP_LOL_ALLOW_DEV_ORIGINS") == "1"
     dev_origins = ["http://127.0.0.1:5173", "http://localhost:5173"] if allow_dev_origins else []
+    app.state.dev_origins = frozenset(dev_origins)
 
     @app.middleware("http")
     async def validate_mutation_origin(request, call_next):
@@ -66,6 +68,10 @@ def create_app(
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
         allow_headers=["*"],
+    )
+    app.add_middleware(
+        TrustedHostMiddleware,
+        allowed_hosts=["127.0.0.1", "localhost"],
     )
 
     @app.middleware("http")

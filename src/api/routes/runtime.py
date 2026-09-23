@@ -288,15 +288,9 @@ def live_link(request: Request) -> LiveLinkResponse:
 @router.websocket("/events")
 async def events(websocket: WebSocket) -> None:
     origin = websocket.headers.get("origin")
-    host = websocket.headers.get("host", "")
-    allowed_origins = {
-        f"http://{host}",
-        f"https://{host}",
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-        "null",
-    }
-    if origin and origin not in allowed_origins:
+    host = websocket.headers.get("host", "").lower()
+    allowed_origins = {f"http://{host}", *websocket.app.state.dev_origins}
+    if not origin or origin not in allowed_origins:
         await websocket.close(code=1008, reason="Origin not allowed")
         return
     await websocket.accept()

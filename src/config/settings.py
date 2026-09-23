@@ -281,11 +281,11 @@ def _clear_skin_cache() -> None:
             logging.debug("Unable to remove skin cache entry %s: %s", target, e)
 
 
-def _reset_parameters_file(reason: str) -> Dict[str, Any]:
+def _reset_parameters_file(reason: str, *, backup_existing: bool = True) -> Dict[str, Any]:
     """Reset the settings file to first-launch defaults after a validation failure."""
     logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
     had_parameters_file = os.path.exists(PARAMETERS_PATH)
-    if not _backup_parameters_file():
+    if backup_existing and not _backup_parameters_file():
         return _build_first_launch_payload()
     payload = _build_first_launch_payload()
     try:
@@ -301,15 +301,13 @@ def _reset_parameters_file(reason: str) -> Dict[str, Any]:
 def _read_schema_version(config: Dict[str, Any]) -> int:
     """Read the canonical settings schema marker."""
     raw_schema_version = config.get("config_schema_version")
-    if isinstance(raw_schema_version, bool):
+    if raw_schema_version is None:
+        return 0
+    if isinstance(raw_schema_version, bool) or not isinstance(raw_schema_version, int):
         raise ValueError(f"invalid settings schema version: {raw_schema_version!r}")
-    try:
-        schema_version = int(raw_schema_version or 0)
-    except (TypeError, ValueError, OverflowError) as e:
-        raise ValueError(f"invalid settings schema version: {raw_schema_version!r}") from e
-    if schema_version < 0:
-        raise ValueError(f"invalid settings schema version: {schema_version}")
-    return schema_version
+    if raw_schema_version < 0:
+        raise ValueError(f"invalid settings schema version: {raw_schema_version}")
+    return raw_schema_version
 
 
 def _normalize_current_schema(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -338,6 +336,16 @@ def load_parameters() -> Dict[str, Any]:
 
     if not isinstance(config, dict):
         return _reset_parameters_file("root payload is not an object")
+
+    try:
+        schema_version = _read_schema_version(config)
+    except ValueError as e:
+        return _reset_parameters_file(str(e))
+    if schema_version < CONFIG_SCHEMA_VERSION:
+        return _reset_parameters_file(
+            f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})",
+            backup_existing=False,
+        )
 
     try:
         normalized = _normalize_current_schema(config)

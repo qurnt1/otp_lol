@@ -174,7 +174,25 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
   const saveManual = (key: ManualSettingKey) => { const value = draft[key] ?? local?.[key]; if (typeof value !== "string" || pending(key) || submittedManualValues.current[key] === value) return; submittedManualValues.current[key] = value; void save({ [key]: value } as SettingsPatch, key).then((success) => { if (!success) delete submittedManualValues.current[key]; }); };
   const openNativeFolder = (kind: "logs" | "appdata") => { if (nativeBridgeReady) void openLocalFolder(kind); };
   const toggleNativeFullscreen = () => { if (nativeBridgeReady) void toggleFullscreen(); };
-  const downloadExport = async () => { const response = await fetch("/api/settings/export"); if (!response.ok) return; const blob = await response.blob(); const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = "otp-lol-settings.json"; anchor.click(); URL.revokeObjectURL(url); };
+  const downloadExport = async () => {
+    setPending("export", true);
+    setErrors((current) => { const next = { ...current }; delete next.export; return next; });
+    try {
+      const response = await fetch("/api/settings/export");
+      if (!response.ok) throw new Error("Settings export failed");
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "otp-lol-settings.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setErrors((current) => ({ ...current, export: fr.settings.exportFailed }));
+    } finally {
+      setPending("export", false);
+    }
+  };
   const importFile = async (file: File) => {
     try {
       const payload = JSON.parse(await file.text()) as SettingsImport;
@@ -260,13 +278,14 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
         <section className="advanced-group" aria-labelledby="advanced-config-heading">
           <div className="advanced-group-heading"><div className="advanced-group-icon"><FolderOpen size={16} aria-hidden="true" /></div><div><h3 id="advanced-config-heading">{fr.settings.advancedConfig}</h3><p>{fr.settings.advancedConfigDescription}</p></div></div>
           <div className="advanced-actions">
-            <AdvancedAction icon={<Download size={15} aria-hidden="true" />} title={fr.settings.export} description={fr.settings.advancedDescriptions.export} onClick={() => void downloadExport()} />
+            <AdvancedAction icon={<Download size={15} aria-hidden="true" />} title={fr.settings.export} description={fr.settings.advancedDescriptions.export} disabled={pending("export")} onClick={() => void downloadExport()} />
             <AdvancedAction icon={<Upload size={15} aria-hidden="true" />} title={fr.settings.import} description={fr.settings.advancedDescriptions.import} onClick={() => importInput.current?.click()} />
             <AdvancedAction icon={<RotateCcw size={15} aria-hidden="true" />} title={presetAutomationCopy.resetPresets} description={presetAutomationCopy.resetPresetsDescription} tone="danger" disabled={pending("reset-presets")} onClick={() => setConfirmResetPresets(true)} />
             <AdvancedAction icon={<Eraser size={15} aria-hidden="true" />} title={presetAutomationCopy.clearPresets} description={presetAutomationCopy.clearPresetsDescription} tone="danger" disabled={pending("clear-presets")} onClick={() => setConfirmClearPresets(true)} />
             <AdvancedAction icon={<RotateCcw size={15} aria-hidden="true" />} title={fr.settings.reset} description={fr.settings.advancedDescriptions.reset} tone="danger" disabled={pending("reset")} onClick={() => setConfirmReset(true)} />
             <input ref={importInput} id="settings-import" className="sr-only" type="file" accept="application/json,.json" aria-label={fr.settings.import} onChange={(event) => { const file = event.target.files?.[0]; if (file) void importFile(file); event.currentTarget.value = ""; }} />
           </div>
+          {errors.export && <small className="inline-error" role="alert">{errors.export}</small>}
           {errors.import && <small className="inline-error" role="alert">{errors.import}</small>}
           {errors["reset-presets"] && <small className="inline-error" role="alert">{errors["reset-presets"]}</small>}
           {errors["clear-presets"] && <small className="inline-error" role="alert">{errors["clear-presets"]}</small>}
