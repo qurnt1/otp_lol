@@ -40,7 +40,9 @@ OTP LOL.exe
 
 # Node / website
 node_modules/
-website/dist/
+# Sites static source
+!website/dist/
+!website/dist/**
 website/*-qa.png
 website/tsconfig.tsbuildinfo
 *.tsbuildinfo

@@ -1,548 +1,65 @@
 <p align="center">
-  <a href="./readme.md"><img src="https://img.shields.io/badge/version-11.0-2f81f7" alt="Version"></a>
-  <a href="./requirements.txt"><img src="https://img.shields.io/badge/python-3.13-3776AB?logo=python&logoColor=white" alt="Python"></a>
-  <a href="https://www.leagueoflegends.com/"><img src="https://img.shields.io/badge/game-League%20of%20Legends-C28F2C" alt="Game"></a>
-  <a href="./readme.md"><img src="https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform"></a>
-  <a href="https://github.com/qurnt1/otp_lol/actions/workflows/python-ci.yml"><img src="https://github.com/qurnt1/otp_lol/actions/workflows/python-ci.yml/badge.svg" alt="Python CI"></a>
-  <a href="https://github.com/qurnt1/otp_lol/actions/workflows/frontend-ci.yml"><img src="https://github.com/qurnt1/otp_lol/actions/workflows/frontend-ci.yml/badge.svg" alt="Frontend CI"></a>
+  <a href="https://github.com/qurnt1/otp_lol/releases"><img src="https://img.shields.io/badge/Windows-download-0078D6?logo=windows&logoColor=white" alt="Download for Windows"></a>
 </p>
-
----
 
 <h1 align="center">OTP LOL</h1>
 
----
+<p align="center"><strong>Your League routine, ready before the match.</strong></p>
 
-Windows desktop assistant for League of Legends, written in Python with a React interface.
+OTP LOL is a Windows companion for League of Legends that takes care of the repeatable client actions around queue, champion select, and the end of a game. Set your preferences once, then enable only the automations you want.
 
-`OTP LOL` automates several actions around the LoL client to save time during queue, champion select, and post-game, while keeping the interface simple to configure.
+<p align="center">
+  <a href="https://github.com/qurnt1/otp_lol/releases"><strong>Get OTP LOL for Windows</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#see-it-in-action">See the app</a>
+</p>
 
-The application is local to your Windows machine. It is not endorsed by Riot Games and does not provide a cloud account or hosted dashboard.
+## Spend less time on the same setup
 
-Current project version: `11.0`
+Every game brings familiar steps. OTP LOL keeps your choices together and can apply them when the League client is ready.
 
-## Table Of Contents
+- **Get through queue faster.** Optionally accept ready checks and return to the lobby after a game.
+- **Enter champion select with a plan.** Set pick priorities and a ban, then choose pre-picks and summoner spells for your presets.
+- **Keep your loadout consistent.** Configure rune pages and fixed or random skins for each preset.
+- **Make it yours.** Organize presets by role, use quick controls, and open your preferred player-stat pages.
 
-- [Overview](#overview)
-- [Version 11.0 Highlights](#version-110-highlights)
-- [Features](#features)
-- [Screenshots](#screenshots)
-- [Technologies](#technologies)
-- [Requirements](#requirements)
-- [Installation From Source](#installation-from-source)
-- [Launch](#launch)
-- [Executable Build](#executable-build)
-- [Configuration And Used Files](#configuration-and-used-files)
-- [Usage](#usage)
-- [Shortcuts](#shortcuts)
-- [Project Architecture](#project-architecture)
-- [Tests And Verification](#tests-and-verification)
-- [Production Readiness](#production-readiness)
-- [Documentation](#documentation)
-- [Troubleshooting](#troubleshooting)
-- [Possible Roadmap](#possible-roadmap)
+OTP LOL works alongside the League client on your PC. It does not play the match or choose your strategy; it handles the client actions you configure.
 
-## Overview
+## You stay in control
 
-The goal of the application is to act as a local assistant for the League of Legends client.
+Start with every automation turned off. Choose your champions and loadouts, then enable actions one at a time. You can change your setup whenever you want from the dashboard and settings.
 
-It connects to the LoL client through the LCU, detects important phases, then automatically performs certain actions depending on your configuration:
+Your OTP LOL settings stay on your computer. There is no OTP LOL account, hosted profile, or advertising. The app may request public League metadata and update information. League-detected account details are excluded from settings exports. If you open a player-stat link, the selected third-party provider receives the profile URL.
 
-- automatically accept a match
-- pre-pick and lock a champion according to a preset priority order
-- ban a selected champion
-- apply preset-based summs
-- start another match after the game ends
-- quickly open external pages such as `OP.GG` and `Porofessor`
+## See it in action
 
-The application is designed to work as a lightweight desktop tool:
+<p align="center">
+  <img src="./docs/images/dashboard-web.png" alt="OTP LOL dashboard" width="48%">
+  <img src="./docs/images/settings-web.png" alt="OTP LOL settings" width="48%">
+</p>
 
-- React graphical interface hosted in a native `pywebview` window
-- local asset management
-- system tray support
-- keyboard shortcuts
-- cached local League game data, with Data Dragon skin metadata and Data Dragon/CommunityDragon fallbacks for missing catalogs or assets
+## Get started
 
-## Version 11.0 Highlights
+1. Download the Windows installer from the [GitHub releases page](https://github.com/qurnt1/otp_lol/releases).
+2. Open the League client and start OTP LOL.
+3. Set your pick priorities, ban, spells, runes, and skins.
+4. Turn on the automations you want.
 
-Version `11.0` focuses on preset completeness: skins, summoner spells, rune pages, and release/update behavior now work together more reliably.
+The first launch includes editable example presets. Automations remain off until you enable them.
 
-- `Rune page automation`
-  Presets can now store a League rune page and apply it automatically during champion select. The app confirms the selected rune page through the LCU and retries when the client overwrites state.
+## What you need
 
-- `Rune picker with full previews`
-  The settings window now shows every selected rune in the rune picker: primary runes, secondary style, secondary runes, and stat shards. Rows are fully clickable, rune icons come from CommunityDragon, and tooltips expose rune names for easier inspection.
+- A Windows PC with the League of Legends client installed on the same machine.
+- The Microsoft Edge WebView2 Evergreen Runtime.
 
-- `Compact rune previews in settings`
-  Preset rune buttons now show a compact main-rune plus secondary-style preview, and clearly flag presets where rune auto-apply is disabled.
+OTP LOL checks for WebView2 when it starts. If it is missing, install the Evergreen Runtime and reopen the app.
 
-- `Skin inventory detection and validation`
-  The app now resolves owned skins more reliably, logs inventory and pickable-skin fallbacks more clearly, and validates fixed skins against the skins that are actually pickable in champion select.
+## Privacy and compatibility
 
-- `Reworked skin picker`
-  The settings window now exposes a cleaner skin picker with direct `fixed` or `random list` selection, centered skin art in the picker, tile previews in settings, and confirmation when a skin is not detected on the current account.
+OTP LOL runs locally and talks to the League client on your own PC. It does not need an OTP LOL login or cloud dashboard.
 
-- `Per-preset skin modes`
-  Every preset uses the same three skin modes in the Dashboard editor and preview: `none`, `fixed`, and `random`. There is no inherited mode or global skin override.
+OTP LOL is an independent community project and is not affiliated with or endorsed by Riot Games. League of Legends and related marks are property of Riot Games.
 
-- `Cleaner startup and runtime output`
-  Audio initialization no longer pollutes startup output, temporary rune debug prints were removed, and noisy rune retry logs were moved to debug-level logging.
+## For contributors
 
-## Features
-
-### Queue And Champion Select Automation
-
-- `Auto-Accept`
-  Automatically accepts the ready check when a match is found.
-- `Preset Priority`
-  Tries `Preset 1`, then `Preset 2`, then `Preset 3` if the previous preset champion is unavailable or banned.
-- `Pre-pick`
-  The application can preselect your priority champion before the actual lock phase.
-- `Auto-Ban`
-  Automatically bans the configured champion.
-- `Auto-Summs`
-  Applies the summs configured for the preset that is actually picked.
-- `Auto-Runes`
-  Applies the rune page configured for the selected preset, with an option to disable rune auto-apply per preset.
-- `Champion Select Recovery`
-  Confirms picks, summs, skins, and runes through the LCU session, retries when Riot overwrites state, and falls back when needed.
-
-### Post-Game Automation
-
-- `Auto Play Again`
-  Attempts to automatically return to the lobby after the game ends.
-
-### Quality-Of-Life Features
-
-- automatic account detection
-- automatic client region detection
-- quick links to several player and in-game stats websites
-- ordered preset slots shared by the desktop workflow
-- direct preset buttons with champion and summoner icons
-- compact rune and skin previews in preset rows
-- rune picker with full rune, secondary tree, and shard previews
-- local action history window
-- option to hide the window in the system tray
-- configurable global keyboard shortcuts
-- champion and summs icon cache
-- GitHub release update prompt when a newer version is available
-- logs in `%APPDATA%`
-
-### Safety / Robustness Behaviors
-
-The project now includes several useful safeguards:
-
-- separation between `manual_*` and `auto_detected_*` values
-- cleaner application shutdown
-- native tray callbacks that are marshalled back to the WebView2 window lifecycle
-- safer shortcut capture that temporarily disables existing global hotkeys
-- semantic version comparison for update detection
-
-## Screenshots
-
-The captures below are generated from the current React/WebView2 shell with a mocked local API. They contain no real League account data.
-
-### Dashboard, 1100 x 760
-
-![Web command center](./docs/images/dashboard-web.png)
-
-Additional responsive references are available for [1440 x 900](./docs/images/dashboard-web-1440.png) and [1920 x 1080](./docs/images/dashboard-web-1920.png).
-
-### Advanced settings, 1100 x 760
-
-![Web settings](./docs/images/settings-web.png)
-
-## Technologies
-
-The project mainly uses:
-
-- `Python 3.13`
-- `FastAPI` and `Uvicorn` for the local API boundary
-- `React`, `TypeScript`, `Vite`, `Lucide`, `TanStack Query`, and `Zustand` for the desktop interface in `frontend/`
-- `pywebview` with WebView2 for the new desktop shell
-- `lcu-driver` to communicate with the League of Legends client
-- `Pillow` for images
-- `pygame` for sound effects
-- `pystray` for the system tray
-- `keyboard` for global shortcuts
-- `psutil` for single-instance checks
-- `packaging` for semantic version comparisons
-- `requests` for Data Dragon and GitHub
-
-For executable builds:
-
-- `PyInstaller`
-
-## Requirements
-
-Before running the project from source, you need:
-
-- Windows
-- Python `3.13`
-- `pip`
-- Node.js `22` and `npm`
-- Microsoft Edge WebView2 Evergreen Runtime
-- the League of Legends client installed
-- internet access for initial static-data and asset downloads (cached data is reused afterward)
-
-## Installation From Source
-
-```bash
-git clone https://github.com/qurnt1/otp_lol.git
-cd otp_lol
-py -3.13 -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -c requirements-constraints.txt -r requirements.txt
-```
-
-## Launch
-
-To run the application locally:
-
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-python launcher_web.py
-```
-
-The desktop shell serves the compiled React interface through a local FastAPI server and WebView2. Run the commands from a Windows PowerShell with the virtual environment activated.
-
-On startup, the application:
-
-1. checks that only one instance is running
-2. loads local settings
-3. prepares cache folders
-4. starts the interface
-5. restores the last validated League static-data snapshot and local Data Dragon cache
-6. refreshes League data in the background after connection; Data Dragon loads on demand for skin metadata or missing local data/assets
-
-## Executable Build
-
-The project provides a PyInstaller build script:
-
-```bash
-cd frontend
-npm ci
-npm run build
-cd ..
-python -m pip install -c requirements-constraints.txt -r requirements-build.txt
-python create_exe.py --mode onedir --no-shortcut
-```
-
-This script generates a portable onedir distribution:
-
-- binary location: `OTP LOL/OTP LOL.exe`
-- final location: project root
-- temporary `build/`, `dist/`, and `.spec` files are cleaned by the script
-
-To create the installer locally, install Inno Setup 6 and compile [`installer/OTP-LOL.iss`](./installer/OTP-LOL.iss). The tagged release workflow performs this step automatically and publishes `OTP-LOL-Setup.exe` plus its SHA-256 file.
-
-The script also handles:
-
-- asset inclusion
-- compiled `frontend/dist` inclusion for the embedded WebView
-- `src` package inclusion
-- several hidden imports for PyInstaller
-- cleanup of temporary build folders
-
-## Configuration And Used Files
-
-### User Files
-
-- Settings:
-  `%APPDATA%\OTP LOL\parameters.toml`
-- Action history:
-  `%APPDATA%\OTP LOL\history.json`
-- Logs:
-  `%APPDATA%\OTP LOL\app_debug.log`
-
-### Local Cache
-
-- Champion cache:
-  `%TEMP%\otp_lol_ddragon_champions.json`
-- Champion icon cache:
-  `%TEMP%\otp_lol_icons\`
-- Summs icon cache:
-  `%TEMP%\otp_lol_spells\`
-- LCU static data snapshots (last three game versions):
-  `%APPDATA%\OTP LOL\cache\lcu\`
-- Normalized offline account statistics:
-  `%APPDATA%\OTP LOL\cache\account\`
-
-### Main Settings
-
-The application stores, among other things:
-
-- automation toggles
-- presets `1 / 2 / 3`
-- configured ban
-- one champion plus two summs for each preset
-- ordered preset slots and their skin, spell, and rune settings
-- automatic detection mode
-- manual account and region values
-- auto-detected account and region values
-- separate providers for account statistics and in-game statistics
-- global keyboard shortcuts
-- theme, auto-hide, auto-play-again, and close-on-LoL-exit options
-
-The settings file is created on first launch with editable Garen, Lux, and Ashe starter picks, Teemo as the ban, and all automations disabled. Factory reset restores this safe starter setup. **Restaurer les presets d'exemple** restores those choices and disables the preset automation master while keeping the rest of the settings. **Effacer uniquement les presets** empties the three picks and ban without changing automation preferences or general settings. The settings format uses schema version `6`; older or unsupported TOML schemas are not migrated. OTP LOL preserves the previous file as `parameters.toml.bak` and starts with defaults. Settings imports also require the current schema version.
-
-## Usage
-
-### First Launch
-
-On first launch, you can:
-
-1. open **Réglages** from the sidebar
-2. configure `Preset 1`, `Preset 2`, and `Preset 3`
-3. choose your ban
-4. choose summs for each preset
-5. decide whether you want automatic account detection
-6. enable or disable automatic return to lobby
-
-Editable Garen, Lux, and Ashe picks plus a Teemo ban are already prepared. A dismissible banner points you to the first priority to configure; every automation starts disabled.
-
-### Dashboard And Preset Editing
-
-- Dashboard champion cards open the corresponding preset editor; the whole card is clickable.
-- The ban action opens its champion selector directly.
-- Each Dashboard priority editor configures its champion, summoner spells, skin, and runes without leaving the Dashboard.
-- Skin modes are `none`, `fixed`, and `random`; the Dashboard preview reflects the saved mode immediately.
-- The **Avancé** settings section groups local files and diagnostics, configuration import/export/reset, and window controls.
-
-### Automatic Detection Or Manual Mode
-
-The application now distinguishes between:
-
-- manual values
-- values automatically detected by the LoL client
-
-In automatic mode, account links use the current League identity only after both Riot ID and region are available. When League is closed, OTP LOL uses the last complete Riot ID/region/platform tuple saved locally. A connected but not-yet-resolved client never falls back to a different saved identity. Manual mode always uses the separately saved manual Riot ID and region. The Account settings show whether the identity is live or remembered, let you explicitly copy it into the manual fields, and let you forget it.
-
-The detected identity is specific to this installation and is excluded from settings export/import. Factory reset clears it; resetting or clearing presets does not. OTP LOL stores no PUUID or LCU credentials for this feature.
-
-### Statistics Providers
-
-- `#statistics` requests the external profile provider selected by `preferred_stats_site` when the page is entered.
-- `#live` requests the configured live-provider profile when the page is entered and uses `preferred_hotkey_site`; `Alt+P` requests that native provider directly and falls back to the in-app route if it cannot be opened. A saved identity can open its provider page while League is closed, but cannot supply data for a game that is not currently running.
-- `Alt + P` requests the configured Live provider directly and opens `#live` when the native provider cannot be shown.
-- **Diagnostics LCU** is available from Settings > Advanced, not the main sidebar. It lists safe endpoint checks, recent events/errors, and a redacted report; event JSON is opened only in the **Voir JSON** drawer.
-- Provider links and homepages are generated by the local API; each page uses one reusable top-level provider WebView with a browser fallback. Provider iframes are not used. Both pages label the account source.
-
-### Behavior During The Game
-
-When the client is detected:
-
-- the connection indicator turns green
-- the application can hide itself automatically
-- it follows client phase changes
-
-During champion select:
-
-- it detects your role and current action
-- it pre-picks the best available preset champion
-- it skips champions already banned in the current session
-- it falls back from `Preset 1` to `Preset 2` to `Preset 3`
-- it confirms the final lock through the LCU session state
-- it applies summs for the preset that was actually selected
-- it applies the configured rune page for the selected preset when rune auto-apply is enabled
-- it validates and applies the configured skin mode when possible
-
-After the game:
-
-- it can automatically attempt `Play Again` if the option is enabled
-
-## Shortcuts
-
-Shortcuts are configurable from the settings.
-
-Default values:
-
-- `Alt + P`
-  Opens the `En direct` tab
-- `Alt + C`
-  Shows or hides the main window
-
-## Project Architecture
-
-```text
-otp_lol/
-|-- launcher_web.py
-|-- create_exe.py
-|-- frontend/
-|   |-- src/
-|   |-- package.json
-|   `-- vite.config.ts
-|-- requirements.txt
-|-- requirements-test.txt
-|-- requirements-build.txt
-|-- readme.md
-|-- src/
-|   |-- __init__.py
-|   |-- config/
-|   |-- core/
-|   |-- api/
-|   |-- domain/
-|   |-- lcu/
-|   |-- integrations/
-|   |-- desktop/
-|   |-- services/
-|-- config/
-|   |-- son.wav
-|   `-- images/
-|-- docs/
-|   |-- images/
-|   `-- screenshots/
-|-- website/
-`-- tests/
-    |-- test_config.py
-    |-- test_core_champ_select.py
-    |-- test_history.py
-    |-- test_api.py
-    |-- test_lcu_runtime.py
-    |-- test_desktop.py
-    `-- test_utils.py
-```
-
-### Role Of Main Files
-
-- `launcher_web.py`
-  FastAPI + React + pywebview entry point.
-- `frontend/`
-  Desktop React interface. It is intentionally separate from the public `website/` project.
-- `src/api/`, `src/domain/`, and `src/lcu/`
-  UI-independent runtime boundary, HTTP/WebSocket API, and event broker.
-- `src/config/`
-  Constants, paths, version, default settings, and config file handling.
-- `src/core/`
-  Business logic, Data Dragon, WebSocket / LCU, and game automations.
-- `src/integrations/`
-  Validated external asset providers such as CommunityDragon.
-- `src/services/`
-  External URLs, history, updates, role data, skin modes, and single-instance handling.
-- `src/desktop/`
-  Native window, system tray, audio, shortcuts, and embedded API lifecycle.
-- `docs/`
-  Architecture, security, release, development, and current screenshot references.
-- `website/`
-  Separate public Vite marketing site. It shares the current screenshot assets but not the desktop UI.
-- `create_exe.py`
-  Windows build through PyInstaller.
-
-## Tests And Verification
-
-The project contains regression tests for:
-
-- configuration handling
-- utilities
-- champion select automation logic
-- history formatting
-- API boundaries, runtime events, settings and preset validation
-- desktop lifecycle and release metadata consistency
-
-To run the tests:
-
-```bash
-pip install -c requirements-constraints.txt -r requirements-test.txt
-python -m unittest discover -s tests -v
-```
-
-To quickly verify that the code compiles:
-
-```bash
-python -m compileall launcher_web.py src create_exe.py tests
-```
-
-For the React desktop interface:
-
-```bash
-cd frontend
-npm ci
-npm run api:check
-npm run typecheck
-npm run test
-npm run build
-npm run test:e2e
-```
-
-The E2E suite runs on Windows in CI because the packaged desktop experience depends on Windows WebView2. The browser tests use a mocked local API and do not require a running League client.
-
-## Production Readiness
-
-The tagged release workflow validates the source, checks the generated OpenAPI types, runs Python and frontend tests, runs Playwright on Windows, builds the onedir executable, signs and verifies the executable and installer, runs its packaged self-test, creates the Inno Setup installer, and publishes the installer with a SHA-256 checksum. Pull requests and important branch pushes also run the package smoke workflow without publishing.
-
-Before publishing a public release:
-
-1. update `APP_VERSION` in `src/config/constants.py`
-2. run the local checks from [`docs/development.md`](./docs/development.md)
-3. validate the packaged executable on a Windows machine with WebView2 and the League client
-4. verify the installer, shortcuts, first launch, settings creation, tray behavior, global hotkeys, and clean shutdown
-5. confirm the Authenticode secrets are configured in GitHub Actions
-6. create a matching `vX.Y` tag and let the release workflow publish the exact installer assets
-
-The release workflow requires Authenticode signing and certificate timestamping. CI and automated tests cannot replace a real League/WebView2 smoke test.
-
-## Documentation
-
-- [Architecture](./docs/architecture.md)
-- [Security model](./docs/security.md)
-- [Development checks](./docs/development.md)
-- [Release process](./docs/release.md)
-- [Screenshots](./docs/screenshots/README.md)
-
-## Troubleshooting
-
-### The Application Does Not Detect LoL
-
-Check that:
-
-- the League of Legends client is running
-- `lcu-driver` is properly installed
-- the application is running on the same machine as the LoL client
-
-### The First Launch Has No Settings File
-
-This is expected behavior. OTP LOL creates `%APPDATA%\OTP LOL\parameters.toml` automatically with safe starter presets and all automations disabled. If the file is missing, invalid, or uses an unsupported schema, the application backs up the previous file when possible and recreates the current defaults.
-
-### The Window Does Not Open
-
-Check that the Microsoft Edge WebView2 Evergreen Runtime is installed. Run `python launcher_web.py --self-test` from the project root to validate the packaged/runtime prerequisites without opening the main window.
-
-### The System Tray Or Hotkeys Do Not Work
-
-- If the system tray is unavailable, closing the window exits the app instead of hiding it.
-- `Quit` from the tray is designed to close the app cleanly, including in the PyInstaller executable.
-- If global hotkeys are unavailable, the app still works through the main window and settings UI.
-- When editing a shortcut, existing global hotkeys are temporarily disabled so the old shortcut does not trigger while the app is waiting for the new one.
-
-### Images Or Icons Do Not Load
-
-Check that this folder exists:
-
-```text
-config/
-`-- images/
-```
-
-### Logs
-
-If something goes wrong, the first file to check is:
-
-```text
-%APPDATA%\OTP LOL\app_debug.log
-```
-
-## Possible Roadmap
-
-Some ideas for future improvements:
-
-- profiles by game mode
-- more visual presentation page
-- multi-language support
-
-## Author
-
-Project maintained by `Qurnt1`.
+The [development guide](./docs/development.md) covers running from source and the project checks. Product behavior and release details are in the [release notes](./track_updates.md); the [architecture](./docs/architecture.md) and [security model](./docs/security.md) are available for implementation details.
