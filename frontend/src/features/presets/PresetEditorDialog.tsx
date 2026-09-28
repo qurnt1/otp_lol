@@ -114,6 +114,7 @@ export function PresetEditorDialog({
                   <ChevronRight size={15} aria-hidden="true" />
                 </button>
               </div>
+              <label className="skin-mode-option"><input type="checkbox" checked={slot.rune_auto_apply} disabled={pending} onChange={(event) => onUpdate({ rune_auto_apply: event.target.checked })} />{fr.presets.runeAutoApply}</label>
               {!leagueConnected && <p className="preset-editor-note">{fr.presets.runesUnavailableHint} {fr.presets.savedRunePageHint}</p>}
             </section>
 

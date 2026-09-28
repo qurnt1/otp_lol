@@ -29,6 +29,14 @@ class NetworkStatusServiceTests(unittest.TestCase):
         self.assertFalse(forced["online"])
         self.assertEqual(probe.call_count, 2)
 
+    def test_state_changes_notify_the_lifecycle_listener(self):
+        on_change = Mock()
+        service = NetworkStatusService(probe=lambda: (True, None), on_change=on_change)
+
+        status = service.check()
+
+        on_change.assert_called_once_with(status)
+
 
 if __name__ == "__main__":
     unittest.main()

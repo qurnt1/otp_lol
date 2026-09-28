@@ -48,7 +48,7 @@ test("settings advanced actions are grouped and the section title is not duplica
   await expect(page.getByRole("heading", { name: "Avancé", exact: true })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Avancé" })).toBeVisible();
   await expect(page.locator(".advanced-group")).toHaveCount(3);
-  await expect(page.locator(".advanced-action")).toHaveCount(9);
+  await expect(page.locator(".advanced-action")).toHaveCount(10);
   await expect(page.locator(".settings-section")).toHaveScreenshot("settings-advanced.png", { animations: "disabled" });
   await expect(page.locator(".advanced-actions").first()).toHaveCSS("grid-template-columns", /\d+(\.\d+)?px \d+(\.\d+)?px/);
   const firstRowBounds = await page.locator(".advanced-actions").first().locator(".advanced-action").evaluateAll((actions) => actions.slice(0, 2).map((action) => {

@@ -40,6 +40,7 @@ const baseSlot: PresetSlot = {
   random_skin_pool: [],
   rune_page_id: 0,
   rune_page_name: "",
+  rune_auto_apply: true,
   rune_keystone_id: 0,
   rune_keystone_path: "",
   rune_sub_style_icon_path: "",
@@ -55,7 +56,7 @@ beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
 });
 
-function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
+function editor(slot: PresetSlot, skinPreview: PresetPreview = preview, onUpdate = vi.fn()) {
   return <PresetEditorDialog
     open
     slotKey="pick_1"
@@ -71,16 +72,20 @@ function editor(slot: PresetSlot, skinPreview: PresetPreview = preview) {
     returnFocusRef={createRef<HTMLButtonElement>()}
     onClose={vi.fn()}
     onOpenPicker={vi.fn()}
-    onUpdate={vi.fn()}
+    onUpdate={onUpdate}
   >{null}</PresetEditorDialog>;
 }
 
 describe("PresetEditorDialog previews", () => {
-  it("uses an explicit do-nothing rune choice without an automation toggle", () => {
-    render(editor(baseSlot));
+  it("shows the per-slot rune auto-apply toggle", () => {
+    const onUpdate = vi.fn();
+    render(editor(baseSlot, preview, onUpdate));
 
     expect(screen.getByText("Ne rien faire")).toBeVisible();
-    expect(screen.queryByRole("switch", { name: "Appliquer automatiquement" })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("checkbox", { name: "Appliquer automatiquement les runes" });
+    expect(toggle).toBeChecked();
+    fireEvent.click(toggle);
+    expect(onUpdate).toHaveBeenCalledWith({ rune_auto_apply: false });
   });
 
   it("shows the matching bootstrap skin preview and falls back to the champion icon for none", () => {

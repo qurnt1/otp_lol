@@ -56,9 +56,9 @@ test("the champion base portrait opens the Champion Picker from the Dashboard ed
   await editor.getByRole("button", { name: "Garen La Force de Demacia", exact: true }).click();
   const picker = page.getByRole("dialog", { name: "Choisir un champion" });
   await expect(picker).toBeVisible();
-  await picker.getByRole("option", { name: /Lux/ }).click();
+  await picker.getByRole("option", { name: /Ahri/ }).click();
 
-  await expect(editor.getByRole("button", { name: /Lux/ })).toBeVisible();
+  await expect(editor.getByRole("button", { name: /Ahri/ })).toBeVisible();
   await expect(picker).toBeHidden();
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();

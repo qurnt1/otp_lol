@@ -114,8 +114,9 @@ class WebViewWindow:
         self._maximized = config.maximized
         self._close_to_tray = False
         self._allow_close = False
-        self._shown_callback: Any = None
+        self._shown_callbacks: list[Any] = []
         self._native_shown = False
+        self._visibility_when_shown: bool | None = None
 
     def create(self) -> None:
         import webview
@@ -230,12 +231,21 @@ class WebViewWindow:
         return self._native_window_ready()
 
     def set_shown_callback(self, callback: Any) -> None:
-        self._shown_callback = callback
+        if callback not in self._shown_callbacks:
+            self._shown_callbacks.append(callback)
 
     def _on_shown(self) -> None:
         self._native_shown = True
-        if self._shown_callback is not None:
-            self._shown_callback()
+        desired_visibility = self._visibility_when_shown
+        self._visibility_when_shown = None
+        if desired_visibility is False:
+            self.window.hide()
+            self._visible = False
+        elif desired_visibility is True:
+            self.window.show()
+            self._visible = True
+        for callback in self._shown_callbacks:
+            callback()
 
     def start(self) -> None:
         if not has_webview2_runtime():
@@ -254,15 +264,23 @@ class WebViewWindow:
 
     def show(self) -> None:
         """Show the native window when a tray or hotkey callback requests it."""
-        if self.window is not None and self._native_window_ready():
+        if self.window is None:
+            return
+        if self._native_window_ready():
             self.window.show()
-            self._visible = True
+        else:
+            self._visibility_when_shown = True
+        self._visible = True
 
     def hide(self) -> None:
         """Hide the native window without destroying the embedded application."""
-        if self.window is not None and self._native_window_ready():
+        if self.window is None:
+            return
+        if self._native_window_ready():
             self.window.hide()
-            self._visible = False
+        else:
+            self._visibility_when_shown = False
+        self._visible = False
 
     def set_close_to_tray(self, enabled: bool) -> None:
         """Keep the native close button reversible only while the tray is available."""

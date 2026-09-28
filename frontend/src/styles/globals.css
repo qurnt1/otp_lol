@@ -304,6 +304,8 @@ img { display: block; }
 .settings-row p { max-width: 630px; margin: 4px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .settings-row .switch { margin-right: 2px; }
 .settings-form { display: grid; gap: 12px; }
+.settings-shortcut { display: grid; gap: 5px; }
+.settings-shortcut-field { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 .settings-account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .settings-account-actions p { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: 10px; }
 .settings-account-actions p strong { color: var(--text); }

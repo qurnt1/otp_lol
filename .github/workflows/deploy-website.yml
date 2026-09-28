@@ -5,6 +5,8 @@ on:
     branches: ["main"]
     paths:
       - "website/**"
+      - "docs/images/**"
+      - "frontend/public/assets/app/garen.*"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 
@@ -37,6 +39,10 @@ jobs:
       - name: Install dependencies
         working-directory: website
         run: npm ci
+
+      - name: Test website content
+        working-directory: website
+        run: npm test
 
       - name: Build
         working-directory: website

@@ -191,8 +191,11 @@ async def patch_preset(request: Request, slot_key: str, payload: PresetSlotPatch
     candidate.setdefault("pick_slots", {}).setdefault(slot_key, {}).update(values)
     if champion is not None:
         candidate[f"selected_pick_{PICK_SLOT_ORDER.index(slot_key) + 1}"] = champion
+    changed_keys = set(values)
+    if champion is not None:
+        changed_keys.add(f"selected_pick_{PICK_SLOT_ORDER.index(slot_key) + 1}")
     try:
-        validate_preset_invariants(candidate)
+        validate_preset_invariants(candidate, changed_keys=changed_keys)
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     try:

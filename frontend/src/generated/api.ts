@@ -1388,42 +1388,131 @@ export interface components {
             skin_preview_url?: string | null;
         };
         /**
+         * PresetSlot
+         * @description Complete preset slot returned to the frontend.
+         */
+        PresetSlot: {
+            /** Champion */
+            champion: string;
+            /** Spell 1 */
+            spell_1: string;
+            /** Spell 2 */
+            spell_2: string;
+            /**
+             * Skin Mode
+             * @enum {string}
+             */
+            skin_mode: "none" | "fixed" | "random";
+            /** Skin Id */
+            skin_id: number;
+            /** Skin Name */
+            skin_name: string;
+            /** Skin Num */
+            skin_num: number;
+            /** Random Skin Id */
+            random_skin_id: number;
+            /** Random Skin Name */
+            random_skin_name: string;
+            /** Random Skin Num */
+            random_skin_num: number;
+            /** Random Skin Pool */
+            random_skin_pool: components["schemas"]["SkinReference"][];
+            /** Rune Page Id */
+            rune_page_id: number;
+            /** Rune Page Name */
+            rune_page_name: string;
+            /** Rune Auto Apply */
+            rune_auto_apply: boolean;
+            /** Rune Keystone Id */
+            rune_keystone_id: number;
+            /** Rune Keystone Path */
+            rune_keystone_path: string;
+            /** Rune Sub Style Icon Path */
+            rune_sub_style_icon_path: string;
+        };
+        /**
          * PresetSlotPatch
          * @description Partial update for one of the three champion preset slots.
          */
         PresetSlotPatch: {
             /** Champion */
-            champion?: string | null;
+            champion?: string;
             /** Spell 1 */
-            spell_1?: string | null;
+            spell_1?: string;
             /** Spell 2 */
-            spell_2?: string | null;
-            /** Skin Mode */
-            skin_mode?: ("none" | "fixed" | "random") | null;
+            spell_2?: string;
+            /**
+             * Skin Mode
+             * @enum {string}
+             */
+            skin_mode?: "none" | "fixed" | "random";
             /** Skin Id */
-            skin_id?: number | null;
+            skin_id?: number;
             /** Skin Name */
-            skin_name?: string | null;
+            skin_name?: string;
             /** Skin Num */
-            skin_num?: number | null;
+            skin_num?: number;
             /** Random Skin Id */
-            random_skin_id?: number | null;
+            random_skin_id?: number;
             /** Random Skin Name */
-            random_skin_name?: string | null;
+            random_skin_name?: string;
             /** Random Skin Num */
-            random_skin_num?: number | null;
+            random_skin_num?: number;
             /** Random Skin Pool */
-            random_skin_pool?: components["schemas"]["SkinReference"][] | null;
+            random_skin_pool?: components["schemas"]["SkinReference"][];
             /** Rune Page Id */
-            rune_page_id?: number | null;
+            rune_page_id?: number;
             /** Rune Page Name */
-            rune_page_name?: string | null;
+            rune_page_name?: string;
+            /** Rune Auto Apply */
+            rune_auto_apply?: boolean;
             /** Rune Keystone Id */
-            rune_keystone_id?: number | null;
+            rune_keystone_id?: number;
             /** Rune Keystone Path */
-            rune_keystone_path?: string | null;
+            rune_keystone_path?: string;
             /** Rune Sub Style Icon Path */
-            rune_sub_style_icon_path?: string | null;
+            rune_sub_style_icon_path?: string;
+        };
+        /**
+         * PresetSlotSettings
+         * @description Persisted slot settings returned without the separate champion pick.
+         */
+        PresetSlotSettings: {
+            /** Spell 1 */
+            spell_1: string;
+            /** Spell 2 */
+            spell_2: string;
+            /**
+             * Skin Mode
+             * @enum {string}
+             */
+            skin_mode: "none" | "fixed" | "random";
+            /** Skin Id */
+            skin_id: number;
+            /** Skin Name */
+            skin_name: string;
+            /** Skin Num */
+            skin_num: number;
+            /** Random Skin Id */
+            random_skin_id: number;
+            /** Random Skin Name */
+            random_skin_name: string;
+            /** Random Skin Num */
+            random_skin_num: number;
+            /** Random Skin Pool */
+            random_skin_pool: components["schemas"]["SkinReference"][];
+            /** Rune Page Id */
+            rune_page_id: number;
+            /** Rune Page Name */
+            rune_page_name: string;
+            /** Rune Auto Apply */
+            rune_auto_apply: boolean;
+            /** Rune Keystone Id */
+            rune_keystone_id: number;
+            /** Rune Keystone Path */
+            rune_keystone_path: string;
+            /** Rune Sub Style Icon Path */
+            rune_sub_style_icon_path: string;
         };
         /** PresetsResponse */
         PresetsResponse: {
@@ -1433,7 +1522,7 @@ export interface components {
             selected_ban: string;
             /** Slots */
             slots: {
-                [key: string]: components["schemas"]["PresetSlotPatch"];
+                [key: string]: components["schemas"]["PresetSlot"];
             };
         };
         /** ProviderCatalog */
@@ -1514,65 +1603,77 @@ export interface components {
          */
         SettingsImport: {
             /** Auto Accept Enabled */
-            auto_accept_enabled?: boolean | null;
+            auto_accept_enabled?: boolean;
             /** Auto Pick Enabled */
-            auto_pick_enabled?: boolean | null;
+            auto_pick_enabled?: boolean;
             /** Auto Ban Enabled */
-            auto_ban_enabled?: boolean | null;
+            auto_ban_enabled?: boolean;
             /** Auto Summoners Enabled */
-            auto_summoners_enabled?: boolean | null;
+            auto_summoners_enabled?: boolean;
             /** Presets Enabled */
-            presets_enabled?: boolean | null;
+            presets_enabled?: boolean;
             /** Onboarding Completed */
-            onboarding_completed?: boolean | null;
+            onboarding_completed?: boolean;
             /** Selected Pick 1 */
-            selected_pick_1?: string | null;
+            selected_pick_1?: string;
             /** Selected Pick 2 */
-            selected_pick_2?: string | null;
+            selected_pick_2?: string;
             /** Selected Pick 3 */
-            selected_pick_3?: string | null;
+            selected_pick_3?: string;
             /** Selected Ban */
-            selected_ban?: string | null;
+            selected_ban?: string;
             /** Pick Slots */
             pick_slots?: {
                 [key: string]: components["schemas"]["PresetSlotPatch"];
             } | null;
-            /** Theme */
-            theme?: ("darkly" | "flatly") | null;
+            /**
+             * Theme
+             * @enum {string}
+             */
+            theme?: "darkly" | "flatly";
             /** Summoner Name Auto Detect */
-            summoner_name_auto_detect?: boolean | null;
+            summoner_name_auto_detect?: boolean;
             /** Manual Summoner Name */
-            manual_summoner_name?: string | null;
-            /** Manual Region */
-            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea") | null;
-            /** Preferred Stats Site */
-            preferred_stats_site?: ("opgg" | "deeplol" | "dpm" | "leagueofgraphs") | null;
-            /** Preferred Hotkey Site */
-            preferred_hotkey_site?: ("porofessor" | "deeplol" | "dpm" | "opgg") | null;
+            manual_summoner_name?: string;
+            /**
+             * Manual Region
+             * @enum {string}
+             */
+            manual_region?: "euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea";
+            /**
+             * Preferred Stats Site
+             * @enum {string}
+             */
+            preferred_stats_site?: "opgg" | "deeplol" | "dpm" | "leagueofgraphs";
+            /**
+             * Preferred Hotkey Site
+             * @enum {string}
+             */
+            preferred_hotkey_site?: "porofessor" | "deeplol" | "dpm" | "opgg";
             /** Hotkey Toggle Window */
-            hotkey_toggle_window?: string | null;
+            hotkey_toggle_window?: string;
             /** Hotkey Open Site */
-            hotkey_open_site?: string | null;
+            hotkey_open_site?: string;
             /** Auto Play Again Enabled */
-            auto_play_again_enabled?: boolean | null;
+            auto_play_again_enabled?: boolean;
             /** Auto Hide On Connect */
-            auto_hide_on_connect?: boolean | null;
+            auto_hide_on_connect?: boolean;
             /** Close App On Lol Exit */
-            close_app_on_lol_exit?: boolean | null;
+            close_app_on_lol_exit?: boolean;
             /** Ignored Update Version */
-            ignored_update_version?: string | null;
+            ignored_update_version?: string;
             /** Skin Automation Enabled */
-            skin_automation_enabled?: boolean | null;
+            skin_automation_enabled?: boolean;
             /** Window X */
-            window_x?: number | null;
+            window_x?: number;
             /** Window Y */
-            window_y?: number | null;
+            window_y?: number;
             /** Window Width */
-            window_width?: number | null;
+            window_width?: number;
             /** Window Height */
-            window_height?: number | null;
+            window_height?: number;
             /** Window Maximized */
-            window_maximized?: boolean | null;
+            window_maximized?: boolean;
             /** Config Version */
             config_version?: string | null;
             /** Config Schema Version */
@@ -1590,65 +1691,77 @@ export interface components {
          */
         SettingsPatch: {
             /** Auto Accept Enabled */
-            auto_accept_enabled?: boolean | null;
+            auto_accept_enabled?: boolean;
             /** Auto Pick Enabled */
-            auto_pick_enabled?: boolean | null;
+            auto_pick_enabled?: boolean;
             /** Auto Ban Enabled */
-            auto_ban_enabled?: boolean | null;
+            auto_ban_enabled?: boolean;
             /** Auto Summoners Enabled */
-            auto_summoners_enabled?: boolean | null;
+            auto_summoners_enabled?: boolean;
             /** Presets Enabled */
-            presets_enabled?: boolean | null;
+            presets_enabled?: boolean;
             /** Onboarding Completed */
-            onboarding_completed?: boolean | null;
+            onboarding_completed?: boolean;
             /** Selected Pick 1 */
-            selected_pick_1?: string | null;
+            selected_pick_1?: string;
             /** Selected Pick 2 */
-            selected_pick_2?: string | null;
+            selected_pick_2?: string;
             /** Selected Pick 3 */
-            selected_pick_3?: string | null;
+            selected_pick_3?: string;
             /** Selected Ban */
-            selected_ban?: string | null;
+            selected_ban?: string;
             /** Pick Slots */
             pick_slots?: {
                 [key: string]: components["schemas"]["PresetSlotPatch"];
-            } | null;
-            /** Theme */
-            theme?: ("darkly" | "flatly") | null;
+            };
+            /**
+             * Theme
+             * @enum {string}
+             */
+            theme?: "darkly" | "flatly";
             /** Summoner Name Auto Detect */
-            summoner_name_auto_detect?: boolean | null;
+            summoner_name_auto_detect?: boolean;
             /** Manual Summoner Name */
-            manual_summoner_name?: string | null;
-            /** Manual Region */
-            manual_region?: ("euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea") | null;
-            /** Preferred Stats Site */
-            preferred_stats_site?: ("opgg" | "deeplol" | "dpm" | "leagueofgraphs") | null;
-            /** Preferred Hotkey Site */
-            preferred_hotkey_site?: ("porofessor" | "deeplol" | "dpm" | "opgg") | null;
+            manual_summoner_name?: string;
+            /**
+             * Manual Region
+             * @enum {string}
+             */
+            manual_region?: "euw" | "eune" | "na" | "kr" | "jp" | "br" | "lan" | "las" | "oce" | "tr" | "ru" | "sea";
+            /**
+             * Preferred Stats Site
+             * @enum {string}
+             */
+            preferred_stats_site?: "opgg" | "deeplol" | "dpm" | "leagueofgraphs";
+            /**
+             * Preferred Hotkey Site
+             * @enum {string}
+             */
+            preferred_hotkey_site?: "porofessor" | "deeplol" | "dpm" | "opgg";
             /** Hotkey Toggle Window */
-            hotkey_toggle_window?: string | null;
+            hotkey_toggle_window?: string;
             /** Hotkey Open Site */
-            hotkey_open_site?: string | null;
+            hotkey_open_site?: string;
             /** Auto Play Again Enabled */
-            auto_play_again_enabled?: boolean | null;
+            auto_play_again_enabled?: boolean;
             /** Auto Hide On Connect */
-            auto_hide_on_connect?: boolean | null;
+            auto_hide_on_connect?: boolean;
             /** Close App On Lol Exit */
-            close_app_on_lol_exit?: boolean | null;
+            close_app_on_lol_exit?: boolean;
             /** Ignored Update Version */
-            ignored_update_version?: string | null;
+            ignored_update_version?: string;
             /** Skin Automation Enabled */
-            skin_automation_enabled?: boolean | null;
+            skin_automation_enabled?: boolean;
             /** Window X */
-            window_x?: number | null;
+            window_x?: number;
             /** Window Y */
-            window_y?: number | null;
+            window_y?: number;
             /** Window Width */
-            window_width?: number | null;
+            window_width?: number;
             /** Window Height */
-            window_height?: number | null;
+            window_height?: number;
             /** Window Maximized */
-            window_maximized?: boolean | null;
+            window_maximized?: boolean;
         };
         /** SettingsResponse */
         SettingsResponse: {
@@ -1678,7 +1791,7 @@ export interface components {
             selected_ban: string;
             /** Pick Slots */
             pick_slots: {
-                [key: string]: components["schemas"]["PresetSlotPatch"];
+                [key: string]: components["schemas"]["PresetSlotSettings"];
             };
             /**
              * Theme

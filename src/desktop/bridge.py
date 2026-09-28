@@ -52,7 +52,7 @@ class DesktopBridge:
         return True
 
     def open_external_url(self, url: str) -> bool:
-        """Open an allowlisted HTTPS provider URL in the system browser."""
+        """Open an approved HTTPS provider or project URL in the system browser."""
         if not is_allowed_external_url(url):
             return False
         return bool(webbrowser.open(url))

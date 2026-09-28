@@ -138,11 +138,17 @@ export function PresetEditorFlow({ action, onClose, returnFocusRef }: {
   const editingChampion = champions.data?.items.find((item) => item.name.toLocaleLowerCase() === editingData?.champion.toLocaleLowerCase());
   const selectedBan = presets.data.selected_ban;
   const activeDialog = picker;
+  const excludedChampions = activeDialog?.kind === "ban"
+    ? Object.values(presets.data.slots).map((slot) => slot.champion)
+    : activeDialog?.kind === "champion" && activeDialog.slot
+      ? [...Object.entries(presets.data.slots).filter(([slotKey]) => slotKey !== activeDialog.slot).map(([, slot]) => slot.champion), selectedBan]
+      : [];
   const pickerContent = activeDialog
     ? <PickerContent
         picker={activeDialog}
         selectedBan={selectedBan}
         selectedChampion={activeDialog.kind === "ban" ? selectedBan : selectedChampion}
+        excludedChampions={excludedChampions}
         selectedSlot={activeDialog.kind === "ban" ? undefined : activePickerSlot}
         skins={skins.data}
         skinsLoading={skins.isPending}
@@ -189,10 +195,11 @@ export function PresetEditorFlow({ action, onClose, returnFocusRef }: {
   return <PickerDialog picker={picker} onClose={closeEditor} returnFocusRef={returnFocusRef} feedback={feedback} feedbackIsError={feedbackIsError}>{pickerContent}</PickerDialog>;
 }
 
-function PickerContent({ picker, selectedBan, selectedChampion, selectedSlot, skins, skinsLoading, skinsError, runes, runesLoading, runesError, onChampionSelect, onUpdate, onRetrySkins, onRetryRunes }: {
+function PickerContent({ picker, selectedBan, selectedChampion, excludedChampions, selectedSlot, skins, skinsLoading, skinsError, runes, runesLoading, runesError, onChampionSelect, onUpdate, onRetrySkins, onRetryRunes }: {
   picker: Exclude<Picker, null>;
   selectedBan: string;
   selectedChampion: string;
+  excludedChampions: string[];
   selectedSlot?: PresetSlot;
   skins?: Awaited<ReturnType<typeof api.getSkins>>;
   skinsLoading: boolean;
@@ -205,7 +212,7 @@ function PickerContent({ picker, selectedBan, selectedChampion, selectedSlot, sk
   onRetrySkins: () => void;
   onRetryRunes: () => void;
 }) {
-  if (picker.kind === "champion" || picker.kind === "ban") return <ChampionPicker selected={picker.kind === "ban" ? selectedBan : selectedChampion} onSelect={onChampionSelect} />;
+  if (picker.kind === "champion" || picker.kind === "ban") return <ChampionPicker selected={picker.kind === "ban" ? selectedBan : selectedChampion} excluded={excludedChampions} onSelect={onChampionSelect} />;
   if (picker.kind === "skin" && skinsError) return <div className="state-error"><strong>{fr.presets.skinLoadError}</strong><Button type="button" onClick={onRetrySkins}>{fr.common.retry}</Button></div>;
   if (picker.kind === "skin" && skinsLoading) return <div className="page-loading">{fr.common.loading}</div>;
   if (picker.kind === "skin" && selectedSlot && skins) return <SkinPicker slot={selectedSlot} skins={skins} onUpdate={onUpdate} />;

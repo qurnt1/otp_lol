@@ -5,6 +5,7 @@ export type { DashboardAction } from "../domain/presets";
 
 export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
+export type PresetSlot = components["schemas"]["PresetSlot"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
 
 export type PageId = "dashboard" | "statistics" | "live" | "history" | "settings" | "diagnostics";
@@ -68,25 +69,6 @@ export interface Settings {
   window_width: number;
   window_height: number;
   window_maximized: boolean;
-}
-
-export interface PresetSlot {
-  champion: string;
-  spell_1: string;
-  spell_2: string;
-  skin_mode: "none" | "fixed" | "random";
-  skin_id: number;
-  skin_name: string;
-  skin_num: number;
-  random_skin_id: number;
-  random_skin_name: string;
-  random_skin_num: number;
-  random_skin_pool: SkinReference[];
-  rune_page_id: number;
-  rune_page_name: string;
-  rune_keystone_id: number;
-  rune_keystone_path: string;
-  rune_sub_style_icon_path: string;
 }
 
 export interface SkinReference {

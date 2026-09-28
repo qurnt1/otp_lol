@@ -71,6 +71,7 @@ def build_pick_slot_defaults() -> Dict[str, Dict[str, Any]]:
             "random_skin_pool": [],
             "rune_page_id": 0,
             "rune_page_name": "",
+            "rune_auto_apply": True,
             "rune_keystone_id": 0,
             "rune_keystone_path": "",
             "rune_sub_style_icon_path": "",
@@ -453,6 +454,8 @@ def _normalize_skin_pool(value: Any) -> list[Dict[str, Any]]:
 
 def _build_normalized_pick_slots(
     raw_slots: Any,
+    *,
+    default_rune_auto_apply: bool,
 ) -> Dict[str, Dict[str, Any]]:
     """Normalize pick slots without importing settings from an older format."""
     slots = build_pick_slot_defaults()
@@ -484,6 +487,7 @@ def _build_normalized_pick_slots(
                 ),
                 "rune_page_id": _normalize_skin_id(slot_data.get("rune_page_id", slots[slot]["rune_page_id"])),
                 "rune_page_name": str(slot_data.get("rune_page_name", slots[slot]["rune_page_name"]) or ""),
+                "rune_auto_apply": bool(slot_data.get("rune_auto_apply", default_rune_auto_apply)),
                 "rune_keystone_id": _normalize_skin_id(slot_data.get("rune_keystone_id", slots[slot]["rune_keystone_id"])),
                 "rune_keystone_path": str(slot_data.get("rune_keystone_path", slots[slot]["rune_keystone_path"]) or ""),
                 "rune_sub_style_icon_path": str(slot_data.get("rune_sub_style_icon_path", slots[slot]["rune_sub_style_icon_path"]) or ""),
@@ -520,7 +524,10 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(raw_skin_automation, str):
         raw_skin_automation = raw_skin_automation.strip().lower() in {"1", "true", "yes", "on"}
     merged["skin_automation_enabled"] = bool(raw_skin_automation)
-    merged["pick_slots"] = _build_normalized_pick_slots(config.get("pick_slots"))
+    merged["pick_slots"] = _build_normalized_pick_slots(
+        config.get("pick_slots"),
+        default_rune_auto_apply=bool(config.get("auto_summoners_enabled", True)),
+    )
 
     preferred_stats_site = str(config.get("preferred_stats_site", DEFAULT_PARAMS["preferred_stats_site"])).lower().strip()
     if preferred_stats_site not in STATS_PROVIDERS:

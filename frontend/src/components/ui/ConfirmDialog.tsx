@@ -4,11 +4,12 @@ import { X } from "lucide-react";
 
 import { fr } from "../../content/fr";
 
-export function ConfirmDialog({ open, title, description, confirmLabel, onCancel, onConfirm, children }: {
+export function ConfirmDialog({ open, title, description, confirmLabel, confirmDisabled = false, onCancel, onConfirm, children }: {
   open: boolean;
   title: string;
   description: string;
   confirmLabel: string;
+  confirmDisabled?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   children?: ReactNode;
@@ -19,7 +20,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onCancel
       <Dialog.Content className="confirm-dialog" role="alertdialog" aria-describedby="confirm-dialog-description">
         <div className="drawer-head"><div><Dialog.Title>{title}</Dialog.Title><Dialog.Description id="confirm-dialog-description">{description}</Dialog.Description></div><Dialog.Close asChild><button className="icon-button" type="button" aria-label={fr.common.close}><X size={16} aria-hidden="true" /></button></Dialog.Close></div>
         {children}
-        <div className="confirm-actions"><button className="button" type="button" onClick={onCancel}>{fr.common.cancel}</button><button className="button button-danger" type="button" onClick={onConfirm}>{confirmLabel}</button></div>
+        <div className="confirm-actions"><button className="button" type="button" onClick={onCancel}>{fr.common.cancel}</button><button className="button button-danger" type="button" disabled={confirmDisabled} onClick={onConfirm}>{confirmLabel}</button></div>
       </Dialog.Content>
     </Dialog.Portal>
   </Dialog.Root>;

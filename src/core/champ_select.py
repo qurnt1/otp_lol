@@ -1330,22 +1330,23 @@ class ChampSelectMixin:
         self: "WebSocketManager",
         params: Dict[str, Any],
         slot_key: Optional[str] = None,
-    ) -> tuple[int, str, str]:
-        """Resolve the selected rune page; id zero means keep the current page."""
+    ) -> tuple[int, str, str, bool]:
+        """Resolve the selected rune page and its slot-specific auto-apply setting."""
         effective = self.get_effective_profile_config(params=params)
         if not effective.get("presets_enabled", False):
-            return 0, "", slot_key or self.state.last_locked_pick_slot or "pick_1"
+            return 0, "", slot_key or self.state.last_locked_pick_slot or "pick_1", False
         chosen_slot = slot_key or self.state.last_locked_pick_slot or "pick_1"
         pick_slots = effective.get("pick_slots", {})
         slot_data = pick_slots.get(chosen_slot, {}) if isinstance(pick_slots, dict) else {}
         fallback_slot = pick_slots.get("pick_1", {}) if isinstance(pick_slots, dict) else {}
+        rune_auto_apply = bool(slot_data.get("rune_auto_apply", fallback_slot.get("rune_auto_apply", True)))
         if "rune_page_id" in slot_data:
             rune_page_id = int(slot_data.get("rune_page_id") or 0)
             rune_page_name = str(slot_data.get("rune_page_name") or "")
         else:
             rune_page_id = int(fallback_slot.get("rune_page_id") or 0)
             rune_page_name = str(fallback_slot.get("rune_page_name") or "")
-        return rune_page_id, rune_page_name, chosen_slot
+        return rune_page_id, rune_page_name, chosen_slot, rune_auto_apply
 
     def _ensure_rune_is_applied(
         self: "WebSocketManager",
@@ -1354,8 +1355,6 @@ class ChampSelectMixin:
         slot_key: Optional[str] = None,
     ) -> None:
         """Re-apply the rune page when the live session state does not match the expected value."""
-        if not self.get_params().get("auto_summoners_enabled", False):
-            return
         if self.state.rune_applied_for_session:
             return
         if self.state.rune_apply_in_progress or not self.connection:
@@ -1363,8 +1362,8 @@ class ChampSelectMixin:
         local_selection = self._extract_local_player_selection(session)
         if not local_selection:
             return
-        rune_page_id, rune_page_name, chosen_slot = self._resolve_rune_selection(params, slot_key=slot_key)
-        if rune_page_id <= 0:
+        rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+        if rune_page_id <= 0 or not rune_auto_apply:
             return
         self.state.desired_rune_page_id = rune_page_id
         current_rune_page_id = int(local_selection.get("selectedRunePageId") or 0)
@@ -1411,16 +1410,15 @@ class ChampSelectMixin:
         return False
 
     async def _set_rune_page(self: "WebSocketManager", params: Dict[str, Any], slot_key: Optional[str] = None) -> None:
-        if (
-            not self.connection
-            or self.state.rune_apply_in_progress
-            or not self.get_params().get("auto_summoners_enabled", False)
-        ):
+        if not self.connection or self.state.rune_apply_in_progress:
             return
 
         self.state.rune_apply_in_progress = True
         try:
-            rune_page_id, rune_page_name, chosen_slot = self._resolve_rune_selection(params, slot_key=slot_key)
+            rune_page_id, rune_page_name, chosen_slot, rune_auto_apply = self._resolve_rune_selection(params, slot_key=slot_key)
+            if not rune_auto_apply:
+                logging.debug("[RUNES] Auto-apply disabled for %s; skipping.", chosen_slot)
+                return
             if rune_page_id <= 0:
                 logging.debug("[RUNES] No rune page configured for %s; skipping.", chosen_slot)
                 return
@@ -1437,14 +1435,11 @@ class ChampSelectMixin:
             # Fetch the target page's full data from the list so we can PUT it back.
             all_pages = await self._fetch_rune_pages_async()
             current_params = self.get_params()
-            if not current_params.get("auto_summoners_enabled", False):
-                logging.debug("[RUNES] Auto-Summs disabled while loading rune pages; skipping.")
-                return
-            current_page_id, current_page_name, current_slot = self._resolve_rune_selection(
+            current_page_id, current_page_name, current_slot, current_auto_apply = self._resolve_rune_selection(
                 current_params,
                 slot_key=chosen_slot,
             )
-            if current_page_id <= 0 or current_page_id != rune_page_id:
+            if not current_auto_apply or current_page_id <= 0 or current_page_id != rune_page_id:
                 logging.debug("[RUNES] Selection changed while loading %s; skipping stale task.", chosen_slot)
                 return
             rune_page_name = current_page_name

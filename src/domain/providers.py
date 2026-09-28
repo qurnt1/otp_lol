@@ -119,7 +119,7 @@ HOTKEY_PROVIDERS = {
 PROVIDER_LOGO_FILES = {provider.id: provider.logo_filename for provider in PROVIDER_REGISTRY.values()}
 ALLOWED_EXTERNAL_HOSTS = frozenset(
     host for provider in PROVIDER_REGISTRY.values() for host in provider.allowed_hosts
-)
+) | {"github.com"}
 STATS_SITE_LABELS = {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in STATS_PROVIDER_IDS}
 STATS_SITE_ORDER = list(STATS_PROVIDER_IDS)
 HOTKEY_SITE_LABELS = {provider_id: PROVIDER_REGISTRY[provider_id].label for provider_id in LIVE_PROVIDER_IDS}

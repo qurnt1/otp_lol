@@ -22,13 +22,14 @@ function championRoles(champion: Champion): string[] {
   return champion.tags.flatMap((tag) => TAG_ROLE_FALLBACK[tag.toLowerCase()] ?? []);
 }
 
-export function filterChampions(champions: Champion[], query: string, role: RoleFilterId): Champion[] {
+export function filterChampions(champions: Champion[], query: string, role: RoleFilterId, excluded: string[] = []): Champion[] {
   const needle = query.trim().toLocaleLowerCase();
   const roleValue = roleFilters.find((item) => item.id === role)?.role ?? "GLOBAL";
+  const excludedNames = new Set(excluded.map((name) => name.trim().toLocaleLowerCase()).filter(Boolean));
   return champions.filter((champion) => {
     const matchesQuery = !needle || `${champion.name} ${champion.slug}`.toLocaleLowerCase().includes(needle);
     const matchesRole = roleValue === "GLOBAL" || championRoles(champion).includes(roleValue);
-    return matchesQuery && matchesRole;
+    return matchesQuery && matchesRole && !excludedNames.has(champion.name.trim().toLocaleLowerCase());
   });
 }
 

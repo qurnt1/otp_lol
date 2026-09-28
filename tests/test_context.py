@@ -1,8 +1,9 @@
-import unittest
+import asyncio
 import tempfile
+import unittest
 from threading import Thread
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from src.api.context import ApplicationContext
 from src.config import FIRST_LAUNCH_PARAMS, load_parameters
@@ -159,6 +160,48 @@ class ApplicationContextSettingsTests(unittest.TestCase):
 
         self.assertEqual(window.hide_count, 0)
 
+    def test_connect_before_binding_hides_after_the_window_and_network_are_ready(self):
+        class FakeWindow:
+            def __init__(self):
+                self.visible = True
+                self.hide_count = 0
+
+            def hide(self):
+                self.hide_count += 1
+                self.visible = False
+
+        self.context.network_status._state = "online"
+        self.context._handle_runtime_event("connected")
+        window = FakeWindow()
+
+        self.context.bind_window(window)
+
+        self.assertEqual(window.hide_count, 1)
+        self.assertFalse(window.visible)
+
+    def test_online_network_transition_retries_auto_hide_after_connect(self):
+        class FakeWindow:
+            def __init__(self):
+                self.visible = True
+                self.hide_count = 0
+
+            def hide(self):
+                self.hide_count += 1
+                self.visible = False
+
+        window = FakeWindow()
+        self.context.bind_window(window)
+        self.context.network_status._probe = lambda: (False, "timeout")
+        self.context.network_status.check(force=True)
+        self.context._handle_runtime_event("connected")
+        self.assertEqual(window.hide_count, 0)
+
+        self.context.network_status._probe = lambda: (True, None)
+        self.context.network_status.check(force=True)
+
+        self.assertEqual(window.hide_count, 1)
+        self.assertFalse(window.visible)
+
     def test_transient_disconnect_never_closes_the_application(self):
         shutdowns = []
         self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
@@ -190,8 +233,9 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.assertEqual(shutdowns, [True])
 
     def test_definitive_disconnect_does_not_close_when_option_is_disabled(self):
+        window = Mock()
         shutdowns = []
-        self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+        self.context.bind_window(window, shutdown_callback=lambda: shutdowns.append(True))
         self.context.process_checker = lambda: False
         self.context.update_param("close_app_on_lol_exit", False)
         self.context._handle_runtime_event("connected")
@@ -199,6 +243,39 @@ class ApplicationContextSettingsTests(unittest.TestCase):
         self.context._handle_runtime_event("disconnected", {"transient": False})
 
         self.assertEqual(shutdowns, [])
+        window.show.assert_called_once_with()
+
+    def test_league_exit_is_still_detected_after_the_first_ten_seconds(self):
+        async def run_check():
+            shutdowns = []
+            self.context.bind_window(Mock(), shutdown_callback=lambda: shutdowns.append(True))
+            self.context.process_checker = Mock(side_effect=[True] * 20 + [False])
+            with patch("src.api.context.asyncio.sleep", new=AsyncMock()):
+                await self.context._wait_for_league_exit()
+            self.assertEqual(self.context.process_checker.call_count, 21)
+            self.assertEqual(shutdowns, [True])
+
+        asyncio.run(run_check())
+
+    def test_online_recovery_refreshes_an_offline_champion_catalog(self):
+        class OfflineCatalog:
+            loaded = True
+            version = "offline"
+
+            def refresh(self):
+                self.version = "16.19.1"
+
+        async def run_check():
+            catalog = OfflineCatalog()
+            context = ApplicationContext(params={}, data_dragon=catalog)
+            context._async_loop = asyncio.get_running_loop()
+            context.network_status._probe = lambda: (True, None)
+            context.network_status.check(force=True)
+            await asyncio.sleep(0)
+            await context._data_dragon_refresh_task
+            self.assertEqual(catalog.version, "16.19.1")
+
+        asyncio.run(run_check())
 
     def test_runtime_events_are_available_to_local_diagnostics(self):
         self.context._handle_runtime_event("status", {"action": "ban_confirmed"})

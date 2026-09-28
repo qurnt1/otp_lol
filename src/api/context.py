@@ -42,6 +42,7 @@ class ApplicationContext:
     _params_lock: RLock = field(default_factory=RLock, init=False, repr=False)
     _data_dragon_lock: asyncio.Lock | None = field(default=None, init=False, repr=False)
     _static_data_refresh_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _data_dragon_refresh_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
     _async_loop: asyncio.AbstractEventLoop | None = field(default=None, init=False, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _connected: bool = field(default=False, init=False, repr=False)
@@ -54,7 +55,7 @@ class ApplicationContext:
 
     def __post_init__(self) -> None:
         self.params = normalize_parameters(self.params)
-        self.network_status = NetworkStatusService(self.broker)
+        self.network_status = NetworkStatusService(self.broker, on_change=self._handle_network_status)
         self.diagnostics = DiagnosticsService(
             self._request_diagnostics,
             get_riot_id=self._get_diagnostic_riot_id,
@@ -98,6 +99,49 @@ class ApplicationContext:
         """Bind native lifecycle effects after the local API and WebView exist."""
         self._window = window
         self._shutdown_callback = shutdown_callback
+        set_shown_callback = getattr(window, "set_shown_callback", None)
+        if callable(set_shown_callback):
+            set_shown_callback(self._apply_auto_hide_if_ready)
+        self._apply_auto_hide_if_ready()
+
+    def _apply_auto_hide_if_ready(self) -> None:
+        if (
+            self._connected
+            and self.get_params().get("auto_hide_on_connect", True)
+            and self._window is not None
+            and getattr(self._window, "visible", True)
+            and self.network_status.is_online()
+        ):
+            self._window.hide()
+
+    def _handle_network_status(self, status: dict[str, Any]) -> None:
+        if not status.get("online"):
+            return
+        self._apply_auto_hide_if_ready()
+        loop = self._async_loop
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(self._start_data_dragon_refresh)
+
+    def _start_data_dragon_refresh(self) -> None:
+        task = self._data_dragon_refresh_task
+        if task is None or task.done():
+            self._data_dragon_refresh_task = asyncio.create_task(
+                self._refresh_offline_data_dragon(),
+                name="otp-lol-data-dragon-network-refresh",
+            )
+
+    async def _refresh_offline_data_dragon(self) -> None:
+        async with self._get_data_dragon_lock():
+            if not self.data_dragon.loaded or self.data_dragon.version != "offline":
+                return
+            await asyncio.to_thread(self.data_dragon.refresh)
+        if self.data_dragon.version != "offline":
+            self.broker.publish("game_data_updated", self.data_dragon.version)
+
+    def _get_data_dragon_lock(self) -> asyncio.Lock:
+        if self._data_dragon_lock is None:
+            self._data_dragon_lock = asyncio.Lock()
+        return self._data_dragon_lock
 
     def set_hotkey_status(self, status: Mapping[str, Mapping[str, Any]]) -> None:
         """Expose the native shortcut backend state to diagnostics without handles."""
@@ -172,17 +216,13 @@ class ApplicationContext:
 
     async def _wait_for_league_exit(self) -> None:
         try:
-            for _ in range(20):
+            while not self._connected:
                 await asyncio.sleep(0.5)
-                if self._connected:
-                    return
                 state = self._league_process_present()
                 if state is False:
                     callback = self._shutdown_callback
                     if callback is not None:
                         callback()
-                    return
-                if state is None:
                     return
         except asyncio.CancelledError:
             raise
@@ -194,23 +234,21 @@ class ApplicationContext:
             if self._connected:
                 return
             self._connected = True
-            if (
-                self.get_params().get("auto_hide_on_connect", True)
-                and self._window is not None
-                and self.network_status.is_online()
-            ):
-                self._window.hide()
+            self._apply_auto_hide_if_ready()
             if self._async_loop is not None and self._async_loop.is_running():
                 self._async_loop.call_soon_threadsafe(self._start_static_data_refresh)
         elif event_type == "disconnected":
             was_connected = self._connected
             self._connected = False
             transient = isinstance(_data, dict) and bool(_data.get("transient"))
-            if was_connected and not transient and self.get_params().get("close_app_on_lol_exit", True):
-                if self._async_loop is not None and self._async_loop.is_running():
-                    self._async_loop.call_soon_threadsafe(self._request_shutdown_if_league_stopped)
-                else:
-                    self._request_shutdown_if_league_stopped()
+            if was_connected and not transient:
+                if self.get_params().get("close_app_on_lol_exit", True):
+                    if self._async_loop is not None and self._async_loop.is_running():
+                        self._async_loop.call_soon_threadsafe(self._request_shutdown_if_league_stopped)
+                    else:
+                        self._request_shutdown_if_league_stopped()
+                elif self._window is not None:
+                    self._window.show()
 
     @classmethod
     def from_system(cls) -> "ApplicationContext":
@@ -324,13 +362,11 @@ class ApplicationContext:
             return self._commit_candidate_locked(candidate)
 
     async def ensure_data_dragon(self) -> None:
-        if self.data_dragon.loaded:
-            return
-        if self._data_dragon_lock is None:
-            self._data_dragon_lock = asyncio.Lock()
-        async with self._data_dragon_lock:
+        async with self._get_data_dragon_lock():
             if not self.data_dragon.loaded:
                 await self.runtime.load_data_dragon()
+            elif self.data_dragon.version == "offline" and self.network_status.is_online():
+                await asyncio.to_thread(self.data_dragon.refresh)
 
     async def ensure_static_data(self) -> None:
         """Refresh missing static data from the connected client on demand."""
@@ -384,6 +420,9 @@ class ApplicationContext:
         if self._static_data_refresh_task and not self._static_data_refresh_task.done():
             self._static_data_refresh_task.cancel()
             await asyncio.gather(self._static_data_refresh_task, return_exceptions=True)
+        if self._data_dragon_refresh_task and not self._data_dragon_refresh_task.done():
+            self._data_dragon_refresh_task.cancel()
+            await asyncio.gather(self._data_dragon_refresh_task, return_exceptions=True)
         if self._started:
             await asyncio.to_thread(self.runtime.stop)
             self._started = False

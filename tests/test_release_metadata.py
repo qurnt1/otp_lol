@@ -17,7 +17,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.assertIn("Spend less time on the same setup", readme_text)
         self.assertIn("Get OTP LOL for Windows", readme_text)
         self.assertIn("See it in action", readme_text)
-        self.assertIn(f"https://github.com/{GITHUB_REPO_NAME}.git", readme_text)
+        self.assertIn(f"https://github.com/{GITHUB_REPO_NAME}", readme_text)
 
     def test_readme_has_no_conflict_markers(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
@@ -100,11 +100,11 @@ class ReleaseMetadataTests(unittest.TestCase):
 
     def test_documentation_screenshots_are_current_and_shared_with_website(self):
         readme_text = (ROOT_DIR / "readme.md").read_text(encoding="utf-8")
+        website_app = (ROOT_DIR / "website" / "src" / "site" / "App.tsx").read_text(encoding="utf-8")
         screenshot_names = (
             "dashboard-web.png",
-            "dashboard-web-1440.png",
-            "dashboard-web-1920.png",
             "settings-web.png",
+            "statistics-web.png",
         )
 
         for name in screenshot_names:
@@ -112,8 +112,9 @@ class ReleaseMetadataTests(unittest.TestCase):
             self.assertTrue(docs_image.is_file(), name)
             if name in {"dashboard-web.png", "settings-web.png"}:
                 self.assertIn(f"./docs/images/{name}", readme_text)
-                website_image = ROOT_DIR / "website" / "public" / "assets" / "screenshots" / name
-                self.assertEqual(docs_image.read_bytes(), website_image.read_bytes(), name)
+                self.assertIn(f"../../../docs/images/{name}", website_app)
+
+        self.assertIn("../../../docs/images/statistics-web.png", website_app)
 
         self.assertNotIn("better screenshots in the README", readme_text)
 

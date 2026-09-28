@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Activity, ChevronRight, Database, Download, Eraser, FileText, FolderOpen, Keyboard, Maximize2, RotateCcw, Upload } from "lucide-react";
 
@@ -11,14 +11,16 @@ import { presetAutomationCopy } from "../../content/presetAutomation";
 import { diagnosticsCopy } from "../diagnostics/copy";
 import { regionOptionsOrFallback } from "../../domain/catalog";
 import { cn } from "../../lib/cn";
+import { formatCapturedHotkey } from "../../domain/hotkeys";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import { openLocalFolder, toggleFullscreen } from "../../domain/external";
+import { openExternalUrl, openLocalFolder, toggleFullscreen } from "../../domain/external";
 import { useNativeBridgeReady } from "../../hooks/useNativeBridgeReady";
 import type { Settings, SettingsImport, SettingsPatch, SettingsSection } from "../../types/api";
 import { settingsSections } from "../../app/routes";
 
 const sectionLabels: Record<SettingsSection, string> = { general: fr.settings.general, automations: fr.settings.automations, account: fr.settings.account, links: fr.settings.links, shortcuts: fr.settings.shortcuts, appearance: fr.settings.appearance, advanced: fr.settings.advanced };
 type ManualSettingKey = "manual_summoner_name" | "hotkey_toggle_window" | "hotkey_open_site";
+type HotkeySettingKey = "hotkey_toggle_window" | "hotkey_open_site";
 const accountLinkSettingKeys = new Set(["summoner_name_auto_detect", "manual_summoner_name", "manual_region"]);
 
 function applyTheme(theme: Settings["theme"]): void {
@@ -50,6 +52,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
   const [confirmCopyAccount, setConfirmCopyAccount] = useState(false);
   const [confirmForgetAccount, setConfirmForgetAccount] = useState(false);
   const [draft, setDraft] = useState<Partial<Settings>>({});
+  const [capturingHotkey, setCapturingHotkey] = useState<HotkeySettingKey | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const submittedManualValues = useRef<Partial<Record<ManualSettingKey, string>>>({});
   useEffect(() => { if (settings.data) { setLocal(settings.data); applyTheme(settings.data.theme); } }, [settings.data]);
@@ -105,6 +108,20 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
     }
   };
   const update = <K extends keyof Settings>(key: K, value: Settings[K]) => void save({ [key]: value } as SettingsPatch, String(key));
+  const captureHotkey = (key: HotkeySettingKey, event: KeyboardEvent<HTMLDivElement>) => {
+    if (capturingHotkey !== key) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (["Alt", "Control", "Shift", "Meta"].includes(event.key)) return;
+    const captured = formatCapturedHotkey(event.key, event);
+    if (!captured) {
+      setErrors((current) => ({ ...current, [key]: fr.settings.hotkeyModifierRequired }));
+      return;
+    }
+    void save({ [key]: captured } as SettingsPatch, key).then((success) => {
+      if (success) setCapturingHotkey(null);
+    });
+  };
   const copyDetectedAccount = async () => {
     if (!local || !detectedAccount) return;
     setConfirmCopyAccount(false);
@@ -218,6 +235,14 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
   const reset = async () => { setConfirmReset(false); setPending("reset", true); try { const next = await api.resetSettings(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] }), queryClient.invalidateQueries({ queryKey: ["account-identity"] }), queryClient.invalidateQueries({ queryKey: ["stats-link"] }), queryClient.invalidateQueries({ queryKey: ["live-stats-link"] })]); applyTheme(next.theme); setDraft({}); submittedManualValues.current = {}; setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, reset: error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset", false); } };
   const resetPresets = async () => { setConfirmResetPresets(false); setPending("reset-presets", true); try { const next = await api.resetPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["reset-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "reset-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("reset-presets", false); } };
   const clearPresets = async () => { setConfirmClearPresets(false); setPending("clear-presets", true); try { const next = await api.clearPresets(); setLocal(next); queryClient.setQueryData(["settings"], next); await Promise.all([queryClient.invalidateQueries({ queryKey: ["settings"] }), queryClient.invalidateQueries({ queryKey: ["presets"] }), queryClient.invalidateQueries({ queryKey: ["bootstrap"] })]); setErrors((current) => { const rest = { ...current }; delete rest["clear-presets"]; return rest; }); setFeedback(fr.settings.saved); } catch (error) { setErrors((current) => ({ ...current, "clear-presets": error instanceof Error ? error.message : fr.settings.failed })); } finally { setPending("clear-presets", false); } };
+  const reportIssue = async () => {
+    try {
+      if (await openExternalUrl("https://github.com/qurnt1/otp_lol/issues/new", "https://github.com")) return;
+    } catch {
+      // Show the same recovery message for a rejected bridge call and an unavailable browser.
+    }
+    setErrors((current) => ({ ...current, support: fr.settings.reportIssueFailed }));
+  };
   if (!local) return <div className="page-loading">{fr.common.loading}</div>;
   const regions = regionOptionsOrFallback(providers.data);
   const pending = (key: string) => pendingKeys.has(key);
@@ -264,7 +289,19 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
         {errors["forget-detected-account"] && <small className="inline-error" role="alert">{errors["forget-detected-account"]}</small>}
       </>}
       {section === "links" && <div className="settings-row"><div><strong>{fr.settings.links}</strong><p>{fr.settings.linksHint}</p></div><a className="button button-secondary" href="#statistics">{fr.nav.statistics}</a><a className="button button-secondary" href="#live">{fr.nav.live}</a></div>}
-      {section === "shortcuts" && <div className="settings-form"><label><span><Keyboard size={13} aria-hidden="true" />{fr.settings.toggleHotkey}</span><input className="field-input" value={draft.hotkey_toggle_window ?? local.hotkey_toggle_window} disabled={pending("hotkey_toggle_window")} onChange={(event) => manualUpdate("hotkey_toggle_window", event.target.value)} onBlur={() => saveManual("hotkey_toggle_window")} onKeyDown={(event) => { if (event.key === "Enter") saveManual("hotkey_toggle_window"); }} />{errors.hotkey_toggle_window && <small className="inline-error" role="alert">{errors.hotkey_toggle_window}</small>}</label><label><span><Keyboard size={13} aria-hidden="true" />{fr.settings.statsHotkey}</span><input className="field-input" value={draft.hotkey_open_site ?? local.hotkey_open_site} disabled={pending("hotkey_open_site")} onChange={(event) => manualUpdate("hotkey_open_site", event.target.value)} onBlur={() => saveManual("hotkey_open_site")} onKeyDown={(event) => { if (event.key === "Enter") saveManual("hotkey_open_site"); }} />{errors.hotkey_open_site && <small className="inline-error" role="alert">{errors.hotkey_open_site}</small>}</label></div>}
+      {section === "shortcuts" && <div className="settings-form">{(["hotkey_toggle_window", "hotkey_open_site"] as const).map((key) => {
+        const label = key === "hotkey_toggle_window" ? fr.settings.toggleHotkey : fr.settings.statsHotkey;
+        const capturing = capturingHotkey === key;
+        return <div className="settings-shortcut" key={key}>
+          <label htmlFor={key}><span><Keyboard size={13} aria-hidden="true" />{label}</span></label>
+          <div className="settings-shortcut-field" onKeyDown={(event) => captureHotkey(key, event)}>
+            <input id={key} className="field-input" value={draft[key] ?? local[key]} disabled={pending(key)} onChange={(event) => manualUpdate(key, event.target.value)} onBlur={() => saveManual(key)} onKeyDown={(event) => { if (event.key === "Enter" && !capturing) saveManual(key); }} />
+            <Button type="button" variant="quiet" aria-pressed={capturing} onClick={() => setCapturingHotkey(capturing ? null : key)}>{capturing ? fr.settings.cancelCapture : fr.settings.captureHotkey}</Button>
+          </div>
+          {capturing && <small className="field-hint" role="status">{fr.settings.pressHotkey}</small>}
+          {errors[key] && <small className="inline-error" role="alert">{errors[key]}</small>}
+        </div>;
+      })}</div>}
       {section === "appearance" && <SelectRow label={fr.settings.theme} description={fr.settings.descriptions.theme} value={local.theme} options={[{ id: "darkly", label: fr.settings.dark }, { id: "flatly", label: fr.settings.light }]} pending={pending("theme")} error={errors.theme} onChange={(value) => { document.documentElement.dataset.theme = value === "flatly" ? "light" : "dark"; update("theme", value as Settings["theme"]); }} />}
       {section === "advanced" && <div className="advanced-settings">
         <section className="advanced-group" aria-labelledby="advanced-files-heading">
@@ -273,7 +310,9 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
             <AdvancedAction icon={<FileText size={15} aria-hidden="true" />} title={fr.settings.logs} description={fr.settings.advancedDescriptions.logs} onClick={() => openNativeFolder("logs")} />
             <AdvancedAction icon={<FolderOpen size={15} aria-hidden="true" />} title={fr.settings.appData} description={fr.settings.advancedDescriptions.appData} onClick={() => openNativeFolder("appdata")} />
             <AdvancedAction icon={<Activity size={15} aria-hidden="true" />} title={diagnosticsCopy.title} description={diagnosticsCopy.settingsDescription} onClick={() => { window.location.hash = "#diagnostics"; }} />
+            <AdvancedAction icon={<FileText size={15} aria-hidden="true" />} title={fr.settings.reportIssue} description={fr.settings.reportIssueDescription} onClick={() => void reportIssue()} />
           </div>
+          {errors.support && <small className="inline-error" role="alert">{errors.support}</small>}
         </section>
         <section className="advanced-group" aria-labelledby="advanced-config-heading">
           <div className="advanced-group-heading"><div className="advanced-group-icon"><FolderOpen size={16} aria-hidden="true" /></div><div><h3 id="advanced-config-heading">{fr.settings.advancedConfig}</h3><p>{fr.settings.advancedConfigDescription}</p></div></div>
@@ -289,6 +328,7 @@ export function SettingsPage({ section, onSectionChange }: { section: SettingsSe
           {errors.import && <small className="inline-error" role="alert">{errors.import}</small>}
           {errors["reset-presets"] && <small className="inline-error" role="alert">{errors["reset-presets"]}</small>}
           {errors["clear-presets"] && <small className="inline-error" role="alert">{errors["clear-presets"]}</small>}
+          {errors.reset && <small className="inline-error" role="alert">{errors.reset}</small>}
         </section>
         <section className="advanced-group" aria-labelledby="advanced-window-heading">
           <div className="advanced-group-heading"><div className="advanced-group-icon"><Maximize2 size={16} aria-hidden="true" /></div><div><h3 id="advanced-window-heading">{fr.settings.advancedWindow}</h3><p>{fr.settings.advancedWindowDescription}</p></div></div>

@@ -9,11 +9,11 @@ import type { Champion } from "../../types/api";
 import { AssetImage } from "../../components/game/AssetImage";
 import { filterChampions, roleFilters, type RoleFilterId } from "./picker-utils";
 
-export function ChampionPicker({ selected, onSelect }: { selected: string; onSelect: (champion: Champion) => void }) {
+export function ChampionPicker({ selected, excluded = [], onSelect }: { selected: string; excluded?: string[]; onSelect: (champion: Champion) => void }) {
   const [query, setQuery] = useState("");
   const [role, setRole] = useState<RoleFilterId>("all");
   const champions = useQuery({ queryKey: ["champions", "catalog"], queryFn: () => api.getChampions(), staleTime: 3_600_000 });
-  const items = useMemo(() => filterChampions(champions.data?.items ?? [], query, role), [champions.data?.items, query, role]);
+  const items = useMemo(() => filterChampions(champions.data?.items ?? [], query, role, excluded), [champions.data?.items, query, role, excluded]);
   return <div className="champion-picker"><label className="field-label" htmlFor="champion-search"><Search size={13} aria-hidden="true" />{fr.presets.searchChampion}</label><input id="champion-search" className="field-input" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder={fr.presets.searchChampion} />
     <div className="role-filters" role="group" aria-label={fr.presets.positionFilters}>{roleFilters.map((item) => <button key={item.id} className={cn("filter-button", role === item.id && "is-active")} type="button" aria-pressed={role === item.id} onClick={() => setRole(item.id)}>{item.label}</button>)}</div>
     <div className="picker-summary"><span>{items.length} {fr.presets.championsFound}</span>{selected && <span>{fr.presets.currentSelection}: <strong>{selected}</strong></span>}</div>

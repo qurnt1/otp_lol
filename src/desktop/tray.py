@@ -24,6 +24,8 @@ class TrayController:
         open_settings,
         toggle_presets_automation,
         is_presets_automation_enabled,
+        toggle_auto_ban,
+        is_auto_ban_enabled,
         quit_callback,
         on_failure,
     ) -> bool:
@@ -51,6 +53,14 @@ class TrayController:
                 except Exception as e:
                     logging.debug("Tray presets callback error: %s", e)
 
+            def on_auto_ban(icon=None, item=None):
+                try:
+                    toggle_auto_ban()
+                    if self.icon:
+                        self.icon.update_menu()
+                except Exception as e:
+                    logging.debug("Tray auto-ban callback error: %s", e)
+
             def on_quit(icon=None, item=None):
                 try:
                     quit_callback()
@@ -64,6 +74,12 @@ class TrayController:
                     "Enable presets automations",
                     on_presets,
                     checked=lambda item: bool(is_presets_automation_enabled()),
+                ),
+                pystray.MenuItem(
+                    "Enable auto-ban",
+                    on_auto_ban,
+                    checked=lambda item: bool(is_auto_ban_enabled()),
+                    enabled=lambda item: bool(is_presets_automation_enabled()),
                 ),
                 pystray.MenuItem("Quit", on_quit),
             )

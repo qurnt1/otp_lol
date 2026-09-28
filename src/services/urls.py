@@ -48,7 +48,7 @@ from ..config.regions import normalize_platform_id, normalize_provider_region
 
 
 def is_allowed_external_url(url: str) -> bool:
-    """Allow only HTTPS links to providers intentionally exposed by the app."""
+    """Allow only HTTPS links to providers or the project intentionally exposed by the app."""
     try:
         parsed = urllib.parse.urlparse(str(url or "").strip())
         port = parsed.port

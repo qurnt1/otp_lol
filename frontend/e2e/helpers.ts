@@ -389,6 +389,7 @@ export async function mockLocalApi(page: Page, options: { connected?: boolean; c
       const catalog = [
         { id: 86, name: "Garen", slug: "Garen", title: "La Force de Demacia", tags: ["Fighter"], roles: ["TOP"], icon_url: demoAsset, splash_url: demoAsset },
         { id: 99, name: "Lux", slug: "Lux", title: "Dame de lumière", tags: ["Mage"], roles: ["MIDDLE"], icon_url: demoAsset, splash_url: demoAsset },
+        { id: 103, name: "Ahri", slug: "Ahri", title: "Renard à neuf queues", tags: ["Mage"], roles: ["MIDDLE"], icon_url: demoAsset, splash_url: demoAsset },
         { id: 22, name: "Ashe", slug: "Ashe", title: "Archère de glace", tags: ["Marksman"], roles: ["BOTTOM"], icon_url: demoAsset, splash_url: demoAsset },
         { id: 17, name: "Teemo", slug: "Teemo", title: "Bandle Scout", tags: ["Marksman"], roles: ["TOP"], icon_url: demoAsset, splash_url: demoAsset },
       ];

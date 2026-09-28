@@ -13,6 +13,10 @@ describe("picker data", () => {
     expect(filterChampions(champions, "ah", "mid").map((champion) => champion.name)).toEqual(["Ahri"]);
   });
 
+  it("omits champions already assigned to another pick or ban", () => {
+    expect(filterChampions(champions, "", "all", ["Ahri"]).map((champion) => champion.name)).toEqual(["Topper"]);
+  });
+
   it("keeps hidden random-pool entries when the owned filter changes", () => {
     const catalog = [
       { champion_id: 1, champion_name: "Topper", champion_slug: "Topper", skin_id: 1, skin_num: 1, skin_name: "Hidden", splash_url: "", tile_url: "", centered_splash_url: "", uncentered_splash_url: "" },

@@ -1,7 +1,14 @@
 import { expect, test } from "@playwright/test";
 import { mockLocalApi } from "./helpers";
 
-for (const viewport of [{ width: 1100, height: 760 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
+for (const viewport of [
+  { width: 1100, height: 760 },
+  { width: 1366, height: 768 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+  { width: 2560, height: 1440 },
+  { width: 2560, height: 1600 },
+]) {
   test(`layout propre à ${viewport.width}x${viewport.height}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await mockLocalApi(page, { configured: true });

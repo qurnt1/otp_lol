@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { EOL } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import openapiTS, { astToString } from "openapi-typescript";
@@ -20,14 +21,15 @@ if (python.status !== 0) {
 
 const schema = JSON.parse(python.stdout);
 const output = "// Generated from FastAPI. Do not edit by hand.\n" + astToString(await openapiTS(schema));
+const normalizedOutput = output.replace(/\r\n/g, "\n");
 if (checkOnly) {
-  if (!existsSync(target) || readFileSync(target, "utf8") !== output) {
+  if (!existsSync(target) || readFileSync(target, "utf8").replace(/\r\n/g, "\n") !== normalizedOutput) {
     console.error("Generated API types are stale. Run npm run api:generate.");
     process.exit(1);
   }
   console.log("Generated API types are up to date.");
 } else {
   mkdirSync(dirname(target), { recursive: true });
-  writeFileSync(target, output, "utf8");
+  writeFileSync(target, normalizedOutput.replace(/\n/g, EOL), "utf8");
   console.log("Generated " + target);
 }

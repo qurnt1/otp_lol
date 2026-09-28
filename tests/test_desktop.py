@@ -23,7 +23,7 @@ from src.desktop.provider_browser import ProviderBrowserWindow, ProviderWindowMa
 from src.desktop.self_test import run_self_test
 from src.desktop.server import EmbeddedApiServer
 from src.desktop.tray import TrayController
-from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys
+from src.desktop.webview import _configure_hotkeys, _settings_update_changes_hotkeys, _toggle_auto_ban
 from src.desktop.window import (
     WEBVIEW2_DOWNLOAD_URL,
     WEBVIEW_STORAGE_DIR,
@@ -65,13 +65,18 @@ class FakeNativeWindow:
 class FakeEventSignal:
     def __init__(self):
         self.handlers = []
+        self.fired = False
 
     def __iadd__(self, handler):
         self.handlers.append(handler)
         return self
 
     def fire(self):
+        self.fired = True
         return [handler() for handler in self.handlers]
+
+    def is_set(self):
+        return self.fired
 
 
 class DesktopWindowTests(unittest.TestCase):
@@ -304,6 +309,27 @@ class DesktopWindowTests(unittest.TestCase):
 
         self.assertEqual(native.calls, ["hide", "show", "show", ("load_url", "http://127.0.0.1:1234/#settings/general"), "destroy"])
 
+    def test_visibility_requested_before_native_shown_is_applied_after_shown(self):
+        shown = FakeEventSignal()
+        native = SimpleNamespace(events=SimpleNamespace(shown=shown), hide=Mock(), show=Mock())
+        fake_webview = SimpleNamespace(create_window=lambda *args, **kwargs: native)
+        window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
+        callbacks = []
+        window.set_shown_callback(lambda: callbacks.append("bridge"))
+        with patch.dict(sys.modules, {"webview": fake_webview}):
+            window.create()
+        window.set_shown_callback(lambda: callbacks.append("context"))
+
+        window.hide()
+
+        self.assertFalse(window.visible)
+        native.hide.assert_not_called()
+        shown.fire()
+
+        native.hide.assert_called_once_with()
+        self.assertFalse(window.visible)
+        self.assertEqual(callbacks, ["bridge", "context"])
+
     def test_user_close_hides_to_tray_and_explicit_destroy_still_quits(self):
         window = WebViewWindow(WebViewWindowConfig(title="OTP LOL", url="http://127.0.0.1:1234/"))
         native = FakeNativeWindow()
@@ -446,9 +472,10 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertTrue(bridge.open_external_url("https://porofessor.gg/fr/live/euw/Test-Tag/ranked-only"))
         self.assertTrue(bridge.open_external_url("https://www.deeplol.gg/summoner/euw/Test-Tag"))
         self.assertTrue(bridge.open_external_url("https://www.leagueofgraphs.com/fr/summoner/euw/Test-Tag"))
+        self.assertTrue(bridge.open_external_url("https://github.com/qurnt1/otp_lol/issues/new"))
         self.assertFalse(bridge.open_external_url("https://evil.example/"))
         self.assertFalse(bridge.open_external_url("http://op.gg/"))
-        self.assertEqual(open_browser.call_count, 4)
+        self.assertEqual(open_browser.call_count, 5)
 
     def test_provider_window_uses_an_allowlisted_top_level_url_without_the_app_bridge(self):
         created = []
@@ -1080,6 +1107,8 @@ class DesktopWindowTests(unittest.TestCase):
                     open_settings=Mock(),
                     toggle_presets_automation=Mock(),
                     is_presets_automation_enabled=Mock(return_value=False),
+                    toggle_auto_ban=Mock(),
+                    is_auto_ban_enabled=Mock(return_value=False),
                     quit_callback=Mock(),
                     on_failure=failed,
                 )
@@ -1087,9 +1116,11 @@ class DesktopWindowTests(unittest.TestCase):
         self.assertFalse(available)
         failed.assert_called_once_with()
 
-    def test_tray_exposes_only_the_preset_automation_master(self):
+    def test_tray_exposes_preset_master_and_auto_ban_controls(self):
         items = {}
         master_toggle = Mock()
+        auto_ban_toggle = Mock()
+        master_state = Mock(return_value=False)
         tray = TrayController()
         fake_image = Mock()
         fake_image.resize.return_value = object()
@@ -1109,14 +1140,29 @@ class DesktopWindowTests(unittest.TestCase):
                 toggle_window=Mock(),
                 open_settings=Mock(),
                 toggle_presets_automation=master_toggle,
-                is_presets_automation_enabled=Mock(return_value=False),
+                is_presets_automation_enabled=master_state,
+                toggle_auto_ban=auto_ban_toggle,
+                is_auto_ban_enabled=Mock(return_value=True),
                 quit_callback=Mock(),
                 on_failure=Mock(),
             ))
 
-        self.assertEqual(set(items), {"Show/Hide", "Settings", "Enable presets automations", "Quit"})
+        self.assertEqual(set(items), {"Show/Hide", "Settings", "Enable presets automations", "Enable auto-ban", "Quit"})
         items["Enable presets automations"][0]()
         master_toggle.assert_called_once_with()
+        items["Enable auto-ban"][0]()
+        auto_ban_toggle.assert_called_once_with()
+        self.assertFalse(items["Enable auto-ban"][1]["enabled"](None))
+
+    def test_auto_ban_tray_toggle_persists_and_publishes_the_setting(self):
+        context = Mock()
+        context.get_params.return_value = {"auto_ban_enabled": False}
+        context.persist_parameters.return_value = {"auto_ban_enabled": True}
+
+        _toggle_auto_ban(context)
+
+        context.persist_parameters.assert_called_once_with({"auto_ban_enabled": True})
+        context.broker.publish.assert_called_once_with("settings_updated", {"keys": ["auto_ban_enabled"]})
 
     @patch("src.desktop.window.has_webview2_runtime", return_value=True)
     def test_start_uses_persistent_webview_storage(self, _runtime):
@@ -1198,6 +1244,14 @@ class FakeApiServer:
 
 
 class EmbeddedApiServerTests(unittest.TestCase):
+    def test_embedded_server_config_builds_without_console_streams(self):
+        server = EmbeddedApiServer(object(), host="127.0.0.1", port=0)
+
+        with patch("sys.stdout", None), patch("sys.stderr", None):
+            uvicorn_server = server._build_server()
+
+        self.assertIsNone(uvicorn_server.config.log_config)
+
     def test_server_never_runs_without_a_reserved_socket_after_bind_failure(self):
         sockets_seen = []
 

@@ -49,10 +49,14 @@ def validate_preset_invariants(
     slots = candidate.get("pick_slots")
     if not isinstance(slots, dict):
         slots = {}
-    picks = {
+    pick_values = [
         str(candidate.get(f"selected_pick_{index}") or "").strip().casefold()
         for index in range(1, 4)
-    }
+    ]
+    picks = {pick for pick in pick_values if pick}
+    selection_changed = changed_keys is None or bool(PRESET_SELECTION_KEYS.intersection(changed_keys))
+    if selection_changed and len(picks) != sum(bool(pick) for pick in pick_values):
+        raise ValueError("Chaque priorité doit utiliser un champion différent.")
     ban = str(candidate.get("selected_ban") or "").strip().casefold()
     for slot_key in PICK_SLOT_ORDER:
         slot = slots.get(slot_key)

@@ -112,9 +112,14 @@ class LcuRuntime:
 
     async def _submit(self, coroutine_factory: Callable[[], Any]) -> Any:
         loop = self.manager.loop
-        if loop is None or loop.is_closed():
+        if loop is None or loop.is_closed() or not loop.is_running():
             raise RuntimeUnavailable("The League Client runtime is not ready")
-        future = asyncio.run_coroutine_threadsafe(coroutine_factory(), loop)
+        coroutine = coroutine_factory()
+        try:
+            future = asyncio.run_coroutine_threadsafe(coroutine, loop)
+        except RuntimeError:
+            coroutine.close()
+            raise RuntimeUnavailable("The League Client runtime is not ready") from None
         return await asyncio.wrap_future(future)
 
     async def _request(self, operation: Callable[[str], Any], path: str) -> LcuResponse:

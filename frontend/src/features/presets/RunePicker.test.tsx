@@ -15,7 +15,7 @@ const runes: RunesResponse = {
 
 const slot = {
   champion: "Garen", spell_1: "Flash", spell_2: "Ignite", skin_mode: "none" as const, skin_id: 0, skin_name: "", skin_num: 0,
-  random_skin_id: 0, random_skin_name: "", random_skin_num: 0, random_skin_pool: [], rune_page_id: 0, rune_page_name: "",
+  random_skin_id: 0, random_skin_name: "", random_skin_num: 0, random_skin_pool: [], rune_page_id: 0, rune_page_name: "", rune_auto_apply: true,
   rune_keystone_id: 0, rune_keystone_path: "", rune_sub_style_icon_path: "",
 };
 

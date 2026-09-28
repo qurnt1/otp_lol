@@ -1,0 +1,20 @@
+{
+  "releasesUrl": "https://github.com/qurnt1/otp_lol/releases/latest",
+  "projectUrl": "https://github.com/qurnt1/otp_lol",
+  "screenshots": [
+    {
+      "id": "settings",
+      "label": "Réglages",
+      "title": "Active ce qui te convient",
+      "alt": "Capture des réglages OTP LOL pour les automatismes, les fichiers locaux et la configuration.",
+      "note": "Aperçu des réglages. Les automatismes sont désactivés par défaut au premier lancement."
+    },
+    {
+      "id": "statistics",
+      "label": "Statistiques",
+      "title": "Choisis tes fournisseurs",
+      "alt": "Capture des statistiques OTP LOL avec le choix d’un fournisseur et l’ouverture de son profil.",
+      "note": "Capture de test avec données simulées et profil fictif. Les profils et données de partie viennent de services tiers."
+    }
+  ]
+}

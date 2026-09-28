@@ -84,7 +84,7 @@ class ConfigTests(unittest.TestCase):
         self.assertNotIn("auto_runes_enabled", config.FIRST_LAUNCH_PARAMS)
         self.assertFalse(config.FIRST_LAUNCH_PARAMS["skin_automation_enabled"])
 
-    def test_legacy_fields_are_not_interpreted(self):
+    def test_per_slot_rune_toggle_is_preserved(self):
         raw = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
         raw["pick_slots"]["pick_1"].update(
             {
@@ -97,7 +97,17 @@ class ConfigTests(unittest.TestCase):
         normalized = config.normalize_parameters(raw)
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_page_id"], 123)
         self.assertEqual(normalized["pick_slots"]["pick_1"]["rune_keystone_id"], 8005)
-        self.assertNotIn("rune_auto_apply", normalized["pick_slots"]["pick_1"])
+        self.assertFalse(normalized["pick_slots"]["pick_1"]["rune_auto_apply"])
+
+    def test_missing_per_slot_rune_toggle_follows_summoner_automation(self):
+        raw = copy.deepcopy(config.FIRST_LAUNCH_PARAMS)
+        for slot in raw["pick_slots"].values():
+            slot.pop("rune_auto_apply", None)
+        raw["auto_summoners_enabled"] = False
+
+        normalized = config.normalize_parameters(raw)
+
+        self.assertTrue(all(not slot["rune_auto_apply"] for slot in normalized["pick_slots"].values()))
 
     def test_window_geometry_has_desktop_defaults(self):
         self.assertEqual(config.FIRST_LAUNCH_PARAMS["window_width"], 1100)

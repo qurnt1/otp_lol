@@ -8,15 +8,16 @@ import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { fr } from "../../content/fr";
 import type { HistoryEntry } from "../../types/api";
 
-const filters = ["all", "connection", "ready_check", "champion_select", "runes", "skins", "errors"] as const;
-type HistoryFilter = typeof filters[number];
-const filterLabels: Record<HistoryFilter, string> = { all: fr.history.all, connection: fr.history.connection, ready_check: fr.history.readyCheck, champion_select: fr.history.championSelect, runes: fr.history.runes, skins: fr.history.skins, errors: fr.history.errors };
+const filters = ["all", "connection", "ready_check", "champion_select", "summoners", "runes", "skins", "errors"] as const;
+export type HistoryFilter = typeof filters[number];
+const filterLabels: Record<HistoryFilter, string> = { all: fr.history.all, connection: fr.history.connection, ready_check: fr.history.readyCheck, champion_select: fr.history.championSelect, summoners: fr.history.summoners, runes: fr.history.runes, skins: fr.history.skins, errors: fr.history.errors };
 
-function entryFilter(entry: HistoryEntry): HistoryFilter {
+export function entryFilter(entry: HistoryEntry): HistoryFilter {
   const value = `${entry.type} ${entry.category} ${entry.action}`.toLowerCase();
   if (value.includes("error") || entry.level === "error") return "errors";
   if (value.includes("connection") || value.includes("connect")) return "connection";
   if (value.includes("ready")) return "ready_check";
+  if (value.includes("spell") || value.includes("summs")) return "summoners";
   if (value.includes("rune")) return "runes";
   if (value.includes("skin")) return "skins";
   if (value.includes("champion") || value.includes("pick") || value.includes("ban")) return "champion_select";
@@ -46,6 +47,8 @@ export function HistoryPage() {
       {!history.isPending && !history.isError && !items.length && <div className="history-status empty-state">{fr.history.empty}</div>}
       {!history.isPending && !history.isError && Boolean(items.length) && <div className="history-table-wrap"><table className="history-table"><thead><tr><th>{fr.history.time}</th><th>{fr.history.type}</th><th>{fr.history.action}</th><th>{fr.history.detail}</th><th>{fr.history.status}</th></tr></thead><tbody>{items.map((entry, index) => <tr key={`${entry.timestamp}-${entry.type}-${index}`}><td>{new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(entry.timestamp))}</td><td>{entry.category}</td><td>{entry.action}</td><td><strong>{entry.message}</strong></td><td className={entry.level === "error" ? "status-danger" : entry.level === "success" ? "status-success" : ""}>{entry.level}</td></tr>)}</tbody></table></div>}
     </section>
-    <ConfirmDialog open={confirmClear} title={fr.history.clear} description={fr.history.confirm} confirmLabel={fr.history.clear} onCancel={() => setConfirmClear(false)} onConfirm={() => clearHistory.mutate()} />
+    <ConfirmDialog open={confirmClear} title={fr.history.clear} description={fr.history.confirm} confirmLabel={fr.history.clear} confirmDisabled={clearHistory.isPending} onCancel={() => setConfirmClear(false)} onConfirm={() => clearHistory.mutate()}>
+      {clearHistory.isError && <p className="inline-error" role="alert">{fr.history.clearFailed}</p>}
+    </ConfirmDialog>
   </div>;
 }

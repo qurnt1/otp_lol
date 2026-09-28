@@ -37,29 +37,73 @@ class PresetSlotPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    champion: str | None = None
-    spell_1: str | None = None
-    spell_2: str | None = None
-    skin_mode: SkinMode | None = None
-    skin_id: int | None = Field(default=None, ge=0)
-    skin_name: str | None = None
-    skin_num: int | None = Field(default=None, ge=0)
-    random_skin_id: int | None = Field(default=None, ge=0)
-    random_skin_name: str | None = None
-    random_skin_num: int | None = Field(default=None, ge=0)
-    random_skin_pool: list[SkinReference] | None = None
-    rune_page_id: int | None = Field(default=None, ge=0)
-    rune_page_name: str | None = None
-    rune_keystone_id: int | None = Field(default=None, ge=0)
-    rune_keystone_path: str | None = None
-    rune_sub_style_icon_path: str | None = None
+    champion: str = Field(default=None)
+    spell_1: str = Field(default=None)
+    spell_2: str = Field(default=None)
+    skin_mode: SkinMode = Field(default=None)
+    skin_id: int = Field(default=None, ge=0)
+    skin_name: str = Field(default=None)
+    skin_num: int = Field(default=None, ge=0)
+    random_skin_id: int = Field(default=None, ge=0)
+    random_skin_name: str = Field(default=None)
+    random_skin_num: int = Field(default=None, ge=0)
+    random_skin_pool: list[SkinReference] = Field(default=None)
+    rune_page_id: int = Field(default=None, ge=0)
+    rune_page_name: str = Field(default=None)
+    rune_auto_apply: bool = Field(default=None)
+    rune_keystone_id: int = Field(default=None, ge=0)
+    rune_keystone_path: str = Field(default=None)
+    rune_sub_style_icon_path: str = Field(default=None)
 
     @field_validator("spell_1", "spell_2")
     @classmethod
-    def validate_spell(cls, value: str | None) -> str | None:
-        if value is None or value == "" or value in SUMMONER_SPELL_MAP:
+    def validate_spell(cls, value: str) -> str:
+        if value == "" or value in SUMMONER_SPELL_MAP:
             return value
         raise ValueError("Unknown summoner spell")
+
+
+class PresetSlot(BaseModel):
+    """Complete preset slot returned to the frontend."""
+
+    champion: str
+    spell_1: str
+    spell_2: str
+    skin_mode: SkinMode
+    skin_id: int
+    skin_name: str
+    skin_num: int
+    random_skin_id: int
+    random_skin_name: str
+    random_skin_num: int
+    random_skin_pool: list[SkinReference]
+    rune_page_id: int
+    rune_page_name: str
+    rune_auto_apply: bool
+    rune_keystone_id: int
+    rune_keystone_path: str
+    rune_sub_style_icon_path: str
+
+
+class PresetSlotSettings(BaseModel):
+    """Persisted slot settings returned without the separate champion pick."""
+
+    spell_1: str
+    spell_2: str
+    skin_mode: SkinMode
+    skin_id: int
+    skin_name: str
+    skin_num: int
+    random_skin_id: int
+    random_skin_name: str
+    random_skin_num: int
+    random_skin_pool: list[SkinReference]
+    rune_page_id: int
+    rune_page_name: str
+    rune_auto_apply: bool
+    rune_keystone_id: int
+    rune_keystone_path: str
+    rune_sub_style_icon_path: str
 
 
 class SettingsPatch(BaseModel):
@@ -67,48 +111,44 @@ class SettingsPatch(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    auto_accept_enabled: bool | None = None
-    auto_pick_enabled: bool | None = None
-    auto_ban_enabled: bool | None = None
-    auto_summoners_enabled: bool | None = None
-    presets_enabled: bool | None = None
-    onboarding_completed: bool | None = None
-    selected_pick_1: str | None = None
-    selected_pick_2: str | None = None
-    selected_pick_3: str | None = None
-    selected_ban: str | None = None
-    pick_slots: dict[str, PresetSlotPatch] | None = None
-    theme: Theme | None = None
-    summoner_name_auto_detect: bool | None = None
-    manual_summoner_name: str | None = None
-    manual_region: Region | None = None
-    preferred_stats_site: StatsProvider | None = None
-    preferred_hotkey_site: HotkeyProvider | None = None
-    hotkey_toggle_window: str | None = None
-    hotkey_open_site: str | None = None
-    auto_play_again_enabled: bool | None = None
-    auto_hide_on_connect: bool | None = None
-    close_app_on_lol_exit: bool | None = None
-    ignored_update_version: str | None = None
-    skin_automation_enabled: bool | None = None
-    window_x: int | None = None
-    window_y: int | None = None
-    window_width: int | None = Field(default=None, ge=800, le=7680)
-    window_height: int | None = Field(default=None, ge=540, le=4320)
-    window_maximized: bool | None = None
+    auto_accept_enabled: bool = Field(default=None)
+    auto_pick_enabled: bool = Field(default=None)
+    auto_ban_enabled: bool = Field(default=None)
+    auto_summoners_enabled: bool = Field(default=None)
+    presets_enabled: bool = Field(default=None)
+    onboarding_completed: bool = Field(default=None)
+    selected_pick_1: str = Field(default=None)
+    selected_pick_2: str = Field(default=None)
+    selected_pick_3: str = Field(default=None)
+    selected_ban: str = Field(default=None)
+    pick_slots: dict[str, PresetSlotPatch] = Field(default=None)
+    theme: Theme = Field(default=None)
+    summoner_name_auto_detect: bool = Field(default=None)
+    manual_summoner_name: str = Field(default=None)
+    manual_region: Region = Field(default=None)
+    preferred_stats_site: StatsProvider = Field(default=None)
+    preferred_hotkey_site: HotkeyProvider = Field(default=None)
+    hotkey_toggle_window: str = Field(default=None)
+    hotkey_open_site: str = Field(default=None)
+    auto_play_again_enabled: bool = Field(default=None)
+    auto_hide_on_connect: bool = Field(default=None)
+    close_app_on_lol_exit: bool = Field(default=None)
+    ignored_update_version: str = Field(default=None)
+    skin_automation_enabled: bool = Field(default=None)
+    window_x: int = Field(default=None)
+    window_y: int = Field(default=None)
+    window_width: int = Field(default=None, ge=800, le=7680)
+    window_height: int = Field(default=None, ge=540, le=4320)
+    window_maximized: bool = Field(default=None)
 
     @field_validator("hotkey_toggle_window", "hotkey_open_site")
     @classmethod
-    def validate_hotkey(cls, value: str | None) -> str | None:
-        if value is None:
-            return value
+    def validate_hotkey(cls, value: str) -> str:
         return normalize_hotkey(value)
 
     @field_validator("manual_summoner_name")
     @classmethod
-    def validate_riot_id(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+    def validate_riot_id(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
             return ""
@@ -220,7 +260,7 @@ class SettingsResponse(BaseModel):
     selected_pick_2: str
     selected_pick_3: str
     selected_ban: str
-    pick_slots: dict[str, PresetSlotPatch]
+    pick_slots: dict[str, PresetSlotSettings]
     theme: Theme
     summoner_name_auto_detect: bool
     manual_summoner_name: str
@@ -256,7 +296,7 @@ class SettingsResponse(BaseModel):
 class PresetsResponse(BaseModel):
     presets_enabled: bool
     selected_ban: str
-    slots: dict[str, PresetSlotPatch]
+    slots: dict[str, PresetSlot]
 
 
 class SettingsImport(SettingsPatch):

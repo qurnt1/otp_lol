@@ -369,7 +369,7 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(old_version.status_code, 422)
         self.assertEqual(current_version.status_code, 200)
 
-    def test_settings_import_rejects_removed_rune_toggle(self):
+    def test_settings_import_accepts_per_slot_rune_toggle(self):
         payload = {
             "config_schema_version": CONFIG_SCHEMA_VERSION,
             "pick_slots": {
@@ -382,6 +382,14 @@ class ApiBoundaryTests(unittest.TestCase):
             },
         }
         response = self.client.post("/api/settings/import", json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(self.context.get_params()["pick_slots"]["pick_1"]["rune_auto_apply"])
+
+    def test_settings_import_rejects_legacy_global_rune_toggle(self):
+        response = self.client.post("/api/settings/import", json={
+            "config_schema_version": CONFIG_SCHEMA_VERSION,
+            "rune_auto_apply": False,
+        })
         self.assertEqual(response.status_code, 422)
 
     def test_settings_export_import_and_reset_are_real_persistent_operations(self):
@@ -498,6 +506,18 @@ class ApiBoundaryTests(unittest.TestCase):
             self.assertEqual(self.context.get_params()[key], children_before[key], key)
         self.assertEqual(self.context.get_params()["auto_accept_enabled"], children_before["auto_accept_enabled"])
         self.assertEqual(self.context.get_params()["auto_play_again_enabled"], children_before["auto_play_again_enabled"])
+
+    def test_settings_and_preset_patches_reject_explicit_nulls(self):
+        settings_before = self.context.get_params()["auto_accept_enabled"]
+        rune_toggle_before = self.context.get_params()["pick_slots"]["pick_1"]["rune_auto_apply"]
+
+        settings_null = self.client.patch("/api/settings", json={"auto_accept_enabled": None})
+        nested_null = self.client.patch("/api/settings", json={"pick_slots": {"pick_1": {"rune_auto_apply": None}}})
+        preset_null = self.client.put("/api/presets/pick_1", json={"rune_auto_apply": None})
+
+        self.assertEqual((settings_null.status_code, nested_null.status_code, preset_null.status_code), (422, 422, 422))
+        self.assertEqual(self.context.get_params()["auto_accept_enabled"], settings_before)
+        self.assertEqual(self.context.get_params()["pick_slots"]["pick_1"]["rune_auto_apply"], rune_toggle_before)
 
     def test_resetting_presets_restores_examples_and_disables_the_master(self):
         preferences = {
@@ -662,6 +682,13 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertEqual(self.context.get_params()["selected_pick_2"], "Ahri")
         self.assertTrue(self.context.get_params()["onboarding_completed"])
 
+    def test_preset_patch_rejects_a_champion_used_by_another_priority(self):
+        response = self.client.put("/api/presets/pick_2", json={"champion": "Garen"})
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(self.context.get_params()["selected_pick_1"], "Garen")
+        self.assertNotEqual(self.context.get_params()["selected_pick_2"], "Garen")
+
     def test_preset_patch_rejects_unknown_spell(self):
         response = self.client.put("/api/presets/pick_1", json={"spell_1": "NotASpell"})
 
@@ -713,7 +740,10 @@ class ApiBoundaryTests(unittest.TestCase):
         self.assertNotEqual(saved_slot["spell_1"], saved_slot["spell_2"])
 
     def test_events_websocket_receives_runtime_events(self):
-        with self.client.websocket_connect("/api/events") as websocket:
+        with self.client.websocket_connect(
+            "/api/events",
+            headers={"host": "127.0.0.1", "origin": "http://127.0.0.1"},
+        ) as websocket:
             snapshot = websocket.receive_json()
             self.assertEqual(snapshot["type"], "runtime_snapshot")
             self.assertIn("timestamp", snapshot)
@@ -729,7 +759,7 @@ class ApiBoundaryTests(unittest.TestCase):
     def test_websocket_rejects_external_origin(self):
         with self.assertRaises(WebSocketDisconnect), self.client.websocket_connect(
             "/api/events",
-            headers={"origin": "https://evil.example"},
+            headers={"host": "127.0.0.1", "origin": "https://evil.example"},
         ):
             pass
 

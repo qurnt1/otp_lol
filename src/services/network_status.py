@@ -29,10 +29,12 @@ class NetworkStatusService:
         *,
         probe: Probe | None = None,
         clock: Callable[[], float] | None = None,
+        on_change: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self._broker = broker
         self._probe = probe or self._probe_asset_origin
         self._clock = clock or time.monotonic
+        self._on_change = on_change
         self._lock = threading.RLock()
         self._checking = False
         self._state = "checking"
@@ -96,6 +98,8 @@ class NetworkStatusService:
             )
             if self._broker is not None:
                 self._broker.publish("network_status", result)
+            if self._on_change is not None:
+                self._on_change(result)
         return result
 
     @staticmethod

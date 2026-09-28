@@ -20,16 +20,17 @@ DEPENDENCIES:
 Used by:
 - Executed manually as a build script.
 Uses:
-- Standard library: os, shutil, subprocess, sys
+- Standard library: argparse, os, shutil, subprocess, sys, tempfile
 - Local config exports from src.config
 - External tool: PyInstaller
 """
 
+import argparse
 import os
+import shutil
 import subprocess
 import sys
-import shutil
-import argparse
+import tempfile
 
 from src.config import APP_BUILD_NAME, APP_NAME, CURRENT_VERSION
 
@@ -87,6 +88,22 @@ $shortcut.Save()
     except subprocess.CalledProcessError as e:
         print(f"   ⚠️  Desktop shortcut creation failed: {e}")
         return False
+
+
+def _run_pyinstaller(command: list[str]) -> None:
+    """Run PyInstaller without letting its import analysis touch user settings."""
+    environment = os.environ.copy()
+    with tempfile.TemporaryDirectory(prefix="otp-lol-build-appdata-") as appdata_dir:
+        environment["APPDATA"] = appdata_dir
+        subprocess.run(
+            command,
+            check=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=environment,
+        )
+
 
 def main(argv=None):
     """Run the end-to-end executable build workflow for the current project root."""
@@ -222,7 +239,7 @@ def main(argv=None):
     print("   (Cela peut prendre quelques minutes)\n")
     
     try:
-        subprocess.run(py_command, check=True, text=True, encoding='utf-8', errors='replace')
+        _run_pyinstaller(py_command)
     except subprocess.CalledProcessError as e:
         print(f"\n❌ ERREUR COMPILATION: {e}")
         sys.exit(1)

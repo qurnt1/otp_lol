@@ -4,13 +4,13 @@ import logging
 import threading
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from src.config import EP_GAMEFLOW
 from src.core.datadragon import DataDragon
 from src.core.websocket import WebSocketManager, _LcuDriverMalformedJsonFilter
 from src.domain.events import EventBroker
-from src.lcu.runtime import LcuRuntime
+from src.lcu.runtime import LcuRuntime, RuntimeUnavailable
 
 
 class LcuDriverMalformedJsonFilterTests(unittest.TestCase):
@@ -126,6 +126,23 @@ class FakeManager:
 
 
 class LcuRuntimeAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_submit_rejects_a_loop_that_has_not_started(self):
+        runtime = LcuRuntime(
+            data_dragon=DataDragon(),
+            get_params=lambda: {},
+            update_param=None,
+            broker=EventBroker(),
+            manager_type=FakeManager,
+        )
+        runtime.manager.loop = asyncio.new_event_loop()
+        coroutine_factory = Mock()
+
+        with self.assertRaises(RuntimeUnavailable):
+            await runtime._submit(coroutine_factory)
+
+        coroutine_factory.assert_not_called()
+        runtime.manager.loop.close()
+
     async def test_existing_websocket_subscriptions_forward_diagnostic_event_metadata(self):
         observed = []
         manager = object.__new__(WebSocketManager)

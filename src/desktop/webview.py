@@ -300,6 +300,8 @@ def run_webview() -> None:
             open_settings=window.open_settings,
             toggle_presets_automation=lambda: _toggle_preset_automation(context),
             is_presets_automation_enabled=lambda: bool(context.get_params().get("presets_enabled", True)),
+            toggle_auto_ban=lambda: _toggle_auto_ban(context),
+            is_auto_ban_enabled=lambda: bool(context.get_params().get("auto_ban_enabled", False)),
             quit_callback=window.destroy,
             on_failure=tray_unavailable,
         )
@@ -358,3 +360,11 @@ def _toggle_preset_automation(context: ApplicationContext) -> None:
         "settings_updated",
         {"keys": ["presets_enabled"]},
     )
+
+
+def _toggle_auto_ban(context: ApplicationContext) -> None:
+    enabled = not bool(context.get_params().get("auto_ban_enabled", False))
+    if context.persist_parameters({"auto_ban_enabled": enabled}) is None:
+        LOGGER.error("Unable to persist tray auto-ban setting")
+        return
+    context.broker.publish("settings_updated", {"keys": ["auto_ban_enabled"]})
