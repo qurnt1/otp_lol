@@ -36,7 +36,7 @@ test("[DIAG-01] a diagnostics read failure can be retried from the visible error
   const retryButton = page.getByRole("button", { name: "Réessayer" });
   await expect(retryButton).toBeVisible();
   expect(diagnosticsReads).toBe(1);
-  await page.clock.pauseAt(new Date());
+  await page.clock.pauseAt(new Date(Date.now() + 1_000));
   const recoveredResponse = page.waitForResponse((response) =>
     response.request().method() === "GET" && new URL(response.url()).pathname === "/api/diagnostics" && response.status() === 200,
   );
