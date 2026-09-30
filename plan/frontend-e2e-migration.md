@@ -2,7 +2,7 @@
 
 Date de l’inventaire : 2026-09-30.
 
-Snapshot du checkout `codex/react-fastapi-webview-migration`, HEAD `e5e61c7b39d805656fc56b50391a52c74fa11eae`; les changements locaux non commités sont inclus.
+Snapshot du checkout `codex/react-fastapi-webview-migration`, HEAD `b021c2c8be732a71900647e6c1444ccb4a3eee61`; les changements locaux non commités sont inclus. `npx playwright test --workers=1` passe 147/147 en 19,7 min, la suite `npm run test:e2e:api` passe 38 tests sur ses six configurations et l’intégration full-stack passe 1/1. Le runner natif n’a pas été relancé; `LeagueClientUx` était actif et l’isolation du client réel n’était pas disponible.
 
 Périmètre : état courant de Vitest retiré sous `frontend/src`, Playwright UI sous `frontend/e2e` et `website/e2e`, et scénarios boîte noire API sous `scripts/e2e/*-api.spec.mjs`, scripts npm et configurations associées.
 
@@ -12,11 +12,12 @@ Nature : état de couverture maintenu en complément de `user-action-e2e-matrix.
 
 - Le tree courant ne contient aucun `frontend/src/**/*.test.ts(x)` ni `frontend/src/test/setup.ts`; `frontend/vite.config.ts`, `frontend/package.json`, `frontend/package-lock.json` et le workflow frontend ne référencent plus Vitest, jsdom ou Testing Library. `npm test` n’est plus un script frontend; `test:e2e`, `typecheck`, `api:check` et `build` restent présents.
 - Les 17 anciens fichiers et 45 cas Vitest sont supprimés. Leur mapping détaillé plus bas est conservé comme registre historique, pas comme couverture encore en vigueur ni plan de suppression.
-- `frontend/e2e` contient 13 specs et 121 appels `test()` statiques, auxquels s’ajoutent les cas produits par les boucles viewport/slot. `website/e2e/site.spec.ts` contient 9 appels `test()` statiques plus sa boucle de viewports. Ces nombres sont un inventaire source, pas un résultat de test.
+- `frontend/e2e` contient 14 specs et 137 appels `test()` dans le source, dont certains sont dans des boucles viewport/slot. `website/e2e/site.spec.ts` contient 9 appels `test()`, dont une boucle de viewports. Ces nombres sont un inventaire source, pas un résultat d’exécution.
 - `frontend/playwright.config.ts` exécute Chromium Desktop avec trace après échec. `frontend/e2e/helpers.ts` démarre l’application locale via harness, isole les données utilisateur, bloque l’egress navigateur et expose des helpers de lecture API et de pilotage du faux LCU.
 - Les parcours positifs utilisent le bundle compilé, FastAPI et le WebSocket applicatif; le client League reste une simulation synthétique TLS/WSS. Les injections `page.route` sont des pannes UI HTTP/transport contrôlées et sont inventoriées dans `user-action-e2e-matrix.md`.
-- `scripts/e2e/api-contract.spec.mjs` ajoute cinq scénarios directs HTTP/WebSocket sur le vrai FastAPI: validation 422 et absence de mutation, projection des presets, échec contrôlé du remplacement settings, headers/CORS/Host et refus d’un Origin WebSocket. Ce sont des contrats API boîte noire, pas des actions UI; aucun ne simule un clic React. La commande sérielle est `npm run test:e2e:api` depuis `frontend/`.
-- Les actions browser ciblées incluent désormais filtres History, refresh Stats/Live, choix providers, import/export settings, clipboard Diagnostics et écrans aux résolutions demandées. Le code des specs récentes n’a pas encore passé de run Playwright sur le tree courant. Le dernier run Python sériel n’est pas une validation browser.
+- `scripts/e2e/api-contract.spec.mjs` contient les scénarios HTTP/WebSocket directs au vrai FastAPI, sans clic React. Les cinq contrats API-C-01..05 couvrent validation 422, projection des presets, remplacement settings en échec, headers/CORS/Host et Origin WebSocket. Trois tests TOML supplémentaires couvrent TOML invalide, ancien schéma et schéma futur. La suite `npm run test:e2e:api` passe maintenant 38 tests sur les six configurations; les trois TOML restent un sous-ensemble distinct à 3/3, pas un total à ajouter aux 38.
+- Le lot UI de récupération contient 9 scénarios ciblés: retry de bootstrap, anti-double clic sur un toggle Settings, retry de lecture History, retry des liens Stats/Live, retry des catalogues champion/runes/skins, refus clipboard Diagnostics et fermeture/focus du tiroir JSON. Ils passent dans le run ciblé; le retry initial History passe aussi 10/10 avec `--repeat-each=10`. Le test Auto-Accept sur refus LCU est distinct et passe 1/1. Le frontend complet passe 147/147; ne pas additionner ces sous-ensembles au résultat complet.
+- `npm run build`, `npm run typecheck`, `npm run api:check`, `compileall` et Ruff passent également. Ces vérifications n’apportent pas de preuve complète pour le runner natif, l’EXE installé, le vrai WebView2 ni un client League.
 - HWND, WebView2, tray, raccourcis globaux, dialogues natifs et League installé restent des frontières distinctes et non prouvées par Chromium.
 
 Le retrait des tests Vitest est déjà présent dans le tree courant. La couverture Playwright reste incomplète: la matrice liste les parcours observés et les gaps encore ouverts. Certaines frontières, notamment bridge natif, HWND, DPI Windows et League installé, ne sont pas prouvées par Chromium seul. Le registre ci-dessous garde les anciennes dispositions à titre historique; il ne constitue ni une liste de suppressions futures ni un statut courant.
@@ -71,32 +72,39 @@ Les lignes suivantes conservent l’inventaire des 45 assertions supprimées pen
 
 ## 2. Inventaire Playwright courant
 
-Le comptage source donne 13 specs frontend avec 121 appels `test()` explicites, plus les cas générés par les boucles; le projet website a son propre spec avec 9 appels explicites et une boucle viewport. Ce ne sont pas des résultats d’exécution.
+Le comptage source donne 14 specs frontend avec 137 appels `test()` explicites, plus les cas générés par les boucles; le projet website a son propre spec avec 9 appels explicites et une boucle viewport. Ce ne sont pas des résultats d’exécution.
 
 | Spec | Parcours utilisateur exercés dans le tree courant | Limite importante |
 |---|---|---|
 | `dashboard-connected.spec.ts` | Phases LCU synthétiques, status, disconnect/reconnect, transitions, cartes/pick/ban/skins et layout sidebar. | Faux League TLS/WSS, pas de client Riot installé. |
 | `dashboard-disconnected.spec.ts` | Dashboard sans client, update checking et version ignorée. | GitHub est fixture externe contrôlée. |
-| `diagnostics.spec.ts` | État offline, checks LCU, export et copie clipboard redacted/opt-in, filtres et payload JSON issus d’événements réels du harness. | Clipboard refusé et dialogue natif restent non testés; événement d’erreur UI difficile à générer sans injection. |
+| `diagnostics.spec.ts` | État offline, checks LCU, export et copie clipboard redacted/opt-in, refus clipboard, filtres, payload JSON et focus du drawer issus d’événements du harness. | La spec a passé dans le run frontend 147/147; le dialogue natif n’est pas prouvé. Les filtres ne couvrent pas toutes les catégories non vides. |
+| `auto-accept-failure.spec.ts` | Ready Check avec refus HTTP 503 du faux LCU; attend la réponse et sa ligne de log, puis vérifie l’absence du message de succès et de l’événement History pendant une fenêtre bornée d’une seconde. | Scénario de refus passé 1/1 et dans le frontend complet 147/147; couvre le faux LCU et cette fenêtre, pas un succès éventuellement retardé au-delà ni tous les timeouts/reconnexions. |
 | `game-data-refresh.spec.ts` | Catalogue différé, fallback offline puis récupération au retour Data Dragon. | Les données externes sont simulées par le processus E2E. |
-| `history.spec.ts` | Entrées d’événements LCU par les vrais endpoints, filtres de catégories, recherche, clear/annulation et retry. | Le filtre Erreurs est seulement vérifié vide; `test.fail` conserve le défaut live `ready_check_accepted`. |
+| `history.spec.ts` | Retry d’une lecture initiale en échec, événements LCU via FastAPI, filtres de catégories, recherche, clear/annulation et retry de suppression. | La spec passe dans le full frontend 147/147; le retry initial passe aussi 10/10. Le filtre Erreurs est seulement vérifié vide. Le test live `ready_check_accepted` n’est plus `test.fail`. |
 | `lcu-automation.spec.ts` | Auto-Pick (champion/sorts/skin/runes), Auto-Ban et Play Again via le faux client LCU. | Chemins nominaux, pas toutes les erreurs/versionnements du client réel. |
 | `navigation.spec.ts` | Deep links, invalid hash, Back/Forward, navigation latérale et quick actions. | Les actions natives restent une autre frontière. |
 | `network-gate.spec.ts` | Image locale offline, checking avec GET retardé, panne locale puis récupération, panne Data Dragon puis retour. | GET retardé et transport refusé via `page.route`, une injection documentée. |
-| `presets.spec.ts` | Recherche/rôles/exclusion, erreurs API, Escape imbriqué, runes y compris page supprimée, skins fixe/random/none/owned-only et sorts. | Certaines réponses d’erreur/API sont injectées par route locale. |
-| `settings.spec.ts` | Settings/API reload, thème, identité LCU, hotkeys et validation, import/export round-trip, reset/clear et annulations, automations. | Effets de hide/quit, raccourcis globaux et file dialog sont natifs. |
-| `statistics.spec.ts` | Lien API Stats/Live, comptes live/saved/absent, tous les providers, refresh API, fenêtre indisponible et popup navigateur. | Refresh de la vraie WebView2 n’est pas visible en Chromium. |
+| `presets.spec.ts` | Recherche/rôles/exclusion, retry des catalogues champions/runes/skins, erreurs de mutation, Escape imbriqué, page rune supprimée, skins fixe/random/none/owned-only et sorts. | Les états de panne sont injectés par route; retries positifs et mutations relisent FastAPI. La spec passe dans le full frontend 147/147; WebView2 réelle hors périmètre. |
+| `settings.spec.ts` | Bootstrap initial en échec puis retry, toggle protégé contre double clic pendant un PATCH, settings/API reload, thème, identité LCU, hotkeys et validation, import/export round-trip, reset/clear et annulations, automations. | Les deux nouveaux cas sont inclus dans le full frontend 147/147; effets hide/quit, raccourcis globaux et file dialog restent natifs. |
+| `statistics.spec.ts` | Lien API Stats/Live, échec initial des deux liens puis refresh, comptes live/saved/absent, tous les providers, fenêtre indisponible et popup navigateur. | La spec passe dans le full frontend 147/147; le refresh de la vraie WebView2 reste non observable en Chromium. |
 | `ui-smoke.spec.ts` | Parcours pages/dialogues, absence d’autres erreurs console, cas bridge marqué `test.fail`. | Le `test.fail` CSP est un défaut connu, pas une preuve du bridge fonctionnel. |
 | `window-layout.spec.ts` | Dashboard/éditeur et pages principales aux 4 résolutions cibles; tailles compactes et `deviceScaleFactor` 125/150 %. | `deviceScaleFactor` ne simule pas le DPI Windows natif; aucun bug screenshot n’a été validé dans ce travail. |
-| `website/e2e/site.spec.ts` | Navigation, skip link, sélection d’images, dialogues/focus, liens, assets et overflow. | Site web distinct de l’application desktop. |
+| `website/e2e/site.spec.ts` | Navigation, skip link, sélection d’images, dialogues/focus, liens, assets et overflow. | Site web distinct de l’application desktop; ses 13/13 restent un run historique et le spec n’est pas inclus dans le frontend 147/147. |
 
 ### Contrats API boîte noire (hors parcours UI)
 
-`npm run test:e2e:api` séquence les specs API dédiées de `scripts/e2e/`, y compris `api-contract.spec.mjs` avec sa configuration `api-contract.config.mjs`. La nouvelle spec utilise `page.request` ou un socket TCP pour parler directement au FastAPI du harness. Les assertions portent sur les réponses HTTP/WebSocket et l’état relu, sans geste d’interface. Elle est présente dans le working tree mais n’a pas été exécutée; le run Playwright final reste nécessaire.
+`npm run test:e2e:api` séquence les specs API dédiées de `scripts/e2e/`, y compris `api-contract.spec.mjs` avec sa configuration `api-contract.config.mjs`. La spec utilise `page.request` ou un socket TCP pour parler directement au FastAPI du harness. Les assertions portent sur les réponses HTTP/WebSocket et l’état relu, sans geste d’interface. Le run complet courant passe 38 tests sur les six configurations. Les trois cas TOML (lignes 372, 401 et 438) ont aussi passé 3/3 dans leur run ciblé; ils sont inclus dans les 38 et ne s’y ajoutent pas.
 
-Le cas de persistance provoque une erreur déterministe en occupant le chemin `parameters.toml` avec un répertoire dans un profil temporaire. Il confirme le rollback pour cette branche d’échec seulement. Il ne prouve pas le comportement sur disque plein, ACL, antivirus, écrivain concurrent ou panne système. Les cas de données corrompues qui ne franchissent pas la validation Pydantic et l’acceptation d’un handshake WebSocket valide ne sont pas établis par cette spec.
+| Cas TOML | Preuve E2E | Limite de conclusion |
+|---|---|---|
+| TOML-01 — fichier invalide | La sauvegarde `.bak` contient exactement le TOML invalide d’origine; l’API démarre et expose des paramètres par défaut réécrits en schéma 6. | Prouve le backup de ces octets et le fallback, pas la récupération sémantique des champs endommagés. |
+| TOML-02 — ancien schéma | Un profil TOML schéma 5 démarre, expose un profil schéma 6, puis garde les valeurs exposées après un arrêt/redémarrage du harness. | Le test ne détermine pas si des champs historiques ont déjà été perdus pendant le premier chargement et ne vérifie pas de backup. Le risque qu’un profil ancien soit réinitialisé sans backup demeure à confirmer. |
+| TOML-03 — schéma futur | Le contenu original est sauvegardé exactement dans `.bak`; FastAPI retombe sur les paramètres courants en schéma 6 et exclut les champs inconnus. | Vérifie ce scénario futur contrôlé; ne généralise pas à toutes les versions de format. |
 
-Pour qualifier un succès, un test part du geste visible puis vérifie l’API/stockage ou l’effet LCU; une lecture `page.request` seule sert d’oracle d’état, elle ne remplace pas le clic. Les tests de panne restent clairement distingués des parcours de succès full-stack. Les modifications récentes listées ici restent en attente d’un run Playwright final.
+Le cas de persistance provoque une erreur déterministe en occupant le chemin `parameters.toml` avec un répertoire dans un profil temporaire. Il confirme le rollback pour cette branche d’échec seulement. Il ne prouve pas le comportement sur disque plein, ACL, antivirus, écrivain concurrent ou panne système. Les cas de données corrompues qui ne franchissent pas la validation Pydantic et l’acceptation d’un handshake WebSocket valide ne sont pas établis par cette spec. Les trois scénarios TOML ont aussi passé 3/3 dans leur run ciblé; ils sont inclus dans les 38 tests du run API complet, pas ajoutés à ce total.
+
+Pour qualifier un succès, un test part du geste visible puis vérifie l’API/stockage ou l’effet LCU; une lecture `page.request` seule sert d’oracle d’état, elle ne remplace pas le clic. Les tests de panne restent clairement distingués des parcours de succès full-stack. Les neuf scénarios UI de récupération passent au run ciblé et sont inclus dans le full frontend courant 147/147.
 
 ## 3. Vérifications encore nécessaires
 
@@ -155,7 +163,7 @@ Les specs Vitest ont été retirées du tree avant que tous ces comportements in
 
 ## 6. État et prochaines validations
 
-1. Runs locaux finaux: browser 130/130, API 23/23 et website 13/13 dans une copie isolée. Le browser inclut des observations `test.fail` attendues qui gardent visibles des défauts connus; elles ne constituent pas une preuve de fonctionnalité saine. Relancer ces suites seulement après une modification pertinente et conserver les rapports par configuration.
+1. Run courant: frontend 147/147 en 19,7 min, API 38 sur six configurations, full-stack 1/1. Les 9 scénarios UI de récupération, le refus Auto-Accept 1/1 et TOML 3/3 restent des sous-ensembles distincts, non additionnés. Runs historiques antérieurs dans une copie isolée: browser 130/130, API 23/23 et website 13/13. Le frontend actuel comprend un `test.fail` attendu pour le défaut CSP du bridge; son passage Playwright attendu ne valide pas le bridge.
 2. Traiter les gaps browser encore actionnables décrits dans la matrice, en gardant les succès sur FastAPI réel et les fautes injectées explicitement étiquetées. **Validation :** interaction visible, effet API/LCU, relecture persistée et état UI concordants.
 3. Garder les actions native-only dans le runner Windows ou les déclarer non automatisées tant qu’un host interactif isolé n’est pas disponible. **Validation :** un run du runner natif sur machine Windows avec WebView2, sans déduire ce résultat de Chromium ou de `deviceScaleFactor`.
 4. Vérifier le site marketing avec sa configuration Playwright indépendante. **Validation :** build/site E2E exécutés et résultat rapporté distinctement du frontend OTP.
@@ -168,7 +176,7 @@ Les specs Vitest ont été retirées du tree avant que tous ces comportements in
 - Les parcours utilisateur gardent le vrai bundle construit, FastAPI, le transport WSS applicatif et le `lcu-driver` réel; seuls LCU, Data Dragon/GitHub externes contrôlés et fautes de transport nommées sont simulés.
 - Les tests d’actions settings/presets/history vérifient l’état après une nouvelle lecture; au moins un test persiste les réglages après restart sur le même profil temporaire.
 - Les tests keyboard vérifient focus/fermeture avec événements clavier réellement émis; tests visuels vérifient l’image correspondante, pas seulement la présence d’un `src` ou une classe.
-- Les specs browser courantes passent sur le tree final; les échecs `test.fail` gardés restent explicitement signalés comme défauts connus et ne sont pas comptés comme succès fonctionnel.
+- Le frontend courant passe 147/147, l’API 38/38 et l’intégration full-stack 1/1. La suite Website n’est pas incluse dans ce run; ses 13/13 restent un résultat historique. Le test CSP sous `test.fail` reste un défaut connu, pas un succès fonctionnel. Le runner natif n’a pas été relancé car `LeagueClientUx` était actif; le source natif, l’EXE installé et le vrai WebView2 n’ont pas de preuve complète.
 - Aucun spec Vitest frontend, setup Vitest, import des libs/config Vitest ni script `npm test` ne reste dans le tree courant. Les checks OpenAPI, TypeScript, build, lint, audits et packaging restent indépendants de la migration E2E.
 - La limite Chromium/WebView/DPI/League réel reste écrite et empêche de déclarer la couverture native terminée sans preuve du runner natif.
 
@@ -238,7 +246,7 @@ Cette liste nomme les anciens `it()` supprimés. Les destinations et mentions de
 
 - `frontend/package.json`, `frontend/vite.config.ts`, `frontend/playwright.config.ts`, `website/package.json`, `website/playwright.config.ts`
 - Historique Git des 17 fichiers `frontend/src/**/*.test.ts(x)` supprimés et de `frontend/src/test/setup.ts`
-- `frontend/e2e/*.spec.ts` (13 specs)
+- `frontend/e2e/*.spec.ts` (14 specs)
 - `frontend/e2e/helpers.ts`, `scripts/e2e/appServer.mjs`, `scripts/e2e/fake_lcu.py`, `scripts/e2e/native/run_native_e2e.mjs`
 - `.github/workflows/frontend-ci.yml`, `.github/workflows/website-ci.yml`
 - `plan/user-action-e2e-matrix.md`, `plan/e2e-only-testing.md` (plan transversal)
