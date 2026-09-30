@@ -19,6 +19,79 @@ test("settings persists a toggle across a real page reload", async ({ page }) =>
   await expect(page.getByRole("switch", { name: "Masquer à la connexion" })).toHaveAttribute("aria-checked", "false");
 });
 
+test("an initial bootstrap read failure leaves a retry path and then loads real settings", async ({ page }) => {
+  await setupApplication(page, { connected: true, configured: true });
+  let releaseFirstRead!: () => void;
+  let reportFirstRead!: () => void;
+  const firstReadGate = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+  const firstReadStarted = new Promise<void>((resolve) => { reportFirstRead = resolve; });
+  let bootstrapReads = 0;
+  await page.route("**/api/bootstrap", async (route) => {
+    bootstrapReads += 1;
+    if (bootstrapReads <= 2) {
+      if (bootstrapReads === 1) {
+        reportFirstRead();
+        await firstReadGate;
+      }
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected bootstrap read failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#settings/general");
+
+  await firstReadStarted;
+  await expect(page.getByText("Chargement…")).toBeVisible();
+  releaseFirstRead();
+  await expect(page.getByText("Le serveur local ne répond pas.")).toBeVisible();
+  const retry = page.getByRole("button", { name: "Réessayer" });
+  await expect(retry).toBeVisible();
+  expect(bootstrapReads).toBe(2);
+  await page.unroute("**/api/bootstrap");
+  const recoveredResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/bootstrap" && response.status() === 200,
+  );
+  await retry.click();
+  expect((await recoveredResponse).ok()).toBe(true);
+  await expect(page.getByRole("heading", { name: "Réglages" })).toBeVisible();
+  await expect.poll(async () => (await readSettings(page)).theme).toBe("darkly");
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");
+});
+
+test("a settings switch cannot submit a second toggle while its first save is pending", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/general");
+  const toggle = page.getByRole("switch", { name: "Masquer à la connexion" });
+  let releaseSave!: () => void;
+  let reportSaveStarted!: () => void;
+  const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+  const saveStarted = new Promise<void>((resolve) => { reportSaveStarted = resolve; });
+  let patchCount = 0;
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patchCount += 1;
+      reportSaveStarted();
+      await saveGate;
+    }
+    await route.continue();
+  });
+
+  const savedResponse = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && new URL(response.url()).pathname === "/api/settings" && response.status() === 200,
+  );
+  const toggleBounds = await toggle.boundingBox();
+  expect(toggleBounds).not.toBeNull();
+  await page.mouse.click(toggleBounds!.x + toggleBounds!.width / 2, toggleBounds!.y + toggleBounds!.height / 2);
+  await saveStarted;
+  await expect(toggle).toBeDisabled();
+  await page.mouse.click(toggleBounds!.x + toggleBounds!.width / 2, toggleBounds!.y + toggleBounds!.height / 2);
+  expect(patchCount).toBe(1);
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  releaseSave();
+  expect((await savedResponse).ok()).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(false);
+});
+
 test("a settings transport failure rolls back the toggle and allows a successful retry", async ({ page }) => {
   await setupApplication(page);
   await page.route("**/api/settings", async (route) => {

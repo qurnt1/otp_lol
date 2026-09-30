@@ -117,6 +117,20 @@ test("diagnostics exécute les contrôles LCU fixes et exporte l’identité uni
   expect(exportRequests).toEqual(["false", "false", "true", "true"]);
 });
 
+test("a denied clipboard write reports the failure without claiming the report was copied", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#diagnostics");
+  await page.context().grantPermissions([], { origin: new URL(page.url()).origin });
+
+  const exportResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/diagnostics/export" && response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Copier le rapport" }).click();
+  expect((await exportResponse).ok()).toBe(true);
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByText("Rapport copié dans le presse-papiers.")).toHaveCount(0);
+});
+
 test("le payload d’un événement LCU réel reste dans le tiroir JSON", async ({ page }) => {
   await setupApplication(page, { connected: true, phase: "Lobby" });
   await page.goto("/#diagnostics");
@@ -127,12 +141,26 @@ test("le payload d’un événement LCU réel reste dans le tiroir JSON", async 
     .first();
   await expect(phaseLog).toBeVisible();
   await expect(page.locator(".diagnostics-log-row pre")).toHaveCount(0);
-  await phaseLog.getByRole("button", { name: "Voir JSON" }).click();
+  const jsonButton = phaseLog.getByRole("button", { name: "Voir JSON" });
+  await jsonButton.click();
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
   await expect(drawer.locator("pre")).toContainText('"Lobby"');
   await drawer.getByRole("button", { name: "Fermer" }).click();
   await expect(drawer).toBeHidden();
+  await expect(jsonButton).toBeFocused();
+
+  await jsonButton.click();
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
+  await expect(jsonButton).toBeFocused();
+
+  await jsonButton.click();
+  await expect(drawer).toBeVisible();
+  await page.mouse.click(4, 4);
+  await expect(drawer).toBeHidden();
+  await expect(jsonButton).toBeFocused();
 });
 
 test("Diagnostics classe le rafraîchissement réel des données de jeu dans le filtre Données", async ({ page }) => {

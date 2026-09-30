@@ -34,6 +34,36 @@ test("a failed champion catalogue request does not show a ready subtitle for its
   await expect.poll(async () => card.locator(".priority-caption small").count()).toBe(0);
 });
 
+test("a failed champion picker catalogue can be retried before saving a champion", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  let catalogueReads = 0;
+  await page.route("**/api/champions?**", async (route) => {
+    catalogueReads += 1;
+    if (catalogueReads <= 2) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected champion catalogue outage" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#dashboard/pick_1");
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.locator(".champion-choice").click();
+  const picker = page.getByRole("dialog", { name: "Choisir un champion" });
+  await expect(picker.getByText("Impossible de charger les champions.")).toBeVisible();
+  const retry = picker.getByRole("button", { name: "Réessayer" });
+  await expect(retry).toBeVisible();
+  expect(catalogueReads).toBe(2);
+
+  await page.unroute("**/api/champions?**");
+  const catalogueResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/champions" && response.status() === 200,
+  );
+  await retry.click();
+  expect((await catalogueResponse).ok()).toBe(true);
+  await picker.getByRole("option", { name: /Annie/ }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Annie");
+});
+
 test("Dashboard priority cards open with Enter and restore focus after Escape", async ({ page }) => {
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");
@@ -251,6 +281,49 @@ test("rune page picker offers the connected League page and the do-nothing choic
   await expect(editor.getByRole("button", { name: /Ne rien faire/ })).toBeVisible();
 });
 
+test("rune catalogue loading, failure and retry preserve a real saved selection", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  let releaseFirstRead!: () => void;
+  let reportFirstRead!: () => void;
+  const firstReadGate = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+  const firstReadStarted = new Promise<void>((resolve) => { reportFirstRead = resolve; });
+  let runeReads = 0;
+  await page.route("**/api/runes", async (route) => {
+    runeReads += 1;
+    if (runeReads === 1) {
+      reportFirstRead();
+      await firstReadGate;
+    }
+    if (runeReads <= 2) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected rune catalogue outage" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("button", { name: /E2E Top/ }).click();
+  const picker = page.getByRole("dialog", { name: "Runes" });
+  await firstReadStarted;
+  await expect(picker.getByText("Chargement…")).toBeVisible();
+  releaseFirstRead();
+  await expect(picker.getByText("Impossible de charger les pages de runes.")).toBeVisible();
+  const retry = picker.getByRole("button", { name: "Réessayer" });
+  await expect(retry).toBeVisible();
+  expect(runeReads).toBe(2);
+
+  await page.unroute("**/api/runes");
+  const recoveredCatalogue = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/runes" && response.status() === 200,
+  );
+  await retry.click();
+  expect((await recoveredCatalogue).ok()).toBe(true);
+  await expect(picker.getByRole("button", { name: /E2E Top/ })).toBeVisible();
+  await picker.getByRole("button", { name: /Ne rien faire/ }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.rune_page_id).toBe(0);
+});
+
 test("rune picker offers only the do-nothing choice while League is offline", async ({ page }) => {
   const { app } = await setupApplication(page, {
     configured: true,
@@ -344,6 +417,50 @@ test("fixed skin picker persists an owned Garen skin and updates the preview", a
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_id).toBe(86001);
   await page.keyboard.press("Escape");
   await expect(skinChoice.locator(".editor-skin-preview")).toHaveAttribute("src", /\/api\/assets\/skins\/86\/86001\/splash/);
+});
+
+test("skin catalogue loading, failure and retry preserve a real saved selection", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  let releaseFirstRead!: () => void;
+  let reportFirstRead!: () => void;
+  const firstReadGate = new Promise<void>((resolve) => { releaseFirstRead = resolve; });
+  const firstReadStarted = new Promise<void>((resolve) => { reportFirstRead = resolve; });
+  let skinReads = 0;
+  await page.route("**/api/skins/86", async (route) => {
+    skinReads += 1;
+    if (skinReads === 1) {
+      reportFirstRead();
+      await firstReadGate;
+    }
+    if (skinReads <= 2) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected skin catalogue outage" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("button", { name: /Galerie des skins/ }).click();
+  const picker = page.getByRole("dialog", { name: "Galerie des skins" });
+  await firstReadStarted;
+  await expect(picker.getByText("Chargement…")).toBeVisible();
+  releaseFirstRead();
+  await expect(picker.getByText("Impossible de charger les skins.")).toBeVisible();
+  const retry = picker.getByRole("button", { name: "Réessayer" });
+  await expect(retry).toBeVisible();
+  expect(skinReads).toBe(2);
+
+  await page.unroute("**/api/skins/86");
+  const recoveredCatalogue = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/skins/86" && response.status() === 200,
+  );
+  await retry.click();
+  expect((await recoveredCatalogue).ok()).toBe(true);
+  const commando = picker.locator(".skin-option").filter({ hasText: "Commando Garen" });
+  await expect(commando).toBeVisible();
+  await commando.getByRole("button", { name: "Choisir" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_id).toBe(86001);
 });
 
 test("a failed skin preview falls back and loads the replacement source after a user selection", async ({ page }) => {

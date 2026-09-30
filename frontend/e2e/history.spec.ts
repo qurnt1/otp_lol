@@ -1,5 +1,36 @@
 import { expect, readHistory, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
+test("an initial History read failure can be retried into real persisted events", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true, autoAccept: true });
+  await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+  await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+  await expect.poll(async () => (await readHistory(page)).count).toBeGreaterThan(0);
+
+  let historyReads = 0;
+  await page.route("**/api/history?*", async (route) => {
+    if (route.request().method() === "GET") {
+      historyReads += 1;
+      if (historyReads <= 2) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected History read failure" }) });
+        return;
+      }
+    }
+    await route.continue();
+  });
+  await page.goto("/#history");
+
+  await expect(page.getByText("Impossible de charger l’historique.")).toBeVisible();
+  expect(historyReads).toBe(2);
+  await page.unroute("**/api/history?*");
+  const recoveredResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/history" && response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Réessayer" }).click();
+  expect((await recoveredResponse).ok()).toBe(true);
+  await expect(page.getByText("Match automatically accepted.")).toBeVisible();
+  await expect.poll(async () => (await readHistory(page)).count).toBeGreaterThan(0);
+});
+
 test("[HIST-01] History filters messages and details from a real automatic summoner-spell event", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,

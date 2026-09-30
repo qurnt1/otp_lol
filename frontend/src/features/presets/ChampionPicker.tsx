@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Search, UserRound } from "lucide-react";
 
 import { api } from "../../api/client";
+import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
 import { cn } from "../../lib/cn";
 import type { Champion } from "../../types/api";
@@ -18,5 +19,6 @@ export function ChampionPicker({ selected, excluded = [], onSelect }: { selected
     <div className="role-filters" role="group" aria-label={fr.presets.positionFilters}>{roleFilters.map((item) => <button key={item.id} className={cn("filter-button", role === item.id && "is-active")} type="button" aria-pressed={role === item.id} onClick={() => setRole(item.id)}>{item.label}</button>)}</div>
     <div className="picker-summary"><span>{items.length} {fr.presets.championsFound}</span>{selected && <span>{fr.presets.currentSelection}: <strong>{selected}</strong></span>}</div>
     <div className="champion-grid" role="listbox" aria-label={fr.presets.selectChampion}>{champions.isPending && <span className="empty-state">{fr.common.loading}</span>}{champions.isError && <span className="empty-state status-danger">{fr.presets.championLoadError}</span>}{items.map((item) => <button key={item.id} className={cn("champion-option", item.name === selected && "is-selected")} type="button" role="option" aria-selected={item.name === selected} onClick={() => onSelect(item)}><AssetImage src={item.icon_url ?? undefined} alt="" width="42" height="42" fallback={<UserRound size={18} aria-hidden="true" />} /><span><strong>{item.name}</strong><small>{item.roles?.map((itemRole) => itemRole === "MIDDLE" ? "Mid" : itemRole === "BOTTOM" ? "ADC" : itemRole === "UTILITY" ? "Support" : itemRole[0] + itemRole.slice(1).toLowerCase()).join(" · ") || item.tags.join(" · ")}</small></span></button>)}{!champions.isPending && !champions.isError && !items.length && <span className="empty-state">{fr.presets.noResults}</span>}</div>
+    {champions.isError && <Button type="button" onClick={() => void champions.refetch()}>{fr.common.retry}</Button>}
   </div>;
 }

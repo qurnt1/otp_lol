@@ -35,6 +35,40 @@ test("live statistics has a distinct route and loads its real account link", asy
   await expect.poll(() => requests.filter((path) => path === "/api/links/live").length).toBe(1);
 });
 
+test("initial statistics and live link failures recover through their real refresh endpoints", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true });
+  const failedLinks = new Set<string>();
+  await page.route("**/api/links/*", async (route) => {
+    const request = route.request();
+    const pathname = new URL(request.url()).pathname;
+    if (request.method() === "GET" && ["/api/links/stats", "/api/links/live"].includes(pathname) && !failedLinks.has(pathname)) {
+      failedLinks.add(pathname);
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected profile link failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  for (const [route, endpoint, heading] of [
+    ["/#statistics", "/api/links/stats", "Statistiques"],
+    ["/#live", "/api/links/live", "En direct"],
+  ] as const) {
+    await page.goto(route);
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await expect(page.getByRole("alert")).toBeVisible();
+    const refreshedLink = page.waitForResponse((response) =>
+      response.request().method() === "GET" && new URL(response.url()).pathname === endpoint && response.status() === 200,
+    );
+    await page.getByRole("button", { name: "Actualiser" }).click();
+    const response = await refreshedLink;
+    expect((await response.json()).account_source).toBe("connected");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    await expect(page.locator(".statistics-summary")).toContainText("E2E Player#SAFE");
+    const persistedLink = await page.request.get(new URL(endpoint, app.baseURL).href).then((result) => result.json());
+    expect(persistedLink).toMatchObject({ available: true, account_source: "connected", riot_id: "E2E Player#SAFE" });
+  }
+});
+
 test("changing the statistics provider persists through FastAPI and rebuilds the profile URL", async ({ page }) => {
   await setupApplication(page, { connected: true });
   await page.goto("/#statistics");

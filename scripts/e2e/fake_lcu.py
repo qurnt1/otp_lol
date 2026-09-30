@@ -319,7 +319,7 @@ class FakeLcuServer:
                 if (
                     not isinstance(operation, str)
                     or not re.fullmatch(
-                        r"(?:PATCH /lol-champ-select/v1/session/actions/\d+|PUT /lol-perks/v1/pages/\d+)",
+                        r"(?:PATCH /lol-champ-select/v1/session/actions/\d+|PUT /lol-perks/v1/pages/\d+|POST /lol-matchmaking/v1/ready-check/accept)",
                         operation,
                     )
                 ):
@@ -364,10 +364,21 @@ class FakeLcuServer:
         self._record_request(request, body)
         response_statuses = self.mutation_responses.get(f"{request.method} {request.path}")
         if response_statuses:
-            return web.json_response(
-                {"detail": "Synthetic LCU mutation rejected"},
-                status=response_statuses.pop(0),
+            rejection_body = {"detail": "Synthetic LCU mutation rejected"}
+            response = web.json_response(rejection_body, status=response_statuses.pop(0))
+            await response.prepare(request)
+            await response.write_eof()
+            self._emit_request(
+                {
+                    "type": "lcu-response",
+                    "method": request.method,
+                    "path": request.path,
+                    "status": response.status,
+                    "body": rejection_body,
+                    "complete": True,
+                }
             )
+            return response
 
         account_response = self.account_responses.get(request.path)
         if request.method == "GET" and account_response is not None:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Activity, AlertTriangle, CheckCircle2, Copy, Download, RefreshCw, Wifi, WifiOff, X } from "lucide-react";
@@ -30,6 +30,7 @@ export function DiagnosticsPage() {
   const [search, setSearch] = useState("");
   const [includeRiotId, setIncludeRiotId] = useState(false);
   const [selectedPayload, setSelectedPayload] = useState<{ title: string; payload: unknown } | null>(null);
+  const payloadTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const nativeBridgeReady = useNativeBridgeReady();
@@ -177,7 +178,7 @@ export function DiagnosticsPage() {
             <time>{formatTimestamp(entry.timestamp)}</time>
             <strong>{entry.title}</strong>
             <small>{entry.detail}</small>
-            {entry.payload !== undefined && <Button className="diagnostics-json-button" type="button" onClick={() => setSelectedPayload({ title: entry.title, payload: entry.payload })}>{copy.viewJson}</Button>}
+            {entry.payload !== undefined && <Button className="diagnostics-json-button" type="button" onClick={(event) => { payloadTriggerRef.current = event.currentTarget; setSelectedPayload({ title: entry.title, payload: entry.payload }); }}>{copy.viewJson}</Button>}
           </article>)}
           {!visibleLogs.length && <p className="statistics-empty">{copy.noEntries}</p>}
         </div>
@@ -186,7 +187,7 @@ export function DiagnosticsPage() {
     <Dialog.Root open={selectedPayload !== null} onOpenChange={(open) => { if (!open) setSelectedPayload(null); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="confirm-dialog diagnostics-json-dialog" aria-describedby="diagnostics-json-description">
+        <Dialog.Content className="confirm-dialog diagnostics-json-dialog" aria-describedby="diagnostics-json-description" onCloseAutoFocus={(event) => { event.preventDefault(); window.requestAnimationFrame(() => payloadTriggerRef.current?.focus()); }}>
           <div className="drawer-head"><div><Dialog.Title>{copy.jsonTitle}</Dialog.Title><Dialog.Description id="diagnostics-json-description">{selectedPayload?.title ?? copy.jsonDescription}</Dialog.Description></div><Dialog.Close asChild><button className="icon-button" type="button" aria-label={baseFr.common.close}><X size={16} aria-hidden="true" /></button></Dialog.Close></div>
           <pre><code>{selectedPayload ? JSON.stringify(selectedPayload.payload, null, 2) : ""}</code></pre>
         </Dialog.Content>

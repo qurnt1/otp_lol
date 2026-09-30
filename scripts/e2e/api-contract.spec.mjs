@@ -369,6 +369,102 @@ for (const [label, schemaMarker] of [["future", 999], ["malformed", "not-a-schem
   });
 }
 
+test("startup backs up invalid TOML before exposing first-launch settings", async ({ page }) => {
+  const invalidToml = [
+    "config_schema_version = 6",
+    'selected_pick_1 = "INVALID_TOML_PROFILE_SENTINEL"',
+    'manual_summoner_name = "Invalid TOML Player#SAFE"',
+    "broken = [",
+    "",
+  ].join("\n");
+  const app = await startOtpApp({ settingsToml: invalidToml });
+
+  try {
+    const response = await page.request.get(`${app.baseURL}/api/health`);
+    expect(response.status()).toBe(200);
+
+    const settings = await readSettings(app, page.request);
+    expect(settings.config_schema_version).toBe(6);
+    expect(settings.selected_pick_1).not.toBe("INVALID_TOML_PROFILE_SENTINEL");
+    expect(settings.manual_summoner_name).not.toBe("Invalid TOML Player#SAFE");
+
+    const settingsPath = path.join(app.appDataDir, "OTP LOL", "parameters.toml");
+    expect(await readFile(`${settingsPath}.bak`, "utf8")).toBe(invalidToml);
+    const recoveredToml = await readFile(settingsPath, "utf8");
+    expect(recoveredToml).toContain("config_schema_version = 6");
+    expect(recoveredToml).not.toContain("INVALID_TOML_PROFILE_SENTINEL");
+  } finally {
+    await app.stop();
+  }
+});
+
+test("startup recovers an older TOML schema and keeps the recovered settings across restart", async ({ page }) => {
+  const olderToml = [
+    "config_schema_version = 5",
+    'selected_pick_1 = "OLDER_TOML_PROFILE_SENTINEL"',
+    'manual_summoner_name = "Older TOML Player#SAFE"',
+    "",
+  ].join("\n");
+  let app = await startOtpApp({ settingsToml: olderToml });
+
+  try {
+    const initialHealth = await page.request.get(`${app.baseURL}/api/health`);
+    expect(initialHealth.status()).toBe(200);
+    const recoveredSettings = await readSettings(app, page.request);
+    expect(recoveredSettings.config_schema_version).toBe(6);
+    const recoveredProfileState = {
+      config_schema_version: recoveredSettings.config_schema_version,
+      selected_pick_1: recoveredSettings.selected_pick_1,
+      manual_summoner_name: recoveredSettings.manual_summoner_name,
+      manual_region: recoveredSettings.manual_region,
+      pick_slots: recoveredSettings.pick_slots,
+    };
+
+    const stateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = null;
+    app = await startOtpApp({ stateDir });
+
+    const restartedHealth = await page.request.get(`${app.baseURL}/api/health`);
+    expect(restartedHealth.status()).toBe(200);
+    const restartedSettings = await readSettings(app, page.request);
+    expect(restartedSettings.config_schema_version).toBe(6);
+    expect(restartedSettings).toMatchObject(recoveredProfileState);
+  } finally {
+    if (app) await app.stop();
+  }
+});
+
+test("startup backs up a future TOML schema before falling back to current settings", async ({ page }) => {
+  const futureToml = [
+    "config_schema_version = 999",
+    'selected_pick_1 = "FUTURE_TOML_PROFILE_SENTINEL"',
+    'manual_summoner_name = "Future TOML Player#SAFE"',
+    'future_setting = "UNSUPPORTED_TOML_VALUE"',
+    "",
+  ].join("\n");
+  const app = await startOtpApp({ settingsToml: futureToml });
+
+  try {
+    const response = await page.request.get(`${app.baseURL}/api/health`);
+    expect(response.status()).toBe(200);
+
+    const settings = await readSettings(app, page.request);
+    expect(settings.config_schema_version).toBe(6);
+    expect(settings.selected_pick_1).not.toBe("FUTURE_TOML_PROFILE_SENTINEL");
+    expect(settings.manual_summoner_name).not.toBe("Future TOML Player#SAFE");
+
+    const settingsPath = path.join(app.appDataDir, "OTP LOL", "parameters.toml");
+    expect(await readFile(`${settingsPath}.bak`, "utf8")).toBe(futureToml);
+    const recoveredToml = await readFile(settingsPath, "utf8");
+    expect(recoveredToml).toContain("config_schema_version = 6");
+    expect(recoveredToml).not.toContain("FUTURE_TOML_PROFILE_SENTINEL");
+    expect(recoveredToml).not.toContain("UNSUPPORTED_TOML_VALUE");
+  } finally {
+    await app.stop();
+  }
+});
+
 test("preset API exposes the slot-specific effective profile through FastAPI", async ({ page }) => {
   const app = await startOtpApp();
   try {

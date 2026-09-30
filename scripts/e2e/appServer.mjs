@@ -479,6 +479,17 @@ export async function startOtpApp({
         requestWaiters.add(waiter);
       });
     },
+    waitForLcuResponse(method, requestPath, status, timeoutMs = 8_000) {
+      return waitForMessage(
+        (message) => message.type === "lcu-response"
+          && message.method === method
+          && message.path === requestPath
+          && message.status === status
+          && message.complete === true,
+        timeoutMs,
+        `fake LCU ${method} ${requestPath} response (${status})`,
+      );
+    },
     async stop({ retainState = false } = {}) {
       const result = await stopChild();
       const stopped = await confirmStoppedAndRemoveState({ retainState });

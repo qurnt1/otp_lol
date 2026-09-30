@@ -4,6 +4,7 @@ type ExternalState = { dataDragon?: "online" | "offline"; updates?: "offline" | 
 
 export interface OtpApp {
   baseURL: string;
+  appDataDir: string;
   syntheticLeaguePid: number | null;
   lcuRequests: Array<{ method: string; path: string; body: unknown }>;
   websocketSubscriptions: unknown[];
@@ -16,6 +17,13 @@ export interface OtpApp {
   waitForWebSocketSubscription(count: number): Promise<unknown>;
   emitLcuEvent(uri: string, data: unknown): Promise<void>;
   waitForLcuRequest(method: string, path: string): Promise<{ method: string; path: string; body: unknown }>;
+  waitForLcuResponse(method: string, path: string, status: number): Promise<{
+    method: string;
+    path: string;
+    status: number;
+    body: unknown;
+    complete: true;
+  }>;
   stop(): Promise<{
     forced: boolean;
     code: number | null;
