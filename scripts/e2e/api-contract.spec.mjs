@@ -1,4 +1,5 @@
 import { connect } from "node:net";
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test } from "../../frontend/node_modules/@playwright/test/index.mjs";
@@ -17,6 +18,7 @@ async function waitForDetectedAccount(app, request) {
 
 function webSocketUpgradeStatus(baseURL, origin) {
   const url = new URL(baseURL);
+  const websocketHandshakeKey = randomBytes(16).toString("base64");
   return new Promise((resolve, reject) => {
     const socket = connect({ host: url.hostname, port: Number(url.port) });
     let response = "";
@@ -41,7 +43,7 @@ function webSocketUpgradeStatus(baseURL, origin) {
         `Host: ${url.host}`,
         "Upgrade: websocket",
         "Connection: Upgrade",
-        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        `Sec-WebSocket-Key: ${websocketHandshakeKey}`,
         "Sec-WebSocket-Version: 13",
         `Origin: ${origin}`,
         "",
