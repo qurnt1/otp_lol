@@ -602,6 +602,21 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
             appdata_dir, localappdata_dir, temp_dir
         )
         context = ApplicationContext.from_system()
+        original_event_observer = context.runtime.manager.diagnostic_event_callback
+
+        def report_lcu_event(topic: str, event_type: str, payload: Any) -> None:
+            if original_event_observer is not None:
+                original_event_observer(topic, event_type, payload)
+            _emit(
+                {
+                    "type": "lcu-websocket-event",
+                    "topic": topic,
+                    "eventType": event_type,
+                    "data": payload,
+                }
+            )
+
+        context.runtime.manager.diagnostic_event_callback = report_lcu_event
         app = create_app(context, frontend_dir=frontend_dir)
         api_server = EmbeddedApiServer(app, host="127.0.0.1", port=0)
         api_server.start()

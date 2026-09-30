@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
+import { isDeepStrictEqual } from "node:util";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptDir, "../..");
@@ -417,7 +418,16 @@ export async function startOtpApp({
       return getSyntheticPids();
     },
     async emitLcuEvent(uri, data, timeoutMs = 5_000) {
+      const firstNewMessageIndex = messages.length;
       await sendCommand({ command: "event", uri, data }, timeoutMs);
+      return waitForMessage(
+        (message) => message.type === "lcu-websocket-event"
+          && message.topic === uri
+          && isDeepStrictEqual(message.data, data)
+          && messages.indexOf(message) >= firstNewMessageIndex,
+        timeoutMs,
+        `LCU WebSocket event ${uri}`,
+      );
     },
     async configureLcuState(state, timeoutMs = 5_000) {
       await sendCommand({ command: "state", state }, timeoutMs);

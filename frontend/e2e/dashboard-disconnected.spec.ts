@@ -36,20 +36,22 @@ test("le contrôle des mises à jour est différé puis périodique", async ({ p
 
   await page.goto("/#dashboard");
   await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
-  await page.clock.fastForward(6_999);
+  await page.clock.fastForward(6_900);
   expect(updateRequests).toBe(0);
   const firstUpdate = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates");
-  await page.clock.fastForward(1);
+  await page.clock.fastForward(100);
   await expect.poll(() => updateRequests).toBe(1);
   await firstUpdate;
-  await page.clock.fastForward(21_600_000 - 1);
+  await page.clock.fastForward(21_600_000 - 100);
   expect(updateRequests).toBe(1);
   const secondUpdate = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates");
-  await page.clock.fastForward(1);
+  await page.clock.fastForward(100);
   await expect.poll(() => updateRequests).toBe(2);
   await secondUpdate;
+  await page.clock.fastForward(21_600_000 - 100);
+  expect(updateRequests).toBe(2);
   const thirdUpdate = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates");
-  await page.clock.fastForward(21_600_000);
+  await page.clock.fastForward(100);
   await expect.poll(() => updateRequests).toBe(3);
   await thirdUpdate;
 });
