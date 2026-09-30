@@ -314,6 +314,28 @@ def _instrument_native_actions(state_dir: Path) -> None:
     pystray_win32.Icon._handler = instrument_tray_handler
 
 
+def _instrument_fullscreen_bridge(bridge_type: type) -> None:
+    """Report whether the native fullscreen RPC enters, returns, or raises."""
+    original = bridge_type.toggle_fullscreen
+
+    def capture_fullscreen_rpc(self):
+        _emit("fullscreen_bridge_rpc", stage="entered")
+        try:
+            result = original(self)
+        except Exception as error:
+            _emit(
+                "fullscreen_bridge_rpc",
+                stage="raised",
+                errorType=type(error).__name__,
+                error=str(error),
+            )
+            raise
+        _emit("fullscreen_bridge_rpc", stage="returned", result=result)
+        return result
+
+    bridge_type.toggle_fullscreen = capture_fullscreen_rpc
+
+
 def _instrument_single_instance(state_dir: Path) -> None:
     """Record the real primary lock contents after production acquires the lock."""
     from src.services import single_instance
@@ -428,9 +450,11 @@ def _run_app(state_dir: Path, cdp_port: int) -> int:
     _instrument_single_instance(state_dir)
 
     import launcher_web
+    import src.desktop.bridge as desktop_bridge_module
     import src.api.context as context_module
     import src.config.paths as app_paths
 
+    _instrument_fullscreen_bridge(desktop_bridge_module.DesktopBridge)
     context_module.psutil.process_iter = lambda *_args, **_kwargs: iter(())
     resolved_paths = {
         "parameters": app_paths.PARAMETERS_PATH,

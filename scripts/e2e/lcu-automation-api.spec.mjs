@@ -51,6 +51,21 @@ async function expectConnected(app, request) {
   await app.waitForWebSocketSubscription();
 }
 
+function captureRuntimeEvents(page) {
+  const events = [];
+  page.on("websocket", (socket) => {
+    if (new URL(socket.url()).pathname !== "/api/events") return;
+    socket.on("framereceived", ({ payload }) => {
+      try {
+        events.push(JSON.parse(typeof payload === "string" ? payload : payload.toString()));
+      } catch {
+        // Ignore non-JSON WebSocket frames.
+      }
+    });
+  });
+  return events;
+}
+
 async function enableAutoPick(app, request) {
   const headers = sameOriginHeaders(app);
   const reset = await request.post(`${app.baseURL}/api/presets/reset`, { headers });
@@ -68,15 +83,15 @@ async function enableAutoPick(app, request) {
 }
 
 async function activatePick(app, request, pickableIds, state = {}) {
-  const session = pickSession();
+  const session = state.session ?? pickSession();
   await app.configureLcuState({
     static_data_online: true,
     pickable_champion_ids: pickableIds,
     rune_pages: [runeTarget, runeCurrent],
     current_rune_page: runeCurrent,
-    session,
     phase: "ChampSelect",
     ...state,
+    session,
   });
   await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "ChampSelect");
   await expect.poll(async () => {
@@ -130,6 +145,110 @@ test("a rejected first champion lock falls through to the next configured pick",
     const historyResponse = await page.request.get(`${app.baseURL}/api/history?limit=250`);
     const history = await historyResponse.json();
     expect(history.items.map((entry) => entry.message)).not.toContain("Champion automatically locked in: Garen.");
+  } finally {
+    await app.stop();
+  }
+});
+
+test("Auto-Pick leaves the active action untouched when no configured champion is pickable", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await expectConnected(app, page.request);
+    await enableAutoPick(app, page.request);
+    const settings = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: sameOriginHeaders(app),
+      data: { selected_pick_1: "Garen", selected_pick_2: "", selected_pick_3: "" },
+    });
+    expect(settings.status()).toBe(200);
+    const [savedSettingsResponse, savedPresetsResponse] = await Promise.all([
+      page.request.get(`${app.baseURL}/api/settings`),
+      page.request.get(`${app.baseURL}/api/presets`),
+    ]);
+    const savedSettings = await savedSettingsResponse.json();
+    const savedPresets = await savedPresetsResponse.json();
+    expect(savedSettings).toMatchObject({
+      presets_enabled: true,
+      auto_pick_enabled: true,
+      selected_pick_1: "Garen",
+      selected_pick_2: "",
+      selected_pick_3: "",
+    });
+    expect(savedPresets).toMatchObject({
+      presets_enabled: true,
+      slots: {
+        pick_1: { champion: "Garen" },
+        pick_2: { champion: "" },
+        pick_3: { champion: "" },
+      },
+    });
+    const runtimeEvents = captureRuntimeEvents(page);
+    await page.goto(app.baseURL, { waitUntil: "domcontentloaded" });
+    await expect.poll(() => runtimeEvents.some((event) => event.type === "runtime_snapshot")).toBe(true);
+    const eventStart = runtimeEvents.length;
+
+    await activatePick(app, page.request, [99]);
+    await expect.poll(() => runtimeEvents.slice(eventStart).some((event) => (
+      event.type === "status" && event.data?.action === "no_champion_available"
+    ))).toBe(true);
+
+    const state = await app.readLcuState();
+    expect(state.session.myTeam[0].championId).toBe(0);
+    expect(state.session.actions[0][0]).toMatchObject({ isInProgress: true, completed: false });
+    expect(app.lcuRequests.filter((request) => request.method === "PATCH" && request.path === actionPath)).toEqual([]);
+    const historyResponse = await page.request.get(`${app.baseURL}/api/history?limit=250`);
+    const history = await historyResponse.json();
+    expect(history.items.map((entry) => entry.message)).not.toContain("Champion automatically locked in: Garen.");
+  } finally {
+    await app.stop();
+  }
+});
+
+test("Auto-Pick does not run in a queue where presets are unsupported", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await expectConnected(app, page.request);
+    await enableAutoPick(app, page.request);
+    const selectedPickResponse = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: sameOriginHeaders(app),
+      data: { selected_pick_1: "Garen", selected_pick_2: "", selected_pick_3: "" },
+    });
+    expect(selectedPickResponse.status()).toBe(200);
+    const [settingsResponse, presetsResponse] = await Promise.all([
+      page.request.get(`${app.baseURL}/api/settings`),
+      page.request.get(`${app.baseURL}/api/presets`),
+    ]);
+    expect(await settingsResponse.json()).toMatchObject({
+      presets_enabled: true,
+      auto_pick_enabled: true,
+      selected_pick_1: "Garen",
+      selected_pick_2: "",
+      selected_pick_3: "",
+    });
+    expect(await presetsResponse.json()).toMatchObject({
+      presets_enabled: true,
+      slots: {
+        pick_1: { champion: "Garen" },
+        pick_2: { champion: "" },
+        pick_3: { champion: "" },
+      },
+    });
+    const runtimeEvents = captureRuntimeEvents(page);
+    await page.goto(app.baseURL, { waitUntil: "domcontentloaded" });
+    await expect.poll(() => runtimeEvents.some((event) => event.type === "runtime_snapshot")).toBe(true);
+    const eventStart = runtimeEvents.length;
+    const unsupportedQueueSession = pickSession();
+    unsupportedQueueSession.gameConfig.queueId = 450;
+
+    await activatePick(app, page.request, [86], { session: unsupportedQueueSession });
+    await expect.poll(() => runtimeEvents.slice(eventStart).some((event) => (
+      event.type === "status" && event.data?.action === "presets_disabled"
+    ))).toBe(true);
+
+    const state = await app.readLcuState();
+    expect(state.session.gameConfig.queueId).toBe(450);
+    expect(state.session.myTeam[0].championId).toBe(0);
+    expect(state.session.actions[0][0]).toMatchObject({ isInProgress: true, completed: false });
+    expect(app.lcuRequests.filter((request) => request.method === "PATCH" && request.path === actionPath)).toEqual([]);
   } finally {
     await app.stop();
   }

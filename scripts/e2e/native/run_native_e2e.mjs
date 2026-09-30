@@ -113,6 +113,24 @@ async function waitForNativeWindow(appPid, predicate, timeoutMs = 5_000) {
   throw new Error(`Native window did not reach its expected state: ${JSON.stringify(latest)}`);
 }
 
+async function observeFullscreenRpcCall(page, callIndex, timeoutMs = 10_000) {
+  let waitError = null;
+  try {
+    await page.waitForFunction((index) => window.__nativeFullscreenEvidence?.calls[index]?.settled === true, callIndex, { timeout: timeoutMs });
+  } catch (error) {
+    waitError = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  }
+  return page.evaluate(({ index, observationError }) => {
+    const call = window.__nativeFullscreenEvidence?.calls[index];
+    return {
+      state: !call ? "missing" : call.error !== null ? "rejected" : call.settled ? "resolved" : "pending",
+      result: call?.result ?? null,
+      error: call?.error ?? null,
+      observationError,
+    };
+  }, { index: callIndex, observationError: waitError });
+}
+
 async function lockFileSnapshot(lockfilePath) {
   const stat = await fs.stat(lockfilePath);
   let ownerPid = null;
@@ -712,25 +730,28 @@ try {
     const api = desktopWindow.pywebview?.api;
     const original = api?.toggle_fullscreen;
     if (typeof original !== "function") return { desktopMode: desktopWindow.__otpDesktopMode, ready: desktopWindow.__otpNativeBridgeReady, methodType: typeof original };
-    desktopWindow.__nativeFullscreenEvidence = { calls: 0, result: null, error: null };
+    desktopWindow.__nativeFullscreenEvidence = { calls: [] };
     api.toggle_fullscreen = async (...args) => {
-      desktopWindow.__nativeFullscreenEvidence.calls += 1;
+      const evidence = desktopWindow.__nativeFullscreenEvidence;
+      const call = { settled: false, result: null, error: null };
+      evidence.calls.push(call);
       try {
-        desktopWindow.__nativeFullscreenEvidence.result = await original(...args);
-        return desktopWindow.__nativeFullscreenEvidence.result;
+        call.result = await original(...args);
+        return call.result;
       } catch (error) {
-        desktopWindow.__nativeFullscreenEvidence.error = String(error);
+        call.error = String(error);
         throw error;
+      } finally {
+        call.settled = true;
       }
     };
     return { desktopMode: desktopWindow.__otpDesktopMode, ready: desktopWindow.__otpNativeBridgeReady, methodType: typeof original };
   });
   assert.equal(fullscreenBridge.methodType, "function", `Native fullscreen bridge is unavailable: ${JSON.stringify(fullscreenBridge)}`);
+  const fullscreenPythonEventStart = appEvents.filter(({ event }) => event === "fullscreen_bridge_rpc").length;
   await fullscreenButton.click();
-  await page.waitForTimeout(250);
-  const fullscreenBridgeAction = await page.evaluate(() => window.__nativeFullscreenEvidence);
-  assert.equal(fullscreenBridgeAction.calls, 1, `The visible fullscreen control did not invoke the native bridge: ${JSON.stringify(fullscreenBridge)}`);
-  assert.equal(fullscreenBridgeAction.result, true, `The native bridge did not accept fullscreen: ${JSON.stringify(fullscreenBridgeAction)}`);
+  let fullscreenRpcCallCount = await page.evaluate(() => window.__nativeFullscreenEvidence?.calls.length ?? 0);
+  assert.equal(fullscreenRpcCallCount, 1, `The visible fullscreen control did not invoke the native bridge: ${JSON.stringify(fullscreenBridge)}`);
   const fullscreenOn = await waitForNativeWindow(
     app.pid,
     (snapshot) => snapshot.rect.left === snapshot.monitorBounds.left
@@ -738,18 +759,42 @@ try {
       && snapshot.rect.right === snapshot.monitorBounds.right
       && snapshot.rect.bottom === snapshot.monitorBounds.bottom,
   );
+  const fullscreenRpc = await observeFullscreenRpcCall(page, 0);
   await saveScreenshot(page, "fullscreen");
   await fullscreenButton.click();
+  fullscreenRpcCallCount = await page.evaluate(() => window.__nativeFullscreenEvidence?.calls.length ?? 0);
+  assert.equal(fullscreenRpcCallCount, 2, `The fullscreen restore control did not invoke the native bridge: ${JSON.stringify(fullscreenBridge)}`);
   const fullscreenOff = await waitForNativeWindow(
     app.pid,
     (snapshot) => JSON.stringify(snapshot.rect) === JSON.stringify(windowBeforeFullscreen.rect),
   );
+  const restoreRpc = await observeFullscreenRpcCall(page, 1);
+  const fullscreenPythonEvents = appEvents
+    .filter(({ event }) => event === "fullscreen_bridge_rpc")
+    .slice(fullscreenPythonEventStart);
   nativeActionEvidence.fullscreen = {
     before: windowBeforeFullscreen,
-    bridge: { ...fullscreenBridge, ...fullscreenBridgeAction },
+    bridge: { ...fullscreenBridge, calls: [fullscreenRpc, restoreRpc], pythonEvents: fullscreenPythonEvents },
     fullscreen: fullscreenOn,
     restored: fullscreenOff,
   };
+  const fullscreenRpcCalls = [fullscreenRpc, restoreRpc];
+  const fullscreenRpcDiagnostic = JSON.stringify(nativeActionEvidence.fullscreen.bridge);
+  assert.deepEqual(
+    fullscreenRpcCalls.filter(({ state }) => state === "pending" || state === "missing"),
+    [],
+    `Fullscreen and restore RPCs timed out or were not observed: ${fullscreenRpcDiagnostic}`,
+  );
+  assert.deepEqual(
+    fullscreenRpcCalls.filter(({ state }) => state === "rejected"),
+    [],
+    `Fullscreen and restore RPCs rejected: ${fullscreenRpcDiagnostic}`,
+  );
+  assert.deepEqual(
+    fullscreenRpcCalls.filter(({ state, result: rpcResult }) => state === "resolved" && rpcResult !== true),
+    [],
+    `Fullscreen and restore RPCs did not resolve true: ${fullscreenRpcDiagnostic}`,
+  );
   completedActions.push("Clicked the visible fullscreen control twice and verified native monitor bounds followed by exact restoration of the original HWND rectangle.");
 
   const syntheticSettingsResponse = await page.request.patch(new URL("/api/settings", page.url()).toString(), {

@@ -465,6 +465,116 @@ test("startup backs up a future TOML schema before falling back to current setti
   }
 });
 
+test("successful settings API updates survive a same-profile restart", async ({ page }) => {
+  let app = await startOtpApp();
+  try {
+    const origin = new URL(app.baseURL).origin;
+    const response = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: origin },
+      data: { auto_accept_enabled: true },
+    });
+    expect(response.status()).toBe(200);
+    expect(await readSettings(app, page.request)).toMatchObject({ auto_accept_enabled: true });
+
+    const stateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = null;
+    app = await startOtpApp({ stateDir });
+
+    expect(await readSettings(app, page.request)).toMatchObject({ auto_accept_enabled: true });
+  } finally {
+    if (app) await app.stop();
+  }
+});
+
+test("history append enforces its retention limit, ordering, API limit, and restart persistence", async ({ page }) => {
+  let app = await startOtpApp();
+  try {
+    await app.waitForWebSocketSubscription();
+    const historyPath = path.join(app.appDataDir, "OTP LOL", "history.json");
+    const seededEntries = Array.from({ length: 260 }, (_, index) => ({
+      timestamp: "2026-09-30T12:00:00+00:00",
+      type: "pick",
+      level: "success",
+      category: "Champion Select",
+      action: "pick",
+      message: `retained-event-${index}`,
+      details: {},
+    }));
+    await writeFile(historyPath, JSON.stringify(seededEntries));
+
+    const patch = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: { auto_accept_enabled: true },
+    });
+    expect(patch.status()).toBe(200);
+    await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+    await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+
+    const historyUrl = `${app.baseURL}/api/history`;
+    await expect.poll(async () => {
+      const response = await page.request.get(`${historyUrl}?limit=999`);
+      return (await response.json()).items[0]?.message;
+    }).toBe("Match automatically accepted.");
+
+    const oversized = await page.request.get(`${historyUrl}?limit=999`);
+    expect(oversized.status()).toBe(200);
+    const boundedHistory = await oversized.json();
+    expect(boundedHistory.count).toBe(250);
+    expect(boundedHistory.items.map(({ message }) => message)).toEqual([
+      "Match automatically accepted.",
+      ...Array.from({ length: 249 }, (_, index) => `retained-event-${259 - index}`),
+    ]);
+    const smallHistory = await page.request.get(`${historyUrl}?limit=2`);
+    expect((await smallHistory.json()).items).toEqual(boundedHistory.items.slice(0, 2));
+
+    const stateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = null;
+    app = await startOtpApp({ stateDir });
+    const restartedHistory = await page.request.get(`${app.baseURL}/api/history?limit=250`);
+    expect(restartedHistory.status()).toBe(200);
+    const restartedPayload = await restartedHistory.json();
+    expect(restartedPayload.count).toBe(250);
+    expect(restartedPayload.items.map(({ message }) => message)).toContain("Match automatically accepted.");
+    expect(restartedPayload.items.map(({ message }) => message)).toContain("retained-event-259");
+  } finally {
+    if (app) await app.stop();
+  }
+});
+
+test("history API tolerates unreadable JSON and persists subsequent events", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await app.waitForWebSocketSubscription();
+    const historyPath = path.join(app.appDataDir, "OTP LOL", "history.json");
+    await writeFile(historyPath, "[corrupt history fixture");
+
+    const before = await page.request.get(`${app.baseURL}/api/history`);
+    expect(before.status()).toBe(200);
+    expect(await before.json()).toEqual({ items: [], count: 0 });
+
+    const patch = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: { auto_accept_enabled: true },
+    });
+    expect(patch.status()).toBe(200);
+    await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+    await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/history`);
+      const history = await response.json();
+      return history.items.some((entry) => entry.message === "Match automatically accepted.");
+    }).toBe(true);
+    expect(JSON.parse(await readFile(historyPath, "utf8"))).toMatchObject([
+      { message: "Match automatically accepted.", type: "ready_check" },
+    ]);
+  } finally {
+    await app.stop();
+  }
+});
+
 test("preset API exposes the slot-specific effective profile through FastAPI", async ({ page }) => {
   const app = await startOtpApp();
   try {
