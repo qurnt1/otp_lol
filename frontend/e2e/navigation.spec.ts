@@ -19,6 +19,15 @@ test("settings deep links and browser back-forward restore the selected section"
   await expect(page.locator(".settings-section h2")).toHaveText("Raccourcis");
 });
 
+test("the Settings deep link without a section opens General", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings");
+
+  await expect(page.locator(".settings-section h2")).toHaveText("Général");
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Réglages", exact: true }))
+    .toHaveAttribute("aria-current", "page");
+});
+
 test("an invalid initial hash falls back to the usable Dashboard route", async ({ page }) => {
   await setupApplication(page);
   await page.goto("/#settings/not-a-section");

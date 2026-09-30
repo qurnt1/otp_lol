@@ -201,3 +201,33 @@ test("asset API reads persisted LCU bytes after an offline same-profile restart"
     await restarted.stop();
   }
 });
+
+test("skin catalogue remains available with unknown ownership after League disconnects", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await connected(app, page.request);
+    await app.configureExternalState({ dataDragon: "online" });
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/health`);
+      return (await response.json()).lcu_connected;
+    }).toBe(false);
+
+    const response = await page.request.get(`${app.baseURL}/api/skins/86`);
+    const body = await response.json();
+    expect(response.status()).toBe(200);
+    expect(body.champion_id).toBe(86);
+    expect(body.catalog.map(({ skin_id }) => skin_id)).toEqual([86000, 86001, 86013]);
+    expect(body.owned).toMatchObject({ ok: false, owned_skins: [] });
+    expect(body.owned.message).toBeTruthy();
+    expect(app.lcuRequests.some(({ path }) => path === "/lol-champions/v1/inventories/24680135/champions/86/skins"))
+      .toBe(false);
+    await app.waitForExternalFixtureRequest(
+      "ddragon.leagueoflegends.com",
+      "/cdn/16.1.1/data/en_US/champion/Garen.json",
+      200,
+    );
+  } finally {
+    await app.stop();
+  }
+});

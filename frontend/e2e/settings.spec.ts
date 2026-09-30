@@ -221,6 +221,29 @@ test("manual account mode labels the actual provider identity source", async ({ 
   await expect.poll(async () => (await page.request.get(new URL("/api/account/identity", getOtpApp(page).baseURL).href).then((response) => response.json())).source).toBe("manual");
 });
 
+test("account settings keep the live identity when the identity endpoint is unavailable", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.route("**/api/account/identity", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected identity read failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const failedIdentity = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/account/identity"
+    && response.status() === 503,
+  );
+  await page.goto("/#settings/account");
+  expect((await failedIdentity).status()).toBe(503);
+
+  await expect(page.getByRole("textbox", { name: "Riot ID" })).toHaveValue("E2E Player#SAFE");
+  await expect(page.getByText("Compte League connecté · EUW")).toBeVisible();
+  await expect(page.getByRole("switch", { name: "Détection automatique du compte" })).toHaveAttribute("aria-checked", "true");
+  expect(await readRuntime(page)).toMatchObject({ connected: true, riot_id: "E2E Player#SAFE", region: "euw" });
+});
+
 test("manual Riot ID and region edits persist as the selected provider identity", async ({ page }) => {
   await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
   await page.goto("/#settings/account");

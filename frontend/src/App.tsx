@@ -119,6 +119,7 @@ function App() {
       if (event.type === "account_identity_updated") {
         void queryClient.invalidateQueries({ queryKey: ["settings"] });
         void queryClient.invalidateQueries({ queryKey: ["account-identity"] });
+        void queryClient.invalidateQueries({ queryKey: ["skins"] });
         void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
         void queryClient.invalidateQueries({ queryKey: ["live-stats-link"] });
       }
@@ -145,7 +146,8 @@ function App() {
         void queryClient.invalidateQueries({ queryKey: ["diagnostics"] });
         void queryClient.invalidateQueries({ queryKey: ["game-data-status"] });
       }
-      if (["phase_change", "champion_picked", "champion_banned", "ready_check_accepted", "spells_set", "toast"].includes(event.type)) void queryClient.invalidateQueries({ queryKey: ["history"] });
+      if (["phase_change", "champion_picked", "champion_banned", "ready_check_accepted", "spells_set", "play_again", "toast"].includes(event.type)) void queryClient.invalidateQueries({ queryKey: ["history"] });
+      if (event.type === "status" && event.data !== null && typeof event.data === "object" && ["prepick_confirmed", "skin_selected", "runes_applied"].includes((event.data as { action?: string }).action ?? "")) void queryClient.invalidateQueries({ queryKey: ["history"] });
     });
     return () => { disposed = true; window.clearInterval(reconciliationTimer); disconnect(); };
   }, [queryClient, setRuntime, setStatus]);

@@ -488,6 +488,15 @@ const skippedActions = [];
 const nativeActionEvidence = {};
 let result;
 
+function recordCleanupFailure(message) {
+  const current = result ?? { completedActions, skippedActions, nativeActionEvidence };
+  result = {
+    ...current,
+    status: "failed",
+    error: [current.error, message].filter(Boolean).join("; "),
+  };
+}
+
 try {
   const cdpPort = await allocateLoopbackPort();
   externalDenyProxy = await startExternalDenyProxy();
@@ -627,6 +636,16 @@ try {
   assert.equal(trayShown.visibleAfter, true);
   nativeActionEvidence.tray = { trayRecord, hide: trayHidden, show: trayShown };
   completedActions.push("Win32 posted the real pystray WM_NOTIFY/WM_RBUTTONUP message, selected Show/Hide in its native popup menu, and verified HWND hide then show.");
+
+  const closeWindow = win32Json(["--app-pid", String(app.pid), "--close-window"]);
+  assert.equal(closeWindow.closeRequestPosted, true);
+  assert.equal(closeWindow.processStillRunning, true, "Closing the native window with a working tray must keep the app process alive.");
+  assert.equal(closeWindow.nativeWindowAfter.visible, false, "A native WM_CLOSE request must hide the window while the tray is available.");
+  const restoredAfterClose = trayMenu("toggle");
+  assert.equal(restoredAfterClose.visibleBefore, false);
+  assert.equal(restoredAfterClose.visibleAfter, true, "The tray must restore a window hidden by its native close action.");
+  nativeActionEvidence.windowClose = { closeWindow, restoredByTray: restoredAfterClose };
+  completedActions.push("Sent WM_CLOSE to the visible native window and verified the tray kept the app alive and restored the hidden window.");
 
   const settingsMenu = trayMenu("settings");
   assert.equal(settingsMenu.action, "Settings");
@@ -991,7 +1010,7 @@ try {
     });
     if (!stopped) {
       cleanupProof.helpersStopped = false;
-      result = { status: "failed", error: `${result?.error ? `${result.error}; ` : ""}Win32 helper did not stop.` };
+      recordCleanupFailure("Win32 helper did not stop.");
     }
   }
   if (app?.pid) {
@@ -1015,33 +1034,41 @@ try {
       cleanupProof.processTreeStopped = survivors.length === 0;
       if (!cleanupProof.processTreeStopped) throw new Error(`Test process tree did not stop: ${JSON.stringify(survivors)}`);
     } catch (cleanupError) {
-      result = { status: "failed", error: `${result?.error ? `${result.error}; ` : ""}cleanup failed: ${cleanupError.message}` };
+      recordCleanupFailure(`cleanup failed: ${cleanupError.message}`);
     }
   }
   if (externalDenyProxy?.server.listening) {
-    await new Promise((resolve) => externalDenyProxy.server.close(resolve));
+    try {
+      const serverClosed = new Promise((resolve, reject) => {
+        externalDenyProxy.server.close((error) => error ? reject(error) : resolve());
+      });
+      externalDenyProxy.server.closeAllConnections?.();
+      await serverClosed;
+    } catch (cleanupError) {
+      recordCleanupFailure(`proxy cleanup failed: ${cleanupError.message}`);
+    }
   }
   if (!lcuEvidence) {
     try { lcuEvidence = JSON.parse(await fs.readFile(path.join(tempRoot, "lcu-discovery.json"), "utf8")); } catch { /* evidence may not exist if startup was refused */ }
   }
-  if (cleanupProof.processTreeStopped || !app) {
+  if ((!app?.pid || cleanupProof.processTreeStopped) && cleanupProof.helpersStopped) {
     try {
       await removeOwnTempRoot(tempRoot);
       cleanupProof.profileRemoved = true;
     } catch (cleanupError) {
-      result = { status: "failed", error: `${result?.error ? `${result.error}; ` : ""}profile cleanup failed: ${cleanupError.message}` };
+      recordCleanupFailure(`profile cleanup failed: ${cleanupError.message}`);
     }
   }
 }
 
 if (result?.status === "passed" && !cleanupProof.processTreeStopped) {
-  result = { status: "failed", error: "The app process tree was not proven stopped." };
+  recordCleanupFailure("The app process tree was not proven stopped.");
 }
 if (result?.status === "passed" && !cleanupProof.helpersStopped) {
-  result = { status: "failed", error: "The Win32 helpers were not proven stopped." };
+  recordCleanupFailure("The Win32 helpers were not proven stopped.");
 }
 if (result?.status === "passed" && !cleanupProof.profileRemoved) {
-  result = { status: "failed", error: "The unique isolated profile directory was not removed." };
+  recordCleanupFailure("The unique isolated profile directory was not removed.");
 }
 console.log(JSON.stringify({
   ...result,

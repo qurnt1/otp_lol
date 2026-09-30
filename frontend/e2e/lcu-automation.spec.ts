@@ -198,3 +198,59 @@ test("Auto Play Again envoie la commande LCU et revient au lobby", async ({ page
   await expect(page.locator(".automation-status")).toContainText("Retour au lobby effectué.");
   expect((await readHistory(page)).items.map((item) => item.message)).toContain("Automatically returned to lobby after the game.");
 });
+
+for (const scenario of [
+  {
+    name: "un champion configuré indisponible",
+    queueId: 420,
+    pickableChampionIds: [999],
+    status: "Aucun champion configuré n’est disponible.",
+  },
+  {
+    name: "une file sans prise en charge des presets",
+    queueId: 450,
+    pickableChampionIds: [86],
+    status: "Presets désactivés pour ce mode de partie.",
+  },
+]) {
+  test(`Auto-Pick explique ${scenario.name} sans modifier l’action LCU`, async ({ page }) => {
+    const { app } = await setupApplication(page, {
+      connected: true,
+      configured: true,
+      phase: "ChampSelect",
+      lcuState: { static_data_online: true },
+    });
+    const eventsConnected = waitForRuntimeEvents(page);
+    await page.goto("/#settings/automations");
+    await eventsConnected;
+    await enableAutomation(page, "Auto-Pick", "auto_pick_enabled");
+    await page.goto("/#dashboard");
+
+    const session = champSelectSession([[{
+      actorCellId: 1,
+      type: "pick",
+      id: 503,
+      isInProgress: true,
+      completed: false,
+      championId: 0,
+    }]]);
+    session.gameConfig.queueId = scenario.queueId;
+    const requestOffset = app.lcuRequests.length;
+    await app.configureLcuState({ session, pickable_champion_ids: scenario.pickableChampionIds });
+    await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+
+    const status = page.locator(".automation-status");
+    await expect(status).toContainText(scenario.status);
+    expect(await readSettings(page)).toMatchObject({ auto_pick_enabled: true, selected_pick_1: "Garen" });
+    expect(await readPresets(page)).toMatchObject({ slots: { pick_1: { champion: "Garen" } } });
+
+    const state = await app.readLcuState();
+    expect(state.session.myTeam[0].championId).toBe(0);
+    expect(state.session.actions[0][0]).toMatchObject({ isInProgress: true, completed: false, championId: 0 });
+    expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+      request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/503"
+    )).toEqual([]);
+    expect((await readHistory(page)).items.map((item) => item.message))
+      .not.toContain("Champion automatically locked in: Garen.");
+  });
+}

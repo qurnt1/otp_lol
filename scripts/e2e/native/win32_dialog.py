@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import re
 import time
 from ctypes import wintypes
 from pathlib import Path
@@ -528,8 +529,11 @@ def _other_otp_instances(app_pids: set[int]) -> list[dict[str, object]]:
                 continue
             name = str(process.info.get("name") or "")
             command = process.info.get("cmdline") or []
-            command_text = " ".join(str(part) for part in command).casefold()
-            if name.casefold() == "otp lol.exe" or "launcher_web.py" in command_text or "native_app.py" in command_text:
+            is_python_process = re.fullmatch(r"python(?:w)?(?:\d+(?:\.\d+)*)?\.exe", name, re.IGNORECASE)
+            script_names = {Path(str(part)).name.casefold() for part in command}
+            is_launcher = is_python_process and "launcher_web.py" in script_names
+            is_native_app = is_python_process and "native_app.py" in script_names and "--run" in command
+            if name.casefold() == "otp lol.exe" or is_launcher or is_native_app:
                 matches.append({"pid": process.pid, "name": name})
         except (psutil.NoSuchProcess, psutil.ZombieProcess):
             continue
@@ -584,6 +588,33 @@ def _send_hotkey(app_pid: int, key: str) -> dict[str, object]:
         "foregroundPid": _window_pid(foreground),
         "externalOtpInstances": other_instances,
     }
+
+
+def _close_main_window(app_pid: int) -> dict[str, object]:
+    pids = _process_tree(app_pid)
+    window = _main_window(pids)
+    if window is None:
+        raise RuntimeError("The app window must be visible before sending a native close request.")
+    hwnd = int(window["hwnd"])
+    if not user32.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
+        raise OSError("Could not post WM_CLOSE to the isolated OTP LOL window.")
+
+    deadline = time.monotonic() + 5
+    latest = None
+    while time.monotonic() < deadline:
+        latest = _any_main_window(_process_tree(app_pid))
+        if latest is not None and not latest["visible"]:
+            return {
+                "closeRequestPosted": True,
+                "processStillRunning": psutil.pid_exists(app_pid),
+                "nativeWindowBefore": window,
+                "nativeWindowAfter": latest,
+            }
+        time.sleep(0.05)
+    raise RuntimeError(
+        "The native close request did not hide the app window while the tray was available: "
+        f"{json.dumps({'nativeWindowBefore': window, 'nativeWindowAfter': latest}, separators=(',', ':'))}"
+    )
 
 
 def _select_tray_menu(app_pid: int, tray_file: str, state_file: str, action: str) -> dict[str, object]:
@@ -799,6 +830,7 @@ def main() -> int:
     parser.add_argument("--wait-main-window", action="store_true")
     parser.add_argument("--window-snapshot", action="store_true")
     parser.add_argument("--send-hotkey", action="store_true")
+    parser.add_argument("--close-window", action="store_true")
     parser.add_argument("--key", choices=("c", "p", "C", "P"))
     parser.add_argument("--tray-menu", choices=("toggle", "settings", "presets", "auto-ban", "inspect", "quit"))
     parser.add_argument("--tray-file")
@@ -838,6 +870,10 @@ def main() -> int:
         if not args.key:
             parser.error("--send-hotkey requires --key")
         print(json.dumps(_send_hotkey(args.app_pid, args.key), separators=(",", ":")))
+        return 0
+
+    if args.close_window:
+        print(json.dumps(_close_main_window(args.app_pid), separators=(",", ":")))
         return 0
 
     if args.tray_menu:

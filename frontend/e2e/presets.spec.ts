@@ -78,6 +78,35 @@ test("Dashboard priority cards open with Enter and restore focus after Escape", 
   await expect(card).toBeFocused();
 });
 
+test("clicking an empty priority opens and saves that slot", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#dashboard");
+
+  const emptySlot = page.locator(".priority-card").nth(1);
+  await expect(emptySlot).toHaveClass(/is-empty/);
+  await emptySlot.click();
+  await expect(page).toHaveURL(/#dashboard\/pick_2$/);
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 2" });
+  await expect(editor).toBeVisible();
+  await editor.locator(".champion-choice").click();
+  const picker = page.getByRole("dialog", { name: "Choisir un champion" });
+  await picker.getByRole("option", { name: /Garen/ }).click();
+
+  await expect.poll(async () => (await readPresets(page)).slots.pick_2.champion).toBe("Garen");
+  expect(await readPresets(page)).toMatchObject({
+    slots: {
+      pick_1: { champion: "" },
+      pick_2: { champion: "Garen" },
+      pick_3: { champion: "" },
+    },
+  });
+  await expect(editor.getByRole("button", { name: /Garen/ })).toBeVisible();
+  await editor.getByRole("button", { name: "Fermer" }).last().click();
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(emptySlot).toContainText("Garen");
+});
+
 test("nested picker Escape closes only the picker, while outside click closes the editor", async ({ page }) => {
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");

@@ -61,6 +61,59 @@ test("diagnostics API exposes safe fixed GET checks and gates Riot ID export on 
   }
 });
 
+test("running diagnostics without endpoint IDs checks the complete fixed allowlist", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await waitForConnectedIdentity(app, page.request);
+    const origin = new URL(app.baseURL).origin;
+    const expectedChecks = [
+      { id: "gameflow_phase", method: "GET", path: "/lol-gameflow/v1/gameflow-phase" },
+      { id: "current_summoner", method: "GET", path: "/lol-summoner/v1/current-summoner" },
+      { id: "game_version", method: "GET", path: "/lol-patch/v1/game-version" },
+      { id: "champion_summary", method: "GET", path: "/lol-game-data/assets/v1/champion-summary.json" },
+      { id: "ranked_stats", method: "GET", path: "/lol-ranked/v1/current-ranked-stats" },
+      { id: "masteries", method: "GET", path: "/lol-champion-mastery/v1/local-player/champion-mastery" },
+      { id: "match_history", method: "GET", path: "/lol-match-history/v1/products/lol/current-summoner/matches" },
+    ];
+    const overview = await page.request.get(`${app.baseURL}/api/diagnostics`).then((response) => response.json());
+    const checks = overview.endpoint_checks;
+    expect(checks.map(({ id, method, path }) => ({ id, method, path }))).toEqual(expectedChecks);
+    expect(checks.every((check) => check.method === "GET" && check.path.startsWith("/lol-"))).toBe(true);
+    const requestCountsBefore = new Map(expectedChecks.map(({ path }) => [
+      path,
+      app.lcuRequests.filter((request) => request.method === "GET" && request.path === path).length,
+    ]));
+
+    const runResponse = await page.request.post(`${app.baseURL}/api/diagnostics/run`, {
+      headers: { Origin: origin },
+      data: {},
+    });
+    const runBody = await runResponse.json();
+    expect(runResponse.status()).toBe(200);
+    expect(runBody.results).toHaveLength(expectedChecks.length);
+    expect(runBody.results.map(({ id, method, path }) => ({ id, method, path }))).toEqual(
+      expectedChecks,
+    );
+
+    for (const check of expectedChecks) {
+      await app.waitForLcuRequest("GET", check.path);
+      expect(
+        app.lcuRequests.filter((request) => request.method === "GET" && request.path === check.path),
+        check.id,
+      ).toHaveLength(requestCountsBefore.get(check.path) + 1);
+    }
+
+    const persistedResults = await page.request.get(`${app.baseURL}/api/diagnostics`)
+      .then(async (response) => {
+        expect(response.status()).toBe(200);
+        return (await response.json()).endpoint_results;
+      });
+    expect(persistedResults).toEqual(runBody.results);
+  } finally {
+    await app.stop();
+  }
+});
+
 test("diagnostics event storage redacts sensitive values arriving over the real LCU WebSocket", async ({ page }) => {
   const app = await startOtpApp();
   try {
