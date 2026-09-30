@@ -128,8 +128,57 @@ class EmbeddedApiServer:
             server.should_exit = True
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5)
+            if self._thread.is_alive() and server is not None:
+                self._wake_closed_listener_waiters(server)
+                self._thread.join(timeout=5)
         self._close_socket()
-        self._thread = None
+        if self._thread and not self._thread.is_alive():
+            self._thread = None
+
+    @staticmethod
+    def _wake_closed_listener_waiters(server: uvicorn.Server) -> None:
+        # ponytail: asyncio.Server has no public way to wake wait_closed(); remove this CPython GH-93821 fallback once supported Python releases detach reset clients.
+        state = server.server_state
+        if state.connections or state.tasks:
+            return
+
+        for listener in server.servers or ():
+            loop = getattr(listener, "_loop", None)
+            waiters = getattr(listener, "_waiters", None)
+            clients = tuple(getattr(listener, "_clients", ()) or ())
+            if (
+                loop is None
+                or not loop.is_running()
+                or getattr(listener, "_sockets", None) is not None
+                or waiters is None
+                or any(
+                    not client.is_closing()
+                    or not type(client).__name__.startswith("_Proactor")
+                    for client in clients
+                )
+            ):
+                continue
+
+            def wake_if_still_closed(listener=listener, state=state) -> None:
+                clients = tuple(getattr(listener, "_clients", ()) or ())
+                if (
+                    getattr(listener, "_sockets", None) is None
+                    and not state.connections
+                    and not state.tasks
+                    and getattr(listener, "_waiters", None) is not None
+                    and all(
+                        client.is_closing()
+                        and type(client).__name__.startswith("_Proactor")
+                        for client in clients
+                    )
+                ):
+                    listener._wakeup()
+
+            try:
+                loop.call_soon_threadsafe(wake_if_still_closed)
+            except RuntimeError:
+                # The server may have completed shutdown after the state check.
+                continue
 
 
 __all__ = ["EmbeddedApiServer"]

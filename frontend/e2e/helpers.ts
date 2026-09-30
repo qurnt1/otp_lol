@@ -204,7 +204,8 @@ export async function setupApplication(page: Page, options: SetupOptions = {}): 
 
   const reconnecting = app.syntheticLeaguePid === null;
   await app.configureLcuConnection({ online: true });
-  if (reconnecting) await app.waitForWebSocketSubscription(app.websocketSubscriptions.length + 1);
+  const subscriptionNumber = reconnecting ? app.websocketSubscriptions.length + 1 : 1;
+  await app.waitForWebSocketSubscription(subscriptionNumber);
   await app.configureLcuState({
     static_data_online: false,
     game_version: "16.1.1",

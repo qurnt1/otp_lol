@@ -82,14 +82,98 @@ def _emit(payload: dict[str, Any]) -> None:
 def _capture_api_shutdown_state(api_server: Any, api_thread: threading.Thread) -> dict[str, Any]:
     snapshot: dict[str, Any] = {"thread": {"name": api_thread.name, "ident": api_thread.ident}}
     try:
-        state = getattr(getattr(api_server, "_server", None), "server_state", None)
+        server = getattr(api_server, "_server", None)
+        state = getattr(server, "server_state", None)
         snapshot["uvicorn"] = {
             "available": state is not None,
             "connections": len(state.connections) if state is not None else 0,
             "tasks": len(state.tasks) if state is not None else 0,
+            "server_id": id(server) if server is not None else None,
+            "started": getattr(server, "started", None),
+            "should_exit": getattr(server, "should_exit", None),
+            "force_exit": getattr(server, "force_exit", None),
         }
+        lifespan = getattr(server, "lifespan", None)
+        if lifespan is not None:
+            snapshot["uvicorn"]["lifespan"] = {
+                "shutdown_event_set": lifespan.shutdown_event.is_set(),
+                "shutdown_queue_size": lifespan.receive_queue.qsize(),
+                "shutdown_failed": lifespan.shutdown_failed,
+                "error_occurred": lifespan.error_occurred,
+            }
+        snapshot["uvicorn"]["servers"] = [
+            {
+                "serving": listener.is_serving(),
+                "socket_count": len(listener.sockets or ()),
+                "client_count": len(getattr(listener, "_clients", ()) or ()),
+                "waiter_count": len(getattr(listener, "_waiters", ()) or ()),
+                "clients": [
+                    {
+                        "transport": type(client).__name__,
+                        "closing": client.is_closing(),
+                        "peer": client.get_extra_info("peername"),
+                    }
+                    for client in (getattr(listener, "_clients", ()) or ())
+                ],
+            }
+            for listener in (getattr(server, "servers", ()) or ())
+        ]
     except Exception as error:  # noqa: BLE001 - diagnostic snapshots must not mask cleanup.
         snapshot["uvicorn_error"] = type(error).__name__
+
+    try:
+        context = api_server.application.state.context
+        api_loop = getattr(context, "_async_loop", None)
+        snapshot["api_loop"] = {
+            "available": api_loop is not None,
+            "running": api_loop.is_running() if api_loop is not None else False,
+            "closed": api_loop.is_closed() if api_loop is not None else True,
+        }
+        if api_loop is not None and api_loop.is_running():
+            async def capture_tasks() -> list[dict[str, Any]]:
+                def describe_await_chain(coroutine: Any) -> list[dict[str, Any]]:
+                    chain = []
+                    current = coroutine
+                    for _ in range(12):
+                        frame = getattr(current, "cr_frame", None)
+                        if frame is None:
+                            frame = getattr(current, "gi_frame", None)
+                        chain.append({
+                            "coroutine": getattr(current, "__qualname__", type(current).__name__),
+                            "frame": {
+                                "file": Path(frame.f_code.co_filename).name,
+                                "line": frame.f_lineno,
+                                "function": frame.f_code.co_name,
+                            } if frame is not None else None,
+                        })
+                        current = getattr(current, "cr_await", None) or getattr(current, "gi_yieldfrom", None)
+                        if current is None:
+                            break
+                    return chain
+
+                current = asyncio.current_task()
+                return [
+                    {
+                        "name": task.get_name(),
+                        "coroutine": getattr(task.get_coro(), "__qualname__", type(task.get_coro()).__name__),
+                        "await_chain": describe_await_chain(task.get_coro()),
+                        "stack": [
+                            {"file": Path(frame.f_code.co_filename).name, "line": frame.f_lineno, "function": frame.f_code.co_name}
+                            for frame in task.get_stack(limit=8)
+                        ],
+                    }
+                    for task in asyncio.all_tasks(api_loop)
+                    if task is not current
+                ]
+
+            future = asyncio.run_coroutine_threadsafe(capture_tasks(), api_loop)
+            try:
+                snapshot["api_loop"]["tasks"] = future.result(timeout=0.5)
+            except TimeoutError:
+                future.cancel()
+                snapshot["api_loop"]["tasks_error"] = "snapshot_timeout"
+    except Exception as error:  # noqa: BLE001 - diagnostic snapshots must not mask cleanup.
+        snapshot["api_loop_error"] = type(error).__name__
 
     try:
         frame = sys._current_frames().get(api_thread.ident) if api_thread.ident is not None else None
@@ -700,14 +784,14 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
             api_thread = api_server._thread
             phase_started = time.monotonic()
             try:
-                api_server.stop()
+                await asyncio.to_thread(api_server.stop)
             except Exception as error:  # noqa: BLE001 - attempt every remaining cleanup.
                 cleanup_errors.append(f"api-server-stop:{type(error).__name__}:{error}")
             finally:
                 cleanup_phase_seconds["api_server_stop"] = round(time.monotonic() - phase_started, 3)
             if api_thread is not None and api_thread.is_alive():
                 phase_started = time.monotonic()
-                api_thread.join(timeout=5)
+                await asyncio.to_thread(api_thread.join, timeout=5)
                 cleanup_phase_seconds["api_thread_join_initial"] = round(
                     time.monotonic() - phase_started, 3
                 )
@@ -734,7 +818,7 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
                 cleanup_phase_seconds["fake_lcu_stop"] = round(time.monotonic() - phase_started, 3)
         if api_thread_still_alive_after_initial_join:
             phase_started = time.monotonic()
-            api_thread.join(timeout=5)
+            await asyncio.to_thread(api_thread.join, timeout=5)
             cleanup_phase_seconds["api_thread_join_final"] = round(time.monotonic() - phase_started, 3)
             if api_thread.is_alive():
                 cleanup_errors.append("api-server-thread-still-alive")

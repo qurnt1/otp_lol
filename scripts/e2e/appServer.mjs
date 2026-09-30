@@ -245,7 +245,7 @@ export async function startOtpApp({
     } catch {
       // The process can exit between the state check and the write.
     }
-    const graceful = await waitBounded(exitPromise, 15_000, "graceful stop");
+    const graceful = await waitBounded(exitPromise, 30_000, "graceful stop");
     if (graceful.completed) return { ...graceful.value, forced: false };
 
     let forceError = null;

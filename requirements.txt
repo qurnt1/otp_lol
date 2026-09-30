@@ -11,3 +11,4 @@ pywebview~=6.1
 requests~=2.31
 tomli_w~=1.2
 uvicorn~=0.41
+websockets~=15.0
