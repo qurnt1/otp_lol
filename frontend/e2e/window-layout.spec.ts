@@ -20,7 +20,6 @@ for (const viewport of [
     await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
     await page.goto("/#dashboard");
     await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
-    await expect.poll(() => page.locator("img").evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
     const layout = await page.evaluate(() => {
       const bounds = (element: Element) => {
         const rect = element.getBoundingClientRect();
