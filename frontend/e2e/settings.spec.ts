@@ -276,8 +276,9 @@ test("account identity follows a real platform change after LCU reconnect", asyn
   await app.waitForWebSocketSubscription(nextSubscription);
   await expect.poll(() => app.lcuRequests.filter((request) => request.method === "GET" && request.path === "/lol-chat/v1/me").length).toBeGreaterThan(previousChatMeRequests);
 
-  const identity = await page.request.get(new URL("/api/account/identity", app.baseURL).href).then((response) => response.json());
-  expect(identity).toMatchObject({ riot_id: "E2E Player#SAFE", region: "na", platform_id: "na1", source: "connected" });
+  await expect.poll(async () =>
+    page.request.get(new URL("/api/account/identity", app.baseURL).href).then((response) => response.json()),
+  ).toMatchObject({ riot_id: "E2E Player#SAFE", region: "na", platform_id: "na1", source: "connected" });
   await page.goto("/#settings/account");
   await expect(page.getByText("Compte League connecté · NA")).toBeVisible();
 });
