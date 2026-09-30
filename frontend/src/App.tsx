@@ -145,7 +145,7 @@ function App() {
         void queryClient.invalidateQueries({ queryKey: ["diagnostics"] });
         void queryClient.invalidateQueries({ queryKey: ["game-data-status"] });
       }
-      if (["phase_change", "champion_picked", "champion_banned", "spells_set", "toast"].includes(event.type)) void queryClient.invalidateQueries({ queryKey: ["history"] });
+      if (["phase_change", "champion_picked", "champion_banned", "ready_check_accepted", "spells_set", "toast"].includes(event.type)) void queryClient.invalidateQueries({ queryKey: ["history"] });
     });
     return () => { disposed = true; window.clearInterval(reconciliationTimer); disconnect(); };
   }, [queryClient, setRuntime, setStatus]);

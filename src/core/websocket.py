@@ -988,19 +988,26 @@ class WebSocketManager(ChampSelectMixin):
                 me = await resp_me.json()
                 self.state.summoner = me.get("displayName", "Unknown")
 
-        if self.state.summoner != self.state.last_reported_summoner:
-            self._notify_event(self.EVENT_SUMMONER_UPDATE, self.get_riot_id())
-            self._notify_status("account_connected", level="USER", riot_id=self.get_riot_id())
+        summoner_changed = self.state.summoner != self.state.last_reported_summoner
+        riot_id = self.get_riot_id()
+        if summoner_changed:
+            self._notify_status("account_connected", level="USER", riot_id=riot_id)
             self.state.last_reported_summoner = self.state.summoner
         routing = await detect_account_routing(self.connection)
         if routing:
             self._install_region_identity(routing)
-            riot_id = self.get_riot_id() or ""
-            if is_valid_riot_id(riot_id) and self.persist_detected_account:
+            detected_riot_id = self.get_riot_id() or ""
+            if is_valid_riot_id(detected_riot_id) and self.persist_detected_account:
                 try:
-                    self.persist_detected_account(riot_id, routing.provider_region, routing.platform_id)
+                    self.persist_detected_account(
+                        detected_riot_id,
+                        routing.provider_region,
+                        routing.platform_id,
+                    )
                 except Exception:  # noqa: BLE001 - account persistence must not interrupt LCU event handling.
                     logger.exception("Unable to persist the detected League account")
+        if summoner_changed:
+            self._notify_event(self.EVENT_SUMMONER_UPDATE, riot_id)
 
     def _install_region_identity(self, identity: RegionIdentity) -> None:
         self.state.platform_routing = identity.platform_id

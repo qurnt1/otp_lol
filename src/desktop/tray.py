@@ -9,6 +9,8 @@ from PIL import Image
 
 from ..config import APP_IMAGE_FILES, APP_NAME, resource_path
 
+LOGGER = logging.getLogger(__name__)
+
 
 class TrayController:
     """Wrap system tray creation, menu callbacks, and shutdown cleanup."""
@@ -48,16 +50,12 @@ class TrayController:
             def on_presets(icon=None, item=None):
                 try:
                     toggle_presets_automation()
-                    if self.icon:
-                        self.icon.update_menu()
                 except Exception as e:
                     logging.debug("Tray presets callback error: %s", e)
 
             def on_auto_ban(icon=None, item=None):
                 try:
                     toggle_auto_ban()
-                    if self.icon:
-                        self.icon.update_menu()
                 except Exception as e:
                     logging.debug("Tray auto-ban callback error: %s", e)
 
@@ -100,6 +98,14 @@ class TrayController:
             logging.warning("Unable to create system tray: %s", e)
             on_failure()
         return self.available
+
+    def refresh_menu(self) -> None:
+        """Refresh dynamic item states after settings change outside the tray menu."""
+        if self.icon:
+            try:
+                self.icon.update_menu()
+            except OSError as error:
+                LOGGER.debug("Tray menu refresh error: %s", error)
 
     def shutdown(self) -> None:
         """Stop the tray icon when it was created successfully."""

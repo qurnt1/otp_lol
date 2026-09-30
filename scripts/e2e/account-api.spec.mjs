@@ -1,4 +1,5 @@
 import { readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { expect, test } from "../../frontend/node_modules/@playwright/test/index.mjs";
 import { startOtpApp } from "./appServer.mjs";
@@ -452,6 +453,172 @@ test("account cache files stay scoped to each PUUID across a League account swit
     expect(cachedLevels.sort((left, right) => left - right)).toEqual([20, 40]);
     const allCacheText = await Promise.all(accountFiles.map((name) => readFile(path.join(accountCacheDir, name), "utf8")));
     expect(allCacheText.join("\n")).not.toContain("SECOND_ACCOUNT_PUUID_SENTINEL");
+
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/health`);
+      return (await response.json()).lcu_connected;
+    }).toBe(false);
+    const offlineResponse = await page.request.get(`${app.baseURL}/api/account/summary`);
+    expect(await offlineResponse.json()).toMatchObject({
+      data: { level: 40 },
+      available: true,
+      stale: true,
+      source: "cache",
+      errors: { summary: "disconnected" },
+    });
+
+    const identityChange = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: {
+        summoner_name_auto_detect: false,
+        manual_summoner_name: "Unrelated Player#9999",
+        manual_region: "na",
+      },
+    });
+    expect(identityChange.status()).toBe(200);
+    expect(await (await page.request.get(`${app.baseURL}/api/account/identity`)).json()).toMatchObject({
+      riot_id: "Unrelated Player#9999",
+      source: "manual",
+      connected: false,
+    });
+    expect(await (await page.request.get(`${app.baseURL}/api/account/summary`)).json()).toMatchObject({
+      data: { level: 40 },
+      available: true,
+      stale: true,
+      source: "cache",
+      errors: { summary: "disconnected" },
+    });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("account stats cache stays tied to LCU identity when manual provider identity differs", async ({ page }) => {
+  let app = await startOtpApp();
+  try {
+    await waitForConnectedLcu(app, page.request);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/settings`);
+      return (await response.json()).auto_detected_account_valid;
+    }).toBe(true);
+    const accountIdentity = await (await page.request.get(`${app.baseURL}/api/account/identity`)).json();
+    expect(accountIdentity).toMatchObject({ source: "connected", connected: true });
+    const responsePayloads = accountFixture();
+    await app.configureLcuState({ account_responses: responsePayloads });
+
+    const firstSummary = await (await page.request.get(`${app.baseURL}/api/account/summary`)).json();
+    expect(firstSummary).toMatchObject({ data: { level: 321 }, source: "lcu", stale: false });
+    const accountCacheDir = path.join(app.appDataDir, "OTP LOL", "cache", "account");
+    const pointerPath = path.join(accountCacheDir, "last-account.json");
+    const lcuPointer = JSON.parse(await readFile(pointerPath, "utf8"));
+    expect(lcuPointer.identity_key).toMatch(/^[a-f0-9]{64}$/);
+
+    const manualRiotId = "Manual Account#9999";
+    const manualRegion = "na";
+    const identityChange = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: {
+        summoner_name_auto_detect: false,
+        manual_summoner_name: manualRiotId,
+        manual_region: manualRegion,
+      },
+    });
+    expect(identityChange.status()).toBe(200);
+    expect(await (await page.request.get(`${app.baseURL}/api/account/identity`)).json()).toMatchObject({
+      riot_id: manualRiotId,
+      source: "manual",
+    });
+
+    const [summary, matches] = await Promise.all([
+      page.request.get(`${app.baseURL}/api/account/summary`),
+      page.request.get(`${app.baseURL}/api/account/matches`),
+    ]);
+    expect(await summary.json()).toMatchObject({ data: { level: 321 }, source: "lcu", stale: false });
+    expect(await matches.json()).toMatchObject({ data: { total: 29 }, source: "lcu", stale: false });
+    const manualIdentityKey = createHash("sha256")
+      .update(`${manualRegion}|${manualRiotId.toLowerCase()}`)
+      .digest("hex");
+    expect(JSON.parse(await readFile(pointerPath, "utf8"))).toEqual(lcuPointer);
+    expect(lcuPointer.identity_key).not.toBe(manualIdentityKey);
+
+    const retainedStateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = await startOtpApp({ stateDir: retainedStateDir });
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/health`);
+      return (await response.json()).lcu_connected;
+    }).toBe(true);
+    await app.waitForWebSocketSubscription();
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/health`);
+      return (await response.json()).lcu_connected;
+    }).toBe(false);
+
+    expect(await (await page.request.get(`${app.baseURL}/api/account/identity`)).json()).toMatchObject({
+      riot_id: manualRiotId,
+      source: "manual",
+      connected: false,
+    });
+    const [offlineSummary, offlineMatches] = await Promise.all([
+      page.request.get(`${app.baseURL}/api/account/summary`),
+      page.request.get(`${app.baseURL}/api/account/matches`),
+    ]);
+    expect(await offlineSummary.json()).toMatchObject({
+      data: { level: 321 },
+      available: true,
+      stale: true,
+      source: "cache",
+    });
+    expect(await offlineMatches.json()).toMatchObject({
+      data: { total: 29 },
+      available: true,
+      stale: true,
+      source: "cache",
+    });
+    expect(JSON.parse(await readFile(pointerPath, "utf8"))).toEqual(lcuPointer);
+  } finally {
+    await app.stop();
+  }
+});
+
+test("offline stats stay unavailable when the profile has no saved account identity", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await waitForConnectedLcu(app, page.request);
+    await app.configureLcuState({
+      account_responses: {
+        [accountPaths.summary]: { status: 200, payload: { summonerLevel: 73 } },
+      },
+    });
+    expect(await (await page.request.get(`${app.baseURL}/api/account/summary`)).json()).toMatchObject({
+      data: { level: 73 },
+      source: "lcu",
+      stale: false,
+    });
+
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/health`);
+      return (await response.json()).lcu_connected;
+    }).toBe(false);
+    const clearedIdentity = await page.request.delete(`${app.baseURL}/api/settings/last-detected-account`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+    });
+    expect(clearedIdentity.status()).toBe(200);
+    expect(await (await page.request.get(`${app.baseURL}/api/account/identity`)).json()).toMatchObject({
+      riot_id: null,
+      source: "unavailable",
+    });
+
+    expect(await (await page.request.get(`${app.baseURL}/api/account/summary`)).json()).toMatchObject({
+      data: null,
+      available: false,
+      stale: false,
+      source: "unavailable",
+      errors: { summary: "disconnected" },
+    });
   } finally {
     await app.stop();
   }
@@ -484,6 +651,7 @@ test("same-profile restart serves the previous account cache while disconnected"
     expect(accountCacheFile).toBeTruthy();
     const cacheText = await readFile(path.join(accountCacheDir, accountCacheFile), "utf8");
     const identityPointer = await readFile(path.join(accountCacheDir, "last-account.json"), "utf8");
+    expect(JSON.parse(identityPointer).identity_key).toMatch(/^[a-f0-9]{64}$/);
     for (const privateValue of ["PRIVATE_PUUID_SENTINEL", "PRIVATE_RIOT_ID_SENTINEL"]) {
       expect(cacheText).not.toContain(privateValue);
       expect(identityPointer).not.toContain(privateValue);
@@ -519,12 +687,97 @@ test("same-profile restart serves the previous account cache while disconnected"
 
     const offlineResponse = await page.request.get(`${app.baseURL}/api/account/summary`);
     expect(offlineResponse.status()).toBe(200);
-    test.fail(true, "Confirmed cache-key mismatch: a restarted disconnected client no longer has the PUUID used by the saved cache key.");
     expect(await offlineResponse.json()).toMatchObject({
       data: { level: 88 },
       available: true,
       stale: true,
       source: "cache",
+      errors: { summary: "disconnected" },
+    });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("same-profile restart serves cached matches while disconnected", async ({ page }) => {
+  let app = await startOtpApp();
+  try {
+    await waitForConnectedLcu(app, page.request);
+    await app.configureLcuState({ account_responses: accountFixture() });
+    const freshResponse = await page.request.get(`${app.baseURL}/api/account/matches`);
+    expect(freshResponse.status()).toBe(200);
+    const freshBody = await freshResponse.json();
+    expect(freshBody).toMatchObject({
+      data: { offset: 0, total: 29 },
+      source: "lcu",
+      stale: false,
+    });
+    expect(freshBody.data.matches[0]).toMatchObject({ game_id: "100", champion_id: 86 });
+
+    const retainedStateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = await startOtpApp({ stateDir: retainedStateDir });
+    await waitForConnectedLcu(app, page.request);
+    await app.waitForWebSocketSubscription();
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const health = await page.request.get(`${app.baseURL}/api/health`);
+      return (await health.json()).lcu_connected;
+    }).toBe(false);
+
+    const offlineResponse = await page.request.get(`${app.baseURL}/api/account/matches`);
+    expect(offlineResponse.status()).toBe(200);
+    const offlineBody = await offlineResponse.json();
+    expect(offlineBody).toMatchObject({
+      data: { offset: 0, total: 29 },
+      available: true,
+      stale: true,
+      source: "cache",
+      errors: { matches: "disconnected" },
+    });
+    expect(offlineBody.data.matches[0]).toMatchObject({ game_id: "100", champion_id: 86 });
+  } finally {
+    await app.stop();
+  }
+});
+
+test("offline restart does not attribute an unaliased legacy cache pointer to an account", async ({ page }) => {
+  let app = await startOtpApp();
+  try {
+    await waitForConnectedLcu(app, page.request);
+    const responsePayloads = accountFixture();
+    responsePayloads[accountPaths.summary] = {
+      status: 200,
+      payload: { summonerLevel: 61, puuid: "LEGACY_POINTER_PUUID_SENTINEL" },
+    };
+    await app.configureLcuState({ account_responses: responsePayloads });
+    expect(await (await page.request.get(`${app.baseURL}/api/account/summary`)).json()).toMatchObject({
+      data: { level: 61 },
+      source: "lcu",
+    });
+
+    const accountCacheDir = path.join(app.appDataDir, "OTP LOL", "cache", "account");
+    const pointerPath = path.join(accountCacheDir, "last-account.json");
+    const pointer = JSON.parse(await readFile(pointerPath, "utf8"));
+    delete pointer.identity_key;
+    await writeFile(pointerPath, JSON.stringify(pointer));
+
+    const retainedStateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = await startOtpApp({ stateDir: retainedStateDir });
+    await waitForConnectedLcu(app, page.request);
+    await app.waitForWebSocketSubscription();
+    await app.configureLcuConnection({ online: false });
+    await expect.poll(async () => {
+      const health = await page.request.get(`${app.baseURL}/api/health`);
+      return (await health.json()).lcu_connected;
+    }).toBe(false);
+
+    expect(await (await page.request.get(`${app.baseURL}/api/account/summary`)).json()).toMatchObject({
+      data: null,
+      available: false,
+      stale: false,
+      source: "unavailable",
       errors: { summary: "disconnected" },
     });
   } finally {

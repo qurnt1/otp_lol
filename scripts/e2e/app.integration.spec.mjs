@@ -1,5 +1,14 @@
 import { expect, test } from "../../frontend/node_modules/@playwright/test/index.mjs";
+import path from "node:path";
 import { startOtpApp } from "./appServer.mjs";
+
+function isWithinPath(root, candidate) {
+  const relativePath = path.relative(root, candidate);
+  return relativePath === ""
+    || (!path.isAbsolute(relativePath)
+      && relativePath !== ".."
+      && !relativePath.startsWith(`..${path.sep}`));
+}
 
 test("real UI reads saved pickers after restart, retries offline Data Dragon, and sends production LCU accept", async ({ page }) => {
   test.setTimeout(120_000);
@@ -57,6 +66,21 @@ test("real UI reads saved pickers after restart, retries offline Data Dragon, an
     expect(app.pathIsolation.appDataPathNames).toContain("parameters");
     expect(app.pathIsolation.tempPathNames).toContain("lockfile");
     expect(app.pathIsolation.localAppDataIsolated).toBe(true);
+    const { resolvedRoots, resolvedPaths } = app.pathIsolation;
+    for (const rootName of ["appData", "localAppData", "temp"]) {
+      expect(
+        isWithinPath(resolvedRoots.state, resolvedRoots[rootName]),
+        `${rootName} root escaped the isolated profile: ${resolvedRoots[rootName]}`,
+      ).toBe(true);
+    }
+    for (const [rootName, paths] of Object.entries(resolvedPaths)) {
+      for (const [name, resolvedPath] of Object.entries(paths)) {
+        expect(
+          isWithinPath(resolvedRoots[rootName], resolvedPath),
+          `${name} escaped its isolated ${rootName} root: ${resolvedPath}`,
+        ).toBe(true);
+      }
+    }
     expect(app.socketGuardProof).toEqual(["connect", "connect_ex", "sendto"]);
     expect(app.lcuDiscovery).toContain("unfiltered production scan/argument parsing verified without connecting");
     await app.waitForLcuRequest("GET", "/lol-chat/v1/me");
@@ -68,7 +92,13 @@ test("real UI reads saved pickers after restart, retries offline Data Dragon, an
       port: Number(new URL(app.lcuURL).port),
     });
 
+    const runtimeEventsSocketPromise = page.waitForEvent(
+      "websocket",
+      (socket) => new URL(socket.url()).pathname === "/api/events",
+    );
     await page.goto(app.baseURL, { waitUntil: "domcontentloaded" });
+    const runtimeEventsSocket = await runtimeEventsSocketPromise;
+    await runtimeEventsSocket.waitForEvent("framereceived");
     await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Réessayer maintenant" })).toBeVisible();
     const offlineUpdatesResponse = await page.request.get(`${app.baseURL}/api/updates`);
@@ -170,6 +200,7 @@ test("real UI reads saved pickers after restart, retries offline Data Dragon, an
     const retainedStateDir = app.stateDir;
     const firstApiPort = Number(new URL(app.baseURL).port);
     const firstLcuPort = Number(new URL(app.lcuURL).port);
+    await expect.poll(() => runtimeEvents.some((event) => event.type === "runtime_snapshot")).toBe(true);
     firstShutdown = await app.stop({ retainState: true });
     expect(firstShutdown.forced, firstShutdown.stderr).toBe(false);
     expect(firstShutdown.code, firstShutdown.stderr).toBe(0);

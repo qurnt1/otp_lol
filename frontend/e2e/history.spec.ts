@@ -1,6 +1,6 @@
 import { expect, readHistory, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
-test("History filters and searches a real automatic summoner-spell event", async ({ page }) => {
+test("[HIST-01] History filters messages and details from a real automatic summoner-spell event", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,
     configured: true,
@@ -33,10 +33,15 @@ test("History filters and searches a real automatic summoner-spell event", async
   await expect.poll(async () => (await readHistory(page)).items.some((item) => item.message === "Automatic summs applied: Flash + Ignite.")).toBe(true);
 
   await page.getByRole("button", { name: "Sorts", exact: true }).click();
-  await expect(page.getByText("Automatic summs applied: Flash + Ignite.")).toBeVisible();
+  const summonerEvent = page.locator(".history-table tbody tr").filter({ hasText: "Automatic summs applied: Flash + Ignite." });
+  await expect(summonerEvent).toContainText("spell 1: Flash");
+  await expect(summonerEvent).toContainText("spell 2: Ignite");
+  await expect(summonerEvent).toContainText("role: GLOBAL");
   await expect(page.getByRole("button", { name: "Sorts", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("textbox", { name: "Rechercher dans le journal…" }).fill("Flash");
-  await expect(page.getByText("Automatic summs applied: Flash + Ignite.")).toBeVisible();
+  await expect(summonerEvent).toBeVisible();
+  await page.getByRole("textbox", { name: "Rechercher dans le journal…" }).fill("GLOBAL");
+  await expect(summonerEvent).toBeVisible();
   await page.getByRole("textbox", { name: "Rechercher dans le journal…" }).fill("not in this log");
   await expect(page.getByText("Aucun événement pour le moment.")).toBeVisible();
   await expect.poll(async () => (await readHistory(page)).count).toBeGreaterThan(0);
@@ -137,7 +142,7 @@ test("un ready-check accepté est envoyé au LCU et enregistré dans l’API His
   await expect.poll(async () => (await readHistory(page)).items.some((item) => item.message === "Match automatically accepted.")).toBe(true);
 });
 
-test("an already-mounted History page receives an accepted ready check live", async ({ page }) => {
+test("[HIST-02] an already-mounted History page receives an accepted ready check live", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true, autoAccept: true });
   const eventsConnected = waitForRuntimeEvents(page);
   await page.goto("/#history");
@@ -148,7 +153,6 @@ test("an already-mounted History page receives an accepted ready check live", as
   await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
   await expect.poll(async () => (await readHistory(page)).items.some((item) => item.message === "Match automatically accepted.")).toBe(true);
 
-  test.fail(true, "Known product bug: ready_check_accepted does not invalidate the query for an already-mounted History page.");
   await expect(page.getByText("Match automatically accepted.")).toBeVisible();
 });
 

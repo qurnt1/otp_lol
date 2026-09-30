@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -76,6 +77,29 @@ def _wait_for_health(url: str, timeout_s: float = 30.0) -> None:
 
 def _emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
+def _capture_api_shutdown_state(api_server: Any, api_thread: threading.Thread) -> dict[str, Any]:
+    snapshot: dict[str, Any] = {"thread": {"name": api_thread.name, "ident": api_thread.ident}}
+    try:
+        state = getattr(getattr(api_server, "_server", None), "server_state", None)
+        snapshot["uvicorn"] = {
+            "available": state is not None,
+            "connections": len(state.connections) if state is not None else 0,
+            "tasks": len(state.tasks) if state is not None else 0,
+        }
+    except Exception as error:  # noqa: BLE001 - diagnostic snapshots must not mask cleanup.
+        snapshot["uvicorn_error"] = type(error).__name__
+
+    try:
+        frame = sys._current_frames().get(api_thread.ident) if api_thread.ident is not None else None
+        snapshot["thread"]["stack"] = [
+            {"file": Path(item.filename).name, "line": item.lineno, "function": item.name}
+            for item in traceback.extract_stack(frame, limit=30)
+        ] if frame is not None else []
+    except Exception as error:  # noqa: BLE001 - diagnostics must not mask cleanup.
+        snapshot["thread"]["stack_error"] = type(error).__name__
+    return snapshot
 
 
 def _install_socket_egress_guard(lcu_port: int):
@@ -367,7 +391,9 @@ def _verify_isolated_runtime_paths(
         HISTORY_PATH,
         ICONS_CACHE_DIR,
         LCU_CACHE_DIR,
+        LEGACY_PARAMETERS_JSON_PATH,
         LOCKFILE_PATH,
+        PARAMETERS_JSON_PATH,
         PARAMETERS_PATH,
         RUNES_CACHE_DIR,
         SKINS_CACHE_DIR,
@@ -377,12 +403,15 @@ def _verify_isolated_runtime_paths(
 
     app_paths = {
         "parameters": PARAMETERS_PATH,
+        "legacyParameters": PARAMETERS_JSON_PATH,
         "history": HISTORY_PATH,
         "webview": WEBVIEW_STORAGE_DIR,
         "lcuCache": LCU_CACHE_DIR,
         "accountCache": ACCOUNT_CACHE_DIR,
         "logs": LOG_FILE_PATH,
     }
+    if LEGACY_PARAMETERS_JSON_PATH is not None:
+        app_paths["legacyMainParameters"] = LEGACY_PARAMETERS_JSON_PATH
     temp_paths = {
         "lockfile": LOCKFILE_PATH,
         "dataDragon": DDRAGON_CACHE_FILE,
@@ -411,10 +440,25 @@ def _verify_isolated_runtime_paths(
         actual_path = Path(os.environ[name]).resolve()
         if actual_path != expected_path.resolve():
             raise RuntimeError(f"{name} does not resolve to the isolated E2E profile.")
+    resolved_roots = {
+        "state": str(appdata_dir.parent.parent.resolve()),
+        "appData": str(appdata_dir.resolve()),
+        "localAppData": str(localappdata_dir.resolve()),
+        "temp": str(temp_dir.resolve()),
+    }
     return {
         "appDataPathNames": list(app_paths),
         "localAppDataIsolated": True,
         "tempPathNames": list(temp_paths),
+        "resolvedRoots": resolved_roots,
+        "resolvedPaths": {
+            "appData": {
+                name: str(Path(path).resolve()) for name, path in app_paths.items()
+            },
+            "temp": {
+                name: str(Path(path).resolve()) for name, path in temp_paths.items()
+            },
+        },
     }
 
 
@@ -649,35 +693,59 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
         had_active_error = sys.exc_info()[0] is not None
         cleanup_errors: list[str] = []
         api_thread_still_alive_after_initial_join = False
+        api_shutdown_diagnostics: dict[str, Any] | None = None
+        cleanup_phase_seconds: dict[str, float] = {}
+        cleanup_started = time.monotonic()
         if api_server is not None:
             api_thread = api_server._thread
+            phase_started = time.monotonic()
             try:
                 api_server.stop()
             except Exception as error:  # noqa: BLE001 - attempt every remaining cleanup.
                 cleanup_errors.append(f"api-server-stop:{type(error).__name__}:{error}")
+            finally:
+                cleanup_phase_seconds["api_server_stop"] = round(time.monotonic() - phase_started, 3)
             if api_thread is not None and api_thread.is_alive():
+                phase_started = time.monotonic()
                 api_thread.join(timeout=5)
+                cleanup_phase_seconds["api_thread_join_initial"] = round(
+                    time.monotonic() - phase_started, 3
+                )
                 api_thread_still_alive_after_initial_join = api_thread.is_alive()
+        phase_started = time.monotonic()
         try:
             _stop_synthetic_league_process(league_process)
         except Exception as error:  # noqa: BLE001 - attempt every remaining cleanup.
             cleanup_errors.append(f"synthetic-league-stop:{type(error).__name__}:{error}")
+        finally:
+            cleanup_phase_seconds["synthetic_league_stop"] = round(time.monotonic() - phase_started, 3)
         if league_process is not None:
             if league_process.poll() is not None:
                 _emit({"type": "synthetic-league-stopped", "pid": league_process.pid, "returnCode": league_process.returncode})
             else:
                 _emit({"type": "cleanup-warning", "resource": "synthetic-league-process-still-alive", "pid": league_process.pid})
         if fake_lcu is not None:
+            phase_started = time.monotonic()
             try:
                 await fake_lcu.stop()
             except Exception as error:  # noqa: BLE001 - attempt every remaining cleanup.
                 cleanup_errors.append(f"fake-lcu-stop:{type(error).__name__}:{error}")
+            finally:
+                cleanup_phase_seconds["fake_lcu_stop"] = round(time.monotonic() - phase_started, 3)
         if api_thread_still_alive_after_initial_join:
+            phase_started = time.monotonic()
             api_thread.join(timeout=5)
+            cleanup_phase_seconds["api_thread_join_final"] = round(time.monotonic() - phase_started, 3)
             if api_thread.is_alive():
                 cleanup_errors.append("api-server-thread-still-alive")
+                api_shutdown_diagnostics = _capture_api_shutdown_state(api_server, api_thread)
+        cleanup_phase_seconds["total_before_report"] = round(time.monotonic() - cleanup_started, 3)
         for error in cleanup_errors:
-            _emit({"type": "cleanup-warning", "resource": error})
+            warning: dict[str, Any] = {"type": "cleanup-warning", "resource": error}
+            if error == "api-server-thread-still-alive":
+                warning["phase_seconds"] = cleanup_phase_seconds
+                warning["api_shutdown"] = api_shutdown_diagnostics
+            _emit(warning)
         if cleanup_errors and not had_active_error:
             raise RuntimeError("E2E resource cleanup failed: " + "; ".join(cleanup_errors))
 

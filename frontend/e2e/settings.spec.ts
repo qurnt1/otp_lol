@@ -1,4 +1,4 @@
-import { expect, getOtpApp, readPresets, readSettings, readRuntime, setupApplication, test } from "./helpers";
+import { expect, getOtpApp, readPresets, readSettings, readRuntime, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
 test("settings persists a toggle across a real page reload", async ({ page }) => {
   await setupApplication(page);
@@ -182,7 +182,10 @@ test("League close and reconnect update the saved account view through LCU WebSo
 
   await app.configureLcuConnection({ online: true });
   await app.waitForWebSocketSubscription(2);
-  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await expect.poll(async () => {
+    const runtime = await readRuntime(page);
+    return { connected: runtime.connected, riot_id: runtime.riot_id, region: runtime.region };
+  }).toEqual({ connected: true, riot_id: "E2E Player#SAFE", region: "euw" });
   await expect(page.getByText("Compte League connecté · EUW")).toBeVisible();
 });
 
@@ -232,6 +235,118 @@ test("account copy requires confirmation, and forgetting the saved identity pres
   expect(saved.auto_detected_platform).toBe("");
   expect(saved.manual_summoner_name).toBe("E2E Player#SAFE");
   expect(saved.manual_region).toBe("euw");
+});
+
+test("[SET-05] account copy cancellation and API failure preserve manual values until retry", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    manualRiotId: "Manual#NA",
+    settings: { close_app_on_lol_exit: false, summoner_name_auto_detect: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#settings/account");
+
+  let copyRequests = 0;
+  await page.route("**/api/settings", async (route) => {
+    const request = route.request();
+    if (request.method() !== "PATCH" || !("manual_summoner_name" in request.postDataJSON())) {
+      await route.continue();
+      return;
+    }
+    copyRequests += 1;
+    if (copyRequests === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected copy failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const copyButton = page.getByRole("button", { name: "Copier vers les champs manuels" });
+  const manualRiotIdInput = page.getByRole("textbox", { name: "Riot ID" });
+  await copyButton.click();
+  let dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "Annuler" }).click();
+  await expect(dialog).toBeHidden();
+  expect(copyRequests).toBe(0);
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Manual#NA");
+
+  await copyButton.click();
+  dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "Copier vers les champs manuels" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Injected copy failure");
+  await expect(manualRiotIdInput).toHaveValue("Manual#NA");
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Manual#NA");
+
+  await copyButton.click();
+  dialog = page.getByRole("alertdialog");
+  const copySaved = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && new URL(response.url()).pathname === "/api/settings",
+  );
+  await dialog.getByRole("button", { name: "Copier vers les champs manuels" }).click();
+  expect((await copySaved).status()).toBe(200);
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("E2E Player#SAFE");
+  expect(copyRequests).toBe(2);
+});
+
+test("[SET-06] forgetting the saved account can be cancelled and retried without changing manual values", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    manualRiotId: "Manual#NA",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#settings/account");
+  const manualBeforeForget = await readSettings(page);
+
+  let forgetRequests = 0;
+  await page.route("**/api/settings/last-detected-account", async (route) => {
+    if (route.request().method() !== "DELETE") {
+      await route.continue();
+      return;
+    }
+    forgetRequests += 1;
+    if (forgetRequests === 1) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected forget failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const forgetButton = page.getByRole("button", { name: "Oublier le dernier compte" });
+  await forgetButton.click();
+  let dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "Annuler" }).click();
+  await expect(dialog).toBeHidden();
+  expect(forgetRequests).toBe(0);
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    auto_detected_riot_id: "E2E Player#SAFE",
+    manual_summoner_name: manualBeforeForget.manual_summoner_name,
+    manual_region: manualBeforeForget.manual_region,
+  });
+
+  await forgetButton.click();
+  dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "Oublier le dernier compte" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Injected forget failure");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    auto_detected_riot_id: "E2E Player#SAFE",
+    manual_summoner_name: manualBeforeForget.manual_summoner_name,
+    manual_region: manualBeforeForget.manual_region,
+  });
+
+  await forgetButton.click();
+  dialog = page.getByRole("alertdialog");
+  const forgetSaved = page.waitForResponse((response) =>
+    response.request().method() === "DELETE" && new URL(response.url()).pathname === "/api/settings/last-detected-account",
+  );
+  await dialog.getByRole("button", { name: "Oublier le dernier compte" }).click();
+  expect((await forgetSaved).status()).toBe(200);
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    auto_detected_riot_id: "",
+    manual_summoner_name: manualBeforeForget.manual_summoner_name,
+    manual_region: manualBeforeForget.manual_region,
+  });
+  expect(forgetRequests).toBe(2);
 });
 
 test("automatic account mode remains empty when League is offline and no identity was saved", async ({ page }) => {
@@ -329,7 +444,10 @@ test("import applies a valid theme, export downloads the real persisted settings
 
 test("reset restores starter presets and a dismissible first-run message", async ({ page }) => {
   await setupApplication(page);
+  const runtimeEvents = waitForRuntimeEvents(page);
   await page.goto("/#settings/advanced");
+  const eventSocket = await runtimeEvents;
+  await eventSocket.waitForEvent("framereceived");
   await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toContainText("efface aussi le dernier compte League détecté");
@@ -451,18 +569,51 @@ test("clearing only presets preserves account and automation settings", async ({
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("");
 });
 
-test("old settings schema is rejected without changing the active theme", async ({ page }) => {
-  await setupApplication(page);
+test("[SET-10] malformed, old, and future settings imports preserve the current settings", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    autoDetect: false,
+    manualRiotId: "Preserved#EUW",
+    settings: { auto_accept_enabled: true, theme: "flatly" },
+  });
   await page.goto("/#settings/advanced");
+  const before = await readSettings(page);
+  const preserved = {
+    theme: before.theme,
+    auto_accept_enabled: before.auto_accept_enabled,
+    manual_summoner_name: before.manual_summoner_name,
+    selected_pick_1: before.selected_pick_1,
+  };
+  const importInput = page.getByLabel("Importer une configuration");
+
+  await importInput.setInputFiles({
+    name: "otp-lol-settings-malformed.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{not valid json"),
+  });
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect.poll(async () => (await readSettings(page))).toMatchObject(preserved);
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
   await page.getByLabel("Importer une configuration").setInputFiles({
     name: "otp-lol-settings-old.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({ config_schema_version: 5, theme: "flatly" })),
   });
-
   await expect(page.getByRole("alert")).toContainText("unsupported settings schema");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect.poll(async () => (await readSettings(page)).theme).toBe("darkly");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject(preserved);
+
+  await importInput.setInputFiles({
+    name: "otp-lol-settings-future.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ config_schema_version: 999, theme: "darkly", auto_accept_enabled: false, selected_pick_1: "Teemo" })),
+  });
+  await expect(page.getByRole("alert")).toContainText("unsupported settings schema");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject(preserved);
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject(preserved);
 });
 
 test("configuration export can be imported again after intervening UI changes", async ({ page }) => {
@@ -526,6 +677,146 @@ test("canceling reset and preset actions leaves the configured account and picks
   await confirmation.getByRole("button", { name: "Annuler" }).click();
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");
   await expect.poll(async () => (await readSettings(page))).toMatchObject({ manual_summoner_name: "Manual#EUW", presets_enabled: true, auto_accept_enabled: true });
+});
+
+test("[SET-12] restoring example presets preserves settings on failure and retries through FastAPI", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    autoDetect: false,
+    manualRiotId: "Manual#EUW",
+    settings: { presets_enabled: true, auto_accept_enabled: true, theme: "flatly" },
+  });
+  await page.goto("/#settings/advanced");
+
+  let restoreRequests = 0;
+  await page.route("**/api/presets/reset", async (route) => {
+    if (route.request().method() === "POST" && restoreRequests++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected preset restore failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const beforeRestore = await readSettings(page);
+  const presetsBeforeRestore = await readPresets(page);
+  await page.getByRole("button", { name: /Restaurer les presets d'exemple/ }).click();
+  let dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button").last().click();
+  await expect(page.getByRole("alert")).toHaveText("Injected preset restore failure");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: beforeRestore.manual_summoner_name,
+    presets_enabled: beforeRestore.presets_enabled,
+    auto_accept_enabled: beforeRestore.auto_accept_enabled,
+  });
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe(presetsBeforeRestore.slots.pick_1.champion);
+
+  await page.getByRole("button", { name: /Restaurer les presets d'exemple/ }).click();
+  dialog = page.getByRole("alertdialog");
+  const restoreSaved = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/presets/reset",
+  );
+  await dialog.getByRole("button").last().click();
+  expect((await restoreSaved).status()).toBe(200);
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: "Manual#EUW",
+    presets_enabled: false,
+    auto_accept_enabled: true,
+    selected_pick_1: "Garen",
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(restoreRequests).toBe(2);
+});
+
+test("[SET-12] clearing presets preserves account and automation settings on failure and retry", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    autoDetect: false,
+    manualRiotId: "Manual#EUW",
+    settings: { presets_enabled: true, auto_accept_enabled: true, theme: "flatly" },
+  });
+  await page.goto("/#settings/advanced");
+
+  let clearRequests = 0;
+  await page.route("**/api/presets/clear", async (route) => {
+    if (route.request().method() === "POST" && clearRequests++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected clear failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const beforeClear = await readSettings(page);
+  await page.getByRole("button", { name: /Effacer uniquement les presets/ }).click();
+  let dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button").last().click();
+  await expect(page.getByRole("alert")).toHaveText("Injected clear failure");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: beforeClear.manual_summoner_name,
+    presets_enabled: beforeClear.presets_enabled,
+    auto_accept_enabled: beforeClear.auto_accept_enabled,
+    selected_pick_1: beforeClear.selected_pick_1,
+  });
+
+  await page.getByRole("button", { name: /Effacer uniquement les presets/ }).click();
+  dialog = page.getByRole("alertdialog");
+  const clearSaved = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/presets/clear",
+  );
+  await dialog.getByRole("button").last().click();
+  expect((await clearSaved).status()).toBe(200);
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: "Manual#EUW",
+    presets_enabled: true,
+    auto_accept_enabled: true,
+    selected_pick_1: "",
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(clearRequests).toBe(2);
+});
+
+test("[SET-11] full settings reset preserves state on failure and retries through FastAPI", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    autoDetect: false,
+    manualRiotId: "Manual#EUW",
+    settings: { presets_enabled: true, auto_accept_enabled: true, theme: "flatly" },
+  });
+  await page.goto("/#settings/advanced");
+
+  let resetRequests = 0;
+  await page.route("**/api/settings/reset", async (route) => {
+    if (route.request().method() === "POST" && resetRequests++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected reset failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const beforeReset = await readSettings(page);
+  await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
+  let dialog = page.getByRole("alertdialog");
+  await dialog.getByRole("button", { name: "Réinitialiser" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Injected reset failure");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: beforeReset.manual_summoner_name,
+    presets_enabled: beforeReset.presets_enabled,
+    auto_accept_enabled: beforeReset.auto_accept_enabled,
+    selected_pick_1: beforeReset.selected_pick_1,
+  });
+
+  await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
+  dialog = page.getByRole("alertdialog");
+  const resetSaved = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/settings/reset",
+  );
+  await dialog.getByRole("button", { name: "Réinitialiser" }).click();
+  expect((await resetSaved).status()).toBe(200);
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    manual_summoner_name: "",
+    presets_enabled: false,
+    auto_accept_enabled: false,
+    selected_pick_1: "Garen",
+  });
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(resetRequests).toBe(2);
 });
 
 test("each automation switch persists its setting through FastAPI", async ({ page }) => {

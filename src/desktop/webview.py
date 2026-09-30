@@ -35,6 +35,7 @@ _NATIVE_WINDOW_WIDTH = 1100
 _NATIVE_WINDOW_HEIGHT = 760
 _HOTKEY_SETTING_KEYS = frozenset({"hotkey_toggle_window", "hotkey_open_site"})
 _PROVIDER_SETTING_KEYS = frozenset({"preferred_stats_site", "preferred_hotkey_site"})
+_TRAY_SETTING_KEYS = frozenset({"presets_enabled", "auto_ban_enabled"})
 LOGGER = logging.getLogger("otp_lol.webview")
 
 
@@ -194,6 +195,36 @@ def _start_provider_event_listener(
     return stop_event, thread
 
 
+def _start_tray_settings_listener(
+    context: ApplicationContext,
+    tray: TrayController,
+) -> tuple[Event, Thread]:
+    """Refresh dynamic tray item states when their settings change in the WebView."""
+    stop_event = Event()
+
+    async def consume() -> None:
+        subscription = context.broker.subscribe()
+        try:
+            while not stop_event.is_set():
+                try:
+                    event = await asyncio.wait_for(
+                        subscription.next_event(), timeout=0.5
+                    )
+                except asyncio.TimeoutError:
+                    continue
+                if _settings_update_changes_tray_menu(event):
+                    tray.refresh_menu()
+        finally:
+            subscription.close()
+
+    def run() -> None:
+        asyncio.run(consume())
+
+    thread = Thread(target=run, daemon=True, name="otp-lol-tray-settings")
+    thread.start()
+    return stop_event, thread
+
+
 def _settings_update_changes_hotkeys(event) -> bool:
     """Return whether a settings event changes one of the global shortcuts."""
     if event.type != "settings_updated" or not isinstance(event.data, dict):
@@ -202,6 +233,16 @@ def _settings_update_changes_hotkeys(event) -> bool:
     if not isinstance(keys, (list, tuple, set, frozenset)):
         return False
     return bool(_HOTKEY_SETTING_KEYS.intersection(keys))
+
+
+def _settings_update_changes_tray_menu(event) -> bool:
+    """Return whether a settings event changes a dynamic tray item state."""
+    if event.type != "settings_updated" or not isinstance(event.data, dict):
+        return False
+    keys = event.data.get("keys")
+    if not isinstance(keys, (list, tuple, set, frozenset)):
+        return False
+    return bool(_TRAY_SETTING_KEYS.intersection(keys))
 
 
 def _configure_logging() -> None:
@@ -231,6 +272,8 @@ def run_webview() -> None:
     hotkey_thread: Thread | None = None
     provider_stop: Event | None = None
     provider_thread: Thread | None = None
+    tray_settings_stop: Event | None = None
+    tray_settings_thread: Thread | None = None
     hotkeys: HotkeyManager | None = None
     tray: TrayController | None = None
     context: ApplicationContext | None = None
@@ -305,9 +348,17 @@ def run_webview() -> None:
             quit_callback=window.destroy,
             on_failure=tray_unavailable,
         )
+        if tray.available:
+            tray_settings_stop, tray_settings_thread = _start_tray_settings_listener(
+                context, tray
+            )
         window.set_close_to_tray(tray.available)
         window.start()
     finally:
+        if tray_settings_stop is not None:
+            tray_settings_stop.set()
+        if tray_settings_thread is not None and tray_settings_thread.is_alive():
+            tray_settings_thread.join(timeout=2)
         if tray is not None:
             tray.shutdown()
         if hotkey_stop is not None:

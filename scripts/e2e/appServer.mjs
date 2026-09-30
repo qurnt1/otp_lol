@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,15 +10,52 @@ const repoRoot = path.resolve(scriptDir, "../..");
 const retainedStateDirs = new Set();
 const stateDirPrefix = "otp-lol-e2e-";
 
-function samePath(left, right) {
-  const resolve = (value) => path.resolve(value).replaceAll("\\", "/").toLowerCase();
-  return resolve(left) === resolve(right);
+function normalizeRealPath(value) {
+  return value.replaceAll("\\", "/")
+    .replace(/^\/\/\?\/UNC\//i, "//")
+    .replace(/^\/\/\?\//, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
+async function comparePaths(paths) {
+  return Promise.all(paths.map(async ({ name, expected, reported }) => {
+    let canonicalExpected = null;
+    let canonicalReported = null;
+    let expectedError = null;
+    let reportedError = null;
+    try {
+      canonicalExpected = normalizeRealPath(await realpath(expected));
+    } catch (error) {
+      expectedError = error.message;
+    }
+    try {
+      canonicalReported = normalizeRealPath(await realpath(reported));
+    } catch (error) {
+      reportedError = error.message;
+    }
+    return {
+      name,
+      expected,
+      reported,
+      canonicalExpected,
+      canonicalReported,
+      expectedError,
+      reportedError,
+      matches: canonicalExpected !== null && canonicalExpected === canonicalReported,
+    };
+  }));
 }
 
 export async function startOtpApp({
   python = process.env.PYTHON || "python",
   startupTimeoutMs = 60_000,
   stateDir: retainedStateDir,
+  settingsToml,
+  legacySettingsJson,
+  legacySettingsFolder = "OTP LOL",
+  legacyMainSettingsJson,
+  legacySettingsBackupJson,
 } = {}) {
   const stateDir = retainedStateDir
     ? path.resolve(retainedStateDir)
@@ -27,7 +64,9 @@ export async function startOtpApp({
     const info = await lstat(stateDir).catch(() => null);
     if (
       !retainedStateDirs.has(stateDir)
-      || !samePath(path.dirname(stateDir), tmpdir())
+      || !(await comparePaths([
+        { name: "retainedStateParent", expected: tmpdir(), reported: path.dirname(stateDir) },
+      ])).every(({ matches }) => matches)
       || !path.basename(stateDir).startsWith(stateDirPrefix)
       || !info?.isDirectory()
       || info.isSymbolicLink()
@@ -39,6 +78,27 @@ export async function startOtpApp({
   const appDataDir = path.join(stateDir, "profile", "Roaming");
   const localAppDataDir = path.join(stateDir, "profile", "Local");
   const tempDir = path.join(stateDir, "temp");
+  if (settingsToml !== undefined) {
+    const currentSettingsDir = path.join(appDataDir, "OTP LOL");
+    await mkdir(currentSettingsDir, { recursive: true });
+    await writeFile(path.join(currentSettingsDir, "parameters.toml"), settingsToml, { flag: "wx" });
+  }
+  if (legacySettingsJson !== undefined) {
+    if (legacySettingsFolder !== "OTP LOL" && legacySettingsFolder !== "MainLoL") {
+      throw new Error("Legacy settings fixtures must use the OTP LOL or MainLoL profile folder.");
+    }
+    const userSettingsDir = path.join(appDataDir, legacySettingsFolder);
+    await mkdir(userSettingsDir, { recursive: true });
+    await writeFile(path.join(userSettingsDir, "parameters.json"), legacySettingsJson, { flag: "wx" });
+    if (legacySettingsBackupJson !== undefined) {
+      await writeFile(path.join(userSettingsDir, "parameters.json.bak"), legacySettingsBackupJson, { flag: "wx" });
+    }
+  }
+  if (legacyMainSettingsJson !== undefined) {
+    const mainSettingsDir = path.join(appDataDir, "MainLoL");
+    await mkdir(mainSettingsDir, { recursive: true });
+    await writeFile(path.join(mainSettingsDir, "parameters.json"), legacyMainSettingsJson, { flag: "wx" });
+  }
   const frontendDir = path.join(repoRoot, "frontend", "dist");
   const appServerPath = path.join(scriptDir, "app_server.py");
   const childEnv = { ...process.env };
@@ -282,12 +342,15 @@ export async function startOtpApp({
       startupTimeoutMs,
     );
     if (ready.type === "startup-error") throw new Error(`${ready.error}\n${startupDiagnostics()}`);
-    if (
-      !samePath(ready.stateDir, stateDir)
-      || !samePath(ready.appDataDir, appDataDir)
-      || !samePath(ready.tempDir, tempDir)
-    ) {
-      throw new Error("The E2E subprocess reported a path outside its isolated temporary profile.");
+    const pathComparisons = await comparePaths([
+      { name: "stateDir", expected: stateDir, reported: ready.stateDir },
+      { name: "appDataDir", expected: appDataDir, reported: ready.appDataDir },
+      { name: "tempDir", expected: tempDir, reported: ready.tempDir },
+    ]);
+    if (pathComparisons.some(({ matches }) => !matches)) {
+      throw new Error(
+        `The E2E subprocess reported paths outside its isolated temporary profile: ${JSON.stringify(pathComparisons)}`,
+      );
     }
   } catch (error) {
     let cleanup = "not attempted";

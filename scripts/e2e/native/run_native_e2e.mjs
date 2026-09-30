@@ -571,6 +571,16 @@ try {
     "--tray-file", trayFile,
     "--tray-state-file", trayStateFile,
   ], timeout);
+  const waitForTrayMenuState = async (predicate, timeoutMs = 5_000) => {
+    const deadline = Date.now() + timeoutMs;
+    let latest;
+    while (Date.now() < deadline) {
+      latest = trayMenu("inspect");
+      if (predicate(latest.menuState)) return latest;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    throw new Error(`Native tray menu did not reach its expected state: ${JSON.stringify(latest?.menuState)}`);
+  };
   const trayRecord = await waitForJsonFile(trayFile);
   assert.equal(trayRecord.pid, app.pid, "The tray HWND must belong to the exact isolated source-app PID.");
   assert.deepEqual(trayRecord.menuLabels, ["Show/Hide", "Settings", "Enable presets automations", "Enable auto-ban", "Quit"]);
@@ -597,35 +607,52 @@ try {
   if (await presetsMaster.getAttribute("aria-checked") === "true") {
     await presetsMaster.click();
     await waitForSetting(page, "presets_enabled", false);
+    const disabledByUi = await waitForTrayMenuState((menu) => !menu.items[2].checked && !menu.items[3].enabled);
+    nativeActionEvidence.tray.disabledByUi = disabledByUi.menuState;
   }
   await presetsMaster.click();
   let traySettings = await waitForSetting(page, "presets_enabled", true);
+  const enabledByUi = await waitForTrayMenuState((menu) => menu.items[2].checked && menu.items[3].enabled);
+  nativeActionEvidence.tray.enabledByUi = enabledByUi.menuState;
+
   const autoBanSwitch = page.getByRole("switch", { name: "Auto-Ban" });
   if (await autoBanSwitch.getAttribute("aria-checked") === "true") {
     await autoBanSwitch.click();
     traySettings = await waitForSetting(page, "auto_ban_enabled", false);
+    await waitForTrayMenuState((menu) => !menu.items[3].checked);
   }
+  await autoBanSwitch.click();
+  traySettings = await waitForSetting(page, "auto_ban_enabled", true);
+  const autoBanEnabledByUi = await waitForTrayMenuState((menu) => menu.items[3].enabled && menu.items[3].checked);
+  nativeActionEvidence.tray.autoBanEnabledByUi = autoBanEnabledByUi.menuState;
+  await autoBanSwitch.click();
+  traySettings = await waitForSetting(page, "auto_ban_enabled", false);
+  const autoBanDisabledByUi = await waitForTrayMenuState((menu) => menu.items[3].enabled && !menu.items[3].checked);
+  nativeActionEvidence.tray.autoBanDisabledByUi = autoBanDisabledByUi.menuState;
+
   assert.equal(traySettings.presets_enabled, true);
   assert.equal(traySettings.auto_ban_enabled, false);
   nativeActionEvidence.tray.settingsPreparation = {
     via: "visible Dashboard automation switches",
     settingsAfter: traySettings,
   };
-  const trayAfterUiSettings = trayMenu("inspect");
+  await presetsMaster.click();
+  traySettings = await waitForSetting(page, "presets_enabled", false);
+  const trayAfterUiSettings = await waitForTrayMenuState((menu) => !menu.items[2].checked && !menu.items[3].enabled);
   nativeActionEvidence.tray.afterUiSettings = trayAfterUiSettings;
-  assert.equal(
-    trayAfterUiSettings.menuState.items[3].enabled,
-    true,
-    "The native auto-ban item must become enabled after presets are enabled through the UI."
-  );
-  completedActions.push("Enabled preset automations through the visible Dashboard control and verified the native Auto-ban item state.");
+  await presetsMaster.click();
+  traySettings = await waitForSetting(page, "presets_enabled", true);
+  const trayAfterUiReenable = await waitForTrayMenuState((menu) => menu.items[2].checked && menu.items[3].enabled);
+  nativeActionEvidence.tray.reenabledByUi = trayAfterUiReenable.menuState;
+  completedActions.push("Enabled and disabled preset and auto-ban settings through the visible Dashboard switches, verifying native tray check and enabled states.");
 
   const autoBanEnabled = trayMenu("auto-ban");
   assert.equal(autoBanEnabled.action, "auto-ban");
   assert.equal(autoBanEnabled.menuState.items[3].enabled, true);
   assert.equal(autoBanEnabled.menuState.items[3].checked, false);
   traySettings = await waitForSetting(page, "auto_ban_enabled", true);
-  nativeActionEvidence.tray.autoBanEnable = { menu: autoBanEnabled, settingsAfter: traySettings };
+  const autoBanEnabledByTray = await waitForTrayMenuState((menu) => menu.items[3].enabled && menu.items[3].checked);
+  nativeActionEvidence.tray.autoBanEnable = { menu: autoBanEnabled, menuAfter: autoBanEnabledByTray.menuState, settingsAfter: traySettings };
 
   const presetsDisabled = trayMenu("presets");
   assert.equal(presetsDisabled.action, "presets");
@@ -634,19 +661,18 @@ try {
   traySettings = await waitForSetting(page, "presets_enabled", false);
   assert.equal(traySettings.auto_ban_enabled, true, "Disabling the master must preserve the auto-ban setting.");
 
-  const disabledMenu = trayMenu("inspect");
-  assert.equal(disabledMenu.menuState.items[2].checked, false);
-  assert.equal(disabledMenu.menuState.items[3].enabled, false, "The native auto-ban menu item must be disabled with its master off.");
-  assert.equal(disabledMenu.menuState.items[3].checked, true);
+  const disabledMenu = await waitForTrayMenuState((menu) => !menu.items[2].checked && !menu.items[3].enabled && menu.items[3].checked);
 
   const presetsReenabled = trayMenu("presets");
   assert.equal(presetsReenabled.menuState.items[2].checked, false);
   assert.equal(presetsReenabled.menuState.items[3].enabled, false);
   traySettings = await waitForSetting(page, "presets_enabled", true);
+  const reenabledMenu = await waitForTrayMenuState((menu) => menu.items[2].checked && menu.items[3].enabled && menu.items[3].checked);
   nativeActionEvidence.tray.presets = {
     disable: presetsDisabled,
     disabledMenu: disabledMenu.menuState,
     reenable: presetsReenabled,
+    reenabledMenu: reenabledMenu.menuState,
     settingsAfter: traySettings,
   };
 
@@ -654,7 +680,8 @@ try {
   assert.equal(autoBanDisabled.menuState.items[3].enabled, true);
   assert.equal(autoBanDisabled.menuState.items[3].checked, true);
   traySettings = await waitForSetting(page, "auto_ban_enabled", false);
-  nativeActionEvidence.tray.autoBanDisable = { menu: autoBanDisabled, settingsAfter: traySettings };
+  const autoBanDisabledByTray = await waitForTrayMenuState((menu) => menu.items[3].enabled && !menu.items[3].checked);
+  nativeActionEvidence.tray.autoBanDisable = { menu: autoBanDisabled, menuAfter: autoBanDisabledByTray.menuState, settingsAfter: traySettings };
   completedActions.push("Toggled master preset automations and auto-ban through the real tray menu, verified persisted API state, native checked states, and auto-ban disabling when the master is off.");
 
   await page.getByRole("button", { name: "Avancé" }).click();

@@ -48,7 +48,9 @@ from .constants import (
 from ..domain.hotkeys import normalize_hotkey, validate_hotkey_pair
 from .paths import (
     ICONS_CACHE_DIR,
+    LEGACY_PARAMETERS_JSON_PATH,
     PARAMETERS_PATH,
+    PARAMETERS_JSON_PATH,
     RUNES_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
@@ -323,8 +325,86 @@ def _normalize_current_schema(config: Dict[str, Any]) -> Dict[str, Any]:
     return _normalize_parameters(normalized)
 
 
+def _read_legacy_json_schema_version(config: Dict[str, Any]) -> int:
+    """Read supported legacy JSON schema markers without coercing malformed values."""
+    if "config_schema_version" in config:
+        raw_schema_version = config["config_schema_version"]
+    elif "settings_schema_version" in config:
+        raw_schema_version = config["settings_schema_version"]
+    elif "schema_version" in config:
+        raw_schema_version = config["schema_version"]
+    else:
+        return 0
+
+    if type(raw_schema_version) is int:
+        schema_version = raw_schema_version
+    elif isinstance(raw_schema_version, str):
+        marker = raw_schema_version.strip()
+        if not marker.isascii() or not marker.isdigit():
+            raise ValueError(f"invalid legacy JSON settings schema: {raw_schema_version!r}")
+        schema_version = int(marker)
+    else:
+        raise ValueError(f"invalid legacy JSON settings schema: {raw_schema_version!r}")
+
+    if schema_version < 0 or schema_version > CONFIG_SCHEMA_VERSION:
+        raise ValueError(
+            f"unsupported legacy JSON settings schema (found={schema_version}, expected<={CONFIG_SCHEMA_VERSION})"
+        )
+    return schema_version
+
+
+def _migrate_json_to_toml() -> None:
+    """Migrate a legacy JSON settings file when no TOML file exists."""
+    if os.path.exists(PARAMETERS_PATH):
+        return
+
+    source_path = next(
+        (
+            path
+            for path in (PARAMETERS_JSON_PATH, LEGACY_PARAMETERS_JSON_PATH)
+            if path and os.path.exists(path)
+        ),
+        None,
+    )
+    if source_path is None:
+        return
+
+    try:
+        with open(source_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        if not isinstance(config, dict):
+            raise ValueError("legacy settings root is not an object")
+
+        schema_version = _read_legacy_json_schema_version(config)
+        if schema_version <= 2:
+            raw_slots = config.get("pick_slots")
+            slots = {}
+            for slot in PICK_SLOT_ORDER:
+                slot_data = raw_slots.get(slot) if isinstance(raw_slots, dict) else None
+                migrated_slot = dict(slot_data) if isinstance(slot_data, dict) else {}
+                migrated_slot.setdefault("spell_1", config.get("global_spell_1", ""))
+                migrated_slot.setdefault("spell_2", config.get("global_spell_2", ""))
+                slots[slot] = migrated_slot
+            config["pick_slots"] = slots
+
+        _write_parameters_file(config)
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as e:
+        logging.warning("Failed to migrate legacy JSON settings: %s", e)
+        return
+
+    backup_path = f"{source_path}.bak"
+    if os.path.exists(backup_path):
+        logging.warning("Migrated legacy JSON settings but kept the source because its backup already exists")
+        return
+    try:
+        os.replace(source_path, backup_path)
+    except OSError as e:
+        logging.warning("Migrated legacy JSON settings but could not move the source to its backup: %s", e)
+
+
 def load_parameters() -> Dict[str, Any]:
     """Load, validate, and normalize parameters from the TOML settings file."""
+    _migrate_json_to_toml()
     if not os.path.exists(PARAMETERS_PATH):
         return _reset_parameters_file("missing file")
 
@@ -514,6 +594,9 @@ def _normalize_parameters(config: Dict[str, Any]) -> Dict[str, Any]:
 
     merged["config_version"] = APP_VERSION
     merged["config_schema_version"] = CONFIG_SCHEMA_VERSION
+
+    if "manual_region" not in config:
+        merged["manual_region"] = config.get("region", DEFAULT_PARAMS["manual_region"])
 
     merged["selected_pick_1"] = str(config.get("selected_pick_1", DEFAULT_PARAMS["selected_pick_1"]))
     merged["selected_pick_2"] = str(config.get("selected_pick_2", DEFAULT_PARAMS["selected_pick_2"]))

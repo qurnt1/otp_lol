@@ -87,12 +87,23 @@ class ApplicationContext:
 
     def _get_account_identity(self) -> dict[str, Any]:
         state = self.runtime.manager.state
-        identity = self.runtime.get_account_identity(self.get_params())
+        if self.runtime.is_active:
+            riot_id = self.runtime.manager.get_riot_id()
+            region = state.provider_region
+            platform = state.platform_routing
+        else:
+            params = self.get_params()
+            riot_id = params.get("auto_detected_riot_id")
+            region = params.get("auto_detected_region")
+            platform = params.get("auto_detected_platform")
+        if not is_valid_detected_account(str(riot_id or ""), str(region or ""), str(platform or "")):
+            riot_id = None
+            region = None
         return {
             "puuid": getattr(state, "puuid", None),
             "summoner_id": getattr(state, "summoner_id", None),
-            "riot_id": identity.get("riot_id"),
-            "region": identity.get("region"),
+            "riot_id": riot_id,
+            "region": region,
         }
 
     def bind_window(self, window: Any, *, shutdown_callback: Callable[[], None] | None = None) -> None:

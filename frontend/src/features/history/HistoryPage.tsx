@@ -34,7 +34,8 @@ export function HistoryPage() {
   const items = useMemo(() => (history.data?.items ?? []).filter((entry) => {
     const matchesFilter = filter === "all" || entryFilter(entry) === filter;
     const needle = search.trim().toLowerCase();
-    return matchesFilter && (!needle || `${entry.message} ${entry.action} ${entry.category}`.toLowerCase().includes(needle));
+    const details = formatDetails(entry.details).join(" ");
+    return matchesFilter && (!needle || `${entry.message} ${entry.action} ${entry.category} ${details}`.toLowerCase().includes(needle));
   }), [filter, history.data?.items, search]);
 
   return <div className="history-page">
@@ -45,10 +46,21 @@ export function HistoryPage() {
       {history.isError && <div className="history-status empty-state status-danger">{fr.history.error}<button className="text-button" type="button" onClick={() => void history.refetch()}>{fr.common.retry}</button></div>}
       {clearHistory.isSuccess && <div className="feedback" role="status"><Check size={13} aria-hidden="true" /> {fr.history.cleared}</div>}
       {!history.isPending && !history.isError && !items.length && <div className="history-status empty-state">{fr.history.empty}</div>}
-      {!history.isPending && !history.isError && Boolean(items.length) && <div className="history-table-wrap"><table className="history-table"><thead><tr><th>{fr.history.time}</th><th>{fr.history.type}</th><th>{fr.history.action}</th><th>{fr.history.detail}</th><th>{fr.history.status}</th></tr></thead><tbody>{items.map((entry, index) => <tr key={`${entry.timestamp}-${entry.type}-${index}`}><td>{new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(entry.timestamp))}</td><td>{entry.category}</td><td>{entry.action}</td><td><strong>{entry.message}</strong></td><td className={entry.level === "error" ? "status-danger" : entry.level === "success" ? "status-success" : ""}>{entry.level}</td></tr>)}</tbody></table></div>}
+      {!history.isPending && !history.isError && Boolean(items.length) && <div className="history-table-wrap"><table className="history-table"><thead><tr><th>{fr.history.time}</th><th>{fr.history.type}</th><th>{fr.history.action}</th><th>{fr.history.detail}</th><th>{fr.history.status}</th></tr></thead><tbody>{items.map((entry, index) => {
+        const details = formatDetails(entry.details);
+        return <tr key={`${entry.timestamp}-${entry.type}-${index}`}><td>{new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(entry.timestamp))}</td><td>{entry.category}</td><td>{entry.action}</td><td><strong>{entry.message}</strong>{details.length > 0 && <><br /><small className="history-details">{details.join(" · ")}</small></>}</td><td className={entry.level === "error" ? "status-danger" : entry.level === "success" ? "status-success" : ""}>{entry.level}</td></tr>;
+      })}</tbody></table></div>}
     </section>
     <ConfirmDialog open={confirmClear} title={fr.history.clear} description={fr.history.confirm} confirmLabel={fr.history.clear} confirmDisabled={clearHistory.isPending} onCancel={() => setConfirmClear(false)} onConfirm={() => clearHistory.mutate()}>
       {clearHistory.isError && <p className="inline-error" role="alert">{fr.history.clearFailed}</p>}
     </ConfirmDialog>
   </div>;
+}
+
+function formatDetails(details: HistoryEntry["details"]): string[] {
+  return Object.entries(details).flatMap(([key, value]) => {
+    if (value === null || value === "") return [];
+    const formattedValue = typeof value === "string" ? value : JSON.stringify(value);
+    return formattedValue === undefined ? [] : [`${key.replace(/_/g, " ")}: ${formattedValue}`];
+  });
 }

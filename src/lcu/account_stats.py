@@ -88,6 +88,7 @@ class _Identity:
     cache_key: str | None
     puuid: str | None
     summoner_id: str | None
+    identity_key: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -468,12 +469,12 @@ class AccountStatsService:
             is_connected = bool(self._connected())
         except Exception:  # noqa: BLE001 - the injected runtime is an isolation boundary
             is_connected = False
-        if identity.cache_key:
-            self._remember_identity(identity.cache_key)
+        if is_connected and identity.cache_key:
+            self._remember_identity(identity.cache_key, identity.identity_key)
         elif not is_connected:
-            cache_key = self._read_last_identity_key()
-            if cache_key:
-                identity = _Identity(cache_key, None, None)
+            if identity.identity_key:
+                cache_key = self._read_last_identity_key(identity.identity_key)
+                identity = _Identity(cache_key, None, identity.summoner_id, identity.identity_key)
         cache_path = (
             self._cache_dir / f"account-{identity.cache_key}.json"
             if identity.cache_key
@@ -482,12 +483,15 @@ class AccountStatsService:
         cached, cache_error = self._read_cache(cache_path) if cache_path else ({}, None)
         return cache_path, cached, cache_error, identity, is_connected
 
-    def _remember_identity(self, cache_key: str) -> None:
+    def _remember_identity(self, cache_key: str, identity_key: str | None) -> None:
         if not re.fullmatch(r"[a-f0-9]{64}", cache_key):
             return
-        self._write_atomic(self._cache_dir / "last-account.json", {"cache_key": cache_key})
+        pointer = {"cache_key": cache_key}
+        if identity_key and re.fullmatch(r"[a-f0-9]{64}", identity_key):
+            pointer["identity_key"] = identity_key
+        self._write_atomic(self._cache_dir / "last-account.json", pointer)
 
-    def _read_last_identity_key(self) -> str | None:
+    def _read_last_identity_key(self, identity_key: str) -> str | None:
         pointer = self._cache_dir / "last-account.json"
         try:
             if pointer.stat().st_size > 256:
@@ -495,7 +499,11 @@ class AccountStatsService:
             document = json.loads(pointer.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError):
             return None
-        cache_key = document.get("cache_key") if isinstance(document, dict) else None
+        if not isinstance(document, dict):
+            return None
+        cache_key = document.get("cache_key")
+        if document.get("identity_key") != identity_key:
+            return None
         return cache_key if isinstance(cache_key, str) and re.fullmatch(r"[a-f0-9]{64}", cache_key) else None
 
     def _write_atomic(self, path: Path, document: dict[str, str]) -> None:
@@ -624,10 +632,16 @@ async def _read_identity(get_identity: Callable[[], Any]) -> _Identity:
     riot_id = _safe_text(_field(value, "riot_id", "riotId", "display_name", "displayName"), 128)
     region = _safe_text(_field(value, "region", "platform_id", "platformId"), 32)
     summoner_id = _safe_id(_field(value, "summoner_id", "summonerId", "id"))
-    stable = puuid or (f"{region.lower()}|{riot_id.casefold()}" if riot_id else None)
+    fallback_identity = f"{region.lower()}|{riot_id.casefold()}" if riot_id else None
+    identity_key = (
+        hashlib.sha256(fallback_identity.encode("utf-8")).hexdigest()
+        if fallback_identity and region
+        else None
+    )
+    stable = puuid or fallback_identity
     stable = stable or (f"{region.lower()}|{summoner_id}" if summoner_id else None)
     key = hashlib.sha256(stable.encode("utf-8")).hexdigest() if stable else None
-    return _Identity(key, puuid, summoner_id)
+    return _Identity(key, puuid, summoner_id, identity_key)
 
 
 async def _request(
@@ -1081,7 +1095,7 @@ def _normalize_matches_cache(payload: Any) -> dict[str, Any] | None:
         {"matches": _field(payload, "matches"), "gameCount": _field(payload, "total")},
         MAX_MATCHES,
         offset,
-        _Identity(None, None, None),
+        _Identity(None, None, None, None),
     )
     return normalized
 

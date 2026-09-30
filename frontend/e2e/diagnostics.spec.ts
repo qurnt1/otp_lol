@@ -14,6 +14,43 @@ test("diagnostics shows the real disconnected transport and disables LCU checks"
   await expect(page.locator(".diagnostics-account-card")).toContainText("E2E Player#SAFE");
 });
 
+test("[DIAG-01] a diagnostics read failure can be retried from the visible error state", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.clock.install();
+  let diagnosticsReads = 0;
+  await page.route("**/api/diagnostics", async (route) => {
+    const request = route.request();
+    if (request.method() === "GET" && new URL(request.url()).pathname === "/api/diagnostics") {
+      diagnosticsReads += 1;
+      if (diagnosticsReads === 1) {
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected diagnostics read failure" }) });
+        return;
+      }
+    }
+    await route.continue();
+  });
+  await page.goto("/#diagnostics");
+
+  const readError = page.getByRole("alert");
+  await expect(readError).toBeVisible();
+  const retryButton = page.getByRole("button", { name: "Réessayer" });
+  await expect(retryButton).toBeVisible();
+  expect(diagnosticsReads).toBe(1);
+  await page.clock.pauseAt(new Date());
+  const recoveredResponse = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/diagnostics" && response.status() === 200,
+  );
+  await retryButton.click();
+
+  const recovered = await recoveredResponse;
+  expect(diagnosticsReads).toBe(2);
+  expect((await recovered.json()).runtime.connected).toBe(true);
+  await page.clock.fastForward(0);
+  await expect(readError).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Diagnostics LCU" })).toBeVisible();
+  await expect(page.locator(".diagnostics-account-card")).toContainText("E2E Player#SAFE");
+});
+
 test("diagnostics is hidden from permanent navigation and reachable from advanced settings", async ({ page }) => {
   await setupApplication(page, { connected: true });
   await page.goto("/#settings/advanced");
@@ -114,6 +151,78 @@ test("Diagnostics classe le rafraîchissement réel des données de jeu dans le 
   await expect(dataEvent).toBeVisible();
   await dataEvent.getByRole("button", { name: "Voir JSON" }).click();
   await expect(page.getByRole("dialog").locator("pre")).toContainText('"refreshed": false');
+});
+
+test("[DIAG-03] log filters combine with text search and clear back to visible entries", async ({ page }) => {
+  await setupApplication(page, { connected: true, phase: "Lobby" });
+  await page.goto("/#diagnostics");
+
+  const phaseEvent = page.locator(".diagnostics-log-row")
+    .filter({ hasText: "/lol-gameflow/v1/gameflow-phase" })
+    .filter({ hasText: "Lobby" })
+    .first();
+  await expect(phaseEvent).toBeVisible();
+
+  const lcuFilter = page.getByRole("button", { name: "LCU", exact: true });
+  await lcuFilter.click();
+  await expect(lcuFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(phaseEvent).toBeVisible();
+
+  const search = page.getByRole("searchbox", { name: "Filtrer les journaux" });
+  await search.fill("lobby");
+  await expect(phaseEvent).toBeVisible();
+  await search.fill("no matching diagnostic entry");
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+
+  await search.press("Control+A");
+  await search.press("Backspace");
+  await expect(phaseEvent).toBeVisible();
+  await expect(lcuFilter).toHaveAttribute("aria-pressed", "true");
+
+  const webViewFilter = page.getByRole("button", { name: "WebView", exact: true });
+  await webViewFilter.click();
+  await expect(webViewFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+});
+
+test("[DIAG-02] a rejected endpoint check can be retried and its real result survives reload", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  let failedRun = false;
+  await page.route("**/api/diagnostics/run", async (route) => {
+    if (route.request().method() === "POST" && !failedRun) {
+      failedRun = true;
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected diagnostics check failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#diagnostics");
+
+  const phaseCheck = page.locator(".diagnostics-test-row").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" });
+  await expect(phaseCheck.locator("small")).toHaveText("—");
+  const runButton = page.getByRole("button", { name: "Tester les endpoints sûrs" });
+  await runButton.click();
+  await expect(page.getByRole("alert")).toHaveText("Injected diagnostics check failure");
+  await expect(phaseCheck.locator("small")).toHaveText("—");
+
+  const successfulRun = page.waitForResponse((response) =>
+    response.request().method() === "POST" && new URL(response.url()).pathname === "/api/diagnostics/run" && response.status() === 200,
+  );
+  await runButton.click();
+  const runResponse = await successfulRun;
+  const runData = await runResponse.json();
+  expect(runData.results).toContainEqual(expect.objectContaining({ path: "/lol-gameflow/v1/gameflow-phase", status: 200, success: true }));
+  await expect(phaseCheck.locator(".diagnostics-check")).toHaveText("OK");
+  await expect(phaseCheck.locator("small")).toHaveText(/^200 · [\d.]+ ms$/);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  const refreshedDiagnostics = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/diagnostics" && response.status() === 200,
+  );
+  await page.reload();
+  const snapshot = await (await refreshedDiagnostics).json();
+  expect(snapshot.endpoint_results).toContainEqual(expect.objectContaining({ path: "/lol-gameflow/v1/gameflow-phase", status: 200, success: true }));
+  await expect(page.locator(".diagnostics-test-row").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" }).locator("small")).toHaveText(/^200 · [\d.]+ ms$/);
 });
 
 test("les filtres Diagnostics classent les événements LCU et automatisation reçus du client", async ({ page }) => {
