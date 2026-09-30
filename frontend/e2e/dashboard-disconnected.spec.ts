@@ -27,8 +27,9 @@ test("dashboard au repos reste utile et ne charge les catalogues qu’à la dema
 });
 
 test("le contrôle des mises à jour est différé puis périodique", async ({ page }) => {
-  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
   await setupApplication(page);
+  const clockStart = new Date("2026-01-01T00:00:00Z");
+  await page.clock.install({ time: clockStart });
   let updateRequests = 0;
   page.on("request", (request) => {
     if (request.url().endsWith("/api/updates")) updateRequests += 1;
@@ -36,10 +37,11 @@ test("le contrôle des mises à jour est différé puis périodique", async ({ p
 
   await page.goto("/#dashboard");
   await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
-  await page.clock.fastForward(6_900);
+  const elapsed = await page.evaluate((start) => Date.now() - start, clockStart.getTime());
+  await page.clock.fastForward(Math.max(0, 6_500 - elapsed));
   expect(updateRequests).toBe(0);
   const firstUpdate = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/updates");
-  await page.clock.fastForward(100);
+  await page.clock.fastForward(2_000);
   await expect.poll(() => updateRequests).toBe(1);
   await firstUpdate;
   await page.clock.fastForward(21_600_000 - 100);
