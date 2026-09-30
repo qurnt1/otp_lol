@@ -72,6 +72,22 @@ async function waitForJsonFile(filePath, timeoutMs = 10_000) {
   throw new Error(`Native evidence file did not become readable: ${filePath} (${String(lastError)})`);
 }
 
+async function waitForNativeShellAction(filePath, previousCount, predicate, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  let latest = [];
+  while (Date.now() < deadline) {
+    try {
+      latest = JSON.parse(await fs.readFile(filePath, "utf8"));
+      const action = latest.slice(previousCount).find(predicate);
+      if (action) return action;
+    } catch (error) {
+      if (error.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`No matching native shell action was captured after index ${previousCount}: ${JSON.stringify(latest)}`);
+}
+
 async function waitForSetting(page, key, expected, timeoutMs = 5_000) {
   const endpoint = new URL("/api/settings", page.url()).toString();
   const deadline = Date.now() + timeoutMs;
@@ -684,13 +700,37 @@ try {
   nativeActionEvidence.tray.autoBanDisable = { menu: autoBanDisabled, menuAfter: autoBanDisabledByTray.menuState, settingsAfter: traySettings };
   completedActions.push("Toggled master preset automations and auto-ban through the real tray menu, verified persisted API state, native checked states, and auto-ban disabling when the master is off.");
 
+  await page.getByRole("link", { name: "Réglages" }).click();
   await page.getByRole("button", { name: "Avancé" }).click();
   await page.getByRole("heading", { name: "Fichiers et diagnostics" }).waitFor({ state: "visible" });
 
   const windowBeforeFullscreen = win32Json(["--app-pid", String(app.pid), "--window-snapshot"]);
   const fullscreenButton = page.locator("button.advanced-action").filter({ hasText: "Basculer en plein écran" });
   assert.equal(await fullscreenButton.count(), 1, "The visible native fullscreen action must be unique.");
+  const fullscreenBridge = await page.evaluate(() => {
+    const desktopWindow = window;
+    const api = desktopWindow.pywebview?.api;
+    const original = api?.toggle_fullscreen;
+    if (typeof original !== "function") return { desktopMode: desktopWindow.__otpDesktopMode, ready: desktopWindow.__otpNativeBridgeReady, methodType: typeof original };
+    desktopWindow.__nativeFullscreenEvidence = { calls: 0, result: null, error: null };
+    api.toggle_fullscreen = async (...args) => {
+      desktopWindow.__nativeFullscreenEvidence.calls += 1;
+      try {
+        desktopWindow.__nativeFullscreenEvidence.result = await original(...args);
+        return desktopWindow.__nativeFullscreenEvidence.result;
+      } catch (error) {
+        desktopWindow.__nativeFullscreenEvidence.error = String(error);
+        throw error;
+      }
+    };
+    return { desktopMode: desktopWindow.__otpDesktopMode, ready: desktopWindow.__otpNativeBridgeReady, methodType: typeof original };
+  });
+  assert.equal(fullscreenBridge.methodType, "function", `Native fullscreen bridge is unavailable: ${JSON.stringify(fullscreenBridge)}`);
   await fullscreenButton.click();
+  await page.waitForTimeout(250);
+  const fullscreenBridgeAction = await page.evaluate(() => window.__nativeFullscreenEvidence);
+  assert.equal(fullscreenBridgeAction.calls, 1, `The visible fullscreen control did not invoke the native bridge: ${JSON.stringify(fullscreenBridge)}`);
+  assert.equal(fullscreenBridgeAction.result, true, `The native bridge did not accept fullscreen: ${JSON.stringify(fullscreenBridgeAction)}`);
   const fullscreenOn = await waitForNativeWindow(
     app.pid,
     (snapshot) => snapshot.rect.left === snapshot.monitorBounds.left
@@ -706,6 +746,7 @@ try {
   );
   nativeActionEvidence.fullscreen = {
     before: windowBeforeFullscreen,
+    bridge: { ...fullscreenBridge, ...fullscreenBridgeAction },
     fullscreen: fullscreenOn,
     restored: fullscreenOff,
   };
@@ -789,12 +830,21 @@ try {
 
   const openInAppButton = page.getByRole("button", { name: "Ouvrir dans OTP LOL" });
   if (await openInAppButton.count()) {
+    const networkResponse = await page.request.get(new URL("/api/network/status", page.url()).toString());
+    assert.equal(networkResponse.status(), 200);
+    const networkStatus = await networkResponse.json();
+    assert.equal(networkStatus.online, false, "The native harness must prove provider egress is offline before testing this action.");
     const providerOpenResponse = page.waitForResponse((response) => response.url().includes("/api/desktop/providers/live/open"));
     await openInAppButton.click();
     const providerOpen = await (await providerOpenResponse).json();
     assert.equal(providerOpen.ok, false);
     assert.equal(providerOpen.reason, "network_unavailable");
-    nativeActionEvidence.providerWindow = providerOpen;
+    assert.equal(providerOpen.state, "not_created");
+    const providerWindowResponse = await page.request.get(new URL("/api/desktop/providers/status", page.url()).toString());
+    assert.equal(providerWindowResponse.status(), 200);
+    const providerWindowStatus = await providerWindowResponse.json();
+    assert.equal(providerWindowStatus.windows.live, undefined, "An offline open must not register a provider window in the manager.");
+    nativeActionEvidence.providerWindow = { networkStatus, action: providerOpen, statusAfter: providerWindowStatus.windows };
     completedActions.push("Clicked the in-app provider action with external network hard-blocked; FastAPI returned the expected network_unavailable response without creating an external browser process.");
   } else {
     skippedActions.push("The live-provider in-app button was not rendered, so the offline open path was not clickable in this state.");
@@ -802,13 +852,25 @@ try {
 
   await page.getByRole("link", { name: "Réglages" }).click();
   await page.getByRole("button", { name: "Avancé" }).click();
+  await page.getByRole("heading", { name: "Fichiers et diagnostics" }).waitFor({ state: "visible" });
+  const shellActionsPath = path.join(tempRoot, "native-shell-actions.json");
+  const expectedAppDataFolder = path.join(tempRoot, "profile", "Roaming", "OTP LOL");
+  const logsButton = page.locator("button.advanced-action").filter({ hasText: "Ouvrir le dossier des logs" });
+  assert.equal(await logsButton.count(), 1, "The visible logs-folder action must be unique.");
+  const shellActionsBeforeLogs = (await waitForJsonFile(shellActionsPath)).length;
+  await logsButton.click();
+  const logsOpenAction = await waitForNativeShellAction(shellActionsPath, shellActionsBeforeLogs, (action) => action.kind === "open_folder");
+  assert.equal(logsOpenAction.path.toLowerCase(), expectedAppDataFolder.toLowerCase());
+  assert.equal(logsOpenAction.launchSuppressed, true);
+  nativeActionEvidence.logsFolder = logsOpenAction;
+  completedActions.push("Clicked Ouvrir le dossier des logs and verified the native bridge requested only this run's isolated log folder; Explorer launch was suppressed.");
+
   const appDataButton = page.locator("button.advanced-action").filter({ hasText: "Dossier AppData" });
   assert.equal(await appDataButton.count(), 1);
+  const shellActionsBeforeAppData = (await waitForJsonFile(shellActionsPath)).length;
   await appDataButton.click();
-  const folderOpenActions = await waitForJsonFile(path.join(tempRoot, "native-shell-actions.json"));
-  const folderOpenAction = folderOpenActions.find((action) => action.kind === "open_folder");
-  assert.ok(folderOpenAction, "The app-data action must reach the native bridge.");
-  assert.equal(folderOpenAction.path.toLowerCase(), path.join(tempRoot, "profile", "Roaming", "OTP LOL").toLowerCase());
+  const folderOpenAction = await waitForNativeShellAction(shellActionsPath, shellActionsBeforeAppData, (action) => action.kind === "open_folder");
+  assert.equal(folderOpenAction.path.toLowerCase(), expectedAppDataFolder.toLowerCase());
   assert.equal(folderOpenAction.launchSuppressed, true);
   nativeActionEvidence.localShell = folderOpenAction;
   completedActions.push("Clicked Dossier AppData and captured only this run's isolated APPDATA target; Explorer launch was suppressed by the test-only shell interceptor.");
