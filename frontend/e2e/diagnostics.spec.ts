@@ -1,20 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, readRuntime, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
-import { mockLocalApi } from "./helpers";
-
-test("diagnostics explains the disconnected state and disables live checks when League is offline", async ({ page }) => {
-  await mockLocalApi(page, { connected: false });
+test("diagnostics shows the real disconnected transport and disables LCU checks", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
   await page.goto("/#diagnostics");
 
-  const offlineNotice = page.locator(".diagnostics-note[role='status']");
-  await expect(offlineNotice).toBeVisible();
-  await expect(offlineNotice).toContainText("League");
-  await expect(page.getByRole("button", { name: /Tester les endpoints/ })).toBeDisabled();
-  await expect(page.getByRole("button", { name: /Exporter le rapport/ })).toBeEnabled();
+  await expect(page.getByText("League n’est pas connecté. Les tests seront réessayés quand le client sera ouvert.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Tester les endpoints sûrs" })).toBeDisabled();
+  await expect(page.locator(".diagnostics-account-card")).toContainText("E2E Player#SAFE");
 });
 
 test("diagnostics is hidden from permanent navigation and reachable from advanced settings", async ({ page }) => {
-  await mockLocalApi(page, { connected: true });
+  await setupApplication(page, { connected: true });
   await page.goto("/#settings/advanced");
 
   await expect(page.getByRole("button", { name: "Diagnostics LCU" })).toBeVisible();
@@ -23,102 +24,143 @@ test("diagnostics is hidden from permanent navigation and reachable from advance
 
   await expect(page).toHaveURL(/#diagnostics$/);
   await expect(page.getByRole("heading", { name: "Diagnostics LCU" })).toBeVisible();
-  await expect(page.getByText("Cache local")).toBeVisible();
-  await expect(page.locator("#diagnostics-account-heading")).toHaveText("Player#EUW");
-  await expect(page.locator(".diagnostics-test-list code").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" })).toBeVisible();
+  await expect(page.getByText("Cache disponible")).toBeVisible();
+  await expect(page.locator("#diagnostics-account-heading")).toHaveText("E2E Player#SAFE");
+  await expect(page.locator(".diagnostics-test-list").getByText("GET /lol-gameflow/v1/gameflow-phase", { exact: true })).toBeVisible();
 });
 
-test("diagnostics runs only fixed checks, filters redacted events, and makes identity export opt-in", async ({ page }) => {
+test("diagnostics exécute les contrôles LCU fixes et exporte l’identité uniquement après opt-in", async ({ page }) => {
   const exportRequests: string[] = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
     if (url.pathname === "/api/diagnostics/export") exportRequests.push(url.searchParams.get("include_riot_id") ?? "missing");
   });
-  await mockLocalApi(page, { connected: true });
+  await setupApplication(page, { connected: true });
+  const eventsConnected = waitForRuntimeEvents(page);
   await page.goto("/#diagnostics");
+  await eventsConnected;
 
   await page.getByRole("button", { name: "Tester les endpoints sûrs" }).click();
-  await expect(page.locator(".diagnostics-test-list").getByText("200 · 2.4 ms")).toBeVisible();
+  const gamePhaseCheck = page.locator(".diagnostics-test-row").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" });
+  await expect(gamePhaseCheck.locator("small")).toHaveText(/^200 · [\d.]+ ms$/);
   await expect(page.getByText("Game phase")).toBeVisible();
   await page.reload();
-  await expect(page.locator(".diagnostics-test-list").getByText("200 · 2.4 ms")).toBeVisible();
+  await expect(page.locator(".diagnostics-test-row").filter({ hasText: "GET /lol-gameflow/v1/gameflow-phase" }).locator("small")).toHaveText(/^200 · [\d.]+ ms$/);
   await page.getByRole("searchbox", { name: "Filtrer les journaux" }).fill("gameflow");
   await expect(page.locator(".diagnostics-log-list").getByText("GET /lol-gameflow/v1/gameflow-phase")).toBeVisible();
 
-  const firstDownload = page.waitForEvent("download");
+  const firstDownloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Exporter le rapport" }).click();
-  expect((await firstDownload).suggestedFilename()).toBe("otp-lol-diagnostics.json");
+  const firstDownload = await firstDownloadPromise;
+  expect(firstDownload.suggestedFilename()).toBe("otp-lol-diagnostics.json");
+  const firstReport = JSON.parse(await (await import("node:fs/promises")).readFile(await firstDownload.path() as string, "utf8"));
+  expect(firstReport.riot_id).toBeUndefined();
+  expect(firstReport.account_identity.riot_id).toBeNull();
   expect(exportRequests).toEqual(["false"]);
 
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  await page.getByRole("button", { name: "Copier le rapport" }).click();
+  await expect(page.getByText("Rapport copié dans le presse-papiers.")).toBeVisible();
+  const redactedClipboard = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(redactedClipboard.account_identity.riot_id).toBeNull();
+  expect(exportRequests).toEqual(["false", "false"]);
+
   await page.getByRole("checkbox", { name: "Inclure mon Riot ID dans l’export" }).check();
-  const optedInDownload = page.waitForEvent("download");
+  const optedInPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Exporter le rapport" }).click();
-  await optedInDownload;
-  expect(exportRequests).toEqual(["false", "true"]);
+  const optedIn = await optedInPromise;
+  const optedInReport = JSON.parse(await (await import("node:fs/promises")).readFile(await optedIn.path() as string, "utf8"));
+  expect(optedInReport.account_identity.riot_id).toBe("E2E Player#SAFE");
+  expect(exportRequests).toEqual(["false", "false", "true"]);
+
+  await page.getByRole("button", { name: "Copier le rapport" }).click();
+  await expect(page.getByText("Rapport copié dans le presse-papiers.")).toBeVisible();
+  const optedInClipboard = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+  expect(optedInClipboard.account_identity.riot_id).toBe("E2E Player#SAFE");
+  expect(exportRequests).toEqual(["false", "false", "true", "true"]);
 });
 
-test("diagnostic event payload is available only in the JSON drawer", async ({ page }) => {
-  await mockLocalApi(page, { connected: true });
-  await page.route("**/api/diagnostics", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        runtime: { connected: true, phase: "ChampSelect" },
-        account_identity: { riot_id: "Player#EUW", region: "euw", platform_id: "euw1", regional_routing: "europe", routing_source: "platform_config", source: "connected", connected: true },
-        game_data: { source: "cache", game_version: "16.18.1", cache_available: true, cache_version: "16.18.1", catalogs: {} },
-        requests: [],
-        events: [{ timestamp: "2026-09-18T10:00:00Z", topic: "/lol-gameflow/v1/gameflow-phase", event_type: "Update", summary: "Lobby", payload: { phase: "Lobby" }, payload_truncated: false, payload_redacted: false }],
-        errors: [],
-        endpoint_checks: [],
-        endpoint_results: [],
-      }),
-    });
-  });
+test("le payload d’un événement LCU réel reste dans le tiroir JSON", async ({ page }) => {
+  await setupApplication(page, { connected: true, phase: "Lobby" });
   await page.goto("/#diagnostics");
 
+  const phaseLog = page.locator(".diagnostics-log-row")
+    .filter({ hasText: "/lol-gameflow/v1/gameflow-phase" })
+    .filter({ hasText: "UpdateLobby" })
+    .first();
+  await expect(phaseLog).toBeVisible();
   await expect(page.locator(".diagnostics-log-row pre")).toHaveCount(0);
-  await page.getByRole("button", { name: "Voir JSON" }).click();
+  await phaseLog.getByRole("button", { name: "Voir JSON" }).click();
   const drawer = page.getByRole("dialog");
   await expect(drawer).toBeVisible();
-  await expect(drawer.locator("pre")).toContainText('"phase": "Lobby"');
+  await expect(drawer.locator("pre")).toContainText('"Lobby"');
   await drawer.getByRole("button", { name: "Fermer" }).click();
   await expect(drawer).toBeHidden();
 });
 
-test("diagnostics filters include runtime automation, static data, WebView and errors", async ({ page }) => {
-  await mockLocalApi(page, { connected: true });
-  await page.route("**/api/diagnostics", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        runtime: { connected: true, phase: "ChampSelect" },
-        account_identity: { riot_id: "Player#EUW", region: "euw", platform_id: "euw1", regional_routing: "europe", routing_source: "platform_config", source: "connected", connected: true },
-        game_data: { source: "lcu", game_version: "16.18.1", cache_available: true, cache_version: "16.18.1" },
-        requests: [],
-        events: [
-          { timestamp: "2026-09-18T10:00:04Z", topic: "/lol-gameflow/v1/gameflow-phase", event_type: "Update", summary: "ChampSelect", payload: {}, payload_truncated: false, payload_redacted: false },
-          { timestamp: "2026-09-18T10:00:03Z", topic: "otp-lol/status", event_type: "Update", summary: "ban_confirmed", payload: { action: "ban_confirmed" }, payload_truncated: false, payload_redacted: false },
-          { timestamp: "2026-09-18T10:00:02Z", topic: "otp-lol/data/static-data", event_type: "refresh", summary: "refreshed=true", payload: {}, payload_truncated: false, payload_redacted: false },
-          { timestamp: "2026-09-18T10:00:01Z", topic: "otp-lol/webview", event_type: "created", summary: "object keys: ", payload: {}, payload_truncated: false, payload_redacted: false },
-        ],
-        errors: [{ timestamp: "2026-09-18T10:00:00Z", source: "static_data", error: "request_error", method: null, path: null, status: null }],
-        endpoint_checks: [],
-        endpoint_results: [],
-      }),
-    });
-  });
+test("Diagnostics classe le rafraîchissement réel des données de jeu dans le filtre Données", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true });
+  await expect.poll(async () => {
+    const response = await page.request.get(new URL("/api/diagnostics", app.baseURL).href);
+    const data = await response.json();
+    return data.events.some((event: { topic: string; event_type: string }) =>
+      event.topic === "otp-lol/data/static-data" && event.event_type === "refresh"
+    );
+  }).toBe(true);
   await page.goto("/#diagnostics");
 
-  for (const [label, expected] of [
-    ["LCU", "/lol-gameflow/v1/gameflow-phase"],
-    ["Automation", "otp-lol/status"],
-    ["Données", "otp-lol/data/static-data"],
-    ["WebView", "otp-lol/webview"],
-    ["Erreurs", "static_data"],
-  ]) {
-    await page.getByRole("button", { name: label, exact: true }).click();
-    await expect(page.locator(".diagnostics-log-row").first()).toContainText(expected);
-  }
+  await page.getByRole("button", { name: "Données", exact: true }).click();
+  const dataEvent = page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/data/static-data" }).first();
+  await expect(dataEvent).toBeVisible();
+  await dataEvent.getByRole("button", { name: "Voir JSON" }).click();
+  await expect(page.getByRole("dialog").locator("pre")).toContainText('"refreshed": false');
+});
+
+test("les filtres Diagnostics classent les événements LCU et automatisation reçus du client", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    autoPick: true,
+    phase: "ChampSelect",
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      session: {
+        gameConfig: { queueId: 420, gameMode: "CLASSIC" },
+        localPlayerCellId: 1,
+        myTeam: [{ cellId: 1, summonerId: 24680135, assignedPosition: "TOP", championId: 0, spell1Id: 0, spell2Id: 0, selectedRunePageId: 0, selectedSkinId: 0 }],
+        actions: [[{ actorCellId: 1, type: "pick", id: 201, isInProgress: true, completed: false }]],
+        bans: { myTeamBans: [], theirTeamBans: [] },
+      },
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#diagnostics");
+  await eventsConnected;
+
+  const pick = await app.waitForLcuRequest("PATCH", "/lol-champ-select/v1/session/actions/201");
+  expect(pick.body).toMatchObject({ championId: 86 });
+  await expect.poll(async () => {
+    const state = await app.readLcuState();
+    return { completed: state.session.actions[0][0].completed, championId: state.session.actions[0][0].championId };
+  }).toEqual({ completed: true, championId: 86 });
+  await expect.poll(async () => {
+    const response = await page.request.get(new URL("/api/diagnostics", app.baseURL).href);
+    const data = await response.json();
+    return data.events.some((event: { topic: string }) => event.topic === "otp-lol/champion_picked");
+  }).toBe(true);
+
+  await page.getByRole("button", { name: "Actualiser" }).click();
+  await page.getByRole("button", { name: "LCU", exact: true }).click();
+  const sessionEvent = page.locator(".diagnostics-log-row").filter({ hasText: "/lol-champ-select/v1/session" }).first();
+  await expect(sessionEvent).toBeVisible();
+  await expect(sessionEvent).toContainText("Update");
+  await page.getByRole("button", { name: "Automation", exact: true }).click();
+  await expect(page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/champion_picked" }).first()).toBeVisible();
+  await page.getByRole("button", { name: "WebView", exact: true }).click();
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+  const diagnostics = await page.request.get(new URL("/api/diagnostics", app.baseURL).href).then((response) => response.json());
+  await page.getByRole("button", { name: "Erreurs", exact: true }).click();
+  const failedRequests = diagnostics.requests.filter((request: { success: boolean }) => !request.success).length;
+  await expect(page.locator(".diagnostics-log-row")).toHaveCount(diagnostics.errors.length + failedRequests);
 });

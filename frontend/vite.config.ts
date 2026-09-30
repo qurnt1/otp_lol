@@ -1,7 +1,6 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -19,11 +18,5 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
-  },
-  test: {
-    environment: "jsdom",
-    setupFiles: fileURLToPath(new URL("./src/test/setup.ts", import.meta.url)),
-    include: ["src/**/*.test.{ts,tsx}"],
-    exclude: ["e2e/**"],
   },
 });

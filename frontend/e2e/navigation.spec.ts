@@ -1,9 +1,9 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./helpers";
 
-import { mockLocalApi } from "./helpers";
+import { setupApplication } from "./helpers";
 
 test("settings deep links and browser back-forward restore the selected section", async ({ page }) => {
-  await mockLocalApi(page);
+  await setupApplication(page);
   await page.goto("/#settings/links");
   await expect(page.locator(".settings-section h2")).toHaveText("Liens");
 
@@ -19,6 +19,29 @@ test("settings deep links and browser back-forward restore the selected section"
   await expect(page.locator(".settings-section h2")).toHaveText("Raccourcis");
 });
 
+test("an invalid initial hash falls back to the usable Dashboard route", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/not-a-section");
+
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.getByRole("heading", { name: "Préparation de partie", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation").getByRole("link", { name: "Dashboard" })).toHaveAttribute("aria-current", "page");
+});
+
+test("pick_3 and ban deep links open the matching Dashboard action", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+
+  await page.goto("/#dashboard/pick_3");
+  await expect(page).toHaveURL(/#dashboard\/pick_3$/);
+  await expect(page.getByRole("dialog", { name: "Modifier la priorité 3" })).toBeVisible();
+  await page.getByRole("button", { name: "Fermer" }).last().click();
+  await expect(page).toHaveURL(/#dashboard$/);
+
+  await page.goto("/#dashboard/ban");
+  await expect(page).toHaveURL(/#dashboard\/ban$/);
+  await expect(page.getByRole("dialog", { name: "Champion à bannir" })).toBeVisible();
+});
+
 test("dashboard account-statistics action opens the provider profile without native account requests", async ({ page }) => {
   const accountRequests: string[] = [];
   const statsLinkRequests: string[] = [];
@@ -27,7 +50,7 @@ test("dashboard account-statistics action opens the provider profile without nat
     if (url.pathname.startsWith("/api/account/")) accountRequests.push(url.pathname);
     if (url.pathname === "/api/links/stats") statsLinkRequests.push(url.pathname);
   });
-  await mockLocalApi(page);
+  await setupApplication(page);
   await page.goto("/#dashboard");
   await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
   expect(accountRequests).toHaveLength(0);
@@ -40,15 +63,51 @@ test("dashboard account-statistics action opens the provider profile without nat
 });
 
 test("sidebar settings action opens the default settings deep link", async ({ page }) => {
-  await mockLocalApi(page);
+  await setupApplication(page);
   await page.goto("/#dashboard");
   await page.getByRole("link", { name: "Réglages" }).click();
   await expect(page).toHaveURL(/#settings\/general$/);
   await expect(page.locator(".settings-section h2")).toHaveText("Général");
 });
 
+test("sidebar navigation exposes every main page and marks the current destination", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#dashboard");
+  const navigation = page.getByRole("navigation");
+
+  for (const [label, route, heading] of [
+    ["Dashboard", /#dashboard$/, "Préparation de partie"],
+    ["Statistiques", /#statistics$/, "Statistiques"],
+    ["En direct", /#live$/, "En direct"],
+    ["Journal de logs", /#history$/, "Journal de logs"],
+    ["Réglages", /#settings\/general$/, "Général"],
+  ] as const) {
+    const link = navigation.getByRole("link", { name: label, exact: true });
+    await link.click();
+    await expect(page).toHaveURL(route);
+    await expect(link).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  }
+  await expect(navigation.getByRole("link", { name: "Presets" })).toHaveCount(0);
+});
+
+test("settings Links shortcuts navigate to both provider pages", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#settings/links");
+
+  const section = page.locator(".settings-section");
+  await section.getByRole("link", { name: "Statistiques" }).click();
+  await expect(page).toHaveURL(/#statistics$/);
+  await expect(page.getByRole("heading", { name: "Statistiques", exact: true })).toBeVisible();
+
+  await page.goto("/#settings/links");
+  await section.getByRole("link", { name: "En direct" }).click();
+  await expect(page).toHaveURL(/#live$/);
+  await expect(page.getByRole("heading", { name: "En direct", exact: true })).toBeVisible();
+});
+
 test("Dashboard editor actions participate in browser back-forward history", async ({ page }) => {
-  await mockLocalApi(page, { configured: true });
+  await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");
   await page.locator(".priority-card-link").first().click();
   await expect(page).toHaveURL(/#dashboard\/pick_1$/);
@@ -64,7 +123,7 @@ test("Dashboard editor actions participate in browser back-forward history", asy
 });
 
 test("Dashboard quick actions expose only valid destinations", async ({ page }) => {
-  await mockLocalApi(page, { configured: true });
+  await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");
   const quickActions = page.locator(".quick-panel");
   await expect(quickActions.getByRole("link", { name: "Ouvrir le journal de logs" })).toHaveAttribute("href", "#history");

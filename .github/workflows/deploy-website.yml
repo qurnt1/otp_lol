@@ -40,13 +40,17 @@ jobs:
         working-directory: website
         run: npm ci
 
-      - name: Test website content
-        working-directory: website
-        run: npm test
-
       - name: Build
         working-directory: website
         run: npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: website
+        run: npx playwright install --with-deps chromium
+
+      - name: Test built website in preview
+        working-directory: website
+        run: npx playwright test --workers=1
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5

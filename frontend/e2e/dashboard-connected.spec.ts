@@ -1,58 +1,112 @@
-import { expect, test } from "@playwright/test";
-import { mockLocalApi } from "./helpers";
+import { expect, readPresets, readRuntime, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
-test("dashboard connecté affiche l’identité dans la sidebar et la phase dans le dashboard", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
+test("dashboard connecté affiche l’identité et la phase LCU sans compte synchronisé dans la barre de phase", async ({ page }) => {
+  await setupApplication(page, { connected: true, configured: true, phase: "Lobby" });
   await page.goto("/#dashboard");
+
   await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
-  await expect(page.locator(".sidebar-account")).toHaveAttribute("title", "Player#EUW");
+  await expect(page.locator(".sidebar-account")).toContainText("E2E Player#SAFE");
   await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
   await expect(page.getByRole("heading", { name: "Garen" })).toBeVisible();
-
+  await expect(page.locator(".phase-strip")).not.toContainText("Compte synchronisé");
   await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 
-  await expect(page.locator(".skin-preview").first()).toContainText("God-King Garen");
   await page.locator(".priority-card").first().click();
   await page.locator('.preset-editor-dialog button[aria-label="Fermer"]').click();
   await page.getByRole("link", { name: "Dashboard", exact: true }).click();
   await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 });
 
-test("dashboard affiche le dernier statut d’automatisation avec sa gravité et son âge", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
-  await page.goto("/#dashboard");
-
-  await page.evaluate(() => {
-    (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({
-      type: "status",
-      data: { action: "summoners_unconfirmed", level: "WARN", params: {} },
-      timestamp: new Date(Date.now() - 2_000).toISOString(),
-    });
+test("le statut Ready Check provient de l’événement LCU et affiche sa gravité", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    phase: "ReadyCheck",
+    autoAccept: true,
   });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+  const requestOffset = app.lcuRequests.length;
+  await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+  await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept" && request.body === null
+  )).toBe(true);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+
+  const status = page.locator(".automation-status");
+  await expect(status).toHaveAttribute("class", /is-success/);
+  await expect(status).toContainText("Ready-check accepté.");
+  await expect(status.locator("time")).toBeVisible();
+});
+
+test("le Dashboard affiche l’avertissement réel si aucun champion configuré n’est pickable", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    autoPick: true,
+    phase: "ChampSelect",
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+  const session = {
+    gameConfig: { queueId: 420, gameMode: "CLASSIC" },
+    localPlayerCellId: 1,
+    myTeam: [{ cellId: 1, summonerId: 24680135, assignedPosition: "TOP", championId: 0, spell1Id: 0, spell2Id: 0, selectedRunePageId: 0, selectedSkinId: 0 }],
+    actions: [[{ actorCellId: 1, type: "pick", id: 101, isInProgress: true, completed: false }]],
+    bans: { myTeamBans: [], theirTeamBans: [] },
+  };
+  await app.configureLcuState({ session, pickable_champion_ids: [] });
+  await app.emitLcuEvent("/lol-champ-select/v1/session", session);
 
   const status = page.locator(".automation-status");
   await expect(status).toHaveAttribute("class", /is-warning/);
-  await expect(status).toContainText("Les sorts ne sont pas encore confirmés");
-  await expect(status).toContainText(/à l’instant|il y a 2 s/);
+  await expect(status).toContainText("Aucun champion configuré n’est disponible.");
+  await expect(status.locator("time")).toBeVisible();
+});
+
+test("le statut de poste détecté est localisé et présenté comme une information", async ({ page }) => {
+  const emptyRoleSession = {
+    gameConfig: { queueId: 420, gameMode: "CLASSIC" },
+    localPlayerCellId: 1,
+    myTeam: [{ cellId: 1, summonerId: 24680135, assignedPosition: "", championId: 0, spell1Id: 0, spell2Id: 0, selectedRunePageId: 0, selectedSkinId: 0 }],
+    actions: [],
+    bans: { myTeamBans: [], theirTeamBans: [] },
+  };
+  const { app } = await setupApplication(page, { connected: true, configured: true, phase: "ChampSelect", lcuState: { session: emptyRoleSession } });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+
+  const roleSession = { ...emptyRoleSession, myTeam: [{ ...emptyRoleSession.myTeam[0], assignedPosition: "TOP" }] };
+  await app.configureLcuState({ session: roleSession });
+  await app.emitLcuEvent("/lol-champ-select/v1/session", roleSession);
+
+  const status = page.locator(".automation-status");
+  await expect(status).toHaveText(/Rôle détecté : Top\./);
+  await expect(status).toHaveClass(/is-info/);
 });
 
 test("le statut du ban reflète le maître des automatisations Presets", async ({ page }) => {
-  const state = await mockLocalApi(page, { connected: true, configured: true });
-  state.settings.presets_enabled = false;
-  state.presets.presets_enabled = false;
-  state.settings.auto_ban_enabled = true;
+  await setupApplication(page, {
+    connected: true,
+    settings: { presets_enabled: false, auto_ban_enabled: true },
+  });
   await page.goto("/#dashboard");
 
   await expect(page.locator(".ban-visual strong")).toHaveText("Désactivé");
 });
 
-test("sidebar keeps long account identifiers contained and the phase row never shows account-sync status", async ({ page }) => {
-  await mockLocalApi(page, {
+test("la sidebar contient un identifiant manuel long sur plusieurs résolutions", async ({ page }) => {
+  await setupApplication(page, {
     connected: true,
-    riotId: "A-Very-Long-Player-Name-That-Must-Be-Clipped#TAG",
+    autoDetect: false,
+    manualRiotId: "A-Very-Long-Player-Name-That-Must-Be-Clipped#TAG",
     phase: "WaitingForStats",
   });
   await page.goto("/#dashboard");
+  await expect(page.locator(".sidebar-account")).toHaveAttribute("title", "E2E Player#SAFE");
 
   for (const viewport of [{ width: 800, height: 540 }, { width: 1100, height: 760 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }]) {
     await page.setViewportSize(viewport);
@@ -69,9 +123,11 @@ test("sidebar keeps long account identifiers contained and the phase row never s
   }
 });
 
-test("dashboard phase strip localizes every runtime phase and disconnected state", async ({ page }) => {
-  const state = await mockLocalApi(page, { connected: true });
+test("les phases reçues par le WebSocket LCU sont localisées", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true, phase: "Lobby" });
+  const eventsConnected = waitForRuntimeEvents(page);
   await page.goto("/#dashboard");
+  await eventsConnected;
 
   for (const [phase, label] of [
     ["Lobby", "Dans le lobby"],
@@ -81,37 +137,96 @@ test("dashboard phase strip localizes every runtime phase and disconnected state
     ["InProgress", "En partie"],
     ["WaitingForStats", "Récupération des stats"],
     ["EndOfGame", "Fin de partie"],
+    ["None", "En attente"],
   ]) {
-    state.runtime.phase = phase;
-    await page.evaluate((runtime) => {
-      (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-17T12:00:00Z" });
-    }, state.runtime);
+    await app.configureLcuState({ phase });
+    await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", phase);
+    await expect(page.locator(".phase-strip strong")).toHaveText(label);
+  }
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
+});
+
+test("Dashboard suit la fermeture réelle du client puis une reconnexion LCU", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    phase: "Lobby",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await page.goto("/#dashboard");
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
+
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client déconnecté");
+
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(2);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "ChampSelect");
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
+  await expect(page.locator(".phase-strip strong")).toHaveText("Sélection des champions");
+});
+
+test("le Dashboard suit League fermé, démarrage sans session, les phases de partie et la reconnexion", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    clearDetectedAccount: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#dashboard");
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client déconnecté");
+  await expect(page.locator(".sidebar-account")).toHaveText("Aucun compte connecté");
+
+  const nextSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(nextSubscription);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await expect(page.locator(".phase-strip strong")).toHaveText("En attente");
+
+  for (const [phase, label] of [
+    ["Lobby", "Dans le lobby"],
+    ["Matchmaking", "Recherche de partie"],
+    ["ReadyCheck", "Partie trouvée"],
+    ["ChampSelect", "Sélection des champions"],
+    ["InProgress", "En partie"],
+    ["WaitingForStats", "Récupération des stats"],
+    ["EndOfGame", "Fin de partie"],
+    ["None", "En attente"],
+  ]) {
+    await app.configureLcuState({ phase });
+    await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", phase);
     await expect(page.locator(".phase-strip strong")).toHaveText(label);
   }
 
-  state.runtime.connected = false;
-  await page.evaluate((runtime) => {
-    (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-17T12:01:00Z" });
-  }, state.runtime);
-  await expect(page.locator(".phase-strip strong")).toHaveText("Client non détecté");
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
   await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client déconnecté");
+  const reconnectSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(reconnectSubscription);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
 });
 
-test("dashboard uses the selected skin splash and falls back to the champion splash when skin mode is off", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
+test("Dashboard affiche le skin choisi et retombe sur le portrait du champion si le skin est désactivé", async ({ page }) => {
+  await setupApplication(page, { connected: true, configured: true, networkStatus: "online" });
   await page.goto("/#dashboard");
 
   const card = page.locator(".priority-card").first();
   const splash = card.locator(".priority-art img");
-  await expect(splash).toHaveAttribute("src", "/api/assets/skins/86/86013/splash?skin_num=13&v=test-version");
-
-  await expect(page.locator(".priority-mode-select")).toHaveCount(0);
+  const skinLabel = card.locator(".skin-preview strong");
+  await expect(skinLabel).toHaveText("God-King Garen");
+  await page.locator(".priority-card").first().click();
+  await page.getByRole("dialog", { name: "Modifier la priorité 1" }).getByRole("radio", { name: "Aucun" }).click();
+  await expect(skinLabel).toHaveText("Aucun");
+  await expect(splash).toHaveAttribute("src", /\/api\/assets\/champions\/86\/splash/);
 });
 
 for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
   const priority = index + 1;
   test(`la carte Dashboard ouvre le preset ${priority} sans ouvrir le sélecteur`, async ({ page }) => {
-    await mockLocalApi(page, { connected: true, configured: true });
+    await setupApplication(page, { connected: true, configured: true });
     await page.goto("/#dashboard");
 
     const card = page.locator(".priority-card").nth(index);
@@ -134,8 +249,8 @@ for (const [index, slot] of ["pick_1", "pick_2", "pick_3"].entries()) {
   });
 }
 
-test("modifier le ban ouvre son sélecteur directement et revient au Dashboard après validation", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
+test("modifier le ban choisit réellement un champion puis revient au Dashboard", async ({ page }) => {
+  await setupApplication(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
 
   await page.locator(".ban-panel").click();
@@ -147,10 +262,11 @@ test("modifier le ban ouvre son sélecteur directement et revient au Dashboard a
   await expect(page).toHaveURL(/#dashboard$/);
   await expect(page.getByRole("heading", { name: "Teemo" })).toBeVisible();
   await expect(page.locator("#dashboard-edit-ban")).toBeFocused();
+  await expect(await readPresets(page)).toMatchObject({ selected_ban: "Teemo" });
 });
 
 test("annuler la sélection du ban ramène au Dashboard et rend le focus au déclencheur", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, configured: true });
+  await setupApplication(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
 
   await page.locator(".ban-panel").click();
@@ -160,14 +276,15 @@ test("annuler la sélection du ban ramène au Dashboard et rend le focus au déc
   await expect(page.locator("#dashboard-edit-ban")).toBeFocused();
 });
 
-test("dashboard uses bootstrap previews instead of per-champion catalogs", async ({ page }) => {
+test("les aperçus bootstrap n’ajoutent pas de requêtes de catalogue à l’affichage des cartes", async ({ page }) => {
   const requests: string[] = [];
   page.on("request", (request) => requests.push(request.url()));
-  await mockLocalApi(page, { connected: true, configured: true, assignedPosition: "TOP" });
+  await setupApplication(page, { connected: true, configured: true, assignedPosition: "TOP" });
   await page.goto("/#dashboard");
 
   await expect(page.locator(".priority-card")).toHaveCount(3);
   await expect(page.locator(".priority-role")).toHaveCount(0);
-  await expect(page.locator(".ban-visual img")).toHaveAttribute("src", "/assets/app/garen.webp");
+  await expect(page.locator(".ban-visual img")).toHaveAttribute("src", /\/api\/assets\/(champions|app)\//);
   expect(requests.some((url) => /\/api\/(champions|skins)\//.test(url))).toBe(false);
+  expect(await readSettings(page)).toMatchObject({ selected_pick_1: "Garen", selected_pick_2: "Lux", selected_pick_3: "Ashe" });
 });

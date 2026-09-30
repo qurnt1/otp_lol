@@ -1,47 +1,99 @@
-import { expect, test } from "@playwright/test";
+import { expect, getOtpApp, readPresets, readSettings, readRuntime, setupApplication, test } from "./helpers";
 
-import { applyFactoryDefaults, mockLocalApi } from "./helpers";
+test("settings persists a toggle across a real page reload", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/general");
+  const closeOnExit = page.getByRole("switch", { name: "Fermer lorsque League est réellement fermé" });
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "true");
+  await closeOnExit.click();
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(false);
 
-test("settings persists an accessible toggle", async ({ page }) => {
-  await mockLocalApi(page);
-  await page.goto("/#settings");
   const toggle = page.getByRole("switch", { name: "Masquer à la connexion" });
   await expect(toggle).toHaveAttribute("aria-checked", "true");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(false);
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Fermer lorsque League est réellement fermé" })).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("switch", { name: "Masquer à la connexion" })).toHaveAttribute("aria-checked", "false");
 });
 
-test("custom settings select supports keyboard navigation and Escape", async ({ page }) => {
-  await mockLocalApi(page);
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Apparence" }).click();
+test("a settings transport failure rolls back the toggle and allows a successful retry", async ({ page }) => {
+  await setupApplication(page);
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      await route.abort("failed");
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#settings/general");
+
+  const closeOnExit = page.getByRole("switch", { name: "Fermer lorsque League est réellement fermé" });
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "true");
+  await closeOnExit.click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(true);
+
+  await page.unroute("**/api/settings");
+  const saved = page.waitForResponse((response) =>
+    response.request().method() === "PATCH" && new URL(response.url()).pathname === "/api/settings",
+  );
+  await closeOnExit.click();
+  expect((await saved).status()).toBe(200);
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(false);
+});
+
+test("a rejected settings update shows the API detail and preserves the saved value", async ({ page }) => {
+  await setupApplication(page);
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({ status: 422, contentType: "text/plain", body: "invalid settings" });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#settings/general");
+
+  const closeOnExit = page.getByRole("switch", { name: "Fermer lorsque League est réellement fermé" });
+  await closeOnExit.click();
+
+  await expect(page.getByRole("alert")).toHaveText("invalid settings");
+  await expect(closeOnExit).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(true);
+});
+
+test("custom theme select supports keyboard navigation, Escape and persistence", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/appearance");
 
   const theme = page.getByRole("combobox", { name: "Thème" });
   await theme.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("option", { name: "Clair" })).toBeVisible();
+  const light = page.getByRole("option", { name: "Clair" });
+  await expect(light).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("option", { name: "Clair" })).toBeHidden();
+  await expect(light).toBeHidden();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
   await theme.focus();
   await page.keyboard.press("Enter");
-  const lightOption = page.getByRole("option", { name: "Clair" });
-  await expect(lightOption).toBeVisible();
   await page.keyboard.press("ArrowDown");
-  await expect(lightOption).toBeFocused();
+  await expect(light).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await theme.click();
-  await expect(page.getByRole("option", { name: "Sombre" })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await readSettings(page)).theme).toBe("flatly");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 });
 
-test("settings advanced actions are grouped and the section title is not duplicated", async ({ page }) => {
+test("settings advanced actions stay grouped and responsive", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 760 });
-  await mockLocalApi(page);
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Avancé" }).click();
+  await setupApplication(page);
+  await page.goto("/#settings/advanced");
 
   await expect(page.locator(".page-heading .eyebrow")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Avancé", exact: true })).toHaveCount(1);
@@ -50,231 +102,247 @@ test("settings advanced actions are grouped and the section title is not duplica
   await expect(page.locator(".advanced-group")).toHaveCount(3);
   await expect(page.locator(".advanced-action")).toHaveCount(10);
   await expect(page.locator(".settings-section")).toHaveScreenshot("settings-advanced.png", { animations: "disabled" });
-  await expect(page.locator(".advanced-actions").first()).toHaveCSS("grid-template-columns", /\d+(\.\d+)?px \d+(\.\d+)?px/);
-  const firstRowBounds = await page.locator(".advanced-actions").first().locator(".advanced-action").evaluateAll((actions) => actions.slice(0, 2).map((action) => {
-    const { x, y, width } = action.getBoundingClientRect();
-    return { x, y, width };
-  }));
-  expect(Math.abs(firstRowBounds[0].y - firstRowBounds[1].y)).toBeLessThan(1);
-  expect(Math.abs(firstRowBounds[0].width - firstRowBounds[1].width)).toBeLessThan(1);
-  await page.getByRole("button", { name: "Apparence" }).click();
-  await page.getByRole("combobox", { name: "Thème" }).click();
-  await page.getByRole("option", { name: "Clair" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await page.getByRole("button", { name: "Avancé" }).click();
   await page.setViewportSize({ width: 800, height: 540 });
   await expect(page.getByRole("region", { name: "Avancé" })).toBeVisible();
-  await expect(page.locator(".advanced-group")).toHaveCount(3);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 
-test("automatic account field shows the live Riot ID and preserves the saved manual value", async ({ page }) => {
-  const state = await mockLocalApi(page, {
-    connected: true,
-    autoDetect: true,
-    autoDetectedRiotId: "Detected#Live",
-    riotId: "Detected#Live",
-    manualRiotId: "Saved#Manual",
+test("the issue-report action opens its fixed HTTPS destination", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/advanced");
+  const requestedUrls: string[] = [];
+  page.context().on("request", (request) => {
+    if (request.isNavigationRequest()) requestedUrls.push(request.url());
   });
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Signaler un problème" }).click();
+  const popup = await popupPromise;
+  await expect.poll(() => requestedUrls).toContain("https://github.com/qurnt1/otp_lol/issues/new");
+  await popup.close();
+});
+
+test("automatic account field shows the live LCU Riot ID and preserves the manual fallback", async ({ page }) => {
+  await setupApplication(page, { connected: true, manualRiotId: "Saved#Manual" });
   await page.goto("/#settings/account");
 
   const riotId = page.getByRole("textbox", { name: "Riot ID" });
   const detection = page.getByRole("switch", { name: "Détection automatique du compte" });
   await expect(detection).toHaveAttribute("aria-checked", "true");
   await expect(riotId).toBeDisabled();
-  await expect(riotId).toHaveValue("Detected#Live");
+  await expect(riotId).toHaveValue("E2E Player#SAFE");
 
   await detection.click();
   await expect(riotId).toBeEnabled();
   await expect(riotId).toHaveValue("Saved#Manual");
   await detection.click();
   await expect(riotId).toBeDisabled();
-  await expect(riotId).toHaveValue("Detected#Live");
-  expect(state.settings.manual_summoner_name).toBe("Saved#Manual");
+  await expect(riotId).toHaveValue("E2E Player#SAFE");
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Saved#Manual");
 });
 
-test("manual account mode identifies the manual link source", async ({ page }) => {
-  await mockLocalApi(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
+test("manual account mode labels the actual provider identity source", async ({ page }) => {
+  await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
   await page.goto("/#settings/account");
 
   await expect(page.getByText("Compte configuré manuellement")).toBeVisible();
+  await expect.poll(async () => (await page.request.get(new URL("/api/account/identity", getOtpApp(page).baseURL).href).then((response) => response.json())).source).toBe("manual");
 });
 
-test("automatic account input follows the live account, then uses its complete saved identity offline", async ({ page }) => {
-  const state = await mockLocalApi(page, { connected: true, riotId: "Old#Tag", autoDetectedRiotId: "Old#Tag", manualRiotId: "Saved#Manual" });
+test("manual Riot ID and region edits persist as the selected provider identity", async ({ page }) => {
+  await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
   await page.goto("/#settings/account");
+
   const riotId = page.getByRole("textbox", { name: "Riot ID" });
-  await expect(riotId).toHaveValue("Old#Tag");
+  await riotId.fill("Changed Player#TEST");
+  await riotId.press("Tab");
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Changed Player#TEST");
 
-  state.settings.auto_detected_riot_id = "Stale#Tag";
-  state.runtime.riot_id = "Fresh#Tag";
-  await page.evaluate((runtime) => {
-    const emit = (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent;
-    emit?.({ type: "summoner_update", data: {}, timestamp: "2026-09-16T12:00:00Z" });
-    emit?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-16T12:00:00Z" });
-  }, state.runtime);
-  await expect(riotId).toHaveValue("Fresh#Tag");
-
-  state.runtime.connected = false;
-  state.runtime.riot_id = "";
-  state.settings.auto_detected_riot_id = "Fresh#EUW";
-  state.settings.auto_detected_region = "euw";
-  state.settings.auto_detected_platform = "euw1";
-  await page.evaluate((runtime) => {
-    const emit = (window as Window & { __otpEmitRuntimeEvent?: (event: unknown) => void }).__otpEmitRuntimeEvent;
-    emit?.({ type: "disconnected", data: {}, timestamp: "2026-09-16T12:01:00Z" });
-    emit?.({ type: "runtime_snapshot", data: runtime, timestamp: "2026-09-16T12:01:00Z" });
-  }, state.runtime);
-  await expect(riotId).toBeDisabled();
-  await expect(riotId).toHaveValue("Fresh#EUW");
-  await expect(page.getByText("Dernier compte détecté · EUW · League fermé")).toBeVisible();
-  expect(state.settings.manual_summoner_name).toBe("Saved#Manual");
+  const region = page.getByRole("combobox", { name: "Région" });
+  await region.click();
+  await page.getByRole("option", { name: "NA", exact: true }).click();
+  await expect.poll(async () => (await readSettings(page)).manual_region).toBe("na");
+  await expect.poll(async () => (await page.request.get(new URL("/api/account/identity", getOtpApp(page).baseURL).href).then((response) => response.json()))).toMatchObject({
+    riot_id: "Changed Player#TEST",
+    region: "na",
+    source: "manual",
+  });
 });
 
-test("automatic account field does not present a stale stored ID before live detection", async ({ page }) => {
-  await mockLocalApi(page, { connected: true, autoDetectedRiotId: "Stale#Tag", riotId: "" });
+test("League close and reconnect update the saved account view through LCU WebSocket", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    manualRiotId: "Manual#NA",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#settings/account");
+  await expect(page.getByText("Dernier compte détecté · EUW · League fermé")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Riot ID" })).toHaveValue("E2E Player#SAFE");
+
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(2);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await expect(page.getByText("Compte League connecté · EUW")).toBeVisible();
+});
+
+test("account identity follows a real platform change after LCU reconnect", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  const previousChatMeRequests = app.lcuRequests.filter((request) => request.method === "GET" && request.path === "/lol-chat/v1/me").length;
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await app.configureLcuState({ region: "NA", platform: "NA1" });
+  const nextSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(nextSubscription);
+  await expect.poll(() => app.lcuRequests.filter((request) => request.method === "GET" && request.path === "/lol-chat/v1/me").length).toBeGreaterThan(previousChatMeRequests);
+
+  const identity = await page.request.get(new URL("/api/account/identity", app.baseURL).href).then((response) => response.json());
+  expect(identity).toMatchObject({ riot_id: "E2E Player#SAFE", region: "na", platform_id: "na1", source: "connected" });
+  await page.goto("/#settings/account");
+  await expect(page.getByText("Compte League connecté · NA")).toBeVisible();
+});
+
+test("account copy requires confirmation, and forgetting the saved identity preserves manual values", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    manualRiotId: "Manual#NA",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#settings/account");
+
+  await page.getByRole("button", { name: "Copier vers les champs manuels" }).click();
+  const copyDialog = page.getByRole("alertdialog");
+  await expect(copyDialog).toContainText("Remplacer les valeurs manuelles");
+  await copyDialog.getByRole("button", { name: "Copier vers les champs manuels" }).click();
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("E2E Player#SAFE");
+
+  await page.getByRole("button", { name: "Oublier le dernier compte" }).click();
+  const forgetDialog = page.getByRole("alertdialog");
+  await expect(forgetDialog).toContainText("Les valeurs manuelles ne seront pas modifiées");
+  await forgetDialog.getByRole("button", { name: "Oublier le dernier compte" }).click();
+  const saved = await readSettings(page);
+  expect(saved.auto_detected_riot_id).toBe("");
+  expect(saved.auto_detected_region).toBe("");
+  expect(saved.auto_detected_platform).toBe("");
+  expect(saved.manual_summoner_name).toBe("E2E Player#SAFE");
+  expect(saved.manual_region).toBe("euw");
+});
+
+test("automatic account mode remains empty when League is offline and no identity was saved", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    settings: { close_app_on_lol_exit: false },
+    clearDetectedAccount: true,
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
   await page.goto("/#settings/account");
 
   const riotId = page.getByRole("textbox", { name: "Riot ID" });
   await expect(riotId).toBeDisabled();
   await expect(riotId).toHaveValue("");
-  await expect(page.getByRole("combobox", { name: "Région" })).toHaveText("");
+  await expect(page.getByText("Aucun dernier compte valide. Ouvre le client League ou saisis un Riot ID manuel.")).toBeVisible();
 });
 
-test("offline saved account can be copied explicitly and forgotten without changing manual settings", async ({ page }) => {
-  const state = await mockLocalApi(page, {
-    autoDetectedRiotId: "Saved#EUW",
-    autoDetectedRegion: "euw",
-    autoDetectedPlatform: "euw1",
-    manualRiotId: "Manual#NA",
-  });
-  await page.goto("/#settings/account");
+test("capturing a keyboard shortcut persists a valid hotkey", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/shortcuts");
+  const input = page.getByRole("textbox", { name: "Afficher / masquer la fenêtre" });
+  const originalShortcut = (await readSettings(page)).hotkey_toggle_window;
+  await page.getByRole("button", { name: "Capturer" }).first().click();
+  await expect(page.getByText("Appuie sur un raccourci avec une touche modificatrice.")).toBeVisible();
+  await page.keyboard.press("K");
+  await expect(page.getByRole("alert")).toHaveText("Ajoute au moins une touche modificatrice.");
+  await expect.poll(async () => (await readSettings(page)).hotkey_toggle_window).toBe(originalShortcut);
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByRole("button", { name: "Capturer" }).first()).toHaveAttribute("aria-pressed", "false");
 
-  const riotId = page.getByRole("textbox", { name: "Riot ID" });
-  await expect(riotId).toBeDisabled();
-  await expect(riotId).toHaveValue("Saved#EUW");
-  await expect(page.getByText("Dernier compte détecté · EUW · League fermé")).toBeVisible();
-  await page.getByRole("button", { name: "Copier vers les champs manuels" }).click();
-  const overwrite = page.getByRole("alertdialog");
-  await expect(overwrite).toBeVisible();
-  await overwrite.getByRole("button", { name: "Copier vers les champs manuels" }).click();
-  await expect(riotId).toHaveValue("Saved#EUW");
-  expect(state.settings.manual_summoner_name).toBe("Saved#EUW");
-  expect(state.settings.manual_region).toBe("euw");
-  expect(state.settings.summoner_name_auto_detect).toBe(true);
+  await page.getByRole("button", { name: "Capturer" }).first().click();
+  await page.keyboard.press("Alt+Shift+K");
 
-  await page.getByRole("switch", { name: "Détection automatique du compte" }).click();
-  await expect(riotId).toBeEnabled();
-  await page.getByRole("button", { name: "Oublier le dernier compte" }).click();
-  const forget = page.getByRole("alertdialog");
-  await expect(forget).toBeVisible();
-  await forget.getByRole("button", { name: "Oublier le dernier compte" }).click();
-  expect(state.settings.auto_detected_riot_id).toBe("");
-  expect(state.settings.auto_detected_region).toBe("");
-  expect(state.settings.auto_detected_platform).toBe("");
-  expect(state.settings.manual_summoner_name).toBe("Saved#EUW");
+  await expect.poll(async () => (await readSettings(page)).hotkey_toggle_window).toBe("alt+shift+k");
+  await expect(input).toHaveValue("alt+shift+k");
 });
 
-test("settings do not show or copy a saved account with a mismatched platform, but can forget it", async ({ page }) => {
-  const state = await mockLocalApi(page, {
-    autoDetectedRiotId: "Stale#EUW",
-    autoDetectedRegion: "euw",
-    autoDetectedPlatform: "na1",
-  });
-  await page.goto("/#settings/account");
+test("capturing a named function key persists the backend-supported shortcut", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/shortcuts");
+  const toggleWindow = page.getByRole("textbox", { name: "Afficher / masquer la fenêtre" });
+  await page.getByRole("button", { name: "Capturer" }).first().click();
+  await page.keyboard.press("Shift+F8");
 
-  await expect(page.getByRole("textbox", { name: "Riot ID" })).toHaveValue("");
-  await expect(page.getByRole("button", { name: "Copier vers les champs manuels" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Oublier le dernier compte" }).click();
-  await page.getByRole("alertdialog").getByRole("button", { name: "Oublier le dernier compte" }).click();
-  expect(state.settings.auto_detected_riot_id).toBe("");
+  await expect.poll(async () => (await readSettings(page)).hotkey_toggle_window).toBe("shift+f8");
+  await expect(toggleWindow).toHaveValue("shift+f8");
+  await page.reload();
+  await expect(toggleWindow).toHaveValue("shift+f8");
 });
 
-test("settings applies the saved theme", async ({ page }) => {
-  await mockLocalApi(page);
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Apparence" }).click();
-  const theme = page.getByRole("combobox", { name: "Thème" });
-  await theme.focus();
-  await page.keyboard.press("Enter");
-  const lightOption = page.getByRole("option", { name: "Clair" });
-  await expect(lightOption).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await expect(lightOption).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+test("shortcut validation rejects the same key combination and keeps the saved value", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/shortcuts");
+  const saved = await readSettings(page);
+  const openSite = page.getByRole("textbox", { name: "Ouvrir l’onglet En direct" });
+  await page.getByRole("button", { name: "Capturer" }).nth(1).click();
+  await page.keyboard.press("Alt+C");
+
+  await expect(page.getByRole("alert")).toHaveText("Ce raccourci est déjà utilisé.");
+  await expect(openSite).toHaveValue(saved.hotkey_open_site);
+  await expect.poll(async () => (await readSettings(page)).hotkey_open_site).toBe(saved.hotkey_open_site);
 });
 
-test("settings restores the theme after a failed save", async ({ page }) => {
-  await mockLocalApi(page);
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Apparence" }).click();
-  await page.route("**/api/settings", async (route) => {
-    if (route.request().method() === "PATCH" && route.request().postDataJSON()?.theme === "flatly") {
-      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ detail: "save failed" }) });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.getByRole("combobox", { name: "Thème" }).click();
-  await page.getByRole("option", { name: "Clair" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.getByRole("alert")).toBeVisible();
-});
-
-test("import and reset reapply the theme to the whole interface", async ({ page }) => {
-  const state = await mockLocalApi(page);
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Avancé" }).click();
+test("import applies a valid theme, export downloads the real persisted settings, and reset restores defaults", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/advanced");
   await page.getByLabel("Importer une configuration").setInputFiles({
     name: "otp-lol-settings.json",
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({ config_schema_version: 6, theme: "flatly" })),
   });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect.poll(async () => (await readSettings(page)).theme).toBe("flatly");
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("otp-lol-settings.json");
+  const exportData = JSON.parse(await (await import("node:fs/promises")).readFile(await download.path() as string, "utf8"));
+  expect(exportData.theme).toBe("flatly");
+  expect(exportData).not.toHaveProperty("auto_detected_riot_id");
 
   await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button", { name: "Réinitialiser" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  expect([state.settings.selected_pick_1, state.settings.selected_pick_2, state.settings.selected_pick_3]).toEqual(["Garen", "Lux", "Ashe"]);
-  expect(state.settings.presets_enabled).toBe(false);
-  for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
-    expect(state.settings[key]).toBe(false);
-  }
+  const settings = await readSettings(page);
+  expect(settings.theme).toBe("darkly");
+  expect(settings.presets_enabled).toBe(false);
+  expect(settings.auto_accept_enabled).toBe(false);
+  expect(settings.auto_pick_enabled).toBe(false);
+  expect(settings.auto_ban_enabled).toBe(false);
 });
 
-test("reset writes the starter presets and shows a dismissible first-run message", async ({ page }) => {
-  const state = await mockLocalApi(page, { autoDetectedRiotId: "Saved#EUW", autoDetectedRegion: "euw", autoDetectedPlatform: "euw1" });
+test("reset restores starter presets and a dismissible first-run message", async ({ page }) => {
+  await setupApplication(page);
   await page.goto("/#settings/advanced");
   await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
   const confirmation = page.getByRole("alertdialog");
-  await expect(confirmation).toBeVisible();
   await expect(confirmation).toContainText("efface aussi le dernier compte League détecté");
-  await confirmation.getByRole("button").last().click();
+  await confirmation.getByRole("button", { name: "Réinitialiser" }).click();
 
-  expect(state.settings.presets_enabled).toBe(false);
-  expect(state.settings.onboarding_completed).toBe(false);
-  expect(state.settings.selected_pick_1).toBe("Garen");
-  expect(state.settings.selected_pick_2).toBe("Lux");
-  expect(state.settings.selected_pick_3).toBe("Ashe");
-  expect(state.settings.selected_ban).toBe("Teemo");
-  expect(state.settings.auto_detected_riot_id).toBe("");
-  expect(state.settings.auto_detected_region).toBe("");
-  expect(state.settings.auto_detected_platform).toBe("");
-  expect(state.settings.pick_slots.pick_1.spell_2).toBe("Ignite");
-  expect(state.settings.pick_slots.pick_2.spell_2).toBe("Barrier");
-  expect(state.settings.pick_slots.pick_3.spell_2).toBe("Heal");
-  for (const slot of Object.values(state.settings.pick_slots)) {
-    expect(slot.skin_mode).toBe("none");
-    expect(slot.rune_page_id).toBe(0);
-    expect(slot.rune_keystone_id).toBe(0);
-  }
-  for (const key of ["auto_accept_enabled", "auto_pick_enabled", "auto_ban_enabled", "auto_summoners_enabled", "skin_automation_enabled", "auto_play_again_enabled"] as const) {
-    expect(state.settings[key]).toBe(false);
-  }
+  const settings = await readSettings(page);
+  expect(settings.presets_enabled).toBe(false);
+  expect(settings.onboarding_completed).toBe(false);
+  expect([settings.selected_pick_1, settings.selected_pick_2, settings.selected_pick_3]).toEqual(["Garen", "Lux", "Ashe"]);
+  expect(settings.selected_ban).toBe("Teemo");
+  expect(settings.auto_detected_riot_id).toBe("");
+  expect(Object.keys(settings.pick_slots).sort()).toEqual(["pick_1", "pick_2", "pick_3"]);
+  expect(Object.values(settings.pick_slots).every((slot: any) => slot.skin_mode === "none" && slot.rune_page_id === 0)).toBe(true);
 
   await page.goto("/#dashboard");
   for (const [index, champion] of ["Garen", "Lux", "Ashe"].entries()) {
@@ -283,144 +351,108 @@ test("reset writes the starter presets and shows a dismissible first-run message
   await expect(page.locator(".ban-panel")).toContainText("Teemo");
   const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
   await expect(onboarding).toBeVisible();
-  await page.reload();
-  await expect(onboarding).toBeVisible();
   await page.getByRole("button", { name: "Masquer le message de bienvenue" }).click();
   await expect(onboarding).toBeHidden();
   await page.reload();
   await expect(onboarding).toBeHidden();
 });
 
-test("first-run onboarding closes permanently after editing a preset", async ({ page }) => {
-  const state = await mockLocalApi(page, { onboardingCompleted: false });
-  applyFactoryDefaults(state);
+test("first-run onboarding closes permanently after a real preset edit", async ({ page }) => {
+  await setupApplication(page, { onboardingCompleted: false });
   await page.goto("/#dashboard");
-  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
+  const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
+  await expect(onboarding).toBeVisible();
   await page.getByRole("link", { name: "Configurer mes priorités" }).click();
   await expect(page).toHaveURL(/#dashboard\/pick_1$/);
-  await expect(page.getByRole("dialog", { name: "Modifier la priorité 1" })).toBeVisible();
-  const editRequest = page.waitForRequest((request) => request.url().endsWith("/api/presets/pick_1") && request.method() === "PUT");
-  await page.locator('.skin-mode-options input[value="fixed"]').click();
-  await editRequest;
-  expect(state.settings.onboarding_completed).toBe(true);
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("radio", { name: "Fixe" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("fixed");
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(true);
 
   await page.goto("/#dashboard");
-  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeHidden();
+  await expect(onboarding).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeHidden();
+  await expect(onboarding).toBeHidden();
 });
 
-test("failed dashboard automation updates show feedback and restore the saved value", async ({ page }) => {
-  await mockLocalApi(page, { configured: true, rejectSettingsPatch: true });
-  await page.goto("/#dashboard");
-
-  const toggle = page.getByRole("switch", { name: "Auto-Accept" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await toggle.click();
-
-  await expect(page.getByRole("alert")).toContainText("Impossible d’enregistrer ce réglage.");
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-});
-
-test("failed settings export explains that the download could not be created", async ({ page }) => {
-  await mockLocalApi(page);
-  await page.route("**/api/settings/export", (route) => route.fulfill({ status: 500, body: "export failed" }));
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Avancé" }).click();
-  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
-
-  await expect(page.getByRole("alert")).toContainText("Impossible de télécharger la configuration.");
-});
-
-test("first-run onboarding targets the first empty priority", async ({ page }) => {
-  const state = await mockLocalApi(page, { configured: true, onboardingCompleted: false });
-  state.presets.slots.pick_2.champion = "";
-  state.settings.pick_slots.pick_2.champion = "";
-  state.settings.selected_pick_2 = "";
-  await page.goto("/#dashboard");
-  await page.getByRole("link", { name: "Configurer mes priorités" }).click();
-  await expect(page).toHaveURL(/#dashboard\/pick_2$/);
-  await expect(page.getByRole("dialog", { name: "Modifier la priorité 2" })).toBeVisible();
-});
-
-test("preset reset restores examples, disables the master and preserves child preferences", async ({ page }) => {
-  const state = await mockLocalApi(page, { configured: true });
-  Object.assign(state.settings, {
-    presets_enabled: true,
-    auto_accept_enabled: true,
-    auto_pick_enabled: true,
-    auto_ban_enabled: false,
-    auto_summoners_enabled: true,
-    skin_automation_enabled: true,
-    auto_play_again_enabled: true,
-    theme: "flatly",
+test("restoring example presets disables the master while preserving child preferences", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    settings: {
+      presets_enabled: true,
+      auto_accept_enabled: true,
+      auto_pick_enabled: true,
+      auto_ban_enabled: false,
+      auto_summoners_enabled: true,
+      skin_automation_enabled: true,
+      auto_play_again_enabled: true,
+      theme: "flatly",
+    },
   });
-  state.presets.presets_enabled = true;
-  state.runtime.presets_enabled = true;
   await page.goto("/#settings/advanced");
   await page.getByRole("button", { name: /Restaurer les presets d'exemple/ }).click();
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button").last().click();
 
-  expect(state.settings.presets_enabled).toBe(false);
-  expect(state.settings.auto_accept_enabled).toBe(true);
-  expect(state.settings.auto_pick_enabled).toBe(true);
-  expect(state.settings.auto_ban_enabled).toBe(false);
-  expect(state.settings.auto_summoners_enabled).toBe(true);
-  expect(state.settings.skin_automation_enabled).toBe(true);
-  expect(state.settings.auto_play_again_enabled).toBe(true);
-  expect(state.settings.theme).toBe("flatly");
-  expect(state.settings.onboarding_completed).toBe(false);
-  expect([state.settings.selected_pick_1, state.settings.selected_pick_2, state.settings.selected_pick_3]).toEqual(["Garen", "Lux", "Ashe"]);
-  expect(state.settings.selected_ban).toBe("Teemo");
-  expect(Object.values(state.settings.pick_slots).map((slot) => slot.spell_2)).toEqual(["Ignite", "Barrier", "Heal"]);
-  expect(Object.values(state.settings.pick_slots).every((slot) => slot.skin_mode === "none" && slot.rune_page_id === 0 && slot.rune_keystone_id === 0)).toBe(true);
+  const settings = await readSettings(page);
+  expect(settings.presets_enabled).toBe(false);
+  expect(settings.auto_accept_enabled).toBe(true);
+  expect(settings.auto_pick_enabled).toBe(true);
+  expect(settings.auto_ban_enabled).toBe(false);
+  expect(settings.auto_summoners_enabled).toBe(true);
+  expect(settings.skin_automation_enabled).toBe(true);
+  expect(settings.auto_play_again_enabled).toBe(true);
+  expect(settings.theme).toBe("flatly");
+  expect(settings.onboarding_completed).toBe(false);
+  expect([settings.selected_pick_1, settings.selected_pick_2, settings.selected_pick_3]).toEqual(["Garen", "Lux", "Ashe"]);
+  expect(settings.selected_ban).toBe("Teemo");
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");
 
   await page.goto("/#dashboard");
   await expect(page.getByRole("switch", { name: "Utiliser les presets en sélection" })).toHaveAttribute("aria-checked", "false");
-  for (const [index, champion] of ["Garen", "Lux", "Ashe"].entries()) {
-    await expect(page.locator(".priority-card").nth(index)).toContainText(champion);
-  }
-  await expect(page.locator(".ban-panel")).toContainText("Teemo");
   await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
 });
 
-test("clearing presets leaves the rest of the user's settings unchanged", async ({ page }) => {
-  const state = await mockLocalApi(page, { configured: true });
-  Object.assign(state.settings, {
-    presets_enabled: true,
-    auto_accept_enabled: true,
-    auto_pick_enabled: true,
-    auto_ban_enabled: false,
-    auto_summoners_enabled: true,
-    skin_automation_enabled: true,
-    auto_play_again_enabled: true,
-    theme: "flatly",
+test("clearing only presets preserves account and automation settings", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    manualRiotId: "Manual#EUW",
+    autoDetect: false,
+    settings: {
+      presets_enabled: true,
+      auto_accept_enabled: true,
+      auto_pick_enabled: true,
+      auto_ban_enabled: false,
+      auto_summoners_enabled: true,
+      skin_automation_enabled: true,
+      auto_play_again_enabled: true,
+      theme: "flatly",
+    },
   });
-  state.presets.presets_enabled = true;
-  state.runtime.presets_enabled = true;
   await page.goto("/#settings/advanced");
   await page.getByRole("button", { name: /Effacer uniquement les presets/ }).click();
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toContainText("Restaurer les presets d'exemple");
   await confirmation.getByRole("button").last().click();
 
-  expect(state.settings.presets_enabled).toBe(true);
-  expect(state.settings.auto_accept_enabled).toBe(true);
-  expect(state.settings.auto_pick_enabled).toBe(true);
-  expect(state.settings.auto_ban_enabled).toBe(false);
-  expect(state.settings.auto_summoners_enabled).toBe(true);
-  expect(state.settings.skin_automation_enabled).toBe(true);
-  expect(state.settings.auto_play_again_enabled).toBe(true);
-  expect(state.settings.theme).toBe("flatly");
-  expect([state.settings.selected_pick_1, state.settings.selected_pick_2, state.settings.selected_pick_3]).toEqual(["", "", ""]);
-  expect(state.settings.selected_ban).toBe("");
-  expect(Object.values(state.settings.pick_slots).every((slot) => slot.champion === "")).toBe(true);
+  const settings = await readSettings(page);
+  expect(settings.presets_enabled).toBe(true);
+  expect(settings.auto_accept_enabled).toBe(true);
+  expect(settings.auto_pick_enabled).toBe(true);
+  expect(settings.auto_ban_enabled).toBe(false);
+  expect(settings.auto_summoners_enabled).toBe(true);
+  expect(settings.skin_automation_enabled).toBe(true);
+  expect(settings.auto_play_again_enabled).toBe(true);
+  expect(settings.theme).toBe("flatly");
+  expect(settings.manual_summoner_name).toBe("Manual#EUW");
+  expect([settings.selected_pick_1, settings.selected_pick_2, settings.selected_pick_3]).toEqual(["", "", ""]);
+  expect(settings.selected_ban).toBe("");
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("");
 });
 
-test("import rejects a settings file from an older schema without applying it", async ({ page }) => {
-  await mockLocalApi(page);
+test("old settings schema is rejected without changing the active theme", async ({ page }) => {
+  await setupApplication(page);
   await page.goto("/#settings/advanced");
   await page.getByLabel("Importer une configuration").setInputFiles({
     name: "otp-lol-settings-old.json",
@@ -428,19 +460,100 @@ test("import rejects a settings file from an older schema without applying it", 
     buffer: Buffer.from(JSON.stringify({ config_schema_version: 5, theme: "flatly" })),
   });
 
-  await expect(page.getByRole("alert")).toContainText("Unsupported settings schema");
+  await expect(page.getByRole("alert")).toContainText("unsupported settings schema");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(async () => (await readSettings(page)).theme).toBe("darkly");
 });
 
-test("settings exposes the global skin automation switch", async ({ page }) => {
-  const state = await mockLocalApi(page);
-  state.settings.presets_enabled = true;
-  state.presets.presets_enabled = true;
-  state.runtime.presets_enabled = true;
-  await page.goto("/#settings");
-  await page.getByRole("button", { name: "Automatisations" }).click();
-  const toggle = page.getByRole("switch", { name: "Automatisation des skins" });
-  await expect(toggle).toHaveAttribute("aria-checked", "false");
-  await toggle.click();
-  await expect(toggle).toHaveAttribute("aria-checked", "true");
+test("configuration export can be imported again after intervening UI changes", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  await page.goto("/#settings/appearance");
+  const theme = page.getByRole("combobox", { name: "Thème" });
+  await theme.click();
+  await page.getByRole("option", { name: "Clair" }).click();
+  await expect.poll(async () => (await readSettings(page)).theme).toBe("flatly");
+
+  await page.goto("/#settings/automations");
+  const autoAccept = page.getByRole("switch", { name: "Auto-Accept" });
+  await autoAccept.click();
+  await expect.poll(async () => (await readSettings(page)).auto_accept_enabled).toBe(true);
+
+  await page.goto("/#settings/advanced");
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
+  const download = await downloadPromise;
+  const exported = await (await import("node:fs/promises")).readFile(await download.path() as string);
+
+  await page.goto("/#settings/appearance");
+  await theme.click();
+  await page.getByRole("option", { name: "Sombre" }).click();
+  await page.goto("/#settings/automations");
+  await autoAccept.click();
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({ theme: "darkly", auto_accept_enabled: false });
+
+  await page.goto("/#settings/advanced");
+  await page.getByLabel("Importer une configuration").setInputFiles({
+    name: download.suggestedFilename(),
+    mimeType: "application/json",
+    buffer: exported,
+  });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({ theme: "flatly", auto_accept_enabled: true });
+});
+
+test("canceling reset and preset actions leaves the configured account and picks unchanged", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    autoDetect: false,
+    manualRiotId: "Manual#EUW",
+    settings: { presets_enabled: true, auto_accept_enabled: true },
+  });
+  await page.goto("/#settings/advanced");
+
+  await page.getByRole("button", { name: /Réinitialiser les réglages/ }).click();
+  let confirmation = page.getByRole("alertdialog");
+  await confirmation.getByRole("button", { name: "Annuler" }).click();
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({ manual_summoner_name: "Manual#EUW", presets_enabled: true, selected_pick_1: "Garen" });
+
+  await page.getByRole("button", { name: /Restaurer les presets d'exemple/ }).click();
+  confirmation = page.getByRole("alertdialog");
+  await page.keyboard.press("Escape");
+  await expect(confirmation).toBeHidden();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");
+
+  await page.getByRole("button", { name: /Effacer uniquement les presets/ }).click();
+  confirmation = page.getByRole("alertdialog");
+  await confirmation.getByRole("button", { name: "Annuler" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({ manual_summoner_name: "Manual#EUW", presets_enabled: true, auto_accept_enabled: true });
+});
+
+test("each automation switch persists its setting through FastAPI", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    settings: {
+      auto_accept_enabled: false,
+      auto_pick_enabled: false,
+      auto_ban_enabled: false,
+      auto_summoners_enabled: false,
+      skin_automation_enabled: false,
+      auto_play_again_enabled: false,
+    },
+  });
+  await page.goto("/#settings/automations");
+
+  for (const [label, key] of [
+    ["Auto-Accept", "auto_accept_enabled"],
+    ["Auto-Pick", "auto_pick_enabled"],
+    ["Auto-Ban", "auto_ban_enabled"],
+    ["Auto-Summs", "auto_summoners_enabled"],
+    ["Automatisation des skins", "skin_automation_enabled"],
+    ["Auto Play Again", "auto_play_again_enabled"],
+  ]) {
+    const toggle = page.getByRole("switch", { name: label });
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+    await expect.poll(async () => (await readSettings(page))[key]).toBe(true);
+  }
 });

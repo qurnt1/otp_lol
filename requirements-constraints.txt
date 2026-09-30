@@ -1,7 +1,6 @@
 # Reproducible direct-dependency constraints for CI and release builds.
 aiohttp==3.12.15
 fastapi==0.135.1
-httpx==0.28.1
 keyboard==0.13.5
 lcu-driver==3.0.2
 packaging==25.0
@@ -15,4 +14,3 @@ tomli-w==1.2.0
 uvicorn==0.41.0
 pyinstaller==6.14.2
 ruff==0.16.1
-pytest==9.1.1

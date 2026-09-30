@@ -25,11 +25,17 @@ python launcher_web.py
 # Build the executable
 python create_exe.py
 
-# Run all tests
-python -m unittest discover -s tests -v
-
-# Run a single test file
-python -m unittest tests.test_config -v
+# Run browser E2E checks (after installing Python runtime and E2E dependencies)
+python -m pip install -c requirements-constraints.txt -r requirements.txt -r scripts/e2e/requirements.txt
+cd frontend
+npm ci
+npm run api:check
+npm run typecheck
+npm run build
+npx playwright install chromium
+npm run test:e2e -- --workers=1
+npx playwright test --config ../scripts/e2e/playwright.config.mjs --workers=1
+npm run test:e2e:api
 ```
 
 ## Architecture
@@ -78,10 +84,6 @@ Central registry shared by reference everywhere — champion metadata, image cac
 ### PyInstaller compatibility
 
 `resource_path()` resolves bundled vs dev paths via `sys._MEIPASS`. The build script (`create_exe.py`) configures `--add-data` and `--hidden-import` directives.
-
-## Tests
-
-Framework: `unittest` (stdlib). Tests live in `tests/`. There's a `fake_lcu_server.py` that provides an `aiohttp`-based mock LCU for integration tests. The `tests/test_core_champ_select.py` tests are async and exercise the pick/ban/spell/skin resolution logic against a fake LCU session.
 
 ## Commit style
 

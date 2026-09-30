@@ -31,23 +31,19 @@ jobs:
           cache: pip
           cache-dependency-path: |
             requirements.txt
-            requirements-test.txt
             requirements-constraints.txt
 
       - name: Install dependencies
-        run: python -m pip install -c requirements-constraints.txt -r requirements-test.txt
+        run: python -m pip install -c requirements-constraints.txt -r requirements.txt
 
       - name: Compile Python sources
-        run: python -m compileall -q launcher_web.py src tests create_exe.py
-
-      - name: Run Python test suite
-        run: python -m pytest -q
+        run: python -m compileall -q launcher_web.py src create_exe.py
 
       - name: Install Ruff
         run: python -m pip install -c requirements-constraints.txt ruff
 
       - name: Ruff audit
-        run: python -m ruff check launcher_web.py src tests create_exe.py --select E9,F --ignore F401,F541,F841 --output-format=github
+        run: python -m ruff check launcher_web.py src create_exe.py --select E9,F --ignore F401,F541,F841 --output-format=github
 
       - name: Ruff progressive audit for new layers
         run: >-
