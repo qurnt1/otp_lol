@@ -163,6 +163,7 @@ test("Dashboard suit la fermeture réelle du client puis une reconnexion LCU", a
   await app.waitForWebSocketSubscription(2);
   await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
   await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "ChampSelect");
+  await expect.poll(async () => (await readRuntime(page)).phase).toBe("ChampSelect");
   await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
   await expect(page.locator(".phase-strip strong")).toHaveText("Sélection des champions");
 });
