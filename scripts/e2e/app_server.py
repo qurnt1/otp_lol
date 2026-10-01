@@ -79,6 +79,46 @@ def _emit(payload: dict[str, Any]) -> None:
     print(json.dumps(payload, separators=(",", ":")), flush=True)
 
 
+async def _wait_for_champ_select_retry_ready(manager: Any) -> None:
+    loop = getattr(manager, "loop", None)
+    lock = getattr(manager, "_cs_tick_lock", None)
+    if loop is None or lock is None or not loop.is_running():
+        raise RuntimeError("champ_select_runtime_not_started")
+
+    timeout_s = 5.0
+
+    async def wait_for_retry_ready() -> None:
+        deadline = loop.time() + timeout_s
+        while True:
+            async with lock:
+                pass
+            retry_delay = manager.ACTION_RETRY_COOLDOWN_S - (
+                time.time() - manager.state.last_ban_try_ts
+            )
+            if retry_delay <= 0:
+                return
+            timeout_remaining = deadline - loop.time()
+            if timeout_remaining <= 0:
+                raise TimeoutError("timeout_waiting_for_champ_select_retry_ready")
+            await asyncio.sleep(min(retry_delay, timeout_remaining))
+
+    waiter = wait_for_retry_ready()
+    try:
+        future = asyncio.run_coroutine_threadsafe(waiter, loop)
+    except RuntimeError as error:
+        waiter.close()
+        raise RuntimeError("champ_select_runtime_not_started") from error
+
+    try:
+        await asyncio.wait_for(asyncio.wrap_future(future), timeout=timeout_s)
+    except asyncio.TimeoutError as error:
+        future.cancel()
+        raise TimeoutError("timeout_waiting_for_champ_select_retry_ready") from error
+    except Exception:
+        future.cancel()
+        raise
+
+
 def _capture_api_shutdown_state(api_server: Any, api_thread: threading.Thread) -> dict[str, Any]:
     snapshot: dict[str, Any] = {"thread": {"name": api_thread.name, "ident": api_thread.ident}}
     try:
@@ -663,6 +703,17 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
                     continue
                 await fake_lcu.emit(uri, data)
                 _emit({"type": "event-sent", "id": event_id, "uri": uri})
+                continue
+            if command.get("command") == "wait-champ-select-retry-ready":
+                event_id = command.get("id")
+                try:
+                    await _wait_for_champ_select_retry_ready(context.runtime.manager)
+                except (RuntimeError, TimeoutError) as error:
+                    _emit(
+                        {"type": "command-error", "id": event_id, "error": str(error)}
+                    )
+                else:
+                    _emit({"type": "champ-select-retry-ready", "id": event_id})
                 continue
             if command.get("command") == "state":
                 state = command.get("state")

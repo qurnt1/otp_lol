@@ -1,4 +1,4 @@
-import { expect, readHistory, readPresets, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
+import { expect, readHistory, readPresets, readRuntime, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
 const runePerks = [8005, 8008, 9101, 8014, 8106, 8120, 5008, 5008, 5011];
 const targetRunePage = {
@@ -178,6 +178,52 @@ test("Auto-Ban verrouille le champion choisi et confirme l’état LCU", async (
   expect((await readHistory(page)).items.map((item) => item.message)).toContain("Automatic ban confirmed on Teemo.");
 });
 
+test("Auto-Ban retente après un refus LCU et ne confirme qu’une action appliquée", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoBan: false,
+    lcuState: { static_data_online: true, session: champSelectSession([]) },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await enableAutomation(page, "Auto-Ban", "auto_ban_enabled");
+  await page.goto("/#dashboard");
+
+  const actionId = 504;
+  const actionPath = `/lol-champ-select/v1/session/actions/${actionId}`;
+  await app.configureLcuState({ mutation_responses: { [`PATCH ${actionPath}`]: [503] } });
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "ban",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  await app.configureLcuState({ session });
+  await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+
+  const rejected = await app.waitForLcuResponse("PATCH", actionPath, 503);
+  expect(rejected.status).toBe(503);
+  const rejectedState = await app.readLcuState();
+  expect(rejectedState.session.actions[0][0]).toMatchObject({ completed: false, championId: 0 });
+  expect(rejectedState.session.bans.myTeamBans).toEqual([]);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatic ban confirmed on Teemo.");
+
+  await app.waitForChampSelectRetryReady();
+  await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await expect.poll(async () => {
+    const state = await app.readLcuState();
+    return { completed: state.session.actions[0][0].completed, bans: state.session.bans.myTeamBans };
+  }, { timeout: 12_000 }).toEqual({ completed: true, bans: [17] });
+  await expect(page.locator(".automation-status")).toHaveText(/Champion banni : Teemo\./);
+  expect((await readHistory(page)).items.map((item) => item.message)).toContain("Automatic ban confirmed on Teemo.");
+});
+
 test("Auto Play Again envoie la commande LCU et revient au lobby", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true, phase: "WaitingForStats", autoPlayAgain: false });
   const eventsConnected = waitForRuntimeEvents(page);
@@ -197,6 +243,103 @@ test("Auto Play Again envoie la commande LCU et revient au lobby", async ({ page
   await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
   await expect(page.locator(".automation-status")).toContainText("Retour au lobby effectué.");
   expect((await readHistory(page)).items.map((item) => item.message)).toContain("Automatically returned to lobby after the game.");
+});
+
+test("Auto Play Again réessaie après un refus du LCU et ne confirme qu’au retour au lobby", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true, phase: "WaitingForStats", autoPlayAgain: false });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await enableAutomation(page, "Auto Play Again", "auto_play_again_enabled");
+  await page.goto("/#dashboard");
+
+  const actionPath = "/lol-lobby/v2/play-again";
+  await app.configureLcuState({ mutation_responses: { [`POST ${actionPath}`]: [503] } });
+  const requestOffset = app.lcuRequests.length;
+  await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "WaitingForStats");
+
+  const rejected = await app.waitForLcuResponse("POST", actionPath, 503);
+  expect(rejected.status).toBe(503);
+  expect((await app.readLcuState()).phase).toBe("WaitingForStats");
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatically returned to lobby after the game.");
+
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === actionPath,
+  ).length).toBeGreaterThanOrEqual(2);
+  await expect.poll(async () => (await app.readLcuState()).phase).toBe("Lobby");
+  await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "Lobby");
+  await expect.poll(async () => (await readRuntime(page)).phase).toBe("Lobby");
+  await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
+  await expect(page.locator(".automation-status")).toContainText("Retour au lobby effectué.");
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .toContain("Automatically returned to lobby after the game.");
+});
+
+test("Auto Play Again s’arrête si League quitte la phase de fin pendant l’attente", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true, phase: "Lobby", autoPlayAgain: false });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await enableAutomation(page, "Auto Play Again", "auto_play_again_enabled");
+  await page.goto("/#dashboard");
+
+  await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "WaitingForStats");
+  await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "Lobby");
+  await expect(page.locator(".phase-strip strong")).toHaveText("Dans le lobby");
+  await page.waitForTimeout(2_200);
+
+  expect(app.lcuRequests.filter((request) =>
+    request.method === "POST" && request.path === "/lol-lobby/v2/play-again",
+  )).toEqual([]);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatically returned to lobby after the game.");
+});
+
+test("Auto-Pick saute la première priorité et verrouille le prochain champion disponible", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    lcuState: { static_data_online: true, pickable_champion_ids: [99], session: champSelectSession([]) },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+
+  await expect(await readPresets(page)).toMatchObject({
+    slots: { pick_1: { champion: "Garen" }, pick_2: { champion: "Lux" } },
+  });
+  await enableAutomation(page, "Auto-Pick", "auto_pick_enabled");
+  await page.goto("/#dashboard");
+
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: 505,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [99] });
+  await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/505"
+      && requestBody(request.body).completed === true && requestBody(request.body).championId === 99
+  )).toBe(true);
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: true, championId: 99 });
+  expect(state.session.myTeam[0].championId).toBe(99);
+  const actionPatches = app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/505",
+  );
+  expect(actionPatches.length).toBeGreaterThanOrEqual(2);
+  expect(actionPatches.every((request) => requestBody(request.body).championId === 99)).toBe(true);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .toContain("Champion automatically locked in: Lux.");
+  await expect(page.locator(".automation-status")).toHaveText(/Champion sélectionné : Lux\./);
 });
 
 for (const scenario of [

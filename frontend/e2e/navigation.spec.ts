@@ -19,6 +19,32 @@ test("settings deep links and browser back-forward restore the selected section"
   await expect(page.locator(".settings-section h2")).toHaveText("Raccourcis");
 });
 
+test("every settings section can be opened directly from its hash", async ({ page }) => {
+  await setupApplication(page);
+
+  for (const [section, label] of [
+    ["general", "Général"],
+    ["automations", "Automatisations"],
+    ["account", "Compte"],
+    ["links", "Liens"],
+    ["shortcuts", "Raccourcis"],
+    ["appearance", "Apparence"],
+    ["advanced", "Avancé"],
+  ] as const) {
+    await page.goto(`/#settings/${section}`);
+    await page.reload();
+
+    const sectionNav = page.getByRole("navigation", { name: "Sections des réglages" });
+    await expect(page).toHaveURL(new RegExp(`#settings/${section}$`));
+    await expect(sectionNav.getByRole("button", { name: label, exact: true })).toHaveAttribute("aria-current", "page");
+    if (section === "advanced") {
+      await expect(page.getByRole("heading", { name: "Fichiers et diagnostics" })).toBeVisible();
+    } else {
+      await expect(page.locator(".settings-section h2")).toHaveText(label);
+    }
+  }
+});
+
 test("the Settings deep link without a section opens General", async ({ page }) => {
   await setupApplication(page);
   await page.goto("/#settings");

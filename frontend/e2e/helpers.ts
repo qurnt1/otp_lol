@@ -16,6 +16,7 @@ export interface OtpApp {
   configureExternalState(state: ExternalState): Promise<{ state: ExternalState }>;
   waitForWebSocketSubscription(count: number): Promise<unknown>;
   emitLcuEvent(uri: string, data: unknown): Promise<void>;
+  waitForChampSelectRetryReady(): Promise<void>;
   waitForLcuRequest(method: string, path: string): Promise<{ method: string; path: string; body: unknown }>;
   waitForLcuResponse(method: string, path: string, status: number): Promise<{
     method: string;

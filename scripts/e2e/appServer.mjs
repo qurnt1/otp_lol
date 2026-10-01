@@ -429,6 +429,9 @@ export async function startOtpApp({
         `LCU WebSocket event ${uri}`,
       );
     },
+    async waitForChampSelectRetryReady() {
+      await sendCommand({ command: "wait-champ-select-retry-ready" }, 6_000);
+    },
     async configureLcuState(state, timeoutMs = 5_000) {
       await sendCommand({ command: "state", state }, timeoutMs);
     },

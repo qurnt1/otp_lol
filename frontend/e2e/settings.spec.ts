@@ -14,9 +14,13 @@ test("settings persists a toggle across a real page reload", async ({ page }) =>
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-checked", "false");
   await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(false);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(true);
   await page.reload();
   await expect(page.getByRole("switch", { name: "Fermer lorsque League est réellement fermé" })).toHaveAttribute("aria-checked", "false");
-  await expect(page.getByRole("switch", { name: "Masquer à la connexion" })).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("switch", { name: "Masquer à la connexion" })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(false);
 });
 
 test("an initial bootstrap read failure leaves a retry path and then loads real settings", async ({ page }) => {
@@ -943,5 +947,124 @@ test("each automation switch persists its setting through FastAPI", async ({ pag
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", "true");
     await expect.poll(async () => (await readSettings(page))[key]).toBe(true);
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect.poll(async () => (await readSettings(page))[key]).toBe(false);
   }
+});
+
+test("[SET-03] an automation setting rolls back after a rejected save and persists on retry", async ({ page }) => {
+  await setupApplication(page, { configured: true, settings: { presets_enabled: true, auto_pick_enabled: false } });
+  await page.goto("/#settings/automations");
+
+  let autoPickPatchCount = 0;
+  await page.route("**/api/settings", async (route) => {
+    const request = route.request();
+    if (request.method() === "PATCH" && request.postDataJSON()?.auto_pick_enabled === true && autoPickPatchCount++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected automation settings failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  const autoPick = page.getByRole("switch", { name: "Auto-Pick" });
+  await expect(autoPick).toBeEnabled();
+  await autoPick.click();
+  await expect(page.getByRole("alert")).toHaveText("Injected automation settings failure");
+  await expect(autoPick).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(false);
+
+  const savedResponse = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.status() === 200,
+  );
+  await autoPick.click();
+  expect((await savedResponse).ok()).toBe(true);
+  await expect(autoPick).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByText("Enregistré", { exact: true })).toBeVisible();
+  await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(true);
+  await page.reload();
+  await expect(page.getByRole("switch", { name: "Auto-Pick" })).toHaveAttribute("aria-checked", "true");
+  expect(autoPickPatchCount).toBe(2);
+});
+
+test("[SET-04] account identity recovers on a settings change after its read endpoint returns 503", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  let identityReads = 0;
+  await page.route("**/api/account/identity", async (route) => {
+    if (route.request().method() === "GET" && identityReads++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected identity read failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const failedIdentity = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/account/identity"
+    && response.status() === 503,
+  );
+  await page.goto("/#settings/account");
+  expect((await failedIdentity).status()).toBe(503);
+  await expect(page.getByRole("textbox", { name: "Riot ID" })).toHaveValue("E2E Player#SAFE");
+  await expect(page.getByText("Compte League connecté · EUW")).toBeVisible();
+
+  const detection = page.getByRole("switch", { name: "Détection automatique du compte" });
+  const manualIdentity = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/account/identity"
+    && response.status() === 200,
+  );
+  await detection.click();
+  const manualIdentityResponse = await manualIdentity;
+  expect((await manualIdentityResponse.json()).source).toBe("manual");
+  await expect(detection).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByText("Compte configuré manuellement")).toBeVisible();
+
+  const connectedIdentity = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/account/identity"
+    && response.status() === 200,
+  );
+  await detection.click();
+  const connectedIdentityResponse = await connectedIdentity;
+  expect((await connectedIdentityResponse.json())).toMatchObject({ source: "connected", riot_id: "E2E Player#SAFE", region: "euw" });
+  await expect(detection).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("textbox", { name: "Riot ID" })).toHaveValue("E2E Player#SAFE");
+  expect(await readSettings(page)).toMatchObject({ summoner_name_auto_detect: true });
+});
+
+test("[SET-09] a failed configuration export shows recovery feedback and retries as a real download", async ({ page }) => {
+  await setupApplication(page, { configured: true, manualRiotId: "Private#EUW" });
+  await page.goto("/#settings/advanced");
+  let exportRequests = 0;
+  await page.route("**/api/settings/export", async (route) => {
+    if (route.request().method() === "GET" && exportRequests++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected configuration export failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const downloads: string[] = [];
+  page.on("download", (download) => downloads.push(download.suggestedFilename()));
+
+  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
+  await expect(page.getByRole("alert")).toHaveText("Impossible de télécharger la configuration. Vérifie que l’application répond, puis réessaie.");
+  expect(downloads).toEqual([]);
+
+  const successfulExport = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/settings/export"
+    && response.status() === 200,
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: /Exporter la configuration/ }).click();
+  expect((await successfulExport).ok()).toBe(true);
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("otp-lol-settings.json");
+  const exported = JSON.parse(await (await import("node:fs/promises")).readFile(await download.path() as string, "utf8"));
+  expect(exported).toMatchObject({ config_schema_version: 6, theme: "darkly" });
+  expect(exported).not.toHaveProperty("auto_detected_riot_id");
+  expect(exported.manual_summoner_name).toBe("Private#EUW");
+  expect(exportRequests).toBe(2);
 });

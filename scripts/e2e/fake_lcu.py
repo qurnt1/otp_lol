@@ -316,14 +316,13 @@ class FakeLcuServer:
             if not isinstance(mutation_responses, dict):
                 raise ValueError("Fake mutation responses must map an allowlisted method and path to status codes")
             for operation, statuses in mutation_responses.items():
-                if (
-                    not isinstance(operation, str)
-                    or not re.fullmatch(
-                        r"(?:PATCH /lol-champ-select/v1/session/actions/\d+|PUT /lol-perks/v1/pages/\d+|POST /lol-matchmaking/v1/ready-check/accept)",
-                        operation,
-                    )
+                if not isinstance(operation, str) or not re.fullmatch(
+                    r"(?:PATCH /lol-champ-select/v1/session/actions/\d+|PUT /lol-perks/v1/pages/\d+|POST /lol-matchmaking/v1/ready-check/accept|POST /lol-lobby/v2/play-again)",
+                    operation,
                 ):
-                    raise ValueError(f"Unsupported fake mutation response operation: {operation}")
+                    raise ValueError(
+                        f"Unsupported fake mutation response operation: {operation}"
+                    )
                 if (
                     not isinstance(statuses, list)
                     or not 1 <= len(statuses) <= 4

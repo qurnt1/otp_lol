@@ -49,6 +49,7 @@ export const diagnosticsCopy = {
   notRun: "Non testé",
   latency: "Latence récente",
   noEntries: "Aucune entrée pour ce filtre.",
+  loadFailed: "Impossible de charger les diagnostics.",
   noLeague: "League n’est pas connecté. Les tests seront réessayés quand le client sera ouvert.",
   redacted: "Les identifiants et secrets sont masqués par défaut.",
   exportFailed: "Impossible d’exporter le rapport de diagnostics.",

@@ -33,6 +33,7 @@ test("[DIAG-01] a diagnostics read failure can be retried from the visible error
 
   const readError = page.getByRole("alert");
   await expect(readError).toBeVisible();
+  await expect(readError).toContainText("Impossible de charger les diagnostics.");
   const retryButton = page.getByRole("button", { name: "Réessayer" });
   await expect(retryButton).toBeVisible();
   expect(diagnosticsReads).toBe(1);
@@ -131,6 +132,40 @@ test("a denied clipboard write reports the failure without claiming the report w
   await expect(page.getByText("Rapport copié dans le presse-papiers.")).toHaveCount(0);
 });
 
+test("[DIAG-06] a failed diagnostics export can be retried as a real redacted download", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#diagnostics");
+  let exportRequests = 0;
+  await page.route((url) => url.pathname === "/api/diagnostics/export", async (route) => {
+    if (route.request().method() === "GET" && exportRequests++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected diagnostics export failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const downloads: string[] = [];
+  page.on("download", (download) => downloads.push(download.suggestedFilename()));
+
+  await page.getByRole("button", { name: "Exporter le rapport" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Injected diagnostics export failure");
+  expect(downloads).toEqual([]);
+
+  const successfulExport = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+    && new URL(response.url()).pathname === "/api/diagnostics/export"
+    && response.status() === 200,
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Exporter le rapport" }).click();
+  expect((await successfulExport).ok()).toBe(true);
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("otp-lol-diagnostics.json");
+  const report = JSON.parse(await (await import("node:fs/promises")).readFile(await download.path() as string, "utf8"));
+  expect(report.account_identity.riot_id).toBeNull();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(exportRequests).toBe(2);
+});
+
 test("le payload d’un événement LCU réel reste dans le tiroir JSON", async ({ page }) => {
   await setupApplication(page, { connected: true, phase: "Lobby" });
   await page.goto("/#diagnostics");
@@ -176,6 +211,13 @@ test("Diagnostics classe le rafraîchissement réel des données de jeu dans le 
 
   await page.getByRole("button", { name: "Données", exact: true }).click();
   const dataEvent = page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/data/static-data" }).first();
+  await expect(dataEvent).toBeVisible();
+  const search = page.getByRole("searchbox", { name: "Filtrer les journaux" });
+  await search.fill("static-data");
+  await expect(dataEvent).toBeVisible();
+  await search.fill("no matching data event");
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+  await search.fill("");
   await expect(dataEvent).toBeVisible();
   await dataEvent.getByRole("button", { name: "Voir JSON" }).click();
   await expect(page.getByRole("dialog").locator("pre")).toContainText('"refreshed": false');
@@ -293,7 +335,15 @@ test("les filtres Diagnostics classent les événements LCU et automatisation re
   await expect(sessionEvent).toBeVisible();
   await expect(sessionEvent).toContainText("Update");
   await page.getByRole("button", { name: "Automation", exact: true }).click();
-  await expect(page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/champion_picked" }).first()).toBeVisible();
+  const championPickedEvent = page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/champion_picked" }).first();
+  await expect(championPickedEvent).toBeVisible();
+  const search = page.getByRole("searchbox", { name: "Filtrer les journaux" });
+  await search.fill("champion_picked");
+  await expect(championPickedEvent).toBeVisible();
+  await search.fill("no matching automation event");
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+  await search.fill("");
+  await expect(championPickedEvent).toBeVisible();
   await page.getByRole("button", { name: "WebView", exact: true }).click();
   await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
   const diagnostics = await page.request.get(new URL("/api/diagnostics", app.baseURL).href).then((response) => response.json());

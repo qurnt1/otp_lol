@@ -35,6 +35,53 @@ test("live statistics has a distinct route and loads its real account link", asy
   await expect.poll(() => requests.filter((path) => path === "/api/links/live").length).toBe(1);
 });
 
+test("statistics and live links follow a connected account and region change", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  await page.goto("/#statistics");
+  await expect(page.locator(".statistics-summary")).toContainText("E2E Player#SAFE");
+  await expect(page.locator(".statistics-summary .status-pill")).toHaveText("EUW");
+
+  const nextAccount = {
+    gameName: "Second Player",
+    gameTag: "NA",
+    summonerId: 13579246,
+    name: "Second Player",
+    puuid: "SECOND_ACCOUNT_PUUID_SENTINEL",
+  };
+  await app.configureLcuState({
+    region: "NA",
+    platform: "NA1",
+    account_responses: { "/lol-chat/v1/me": { status: 200, payload: nextAccount } },
+  });
+  await app.emitLcuEvent("/lol-chat/v1/me", nextAccount);
+
+  await expect(page.locator(".statistics-summary")).toContainText("Second Player#NA");
+  await expect(page.locator(".statistics-summary .status-pill")).toHaveText("NA");
+  const statsLink = await page.request.get(new URL("/api/links/stats", app.baseURL).href).then((response) => response.json());
+  expect(statsLink).toMatchObject({
+    available: true,
+    account_source: "connected",
+    riot_id: "Second Player#NA",
+    region: "na",
+    url: "https://op.gg/fr/lol/summoners/na/Second%20Player-NA",
+  });
+
+  await page.goto("/#live");
+  await expect(page.locator(".statistics-summary")).toContainText("Second Player#NA");
+  await expect(page.locator(".statistics-summary .status-pill")).toHaveText("NA");
+  const liveLink = await page.request.get(new URL("/api/links/live", app.baseURL).href).then((response) => response.json());
+  expect(liveLink).toMatchObject({
+    available: true,
+    account_source: "connected",
+    riot_id: "Second Player#NA",
+    region: "na",
+    url: "https://porofessor.gg/fr/live/na/Second%20Player-NA/ranked-only",
+  });
+});
+
 test("initial statistics and live link failures recover through their real refresh endpoints", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true });
   const failedLinks = new Set<string>();
@@ -94,6 +141,12 @@ test("changing the live provider persists without leaving the live route", async
 test("each visible statistics provider choice is saved by FastAPI", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true });
   await page.goto("/#statistics");
+  const expectedHosts: Record<string, string> = {
+    opgg: "op.gg",
+    deeplol: "www.deeplol.gg",
+    dpm: "dpm.lol",
+    leagueofgraphs: "www.leagueofgraphs.com",
+  };
 
   const choices = page.getByRole("radiogroup", { name: "Fournisseur" }).getByRole("radio");
   await expect.poll(() => choices.count()).toBeGreaterThan(1);
@@ -106,6 +159,8 @@ test("each visible statistics provider choice is saved by FastAPI", async ({ pag
     const settings = await readSettings(page);
     const link = await page.request.get(new URL("/api/links/stats", app.baseURL).href).then((response) => response.json());
     expect(settings.preferred_stats_site).toBe(link.site);
+    expect(new URL(link.url).hostname).toBe(expectedHosts[link.site]);
+    expect(decodeURIComponent(new URL(link.url).pathname)).toContain("E2E Player-SAFE");
   }
 });
 
@@ -186,6 +241,54 @@ test("provider window controls show the actual native-manager limitation and kee
   const popup = await popupPromise;
   await expect(await externalRequest).toBeTruthy();
   await popup.close();
+});
+
+test("external provider home is used without an account and native shell failure can be retried", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: string[] = [];
+    const resolvers: Array<(opened: boolean) => void> = [];
+    const current = window as Window & {
+      __otpExternalCalls: string[];
+      __otpResolveExternalCall: (index: number, opened: boolean) => void;
+    };
+    Object.defineProperty(current, "__otpDesktopMode", { value: true });
+    Object.defineProperty(current, "__otpExternalCalls", { value: calls });
+    Object.defineProperty(current, "__otpResolveExternalCall", {
+      value: (index: number, opened: boolean) => resolvers[index](opened),
+    });
+    Object.defineProperty(current, "pywebview", {
+      value: {
+        api: {
+          open_external_url: (url: string) => new Promise<boolean>((resolve) => {
+            calls.push(url);
+            resolvers.push(resolve);
+          }),
+        },
+      },
+    });
+  });
+  const { app } = await setupApplication(page, { autoDetect: false, manualRiotId: "", clearDetectedAccount: true });
+  await page.goto("/#statistics");
+  await expect(page.getByText("Aucun compte exploitable pour le moment.")).toBeVisible();
+  const link = await page.request.get(new URL("/api/links/stats", app.baseURL).href).then((response) => response.json());
+  expect(link).toMatchObject({ available: false, riot_id: null, region: null, homepage_url: "https://op.gg/" });
+  const openExternal = page.locator(".statistics-fallback").getByRole("button", { name: "Ouvrir dans le navigateur" });
+
+  await openExternal.click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __otpExternalCalls: string[] }).__otpExternalCalls.length)).toBe(1);
+  await page.evaluate(() => (window as Window & { __otpResolveExternalCall: (index: number, opened: boolean) => void }).__otpResolveExternalCall(0, false));
+  await expect(page.getByRole("alert")).toHaveText("Impossible d’ouvrir le lien externe.");
+  await openExternal.click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __otpExternalCalls: string[] }).__otpExternalCalls.length)).toBe(2);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    (window as Window & { __otpResolveExternalCall: (index: number, opened: boolean) => void }).__otpResolveExternalCall(1, true);
+    requestAnimationFrame(() => resolve());
+  }));
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await page.evaluate(() => (window as Window & { __otpExternalCalls: string[] }).__otpExternalCalls)).toEqual([
+    link.homepage_url,
+    link.homepage_url,
+  ]);
 });
 
 test("statistics offers account settings when neither a live nor saved identity is available", async ({ page }) => {

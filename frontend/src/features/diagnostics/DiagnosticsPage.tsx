@@ -101,7 +101,7 @@ export function DiagnosticsPage() {
     </div>
 
     {diagnostics.isPending && <p className="page-loading" role="status">{baseFr.common.loading}</p>}
-    {diagnostics.isError && <div className="state-error" role="alert"><span>{copy.runFailed}</span><Button variant="quiet" type="button" onClick={() => void diagnostics.refetch()}>{baseFr.common.retry}</Button></div>}
+    {diagnostics.isError && <div className="state-error" role="alert"><span>{copy.loadFailed}</span><Button variant="quiet" type="button" onClick={() => void diagnostics.refetch()}>{baseFr.common.retry}</Button></div>}
     {error && <p className="inline-error" role="alert">{error}</p>}
     {notice && <p className="feedback" role="status">{notice}</p>}
     {data && <>
