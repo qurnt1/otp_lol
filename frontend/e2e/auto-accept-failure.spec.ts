@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { expect, readHistory, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
+import { expect, readHistory, readRuntime, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
 test("Auto-Accept ne présente pas le ready-check comme accepté après un refus LCU", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true, phase: "ReadyCheck" });
@@ -67,6 +67,44 @@ test("Auto-Accept ne présente pas le ready-check comme accepté après un refus
   ).length).toBe(1);
 
   await expect(page.getByText("Match automatically accepted.", { exact: true })).toHaveCount(1);
+});
+
+test("[FE-LCU-AUTO-ACCEPT-OFF-01] désactiver Auto-Accept empêche toute acceptation du Ready Check", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    phase: "None",
+    autoAccept: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  const runtimeEvents = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await runtimeEvents;
+
+  const autoAccept = page.getByRole("switch", { name: "Auto-Accept" });
+  await expect(autoAccept).toHaveAttribute("aria-checked", "true");
+  await autoAccept.click();
+  await expect(autoAccept).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).auto_accept_enabled).toBe(false);
+
+  const requestOffset = app.lcuRequests.length;
+  const phaseEvent = await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "ReadyCheck");
+  await app.waitForLcuEventCompletion(phaseEvent.id);
+  await expect.poll(async () => (await readRuntime(page)).phase).toBe("ReadyCheck");
+
+  const event = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+  await app.waitForLcuEventCompletion(event.id);
+
+  expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+  )).toHaveLength(0);
+  expect((await app.readLcuState()).ready_check.playerResponse).toBe("None");
+  await expect(page.locator(".automation-status.is-success")).toHaveCount(0);
+  await expect(page.getByText("Ready-check accepté.", { exact: true })).toHaveCount(0);
+  expect((await readHistory(page)).items.some((item) => item.message === "Match automatically accepted.")).toBe(false);
+
+  await page.goto("/#history");
+  await expect(page.getByRole("heading", { name: "Journal de logs" })).toBeVisible();
+  await expect(page.getByText("Match automatically accepted.", { exact: true })).toHaveCount(0);
 });
 
 test("un doublon Ready Check en vol autorise un seul retry après le refus initial", async ({ page }) => {

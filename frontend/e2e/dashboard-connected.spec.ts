@@ -70,6 +70,7 @@ test("[DASH-14] répéter le même événement Ready Check ne répète pas l’a
   }
   expect(firstEventId).not.toBe("");
   await app.waitForLcuEventCompletion(firstEventId);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
   await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
     item.message === "Match automatically accepted.",
   ).length).toBe(1);

@@ -45,6 +45,74 @@ test("every settings section can be opened directly from its hash", async ({ pag
   }
 });
 
+test("[FE-SET-NAV-CLICK-01] les sept entrées de navigation des réglages ouvrent leur section", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/general");
+  const sectionNav = page.getByRole("navigation", { name: "Sections des réglages" });
+
+  for (const [section, label] of [
+    ["general", "Général"],
+    ["automations", "Automatisations"],
+    ["account", "Compte"],
+    ["links", "Liens"],
+    ["shortcuts", "Raccourcis"],
+    ["appearance", "Apparence"],
+    ["advanced", "Avancé"],
+  ] as const) {
+    const button = sectionNav.getByRole("button", { name: label, exact: true });
+    await button.click();
+    await expect(page).toHaveURL(new RegExp(`#settings/${section}$`));
+    await expect(button).toHaveAttribute("aria-current", "page");
+    if (section === "advanced") {
+      await expect(page.getByRole("heading", { name: "Fichiers et diagnostics" })).toBeVisible();
+    } else {
+      await expect(page.locator(".settings-section h2")).toHaveText(label);
+    }
+  }
+});
+
+test("[FE-SHELL-BRAND-01] le lien de marque ramène au Dashboard", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#statistics");
+  await expect(page.getByRole("heading", { name: "Statistiques", exact: true })).toBeVisible();
+  const brand = page.getByRole("link", { name: "OTP LOL" });
+
+  await brand.click();
+
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.getByRole("heading", { name: "Préparation de partie", exact: true })).toBeVisible();
+  await page.goto("/#history");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Journal de logs", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  const tabStopCount = await page.locator(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+  ).count();
+  let brandReachedByTab = false;
+  for (let index = 0; index < tabStopCount; index += 1) {
+    await page.keyboard.press("Tab");
+    if (await brand.evaluate((link) => link === document.activeElement)) {
+      brandReachedByTab = true;
+      break;
+    }
+  }
+  expect(brandReachedByTab).toBe(true);
+  await expect(brand).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.getByRole("heading", { name: "Préparation de partie", exact: true })).toBeVisible();
+});
+
+test("[FE-DASH-MANAGE-01] le lien Gérer atteint Settings, destination produit à confirmer", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  await page.goto("/#dashboard");
+
+  await page.getByRole("link", { name: "Gérer", exact: true }).click();
+
+  await expect(page).toHaveURL(/#settings$/);
+  await expect(page.locator(".settings-section h2")).toHaveText("Général");
+});
+
 test("the Settings deep link without a section opens General", async ({ page }) => {
   await setupApplication(page);
   await page.goto("/#settings");

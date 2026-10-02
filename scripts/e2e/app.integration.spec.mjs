@@ -10,7 +10,7 @@ function isWithinPath(root, candidate) {
       && !relativePath.startsWith(`..${path.sep}`));
 }
 
-test("real UI reads saved pickers after restart, retries offline Data Dragon, and sends production LCU accept", async ({ page }) => {
+test("real UI reconnects to the retained LCU after application restart without replaying mutations", async ({ page }) => {
   test.setTimeout(120_000);
   let app = await startOtpApp();
   let appOrigin = new URL(app.baseURL).origin;
@@ -197,9 +197,134 @@ test("real UI reads saved pickers after restart, retries offline Data Dragon, an
       return (await response.json()).close_app_on_lol_exit;
     }).toBe(false);
 
-    const retainedStateDir = app.stateDir;
+    await app.configureLcuState({ region: "NA", platform: "NA1", phase: "Matchmaking" });
+    await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "Matchmaking");
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/runtime`);
+      return (await response.json()).phase;
+    }).toBe("Matchmaking");
+    const accountRefresh = await app.emitLcuEvent("/lol-chat/v1/me", {
+      gameName: "E2E Player",
+      gameTag: "SAFE",
+    });
+    await app.waitForLcuEventCompletion(accountRefresh.id);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/account/identity`);
+      const identity = await response.json();
+      return { riotId: identity.riot_id, region: identity.region, platform: identity.platform_id };
+    }).toEqual({ riotId: "E2E Player#SAFE", region: "na", platform: "na1" });
+    await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", {
+      state: "InProgress",
+      playerResponse: "None",
+    });
+    await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+    await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+
     const firstApiPort = Number(new URL(app.baseURL).port);
     const firstLcuPort = Number(new URL(app.lcuURL).port);
+    const fakeLeaguePid = app.syntheticLeaguePid;
+    const controllerPid = app.controllerPid;
+    const acceptCountBeforeApiRestart = app.lcuRequests.filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    ).length;
+    expect(acceptCountBeforeApiRestart).toBe(1);
+    const subscriptionsBeforeApiRestart = app.websocketSubscriptions.length;
+    const accountReadsBeforeRestart = app.lcuRequests.filter((request) =>
+      request.method === "GET" && request.path === "/lol-chat/v1/me",
+    ).length;
+    await app.configureLcuState({
+      account_responses: {
+        "/lol-chat/v1/me": {
+          status: 200,
+          payload: { gameName: "Reloaded User", gameTag: "LIVE", summonerId: 24680135 },
+        },
+      },
+    });
+    const applicationGenerationBeforeRestart = app.applicationGeneration;
+    const applicationRestart = await app.restartApplication();
+    expect(applicationRestart.generation).toBe(applicationGenerationBeforeRestart + 1);
+    expect(applicationRestart.controllerPid).toBe(controllerPid);
+    expect(applicationRestart.oldContextStopped).toBe(true);
+    expect(applicationRestart.contextRecreated).toBe(true);
+    expect(applicationRestart.appRecreated).toBe(true);
+    expect(applicationRestart.syntheticLeaguePid).toBe(fakeLeaguePid);
+    expect(applicationRestart.lcuPort).toBe(firstLcuPort);
+    expect(app.syntheticLeaguePid).toBe(fakeLeaguePid);
+    const restartedApiPort = Number(new URL(app.baseURL).port);
+    appOrigin = new URL(app.baseURL).origin;
+    const restartedApiUrl = new URL(app.baseURL);
+    const restartedRuntimeEventsSocketPromise = page.waitForEvent(
+      "websocket",
+      (socket) => new URL(socket.url()).host === restartedApiUrl.host
+        && new URL(socket.url()).pathname === "/api/events",
+    );
+    await page.goto(app.baseURL, { waitUntil: "domcontentloaded" });
+    const restartedRuntimeEventsSocket = await restartedRuntimeEventsSocketPromise;
+    await restartedRuntimeEventsSocket.waitForEvent("framereceived");
+    await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
+
+    const restartedSubscription = await app.waitForWebSocketSubscription(subscriptionsBeforeApiRestart + 1);
+    expect(restartedSubscription).toMatchObject({
+      protocol: "wss",
+      host: "127.0.0.1",
+      port: firstLcuPort,
+    });
+    expect(app.syntheticLeaguePid).toBe(fakeLeaguePid);
+    expect(app.websocketSubscriptions).toHaveLength(subscriptionsBeforeApiRestart + 1);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/runtime`);
+      return (await response.json()).connected;
+    }).toBe(true);
+    await expect.poll(() => app.lcuRequests.filter((request) =>
+      request.method === "GET" && request.path === "/lol-chat/v1/me",
+    ).length).toBeGreaterThan(accountReadsBeforeRestart);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/account/identity`);
+      const identity = await response.json();
+      return { riotId: identity.riot_id, region: identity.region, platform: identity.platform_id };
+    }).toEqual({ riotId: "Reloaded User#LIVE", region: "na", platform: "na1" });
+    const phaseRefresh = await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "Matchmaking");
+    await app.waitForLcuEventCompletion(phaseRefresh.id);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/runtime`);
+      return (await response.json()).phase;
+    }).toBe("Matchmaking");
+    const restartedSettingsResponse = await page.request.get(`${app.baseURL}/api/settings`);
+    expect((await restartedSettingsResponse.json()).auto_accept_enabled).toBe(true);
+    await expect(page.getByRole("switch", { name: "Auto-Accept" })).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
+    await expect(page.locator(".sidebar-account")).toContainText("Reloaded User#LIVE");
+    expect(app.lcuRequests.filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    )).toHaveLength(acceptCountBeforeApiRestart);
+    await expect(page.locator(".phase-strip strong")).toHaveText("Recherche de partie");
+
+    await app.configureLcuState({
+      ready_check: { state: "InProgress", playerResponse: "None" },
+    });
+    const readyCheckPhaseEvent = await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "ReadyCheck");
+    await app.waitForLcuEventCompletion(readyCheckPhaseEvent.id);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/runtime`);
+      return (await response.json()).phase;
+    }).toBe("ReadyCheck");
+    expect(app.lcuRequests.filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    )).toHaveLength(acceptCountBeforeApiRestart);
+    const freshReadyCheckEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", {
+      state: "InProgress",
+      playerResponse: "None",
+    });
+    await app.waitForLcuEventCompletion(freshReadyCheckEvent.id);
+    await expect.poll(() => app.lcuRequests.filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    ).length).toBe(acceptCountBeforeApiRestart + 1);
+    await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+    expect(app.lcuRequests.filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    ).slice(acceptCountBeforeApiRestart)).toHaveLength(1);
+
+    const retainedStateDir = app.stateDir;
     await expect.poll(() => runtimeEvents.some((event) => event.type === "runtime_snapshot")).toBe(true);
     firstShutdown = await app.stop({ retainState: true });
     expect(firstShutdown.forced, firstShutdown.stderr).toBe(false);
@@ -210,7 +335,8 @@ test("real UI reads saved pickers after restart, retries offline Data Dragon, an
     expect(firstShutdown.socketEgressBlocked).toEqual([]);
     expect(firstShutdown.socketConnections.length).toBeGreaterThan(0);
     expect(firstShutdown.socketConnections.every((connection) =>
-      connection.host === "127.0.0.1" && [firstApiPort, firstLcuPort].includes(connection.port)
+      connection.host === "127.0.0.1"
+      && [firstApiPort, restartedApiPort, firstLcuPort].includes(connection.port)
     )).toBe(true);
     expect(firstShutdown.externalRequestsBlocked).toEqual([]);
 

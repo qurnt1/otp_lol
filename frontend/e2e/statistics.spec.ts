@@ -371,16 +371,23 @@ test("external provider home is used without an account and native shell failure
   ]);
 });
 
-test("statistics offers account settings when neither a live nor saved identity is available", async ({ page }) => {
+test("[FE-STATS-ACCOUNT-CTA-01] statistics account CTA opens account settings when no identity is available", async ({ page }) => {
   await setupApplication(page, { autoDetect: false, manualRiotId: "", clearDetectedAccount: true });
   await page.goto("/#statistics");
 
   await expect(page.getByText("Aucun compte exploitable pour le moment.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Configurer le compte" })).toHaveAttribute("href", "#settings/account");
+  await page.getByRole("link", { name: "Configurer le compte" }).click();
+  await expect(page).toHaveURL(/#settings\/account$/);
+  await expect(page.locator(".settings-section h2")).toHaveText("Compte");
   await page.goto("/#live");
   await expect(page.getByRole("heading", { name: "En direct", exact: true })).toBeVisible();
   await expect(page.getByText("Aucun compte exploitable pour le moment.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Configurer le compte" })).toHaveAttribute("href", "#settings/account");
+  const liveAccountCta = page.getByRole("link", { name: "Configurer le compte" });
+  await expect(liveAccountCta).toHaveAttribute("href", "#settings/account");
+  await liveAccountCta.click();
+  await expect(page).toHaveURL(/#settings\/account$/);
+  await expect(page.locator(".settings-section h2")).toHaveText("Compte");
 });
 
 test("statistics uses the persisted account after a real LCU disconnect", async ({ page }) => {

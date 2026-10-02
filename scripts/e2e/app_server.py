@@ -641,57 +641,63 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
         path_isolation = _verify_isolated_runtime_paths(
             appdata_dir, localappdata_dir, temp_dir
         )
-        context = ApplicationContext.from_system()
-        original_event_observer = context.runtime.manager.diagnostic_event_callback
         lcu_event_sequence = 0
 
-        def report_lcu_event(topic: str, event_type: str, payload: Any) -> None:
-            nonlocal lcu_event_sequence
-            lcu_event_sequence += 1
-            event_id = f"lcu-event-{lcu_event_sequence}"
+        def build_application() -> tuple[Any, Any]:
+            context = ApplicationContext.from_system()
+            original_event_observer = context.runtime.manager.diagnostic_event_callback
 
-            def report_lcu_event_completion(task: asyncio.Task[Any]) -> None:
-                if task.cancelled():
-                    outcome = "cancelled"
-                elif task.exception() is not None:
-                    outcome = "failed"
-                else:
-                    outcome = "completed"
+            def report_lcu_event(topic: str, event_type: str, payload: Any) -> None:
+                nonlocal lcu_event_sequence
+                lcu_event_sequence += 1
+                event_id = f"lcu-event-{lcu_event_sequence}"
+
+                def report_lcu_event_completion(task: asyncio.Task[Any]) -> None:
+                    if task.cancelled():
+                        outcome = "cancelled"
+                    elif task.exception() is not None:
+                        outcome = "failed"
+                    else:
+                        outcome = "completed"
+                    _emit(
+                        {
+                            "type": "lcu-websocket-event-completed",
+                            "id": event_id,
+                            "outcome": outcome,
+                        }
+                    )
+
+                event_task = asyncio.current_task()
+                if event_task is not None:
+                    event_task.add_done_callback(report_lcu_event_completion)
+                if original_event_observer is not None:
+                    original_event_observer(topic, event_type, payload)
                 _emit(
                     {
-                        "type": "lcu-websocket-event-completed",
+                        "type": "lcu-websocket-event",
                         "id": event_id,
-                        "outcome": outcome,
+                        "topic": topic,
+                        "eventType": event_type,
+                        "data": payload,
                     }
                 )
 
-            event_task = asyncio.current_task()
-            if event_task is not None:
-                event_task.add_done_callback(report_lcu_event_completion)
-            if original_event_observer is not None:
-                original_event_observer(topic, event_type, payload)
-            _emit(
-                {
-                    "type": "lcu-websocket-event",
-                    "id": event_id,
-                    "topic": topic,
-                    "eventType": event_type,
-                    "data": payload,
-                }
-            )
+            context.runtime.manager.diagnostic_event_callback = report_lcu_event
+            return context, create_app(context, frontend_dir=frontend_dir)
 
-        context.runtime.manager.diagnostic_event_callback = report_lcu_event
-        app = create_app(context, frontend_dir=frontend_dir)
+        context, app = build_application()
         api_server = EmbeddedApiServer(app, host="127.0.0.1", port=0)
         api_server.start()
         allow_loopback_port(api_server.port)
         base_url = f"http://127.0.0.1:{api_server.port}"
+        application_generation = 1
         await asyncio.to_thread(_wait_for_health, base_url)
         _emit(
             {
                 "type": "ready",
                 "url": base_url,
                 "pid": os.getpid(),
+                "applicationGeneration": application_generation,
                 "stateDir": str(state_dir.resolve()),
                 "appDataDir": str(appdata_dir.resolve()),
                 "tempDir": str(temp_dir.resolve()),
@@ -718,6 +724,53 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
             if command.get("command") == "stop":
                 _emit({"type": "stopping"})
                 break
+            if command.get("command") == "restart-app":
+                event_id = command.get("id")
+                try:
+                    previous_context = context
+                    previous_app = app
+                    previous_api_thread = api_server._thread
+                    await asyncio.to_thread(api_server.stop)
+                    if previous_api_thread is not None and previous_api_thread.is_alive():
+                        raise RuntimeError("old_api_thread_still_alive")
+                    if previous_context._started:
+                        raise RuntimeError("old_application_context_still_started")
+                    context, app = build_application()
+                    api_server = EmbeddedApiServer(app, host="127.0.0.1", port=0)
+                    api_server.start()
+                    allow_loopback_port(api_server.port)
+                    base_url = f"http://127.0.0.1:{api_server.port}"
+                    await asyncio.to_thread(_wait_for_health, base_url)
+                except Exception as error:  # noqa: BLE001 - report a controlled restart failure to the E2E.
+                    _emit(
+                        {
+                            "type": "command-error",
+                            "id": event_id,
+                            "error": f"application_restart:{type(error).__name__}:{error}",
+                        }
+                    )
+                    continue
+                application_generation += 1
+                synthetic_pid = (
+                    league_process.pid
+                    if league_process is not None and league_process.poll() is None
+                    else None
+                )
+                _emit(
+                    {
+                        "type": "application-restarted",
+                        "id": event_id,
+                        "generation": application_generation,
+                        "url": base_url,
+                        "controllerPid": os.getpid(),
+                        "oldContextStopped": not previous_context._started,
+                        "contextRecreated": context is not previous_context,
+                        "appRecreated": app is not previous_app,
+                        "syntheticLeaguePid": synthetic_pid,
+                        "lcuPort": lcu_port,
+                    }
+                )
+                continue
             if command.get("command") == "event":
                 event_id = command.get("id")
                 uri = command.get("uri")

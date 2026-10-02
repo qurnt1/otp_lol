@@ -158,6 +158,99 @@ test("champion picker searches, reports an empty result, and persists a real sel
   await expect(editor.getByRole("button", { name: /Ahri/ })).toBeVisible();
 });
 
+test("[FE-PICK-KEY-01] le champion recherché peut être choisi sans souris", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").nth(1).click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 2" });
+  await editor.locator(".champion-choice").click();
+
+  const picker = page.getByRole("dialog", { name: "Choisir un champion" });
+  const search = picker.getByRole("textbox", { name: "Rechercher un champion…" });
+  await expect(search).toBeFocused();
+  await search.fill("Ahri");
+  const ahri = picker.getByRole("option", { name: /Ahri/ });
+  const tabStops = await picker.locator('input:not([disabled]), button:not([disabled])').count();
+  let reachedAhri = false;
+  for (let index = 0; index < tabStops; index += 1) {
+    await page.keyboard.press("Tab");
+    if (await ahri.evaluate((option) => option === document.activeElement)) {
+      reachedAhri = true;
+      break;
+    }
+  }
+  expect(reachedAhri).toBe(true);
+  await expect(ahri).toBeFocused();
+  await page.keyboard.press("Enter");
+
+  await expect(picker).toBeHidden();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_2.champion).toBe("Ahri");
+  await expect(editor.getByRole("button", { name: /Ahri/ })).toBeVisible();
+});
+
+test("[FE-PICK-ROLE-01] chaque filtre de poste rend le résultat correspondant au catalogue courant", async ({ page }) => {
+  const { app } = await setupApplication(page);
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").nth(1).click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 2" });
+  await editor.locator(".champion-choice").click();
+  const picker = page.getByRole("dialog", { name: "Choisir un champion" });
+  const filters = picker.getByRole("group", { name: "Filtrer les champions par poste" });
+  const catalogueResponse = await page.request.get(new URL("/api/champions", app.baseURL).href);
+  expect(catalogueResponse.ok()).toBe(true);
+  const catalogue = (await catalogueResponse.json()).items as Array<{ name: string; roles: string[] }>;
+  const roleFilters = [
+    ["Tous", null],
+    ["Top", "TOP"],
+    ["Jungle", "JUNGLE"],
+    ["Mid", "MIDDLE"],
+    ["ADC", "BOTTOM"],
+    ["Support", "UTILITY"],
+  ] as const;
+  const observedResults: string[][] = [];
+
+  for (const [label, role] of roleFilters) {
+    const expectedNames = catalogue
+      .filter((champion) => role === null || champion.roles.includes(role))
+      .map((champion) => champion.name);
+    const button = filters.getByRole("button", { name: label, exact: true });
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    const visibleNames = await picker.locator('[role="option"] strong').allTextContents();
+    expect(visibleNames).toEqual(expectedNames);
+    if (expectedNames.length === 0) await expect(picker.getByText("Aucun résultat.")).toBeVisible();
+    observedResults.push(visibleNames);
+  }
+
+  expect(new Set(observedResults.map((names) => JSON.stringify(names))).size).toBe(roleFilters.length);
+});
+
+test("[FE-PRESET-SKIN-MODE-01] les trois modes de skin sont sélectionnables et enregistrés", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  const skinPicker = editor.getByRole("button", { name: /Galerie des skins/ });
+  const none = editor.getByRole("radio", { name: "Aucun" });
+  const fixed = editor.getByRole("radio", { name: "Fixe" });
+  const random = editor.getByRole("radio", { name: "Aléatoire" });
+
+  await none.click();
+  await expect(none).toBeChecked();
+  await expect(skinPicker).toBeDisabled();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("none");
+
+  await fixed.click();
+  await expect(fixed).toBeChecked();
+  await expect(skinPicker).toBeEnabled();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("fixed");
+
+  await random.click();
+  await expect(random).toBeChecked();
+  await expect(editor.getByRole("button", { name: /Pool aléatoire/ })).toBeEnabled();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("random");
+});
+
 test("a rejected champion save keeps the old pick and lets the user retry", async ({ page }) => {
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");

@@ -337,6 +337,8 @@ export async function startOtpApp({
   });
 
   let ready;
+  let baseURL;
+  let applicationGeneration;
   try {
     ready = await waitForMessage(
       (message) => message.type === "ready" || message.type === "startup-error",
@@ -353,6 +355,8 @@ export async function startOtpApp({
         `The E2E subprocess reported paths outside its isolated temporary profile: ${JSON.stringify(pathComparisons)}`,
       );
     }
+    baseURL = ready.url;
+    applicationGeneration = ready.applicationGeneration;
   } catch (error) {
     let cleanup = "not attempted";
     try {
@@ -379,7 +383,13 @@ export async function startOtpApp({
   }
 
   return {
-    baseURL: ready.url,
+    get baseURL() {
+      return baseURL;
+    },
+    get applicationGeneration() {
+      return applicationGeneration;
+    },
+    controllerPid: ready.pid,
     stateDir,
     appDataDir: ready.appDataDir,
     localAppDataDir,
@@ -460,6 +470,25 @@ export async function startOtpApp({
     },
     async configureLcuConnection({ online }, timeoutMs = 8_000) {
       return sendCommand({ command: "lcu-connection", online }, timeoutMs);
+    },
+    async restartApplication(timeoutMs = 30_000) {
+      const restarted = await sendCommand({ command: "restart-app" }, timeoutMs);
+      if (
+        restarted.type !== "application-restarted"
+        || typeof restarted.url !== "string"
+        || restarted.generation !== applicationGeneration + 1
+        || restarted.controllerPid !== ready.pid
+        || restarted.oldContextStopped !== true
+        || restarted.contextRecreated !== true
+        || restarted.appRecreated !== true
+        || restarted.syntheticLeaguePid !== getSyntheticPid()
+        || restarted.lcuPort !== Number(new URL(ready.lcuUrl).port)
+      ) {
+        throw new Error(`Unexpected E2E application restart response: ${JSON.stringify(restarted)}`);
+      }
+      baseURL = restarted.url;
+      applicationGeneration = restarted.generation;
+      return restarted;
     },
     waitForWebSocketSubscription(number = 1, timeoutMs = 10_000) {
       if (!Number.isInteger(number) || number < 1) {

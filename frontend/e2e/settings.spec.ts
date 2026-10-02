@@ -23,7 +23,7 @@ test("settings persists a toggle across a real page reload", async ({ page }) =>
   await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(false);
 });
 
-test("an initial bootstrap read failure leaves a retry path and then loads real settings", async ({ page }) => {
+test("[FE-DASH-LOAD-01] le Dashboard reste accessible après une panne initiale du bootstrap et un nouvel essai", async ({ page }) => {
   await setupApplication(page, { connected: true, configured: true });
   let releaseFirstRead!: () => void;
   let reportFirstRead!: () => void;
@@ -42,7 +42,7 @@ test("an initial bootstrap read failure leaves a retry path and then loads real 
     }
     await route.continue();
   });
-  await page.goto("/#settings/general");
+  await page.goto("/#dashboard");
 
   await firstReadStarted;
   await expect(page.getByText("Chargement…")).toBeVisible();
@@ -57,6 +57,9 @@ test("an initial bootstrap read failure leaves a retry path and then loads real 
   );
   await retry.click();
   expect((await recoveredResponse).ok()).toBe(true);
+  await expect(page.getByRole("heading", { name: "Préparation de partie" })).toBeVisible();
+  await expect(page.locator(".priority-card")).toHaveCount(3);
+  await page.goto("/#settings/general");
   await expect(page.getByRole("heading", { name: "Réglages" })).toBeVisible();
   await expect.poll(async () => (await readSettings(page)).theme).toBe("darkly");
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Garen");

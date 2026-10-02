@@ -136,6 +136,160 @@ test("Auto-Pick applique le champion, sorts, skin et page de runes via le vrai L
   await expect(status).toHaveClass(/is-success/);
 });
 
+test("[FE-LCU-RUNE-OFF-01] Auto-Pick confirme le champion sans modifier la page LCU quand l’application automatique des runes est coupée", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    settings: { auto_pick_enabled: false, auto_summoners_enabled: false, skin_automation_enabled: false },
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      rune_pages: [targetRunePage, activeRunePage],
+      current_rune_page: activeRunePage,
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+
+  const autoPick = page.getByRole("switch", { name: "Auto-Pick" });
+  await autoPick.click();
+  await expect(autoPick).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(true);
+  const card = page.locator(".priority-card").first();
+  await card.click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  const runeToggle = editor.getByRole("checkbox", { name: "Appliquer automatiquement les runes" });
+  await expect(runeToggle).toBeChecked();
+  await runeToggle.click();
+  await expect(runeToggle).not.toBeChecked();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.rune_auto_apply).toBe(false);
+  await editor.getByRole("button", { name: "Fermer" }).last().click();
+
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: 511,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/511"
+      && requestBody(request.body).completed === true && requestBody(request.body).championId === 86
+  )).toBe(true);
+  await expect.poll(async () => (await app.readLcuState()).session.actions[0][0].completed).toBe(true);
+  await expect.poll(async () => (await app.readLcuState()).current_rune_page.id).toBe(402);
+  await expect(page.locator(".automation-status-message")).toHaveText("Champion sélectionné : Garen.");
+
+  expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "PUT" && request.path === "/lol-perks/v1/pages/401",
+  )).toHaveLength(0);
+  const history = await readHistory(page);
+  expect(history.items.map((item) => item.message)).toContain("Champion automatically locked in: Garen.");
+  expect(history.items.some((item) => item.message.startsWith('Rune page applied: "E2E Top"'))).toBe(false);
+});
+
+test("[FE-LCU-SKIN-RANDOM-01] le pool aléatoire choisi dans l’éditeur est appliqué et confirmé par le LCU", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    settings: { auto_pick_enabled: false, auto_summoners_enabled: false, skin_automation_enabled: true },
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      rune_pages: [targetRunePage, activeRunePage],
+      current_rune_page: activeRunePage,
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+  const card = page.locator(".priority-card").first();
+  await card.click();
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  const runeToggle = editor.getByRole("checkbox", { name: "Appliquer automatiquement les runes" });
+  await runeToggle.click();
+  await expect(runeToggle).not.toBeChecked();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.rune_auto_apply).toBe(false);
+  await editor.getByRole("radio", { name: "Aléatoire" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("random");
+  await editor.getByRole("button", { name: /Pool aléatoire/ }).click();
+  const skinPicker = page.getByRole("dialog", { name: "Galerie des skins" });
+  const ownedOnly = skinPicker.getByRole("checkbox", { name: "Possédés uniquement" });
+  if (await ownedOnly.isChecked()) await ownedOnly.uncheck();
+  await skinPicker.getByRole("button", { name: "Tout effacer" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.random_skin_pool).toEqual([]);
+
+  const poolIds = [86001, 86013];
+  const commando = skinPicker.getByRole("checkbox", { name: "Commando Garen" });
+  const godKing = skinPicker.getByRole("checkbox", { name: "God-King Garen" });
+  await expect(commando).toBeVisible();
+  await expect(godKing).toBeVisible();
+  const commandoPoolUpdate = page.waitForResponse((response) =>
+    response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/presets/pick_1",
+  );
+  await commando.click();
+  expect((await commandoPoolUpdate).status()).toBe(200);
+  await expect(commando).toBeChecked();
+  const godKingPoolUpdate = page.waitForResponse((response) =>
+    response.request().method() === "PUT" && new URL(response.url()).pathname === "/api/presets/pick_1",
+  );
+  await godKing.click();
+  expect((await godKingPoolUpdate).status()).toBe(200);
+  await expect(godKing).toBeChecked();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.random_skin_pool.map((skin: { skin_id: number }) => skin.skin_id)).toEqual(poolIds);
+  await page.keyboard.press("Escape");
+  await editor.getByRole("button", { name: "Fermer" }).last().click();
+
+  const autoPick = page.getByRole("switch", { name: "Auto-Pick" });
+  await autoPick.click();
+  await expect(autoPick).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(true);
+
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: 512,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86], pickable_skins: [] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/512"
+      && requestBody(request.body).completed === true && requestBody(request.body).championId === 86
+  )).toBe(true);
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/my-selection"
+      && poolIds.includes(requestBody(request.body).selectedSkinId)
+  )).toBe(true);
+  await expect.poll(async () => poolIds.includes((await app.readLcuState()).session.myTeam[0].selectedSkinId)).toBe(true);
+  const selectedSkinId = (await app.readLcuState()).session.myTeam[0].selectedSkinId;
+  expect(poolIds).toContain(selectedSkinId);
+  const selectedSkinName = selectedSkinId === 86001 ? "Commando Garen" : "God-King Garen";
+  const selectedSkinPatch = app.lcuRequests.slice(requestOffset).find((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/my-selection"
+      && requestBody(request.body).selectedSkinId === selectedSkinId
+  );
+  expect(selectedSkinPatch).toBeDefined();
+  await expect(page.locator(".automation-status-message")).toHaveText(`Skin sélectionné : ${selectedSkinName}.`);
+  await expect.poll(async () => (await readHistory(page)).items.map((item) => item.message)).toContain(`Skin applied automatically: ${selectedSkinName}.`);
+});
+
 test("Auto-Ban verrouille le champion choisi et confirme l’état LCU", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,
