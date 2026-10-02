@@ -128,13 +128,93 @@ test("changing the statistics provider persists through FastAPI and rebuilds the
 });
 
 test("changing the live provider persists without leaving the live route", async ({ page }) => {
-  await setupApplication(page, { connected: true });
+  const { app } = await setupApplication(page, { connected: true });
   await page.goto("/#live");
 
-  await page.getByRole("radio", { name: "DeepLOL" }).click();
-  await expect(page.getByRole("radio", { name: "DeepLOL" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.locator(".statistics-fallback")).toContainText("DeepLOL");
-  await expect.poll(async () => (await readSettings(page)).preferred_hotkey_site).toBe("deeplol");
+  const expectedHosts: Record<string, string> = {
+    porofessor: "porofessor.gg",
+    deeplol: "www.deeplol.gg",
+    dpm: "dpm.lol",
+    opgg: "op.gg",
+  };
+  const providerCatalog = await page.request.get(new URL("/api/catalog/providers", app.baseURL).href).then((response) => response.json());
+  const liveProviders = providerCatalog.live as Array<{ id: string; label: string }>;
+  expect(liveProviders.map((provider) => provider.id).sort()).toEqual(Object.keys(expectedHosts).sort());
+  const choices = page.getByRole("radiogroup", { name: "Fournisseur" }).getByRole("radio");
+  await expect.poll(() => choices.count()).toBe(Object.keys(expectedHosts).length);
+  const labels = (await choices.allTextContents()).map((label) => label.trim());
+  let finalProviderId = "";
+  let finalProviderLabel = "";
+  for (const label of labels) {
+    const expectedProvider = liveProviders.find((provider) => provider.label === label);
+    expect(expectedProvider).toBeTruthy();
+    const choice = page.getByRole("radio", { name: label });
+    await choice.click();
+    await expect(choice).toHaveAttribute("aria-checked", "true");
+    const settings = await readSettings(page);
+    const link = await page.request.get(new URL("/api/links/live", app.baseURL).href).then((response) => response.json());
+    expect(settings.preferred_hotkey_site).toBe(expectedProvider!.id);
+    expect(link.site).toBe(expectedProvider!.id);
+    expect(expectedHosts[link.site]).toBe(new URL(link.url).hostname);
+    expect(link).toMatchObject({ available: true, account_source: "connected", riot_id: "E2E Player#SAFE", region: "euw" });
+    finalProviderId = expectedProvider!.id;
+    finalProviderLabel = label;
+  }
+
+  await page.reload();
+  await expect(page.getByRole("radio", { name: finalProviderLabel })).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).preferred_hotkey_site).toBe(finalProviderId);
+  await expect(page).toHaveURL(/#live$/);
+});
+
+test("an injected live provider settings 503 keeps the previous provider and allows retry", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true });
+  await page.goto("/#live");
+  const currentLink = await page.request.get(new URL("/api/links/live", app.baseURL).href).then((response) => response.json());
+  const providerCatalog = await page.request.get(new URL("/api/catalog/providers", app.baseURL).href).then((response) => response.json());
+  const liveProviders = providerCatalog.live as Array<{ id: string; label: string }>;
+  const targetProvider = liveProviders.find((provider) => provider.id !== currentLink.site);
+  expect(targetProvider).toBeTruthy();
+  const target = page.getByRole("radio", { name: targetProvider!.label, exact: true });
+  await expect(target).toHaveAttribute("aria-checked", "false");
+
+  let rejectedUpdates = 0;
+  await page.route("**/api/settings", async (route) => {
+    const request = route.request();
+    if (request.method() === "PATCH" && request.postDataJSON()?.preferred_hotkey_site === targetProvider!.id && rejectedUpdates++ === 0) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected live provider settings failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+  const failedUpdate = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.request().postDataJSON()?.preferred_hotkey_site === targetProvider!.id
+    && response.status() === 503,
+  );
+  await target.click();
+  expect((await failedUpdate).status()).toBe(503);
+  await expect(page.getByRole("alert")).toHaveText("Impossible d’enregistrer ce réglage.");
+  await expect(target).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).preferred_hotkey_site).toBe(currentLink.site);
+  await expect.poll(async () => (await page.request.get(new URL("/api/links/live", app.baseURL).href).then((response) => response.json())).site).toBe(currentLink.site);
+  expect(rejectedUpdates).toBe(1);
+
+  await page.unroute("**/api/settings");
+  const savedUpdate = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.request().postDataJSON()?.preferred_hotkey_site === targetProvider!.id
+    && response.status() === 200,
+  );
+  await target.click();
+  expect((await savedUpdate).ok()).toBe(true);
+  await expect(target).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect.poll(async () => (await readSettings(page)).preferred_hotkey_site).toBe(targetProvider!.id);
+  const updatedLink = await page.request.get(new URL("/api/links/live", app.baseURL).href).then((response) => response.json());
+  expect(updatedLink.site).toBe(targetProvider!.id);
   await expect(page).toHaveURL(/#live$/);
 });
 

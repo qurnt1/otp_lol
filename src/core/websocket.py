@@ -137,6 +137,11 @@ class WebSocketManager(ChampSelectMixin):
         self.ws_active: bool = False
         self._stop_event = Event()
         self._cs_tick_lock = asyncio.Lock()
+        self._ready_check_cycle = 0
+        self._ready_check_accept_in_progress_cycle: Optional[int] = None
+        self._ready_check_accepted_cycle: Optional[int] = None
+        self._ready_check_accept_retry_requested_cycle: Optional[int] = None
+        self._ready_check_accept_retry_attempted_cycle: Optional[int] = None
         self.game_start_cooldown: float = 12.0
 
     def _notify_event(self, event_type: str, data: Any = None) -> None:
@@ -741,6 +746,7 @@ class WebSocketManager(ChampSelectMixin):
         """Clear per-connection runtime fields before a reconnect or final shutdown."""
         self.connection = None
         self.ws_active = False
+        self._reset_ready_check_cycle()
         self.state.current_phase = "None"
         self.state.summoner = ""
         self.state.summoner_id = None
@@ -754,6 +760,25 @@ class WebSocketManager(ChampSelectMixin):
         self.state.last_reported_summoner = None
         self.state.current_queue_id = 0
         self.state.reset_between_games()
+
+    def _reset_ready_check_cycle(self) -> None:
+        """Forget accept state and invalidate results from an older ready-check cycle."""
+        self._ready_check_cycle += 1
+        self._ready_check_accept_in_progress_cycle = None
+        self._ready_check_accepted_cycle = None
+        self._ready_check_accept_retry_requested_cycle = None
+        self._ready_check_accept_retry_attempted_cycle = None
+
+    def _take_ready_check_accept_retry_request(self, cycle: int) -> bool:
+        if (
+            cycle != self._ready_check_cycle
+            or self._ready_check_accept_retry_requested_cycle != cycle
+            or self._ready_check_accept_retry_attempted_cycle == cycle
+        ):
+            return False
+        self._ready_check_accept_retry_requested_cycle = None
+        self._ready_check_accept_retry_attempted_cycle = cycle
+        return True
 
     def _notify_ws_disconnected(self, *, transient: bool, reason: str, status_action: Optional[str] = None) -> None:
         """Emit a structured disconnect event unless shutdown was explicitly requested."""
@@ -858,8 +883,22 @@ class WebSocketManager(ChampSelectMixin):
                     if not phase:
                         return
 
-                    if phase != self.state.current_phase:
-                        logging.info("[PHASE] %s -> %s", self.state.current_phase, phase)
+                    previous_phase = self.state.current_phase
+                    if phase != previous_phase:
+                        logging.info("[PHASE] %s -> %s", previous_phase, phase)
+                        if phase == "Matchmaking" and (
+                            previous_phase != "None"
+                            or self._ready_check_accepted_cycle is not None
+                        ):
+                            self._reset_ready_check_cycle()
+                        elif phase not in (
+                            "Matchmaking",
+                            "ReadyCheck",
+                            "None",
+                            "Lobby",
+                            "ChampSelect",
+                        ):
+                            self._reset_ready_check_cycle()
                     self.state.current_phase = phase
 
                     self._notify_event(self.EVENT_PHASE_CHANGE, phase)
@@ -867,6 +906,7 @@ class WebSocketManager(ChampSelectMixin):
                     if phase in ("Lobby", "Matchmaking", "ChampSelect"):
                         await self._refresh_current_queue_id()
                     if phase == "ChampSelect":
+                        self._reset_ready_check_cycle()
                         self.state.reset_between_games()
                         await self._champ_select_tick()
                     if phase in ("EndOfGame", "WaitingForStats"):
@@ -884,22 +924,49 @@ class WebSocketManager(ChampSelectMixin):
                         and data.get("state") == "InProgress"
                         and data.get("playerResponse") != "Accepted"
                     ):
+                        cycle = self._ready_check_cycle
+                        if self._ready_check_accept_in_progress_cycle == cycle:
+                            if self._ready_check_accept_retry_attempted_cycle != cycle:
+                                self._ready_check_accept_retry_requested_cycle = cycle
+                            return
+                        if self._ready_check_accepted_cycle == cycle:
+                            return
+
+                        self._ready_check_accept_retry_requested_cycle = None
+                        self._ready_check_accept_retry_attempted_cycle = None
+                        self._ready_check_accept_in_progress_cycle = cycle
                         accept_url = f"{EP_READY_CHECK}/accept"
-                        logging.info("[READY] POST %s", accept_url)
-                        response = await connection.request("post", accept_url)
-                        logging.info("[READY] POST %s -> %s", accept_url, getattr(response, "status", "no-response"))
-                        if response and response.status < 400:
-                            log_history_event(
-                                "ready_check",
-                                "Match automatically accepted.",
-                                level="success",
-                                category="Match found",
-                                action="accepted",
-                            )
-                            self._notify_status("match_accepted", level="OK")
-                            if not self.state.has_played_accept_sound:
-                                self.state.has_played_accept_sound = True
-                                self._notify_event(self.EVENT_READY_CHECK_ACCEPTED, None)
+                        try:
+                            for _ in range(2):
+                                logging.info("[READY] POST %s", accept_url)
+                                try:
+                                    response = await connection.request("post", accept_url)
+                                except Exception:
+                                    if self._take_ready_check_accept_retry_request(cycle):
+                                        continue
+                                    raise
+                                logging.info("[READY] POST %s -> %s", accept_url, getattr(response, "status", "no-response"))
+                                if response and response.status < 400:
+                                    if cycle == self._ready_check_cycle:
+                                        self._ready_check_accepted_cycle = cycle
+                                        self._ready_check_accept_retry_requested_cycle = None
+                                    log_history_event(
+                                        "ready_check",
+                                        "Match automatically accepted.",
+                                        level="success",
+                                        category="Match found",
+                                        action="accepted",
+                                    )
+                                    self._notify_status("match_accepted", level="OK")
+                                    if not self.state.has_played_accept_sound:
+                                        self.state.has_played_accept_sound = True
+                                        self._notify_event(self.EVENT_READY_CHECK_ACCEPTED, None)
+                                    break
+                                if not self._take_ready_check_accept_retry_request(cycle):
+                                    break
+                        finally:
+                            if self._ready_check_accept_in_progress_cycle == cycle:
+                                self._ready_check_accept_in_progress_cycle = None
 
                 @connector.ws.register(EP_SESSION)
                 async def _ws_cs_session(connection, event):

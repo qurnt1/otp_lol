@@ -40,8 +40,9 @@ test("a pending network check shows checking feedback without a retry action", a
   await expect(warning).toHaveCount(0);
 });
 
-test("offline retry button stays inside the 1086x753 viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 1086, height: 753 });
+test("offline retry button stays fully visible and clickable at the 1069px native capture width", async ({ page }) => {
+  const viewportWidth = 1069;
+  await page.setViewportSize({ width: viewportWidth, height: 753 });
   await setupApplication(page, { networkStatus: "offline" });
   await page.goto("/#dashboard");
 
@@ -53,9 +54,20 @@ test("offline retry button stays inside the 1086x753 viewport", async ({ page })
   const bounds = await retryButton.boundingBox();
   expect(warningBounds).not.toBeNull();
   expect(bounds).not.toBeNull();
+  expect(await page.evaluate(() => window.innerWidth)).toBe(viewportWidth);
   expect(bounds!.x).toBeGreaterThanOrEqual(0);
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(1086);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewportWidth);
   expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(warningBounds!.x + warningBounds!.width);
+
+  const rightEdgeIsClickable = await page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y);
+    return target?.closest("button") === document.querySelector(".network-warning > button");
+  }, { x: bounds!.x + bounds!.width - 1, y: bounds!.y + bounds!.height / 2 });
+  expect(rightEdgeIsClickable).toBe(true);
+
+  const retryResponse = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/network/status");
+  await page.mouse.click(bounds!.x + bounds!.width - 2, bounds!.y + bounds!.height / 2);
+  expect((await retryResponse).status()).toBe(200);
 });
 
 test("local network-status failure shows recovery and retries the real endpoint", async ({ page }) => {

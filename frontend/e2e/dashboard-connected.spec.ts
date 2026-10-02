@@ -1,4 +1,4 @@
-import { expect, readPresets, readRuntime, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
+import { expect, readHistory, readPresets, readRuntime, readSettings, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
 test("dashboard connecté affiche l’identité et la phase LCU sans compte synchronisé dans la barre de phase", async ({ page }) => {
   await setupApplication(page, { connected: true, configured: true, phase: "Lobby" });
@@ -38,6 +38,102 @@ test("le statut Ready Check provient de l’événement LCU et affiche sa gravit
   await expect(status).toHaveAttribute("class", /is-success/);
   await expect(status).toContainText("Ready-check accepté.");
   await expect(status.locator("time")).toBeVisible();
+});
+
+test("[DASH-14] répéter le même événement Ready Check ne répète pas l’acceptation ni son historique", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    autoAccept: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+  const requestOffset = app.lcuRequests.length;
+  const readyCheck = { state: "InProgress", playerResponse: "None" };
+
+  await app.configureLcuState({ ready_check_accept_paused: true });
+  let firstEventId = "";
+  try {
+    const firstEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", readyCheck);
+    firstEventId = firstEvent.id;
+    await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
+
+    const concurrentDuplicate = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", readyCheck);
+    await app.waitForLcuEventCompletion(concurrentDuplicate.id);
+    expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    )).toHaveLength(1);
+    expect((await app.readLcuState()).ready_check.playerResponse).toBe("None");
+  } finally {
+    await app.configureLcuState({ ready_check_accept_paused: false });
+  }
+  expect(firstEventId).not.toBe("");
+  await app.waitForLcuEventCompletion(firstEventId);
+  await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
+    item.message === "Match automatically accepted.",
+  ).length).toBe(1);
+
+  const repeatedEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", readyCheck);
+  await app.waitForLcuEventCompletion(repeatedEvent.id);
+  const repeatedEventEffects = {
+    acceptRequests: app.lcuRequests.slice(requestOffset).filter((request) =>
+      request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+    ).length,
+    historyEntries: (await readHistory(page)).items.filter((item) =>
+      item.message === "Match automatically accepted.",
+    ).length,
+  };
+  expect(repeatedEventEffects).toEqual({ acceptRequests: 1, historyEntries: 1 });
+
+  const matchmakingEvent = await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "Matchmaking");
+  await app.waitForLcuEventCompletion(matchmakingEvent.id);
+  const nextCycleEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", readyCheck);
+  await app.waitForLcuEventCompletion(nextCycleEvent.id);
+  expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+  )).toHaveLength(2);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+  await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
+    item.message === "Match automatically accepted.",
+  ).length).toBe(2);
+
+  const reconnectSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(reconnectSubscription);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+
+  const reconnectedCycleEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", readyCheck);
+  await app.waitForLcuEventCompletion(reconnectedCycleEvent.id);
+  expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === "/lol-matchmaking/v1/ready-check/accept",
+  )).toHaveLength(3);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+  await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
+    item.message === "Match automatically accepted.",
+  ).length).toBe(3);
+});
+
+test("l’attente d’un événement LCU échoue si son handler lève une exception", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+
+  const malformedLoginEvent = await app.emitLcuEvent("/lol-login/v1/session", ["private-marker"]);
+  let completionError: unknown;
+  try {
+    await app.waitForLcuEventCompletion(malformedLoginEvent.id);
+  } catch (error) {
+    completionError = error;
+  }
+
+  expect(completionError).toBeInstanceOf(Error);
+  expect((completionError as Error).message)
+    .toBe(`LCU WebSocket event handler ${malformedLoginEvent.id} failed.`);
+  expect((completionError as Error).message).not.toContain("private-marker");
 });
 
 test("le Dashboard affiche l’avertissement réel si aucun champion configuré n’est pickable", async ({ page }) => {
@@ -210,6 +306,39 @@ test("le Dashboard suit League fermé, démarrage sans session, les phases de pa
   await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
 });
 
+test("[DASH-12] la sidebar efface le compte hors ligne puis suit le nouveau compte connecté", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    phase: "Lobby",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await page.goto("/#dashboard");
+  const account = page.locator(".sidebar-account");
+  await expect(account).toHaveText("E2E Player#SAFE");
+
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await expect(account).toHaveText("Aucun compte connecté");
+
+  const nextAccount = {
+    gameName: "Dashboard Player B",
+    gameTag: "BBBB",
+    summonerId: 22222222,
+    name: "Dashboard Player B",
+    puuid: "otp-lol-e2e-dashboard-b",
+  };
+  await app.configureLcuState({
+    account_responses: { "/lol-chat/v1/me": { status: 200, payload: nextAccount } },
+  });
+  const nextSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(nextSubscription);
+  await app.emitLcuEvent("/lol-chat/v1/me", nextAccount);
+
+  await expect.poll(async () => (await readRuntime(page)).riot_id).toBe("Dashboard Player B#BBBB");
+  await expect(account).toHaveText("Dashboard Player B#BBBB");
+});
+
 test("Dashboard affiche le skin choisi et retombe sur le portrait du champion si le skin est désactivé", async ({ page }) => {
   await setupApplication(page, { connected: true, configured: true, networkStatus: "online" });
   await page.goto("/#dashboard");
@@ -266,15 +395,17 @@ test("modifier le ban choisit réellement un champion puis revient au Dashboard"
   await expect(await readPresets(page)).toMatchObject({ selected_ban: "Teemo" });
 });
 
-test("annuler la sélection du ban ramène au Dashboard et rend le focus au déclencheur", async ({ page }) => {
+test("[DASH-04] annuler la sélection du ban garde la configuration puis rend le focus au déclencheur", async ({ page }) => {
   await setupApplication(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
+  const selectedBanBefore = (await readPresets(page)).selected_ban;
 
   await page.locator(".ban-panel").click();
   await page.getByRole("button", { name: "Fermer" }).click();
 
   await expect(page).toHaveURL(/#dashboard$/);
   await expect(page.locator("#dashboard-edit-ban")).toBeFocused();
+  await expect.poll(async () => (await readPresets(page)).selected_ban).toBe(selectedBanBefore);
 });
 
 test("les aperçus bootstrap n’ajoutent pas de requêtes de catalogue à l’affichage des cartes", async ({ page }) => {

@@ -544,7 +544,7 @@ test("history append enforces its retention limit, ordering, API limit, and rest
 });
 
 test("history API tolerates unreadable JSON and persists subsequent events", async ({ page }) => {
-  const app = await startOtpApp();
+  let app = await startOtpApp();
   try {
     await app.waitForWebSocketSubscription();
     const historyPath = path.join(app.appDataDir, "OTP LOL", "history.json");
@@ -570,8 +570,34 @@ test("history API tolerates unreadable JSON and persists subsequent events", asy
     expect(JSON.parse(await readFile(historyPath, "utf8"))).toMatchObject([
       { message: "Match automatically accepted.", type: "ready_check" },
     ]);
+
+    const recovered = await page.request.get(`${app.baseURL}/api/history`);
+    const recoveredPayload = await recovered.json();
+    const acceptedEvent = recoveredPayload.items.find(
+      (entry) => entry.message === "Match automatically accepted." && entry.type === "ready_check",
+    );
+    expect(acceptedEvent).toBeDefined();
+
+    const disableAutoAccept = await page.request.patch(`${app.baseURL}/api/settings`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: { auto_accept_enabled: false },
+    });
+    expect(disableAutoAccept.status()).toBe(200);
+    const stateDir = app.stateDir;
+    await app.stop({ retainState: true });
+    app = null;
+    app = await startOtpApp({ stateDir });
+
+    const restarted = await page.request.get(`${app.baseURL}/api/history?limit=250`);
+    expect(restarted.status()).toBe(200);
+    const restartedHistory = await restarted.json();
+    expect(restartedHistory.items).toEqual(expect.arrayContaining([acceptedEvent]));
+    expect(restartedHistory.count).toBe(restartedHistory.items.length);
+    const persistedHistory = JSON.parse(await readFile(historyPath, "utf8"));
+    expect(persistedHistory).toEqual(expect.arrayContaining([acceptedEvent]));
+    expect(restartedHistory.items).toEqual([...persistedHistory].reverse());
   } finally {
-    await app.stop();
+    if (app) await app.stop();
   }
 });
 

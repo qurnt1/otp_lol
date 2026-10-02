@@ -278,12 +278,14 @@ test("preset master gates dependent automations without erasing saved choices", 
   expect(settings.presets_enabled).toBe(false);
 });
 
-test("ban picker excludes configured picks and persists its selected champion", async ({ page }) => {
+test("[DASH-04] ban picker excludes configured picks and persists its selected champion", async ({ page }) => {
   await setupApplication(page, { connected: true, configured: true });
   await page.goto("/#dashboard");
   await page.locator(".ban-panel").click();
   const picker = page.getByRole("dialog", { name: "Champion à bannir" });
   await expect(picker.getByRole("option", { name: /Garen/ })).toHaveCount(0);
+  await expect(picker.getByRole("option", { name: /Lux/ })).toHaveCount(0);
+  await expect(picker.getByRole("option", { name: /Ashe/ })).toHaveCount(0);
   await picker.getByRole("textbox", { name: "Rechercher un champion…" }).fill("Annie");
   await picker.getByRole("option", { name: /Annie/ }).click();
 

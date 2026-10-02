@@ -643,13 +643,37 @@ async def _run(state_dir: Path, frontend_dir: Path) -> None:
         )
         context = ApplicationContext.from_system()
         original_event_observer = context.runtime.manager.diagnostic_event_callback
+        lcu_event_sequence = 0
 
         def report_lcu_event(topic: str, event_type: str, payload: Any) -> None:
+            nonlocal lcu_event_sequence
+            lcu_event_sequence += 1
+            event_id = f"lcu-event-{lcu_event_sequence}"
+
+            def report_lcu_event_completion(task: asyncio.Task[Any]) -> None:
+                if task.cancelled():
+                    outcome = "cancelled"
+                elif task.exception() is not None:
+                    outcome = "failed"
+                else:
+                    outcome = "completed"
+                _emit(
+                    {
+                        "type": "lcu-websocket-event-completed",
+                        "id": event_id,
+                        "outcome": outcome,
+                    }
+                )
+
+            event_task = asyncio.current_task()
+            if event_task is not None:
+                event_task.add_done_callback(report_lcu_event_completion)
             if original_event_observer is not None:
                 original_event_observer(topic, event_type, payload)
             _emit(
                 {
                     "type": "lcu-websocket-event",
+                    "id": event_id,
                     "topic": topic,
                     "eventType": event_type,
                     "data": payload,

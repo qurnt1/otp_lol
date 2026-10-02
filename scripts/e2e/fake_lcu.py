@@ -76,6 +76,9 @@ class FakeLcuServer:
         }
         self.phase = "None"
         self.ready_check = {"state": "InProgress", "playerResponse": "None"}
+        self.ready_check_accept_paused = False
+        self._ready_check_accept_release = asyncio.Event()
+        self._ready_check_accept_release.set()
         self.session: dict[str, Any] = {
             "gameConfig": {"queueId": 420, "gameMode": "CLASSIC"},
             "localPlayerCellId": 1,
@@ -256,6 +259,7 @@ class FakeLcuServer:
             "static_catalogues",
             "asset_responses",
             "mutation_responses",
+            "ready_check_accept_paused",
         }
         unknown = state.keys() - allowed
         if unknown:
@@ -326,11 +330,26 @@ class FakeLcuServer:
                 if (
                     not isinstance(statuses, list)
                     or not 1 <= len(statuses) <= 4
-                    or any(type(status) is not int or not 400 <= status <= 599 for status in statuses)
+                    or any(
+                        type(status) is not int
+                        or not (
+                            400 <= status <= 599
+                            or (operation == "POST /lol-matchmaking/v1/ready-check/accept" and status == 200)
+                        )
+                        for status in statuses
+                    )
                 ):
                     raise ValueError(f"Invalid fake mutation response statuses for {operation}")
+        ready_check_accept_paused = state.get("ready_check_accept_paused")
+        if ready_check_accept_paused is not None and type(ready_check_accept_paused) is not bool:
+            raise ValueError("Fake ready-check accept pause must be a boolean")
         for key, value in state.items():
             setattr(self, key, deepcopy(value))
+        if ready_check_accept_paused is not None:
+            if ready_check_accept_paused:
+                self._ready_check_accept_release.clear()
+            else:
+                self._ready_check_accept_release.set()
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -361,10 +380,19 @@ class FakeLcuServer:
         except (json.JSONDecodeError, UnicodeDecodeError, web.HTTPException):
             body = None
         self._record_request(request, body)
+        if request.method == "POST" and request.path == "/lol-matchmaking/v1/ready-check/accept":
+            await self._ready_check_accept_release.wait()
         response_statuses = self.mutation_responses.get(f"{request.method} {request.path}")
         if response_statuses:
-            rejection_body = {"detail": "Synthetic LCU mutation rejected"}
-            response = web.json_response(rejection_body, status=response_statuses.pop(0))
+            status = response_statuses.pop(0)
+            if status < 400:
+                if request.method == "POST" and request.path == "/lol-matchmaking/v1/ready-check/accept":
+                    self.ready_check["playerResponse"] = "Accepted"
+                response_body = None
+                response = web.Response(status=status)
+            else:
+                response_body = {"detail": "Synthetic LCU mutation rejected"}
+                response = web.json_response(response_body, status=status)
             await response.prepare(request)
             await response.write_eof()
             self._emit_request(
@@ -373,7 +401,7 @@ class FakeLcuServer:
                     "method": request.method,
                     "path": request.path,
                     "status": response.status,
-                    "body": rejection_body,
+                    "body": response_body,
                     "complete": True,
                 }
             )

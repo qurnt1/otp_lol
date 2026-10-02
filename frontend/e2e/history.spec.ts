@@ -225,7 +225,7 @@ test("canceling history clear and confirming with Escape preserve existing entri
   await expect.poll(async () => (await readHistory(page)).count).toBeGreaterThan(0);
 });
 
-test("History clear failure keeps data, prevents duplicate pending submits, and can be retried", async ({ page }) => {
+test("[HIST-03] History clear double activation preserves data on failure and can be retried", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true, autoAccept: true });
   await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
   await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
@@ -255,7 +255,13 @@ test("History clear failure keeps data, prevents duplicate pending submits, and 
   await page.getByRole("button", { name: "Effacer l’historique" }).click();
   const dialog = page.getByRole("alertdialog");
   const confirm = dialog.getByRole("button", { name: "Effacer l’historique" });
-  await confirm.click();
+  const confirmBounds = await confirm.boundingBox();
+  expect(confirmBounds).not.toBeNull();
+  await page.mouse.dblclick(
+    confirmBounds!.x + confirmBounds!.width / 2,
+    confirmBounds!.y + confirmBounds!.height / 2,
+    { delay: 50 },
+  );
   await deleteStarted;
   await expect(confirm).toBeDisabled();
   expect(deleteCount).toBe(1);

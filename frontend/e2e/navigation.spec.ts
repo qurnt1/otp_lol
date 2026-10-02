@@ -126,6 +126,28 @@ test("sidebar navigation exposes every main page and marks the current destinati
   await expect(navigation.getByRole("link", { name: "Presets" })).toHaveCount(0);
 });
 
+test("[NAV-01] chaque lien de navigation principale s’active au clavier", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#diagnostics");
+  const navigation = page.getByRole("navigation");
+
+  for (const [label, route, heading] of [
+    ["Dashboard", /#dashboard$/, "Préparation de partie"],
+    ["Statistiques", /#statistics$/, "Statistiques"],
+    ["En direct", /#live$/, "En direct"],
+    ["Journal de logs", /#history$/, "Journal de logs"],
+    ["Réglages", /#settings\/general$/, "Général"],
+  ] as const) {
+    const link = navigation.getByRole("link", { name: label, exact: true });
+    await link.focus();
+    await expect(link).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(route);
+    await expect(link).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+  }
+});
+
 test("settings Links shortcuts navigate to both provider pages", async ({ page }) => {
   await setupApplication(page, { connected: true });
   await page.goto("/#settings/links");
@@ -161,8 +183,21 @@ test("Dashboard quick actions expose only valid destinations", async ({ page }) 
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");
   const quickActions = page.locator(".quick-panel");
-  await expect(quickActions.getByRole("link", { name: "Ouvrir le journal de logs" })).toHaveAttribute("href", "#history");
-  await expect(quickActions.getByRole("link", { name: "Ouvrir les diagnostics LCU" })).toHaveAttribute("href", "#diagnostics");
-  await expect(quickActions.getByRole("link", { name: "Raccourcis clavier" })).toHaveAttribute("href", "#settings/shortcuts");
+  for (const [label, route, heading] of [
+    ["Ouvrir les statistiques du compte", "#statistics", "Statistiques"],
+    ["Ouvrir les statistiques en direct", "#live", "En direct"],
+    ["Ouvrir le journal de logs", "#history", "Journal de logs"],
+    ["Ouvrir les diagnostics LCU", "#diagnostics", "Diagnostics LCU"],
+    ["Raccourcis clavier", "#settings/shortcuts", "Raccourcis"],
+  ] as const) {
+    const link = quickActions.getByRole("link", { name: label });
+    await expect(link).toHaveAttribute("href", route);
+    await link.click();
+    await expect(page).toHaveURL(new RegExp(`${route}$`));
+    await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/#dashboard$/);
+    await expect(page.getByRole("heading", { name: "Préparation de partie", exact: true })).toBeVisible();
+  }
   await expect(quickActions.getByRole("link", { name: /presets/i })).toHaveCount(0);
 });

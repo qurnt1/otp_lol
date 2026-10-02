@@ -429,6 +429,22 @@ export async function startOtpApp({
         `LCU WebSocket event ${uri}`,
       );
     },
+    async waitForLcuEventCompletion(eventId, timeoutMs = 5_000) {
+      const completion = await waitForMessage(
+        (message) => message.type === "lcu-websocket-event-completed" && message.id === eventId,
+        timeoutMs,
+        `LCU WebSocket event handler ${eventId}`,
+      );
+      if (completion.outcome !== "completed") {
+        const outcome = completion.outcome === "cancelled"
+          ? "was cancelled"
+          : completion.outcome === "failed"
+            ? "failed"
+            : "reported an invalid completion outcome";
+        throw new Error(`LCU WebSocket event handler ${eventId} ${outcome}.`);
+      }
+      return completion;
+    },
     async waitForChampSelectRetryReady() {
       await sendCommand({ command: "wait-champ-select-retry-ready" }, 6_000);
     },

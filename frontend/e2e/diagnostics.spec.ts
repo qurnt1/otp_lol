@@ -14,6 +14,29 @@ test("diagnostics shows the real disconnected transport and disables LCU checks"
   await expect(page.locator(".diagnostics-account-card")).toContainText("E2E Player#SAFE");
 });
 
+test("Diagnostics stays mounted across League disconnect and reconnect", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true });
+  await page.goto("/#diagnostics");
+  const runChecks = page.getByRole("button", { name: "Tester les endpoints sûrs" });
+  const offlineNote = page.getByText("League n’est pas connecté. Les tests seront réessayés quand le client sera ouvert.");
+  await expect(page.getByRole("heading", { name: "Diagnostics LCU" })).toBeVisible();
+  await expect(runChecks).toBeEnabled();
+  await expect(offlineNote).toHaveCount(0);
+
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await expect(offlineNote).toBeVisible();
+  await expect(runChecks).toBeDisabled();
+
+  const nextSubscription = app.websocketSubscriptions.length + 1;
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(nextSubscription);
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(true);
+  await expect(offlineNote).toHaveCount(0);
+  await expect(runChecks).toBeEnabled();
+  await expect(page).toHaveURL(/#diagnostics$/);
+});
+
 test("[DIAG-01] a diagnostics read failure can be retried from the visible error state", async ({ page }) => {
   await setupApplication(page, { connected: true });
   await page.clock.install();
@@ -253,6 +276,59 @@ test("[DIAG-03] log filters combine with text search and clear back to visible e
   await webViewFilter.click();
   await expect(webViewFilter).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+});
+
+test("[DIAG-03] a failed LCU check is searchable in the Errors filter", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    lcuState: {
+      account_responses: {
+        "/lol-summoner/v1/current-summoner": { status: 503, payload: { detail: "Synthetic LCU response failure" } },
+      },
+    },
+  });
+  await page.goto("/#diagnostics");
+
+  const runResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/diagnostics/run"
+    && response.status() === 200,
+  );
+  await page.getByRole("button", { name: "Tester les endpoints sûrs" }).click();
+  const runResponse = await runResponsePromise;
+  const results = (await runResponse.json()).results;
+  expect(results).toContainEqual(expect.objectContaining({
+    id: "current_summoner",
+    status: 503,
+    success: false,
+  }));
+  expect(results).toContainEqual(expect.objectContaining({ id: "gameflow_phase", status: 200, success: true }));
+
+  const failedRequest = page.locator(".diagnostics-log-row")
+    .filter({ hasText: "/lol-summoner/v1/current-summoner" })
+    .filter({ hasText: "503" })
+    .first();
+  const successfulRequest = page.locator(".diagnostics-log-row")
+    .filter({ hasText: "/lol-gameflow/v1/gameflow-phase" })
+    .filter({ hasText: "200" })
+    .first();
+  await expect(failedRequest).toBeVisible();
+  await expect(successfulRequest).toBeVisible();
+  const errorsFilter = page.getByRole("button", { name: "Erreurs", exact: true });
+  await errorsFilter.click();
+  await expect(errorsFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(failedRequest).toBeVisible();
+  await expect(successfulRequest).toHaveCount(0);
+
+  const search = page.getByRole("searchbox", { name: "Filtrer les journaux" });
+  await search.fill("current-summoner");
+  await expect(failedRequest).toBeVisible();
+  await search.fill("no matching failed request");
+  await expect(page.getByText("Aucune entrée pour ce filtre.")).toBeVisible();
+  await search.fill("");
+  await expect(failedRequest).toBeVisible();
+  const diagnostics = await page.request.get(new URL("/api/diagnostics", app.baseURL).href).then((response) => response.json());
+  expect(diagnostics.endpoint_results).toContainEqual(expect.objectContaining({ id: "current_summoner", status: 503, success: false }));
 });
 
 test("[DIAG-02] a rejected endpoint check can be retried and its real result survives reload", async ({ page }) => {

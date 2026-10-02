@@ -2,8 +2,10 @@ import { expect, test } from "../../frontend/node_modules/@playwright/test/index
 import { startOtpApp } from "./appServer.mjs";
 
 const CHAMPION_PATH = "/lol-game-data/assets/v1/champion-icons/86.png";
+const CHAMPION_CATALOGUE_PATH = "/lol-game-data/assets/v1/champion-summary.json";
+const MAPS_CATALOGUE_PATH = "/lol-game-data/assets/v1/maps.json";
 const CATALOGUES = {
-  "/lol-game-data/assets/v1/champion-summary.json": [
+  [CHAMPION_CATALOGUE_PATH]: [
     {
       id: 86,
       name: "Garen",
@@ -20,7 +22,7 @@ const CATALOGUES = {
   "/lol-game-data/assets/v1/items.json": [
     { id: 1001, name: "Boots", iconPath: "/lol-game-data/assets/v1/items/1001.png" },
   ],
-  "/lol-game-data/assets/v1/maps.json": [{ mapId: 11, name: "Summoner's Rift" }],
+  [MAPS_CATALOGUE_PATH]: [{ mapId: 11, name: "Summoner's Rift" }],
   "/lol-game-data/assets/v1/queues.json": [{ queueId: 420, name: "Ranked Solo" }],
 };
 
@@ -29,6 +31,10 @@ const PNG = Buffer.from(
   "base64",
 );
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00]);
+const PNG_V2 = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/3f8AAAAASUVORK5CYII=",
+  "base64",
+);
 
 async function connected(app, request) {
   await expect.poll(async () => {
@@ -40,6 +46,32 @@ async function connected(app, request) {
 
 function binaryResponse(content, contentType) {
   return { status: 200, content_type: contentType, body_base64: content.toString("base64") };
+}
+
+async function expectStaticCacheVersion(app, request, version) {
+  await expect.poll(async () => {
+    const response = await request.get(`${app.baseURL}/api/game-data/status`);
+    if (!response.ok()) return null;
+    const status = await response.json();
+    return {
+      source: status.source,
+      gameVersion: status.game_version,
+      cacheVersion: status.cache_version,
+      catalogs: status.catalogs,
+    };
+  }, { timeout: 15_000 }).toMatchObject({
+    source: "lcu",
+    gameVersion: version,
+    cacheVersion: version,
+    catalogs: {
+      champions: true,
+      spells: true,
+      perks: true,
+      items: true,
+      maps: true,
+      queues: true,
+    },
+  });
 }
 
 test("asset API serves validated LCU PNG, JPEG, skin variants and cached bytes", async ({ page }) => {
@@ -92,6 +124,111 @@ test("asset API serves validated LCU PNG, JPEG, skin variants and cached bytes",
     expect((await page.request.get(`${app.baseURL}/api/assets/champions/999.png`)).status()).toBe(404);
     expect((await page.request.get(`${app.baseURL}/api/assets/champions/not-a-number.png`)).status()).toBe(422);
     expect(app.lcuRequests.some(({ path }) => path === "/lol-game-data/assets/v1/champion-icons/999.png")).toBe(false);
+  } finally {
+    await app.stop();
+  }
+});
+
+test("asset API separates cached bytes when the LCU game version changes", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await connected(app, page.request);
+    await app.configureLcuState({
+      static_data_online: true,
+      game_version: "16.1.1",
+      static_catalogues: CATALOGUES,
+      asset_responses: { [CHAMPION_PATH]: binaryResponse(PNG, "image/png") },
+    });
+    await page.request.get(`${app.baseURL}/api/game-data/status`);
+    await expectStaticCacheVersion(app, page.request, "16.1.1");
+
+    const firstResponse = await page.request.get(`${app.baseURL}/api/assets/champions/86.png`);
+    expect(firstResponse.status()).toBe(200);
+    expect(await firstResponse.body()).toEqual(PNG);
+    expect(app.lcuRequests.filter(({ method, path }) => method === "GET" && path === CHAMPION_PATH)).toHaveLength(1);
+
+    await app.configureLcuConnection({ online: false });
+    await app.configureLcuState({
+      game_version: "16.1.2",
+      asset_responses: { [CHAMPION_PATH]: binaryResponse(PNG_V2, "image/png") },
+    });
+    await app.configureLcuConnection({ online: true });
+    await app.waitForWebSocketSubscription(2);
+    await expectStaticCacheVersion(app, page.request, "16.1.2");
+
+    const updatedResponse = await page.request.get(`${app.baseURL}/api/assets/champions/86.png`);
+    expect(updatedResponse.status()).toBe(200);
+    expect(await updatedResponse.body()).toEqual(PNG_V2);
+    expect(app.lcuRequests.filter(({ method, path }) => method === "GET" && path === CHAMPION_PATH)).toHaveLength(2);
+
+    const cachedResponse = await page.request.get(`${app.baseURL}/api/assets/champions/86.png`);
+    expect(cachedResponse.status()).toBe(200);
+    expect(await cachedResponse.body()).toEqual(PNG_V2);
+    expect(app.lcuRequests.filter(({ method, path }) => method === "GET" && path === CHAMPION_PATH)).toHaveLength(2);
+  } finally {
+    await app.stop();
+  }
+});
+
+test("an invalid new LCU catalogue leaves the previous complete snapshot available", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await connected(app, page.request);
+    await app.configureLcuState({
+      static_data_online: true,
+      game_version: "16.1.1",
+      static_catalogues: CATALOGUES,
+    });
+    await page.request.get(`${app.baseURL}/api/game-data/status`);
+    await expectStaticCacheVersion(app, page.request, "16.1.1");
+
+    const initialChampions = await page.request.get(`${app.baseURL}/api/champions`);
+    expect((await initialChampions.json()).items.map(({ id }) => id)).toEqual([86]);
+    const previousMapRequests = app.lcuRequests.filter(
+      ({ method, path }) => method === "GET" && path === MAPS_CATALOGUE_PATH,
+    ).length;
+    const incompleteCatalogues = {
+      ...CATALOGUES,
+      [CHAMPION_CATALOGUE_PATH]: [
+        ...CATALOGUES[CHAMPION_CATALOGUE_PATH],
+        { id: 99, name: "Lux", alias: "Lux", squarePortraitPath: "/lol-game-data/assets/v1/champion-icons/99.png" },
+      ],
+      [MAPS_CATALOGUE_PATH]: [],
+    };
+
+    await app.configureLcuConnection({ online: false });
+    await app.configureLcuState({
+      game_version: "16.1.2",
+      static_catalogues: incompleteCatalogues,
+    });
+    await app.configureLcuConnection({ online: true });
+    await app.waitForWebSocketSubscription(2);
+    await expect.poll(async () => {
+      const response = await page.request.get(`${app.baseURL}/api/diagnostics`);
+      const diagnostics = await response.json();
+      return diagnostics.events.some((event) => (
+        event.topic === "otp-lol/data/static-data"
+        && event.event_type === "refresh"
+        && event.payload?.refreshed === false
+        && event.payload?.status?.game_version === "16.1.2"
+        && event.payload?.status?.cache_version === "16.1.1"
+      ));
+    }, { timeout: 15_000 }).toBe(true);
+    expect(app.lcuRequests.filter(
+      ({ method, path }) => method === "GET" && path === MAPS_CATALOGUE_PATH,
+    )).toHaveLength(previousMapRequests + 1);
+
+    const preservedStatus = await page.request.get(`${app.baseURL}/api/game-data/status`);
+    expect(await preservedStatus.json()).toMatchObject({
+      source: "lcu",
+      game_version: "16.1.2",
+      cache_version: "16.1.1",
+      catalogs: { champions: true, spells: true, perks: true, items: true, maps: true, queues: true },
+    });
+    const preservedChampions = await page.request.get(`${app.baseURL}/api/champions`);
+    const championIds = (await preservedChampions.json()).items.map(({ id }) => id);
+    expect(championIds).toContain(86);
+    expect(championIds).not.toContain(99);
   } finally {
     await app.stop();
   }

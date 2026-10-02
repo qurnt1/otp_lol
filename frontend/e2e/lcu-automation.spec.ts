@@ -342,6 +342,51 @@ test("Auto-Pick saute la première priorité et verrouille le prochain champion 
   await expect(page.locator(".automation-status")).toHaveText(/Champion sélectionné : Lux\./);
 });
 
+test("[DASH-15] Auto-Pick ignore une action dont l’actorCellId n’est pas celui du joueur local", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    autoPick: true,
+    phase: "ChampSelect",
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+
+  const session = champSelectSession([[{
+    actorCellId: 2,
+    type: "pick",
+    id: 506,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await expect.poll(() => app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "GET" && request.path === "/lol-champ-select/v1/session",
+  )).toBe(true);
+  await app.waitForChampSelectRetryReady();
+
+  const actionPatches = app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/actions/506",
+  );
+  expect(actionPatches).toEqual([]);
+  expect((await app.readLcuState()).session.actions[0][0]).toMatchObject({
+    actorCellId: 2,
+    completed: false,
+    championId: 0,
+  });
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Champion automatically locked in: Garen.");
+});
+
 for (const scenario of [
   {
     name: "un champion configuré indisponible",

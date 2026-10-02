@@ -22,9 +22,10 @@ test("Auto-Accept ne présente pas le ready-check comme accepté après un refus
   });
   const requestOffset = app.lcuRequests.length;
   const acceptPath = "/lol-matchmaking/v1/ready-check/accept";
-  await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+  const failedEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
   const acceptRequest = await app.waitForLcuRequest("POST", acceptPath);
   const rejectedResponse = await app.waitForLcuResponse("POST", acceptPath, 503);
+  await app.waitForLcuEventCompletion(failedEvent.id);
 
   expect(app.lcuRequests.slice(requestOffset)).toContainEqual(expect.objectContaining({
     method: "POST",
@@ -42,8 +43,6 @@ test("Auto-Accept ne présente pas le ready-check comme accepté après un refus
     const appLog = await readFile(appLogPath, "utf8");
     return appLog.includes(`[READY] POST ${acceptPath} -> 503`);
   }).toBe(true);
-  // The app-side log confirms the awaited response; no callback-complete event exists, so this check uses a bounded observation window.
-  await page.waitForTimeout(1_000);
   await expect(successStatus).toHaveCount(0);
   await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("None");
 
@@ -53,4 +52,64 @@ test("Auto-Accept ne présente pas le ready-check comme accepté après un refus
   await page.goto("/#history");
   await expect(page.getByRole("heading", { name: "Journal de logs" })).toBeVisible();
   await expect(page.getByText("Match automatically accepted.", { exact: true })).toHaveCount(0);
+
+  await app.configureLcuState({ mutation_responses: {} });
+  const retryEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+  await app.waitForLcuEventCompletion(retryEvent.id);
+
+  const attempts = app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === acceptPath,
+  );
+  expect(attempts).toHaveLength(2);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+  await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
+    item.message === "Match automatically accepted.",
+  ).length).toBe(1);
+
+  await expect(page.getByText("Match automatically accepted.", { exact: true })).toHaveCount(1);
+});
+
+test("un doublon Ready Check en vol autorise un seul retry après le refus initial", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    phase: "ReadyCheck",
+    autoAccept: true,
+  });
+  const runtimeEvents = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await runtimeEvents;
+
+  const acceptPath = "/lol-matchmaking/v1/ready-check/accept";
+  await app.configureLcuState({
+    mutation_responses: { [`POST ${acceptPath}`]: [503, 200] },
+    ready_check_accept_paused: true,
+  });
+  const requestOffset = app.lcuRequests.length;
+  let firstEventId = "";
+  try {
+    const firstEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+    firstEventId = firstEvent.id;
+    await app.waitForLcuRequest("POST", acceptPath);
+
+    const duplicateEvent = await app.emitLcuEvent("/lol-matchmaking/v1/ready-check", { state: "InProgress", playerResponse: "None" });
+    await app.waitForLcuEventCompletion(duplicateEvent.id);
+    expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+      request.method === "POST" && request.path === acceptPath,
+    )).toHaveLength(1);
+  } finally {
+    await app.configureLcuState({ ready_check_accept_paused: false });
+  }
+
+  expect(firstEventId).not.toBe("");
+  await app.waitForLcuEventCompletion(firstEventId);
+  await expect(app.waitForLcuResponse("POST", acceptPath, 503)).resolves.toMatchObject({ status: 503 });
+  await expect(app.waitForLcuResponse("POST", acceptPath, 200)).resolves.toMatchObject({ status: 200 });
+  expect(app.lcuRequests.slice(requestOffset).filter((request) =>
+    request.method === "POST" && request.path === acceptPath,
+  )).toHaveLength(2);
+  await expect.poll(async () => (await app.readLcuState()).ready_check.playerResponse).toBe("Accepted");
+  await expect.poll(async () => (await readHistory(page)).items.filter((item) =>
+    item.message === "Match automatically accepted.",
+  ).length).toBe(1);
+  await expect(page.getByText("Ready-check accepté.", { exact: true })).toBeVisible();
 });

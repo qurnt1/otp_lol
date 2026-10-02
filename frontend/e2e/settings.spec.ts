@@ -268,6 +268,37 @@ test("manual Riot ID and region edits persist as the selected provider identity"
   });
 });
 
+test("an invalid manual Riot ID is rejected and a corrected value persists", async ({ page }) => {
+  await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
+  await page.goto("/#settings/account");
+
+  const riotId = page.getByRole("textbox", { name: "Riot ID" });
+  const rejectedPatch = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.status() === 422,
+  );
+  await riotId.fill("MissingTag");
+  await riotId.press("Tab");
+  await rejectedPatch;
+
+  await expect(page.getByRole("alert")).toContainText("Riot ID must use the GameName#Tag format");
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Manual#EUW");
+
+  const savedPatch = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.status() === 200,
+  );
+  await riotId.fill("Corrected#TEST");
+  await riotId.press("Tab");
+  await savedPatch;
+
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Corrected#TEST");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "Compte configuré manuellement" })).toBeVisible();
+});
+
 test("League close and reconnect update the saved account view through LCU WebSocket", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,
@@ -594,6 +625,48 @@ test("first-run onboarding closes permanently after a real preset edit", async (
   await expect(onboarding).toBeHidden();
 });
 
+test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masque son CTA", async ({ page }) => {
+  await setupApplication(page, { onboardingCompleted: false });
+  await page.goto("/#settings/advanced");
+
+  const importResponse = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/settings/import"
+    && response.status() === 200,
+  );
+  await page.getByLabel("Importer une configuration").setInputFiles({
+    name: "otp-lol-partial-presets.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({
+      config_schema_version: 6,
+      onboarding_completed: false,
+      selected_pick_1: "Garen",
+      selected_pick_2: "",
+      selected_pick_3: "",
+    })),
+  });
+  expect((await importResponse).ok()).toBe(true);
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    onboarding_completed: true,
+    selected_pick_1: "Garen",
+    selected_pick_2: "",
+    selected_pick_3: "",
+  });
+
+  await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+  await expect(page).toHaveURL(/#dashboard$/);
+  await expect(page.locator(".priority-card").nth(0)).toContainText("Garen");
+  await expect(page.locator(".priority-card").nth(1)).toContainText("Configurer un champion");
+  await expect(page.locator(".priority-card").nth(2)).toContainText("Configurer un champion");
+  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Configurer mes priorités" })).toHaveCount(0);
+  await expect.poll(async () => (await readPresets(page)).slots).toMatchObject({
+    pick_1: { champion: "Garen" },
+    pick_2: { champion: "" },
+    pick_3: { champion: "" },
+  });
+});
+
 test("restoring example presets disables the master while preserving child preferences", async ({ page }) => {
   await setupApplication(page, {
     configured: true,
@@ -612,8 +685,15 @@ test("restoring example presets disables the master while preserving child prefe
   await page.getByRole("button", { name: /Restaurer les presets d'exemple/ }).click();
   const confirmation = page.getByRole("alertdialog");
   await expect(confirmation).toBeVisible();
+  const resetResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/presets/reset",
+  );
   await confirmation.getByRole("button").last().click();
 
+  const resetResponse = await resetResponsePromise;
+  expect(resetResponse.status()).toBe(200);
+  expect(await resetResponse.json()).toMatchObject({ presets_enabled: false, auto_accept_enabled: true });
   const settings = await readSettings(page);
   expect(settings.presets_enabled).toBe(false);
   expect(settings.auto_accept_enabled).toBe(true);
@@ -715,6 +795,50 @@ test("[SET-10] malformed, old, and future settings imports preserve the current 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await expect.poll(async () => (await readSettings(page))).toMatchObject(preserved);
+});
+
+test("[SET-10] a valid settings import stays unchanged after 503 and applies on retry", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    settings: { theme: "flatly", auto_accept_enabled: true },
+  });
+  await page.goto("/#settings/advanced");
+  const importInput = page.getByLabel("Importer une configuration");
+  const importFile = {
+    name: "otp-lol-settings-retry.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify({ config_schema_version: 6, theme: "darkly", auto_accept_enabled: false })),
+  };
+  const before = await readSettings(page);
+  const failedImport = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/settings/import"
+    && response.status() === 503,
+  );
+  await page.route("**/api/settings/import", async (route) => {
+    await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected settings import failure" }) });
+  });
+  await importInput.setInputFiles(importFile);
+  expect((await failedImport).status()).toBe(503);
+  await expect(page.getByRole("alert")).toHaveText("Injected settings import failure");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({
+    theme: before.theme,
+    auto_accept_enabled: before.auto_accept_enabled,
+  });
+
+  await page.unroute("**/api/settings/import");
+  const successfulImport = page.waitForResponse((response) =>
+    response.request().method() === "POST"
+    && new URL(response.url()).pathname === "/api/settings/import"
+    && response.status() === 200,
+  );
+  await importInput.setInputFiles(importFile);
+  expect((await successfulImport).ok()).toBe(true);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByText("Enregistré", { exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(async () => (await readSettings(page))).toMatchObject({ theme: "darkly", auto_accept_enabled: false });
 });
 
 test("configuration export can be imported again after intervening UI changes", async ({ page }) => {
@@ -987,6 +1111,83 @@ test("[SET-03] an automation setting rolls back after a rejected save and persis
   await page.reload();
   await expect(page.getByRole("switch", { name: "Auto-Pick" })).toHaveAttribute("aria-checked", "true");
   expect(autoPickPatchCount).toBe(2);
+});
+
+test("[SET-03] Settings automation controls follow the preset master without losing child preferences", async ({ page }) => {
+  await setupApplication(page, {
+    configured: true,
+    settings: {
+      presets_enabled: true,
+      auto_accept_enabled: false,
+      auto_pick_enabled: true,
+      auto_ban_enabled: true,
+      auto_summoners_enabled: true,
+      skin_automation_enabled: true,
+      auto_play_again_enabled: false,
+    },
+  });
+  await page.goto("/#settings/automations");
+
+  const childOptions = [
+    ["Auto-Pick", "auto_pick_enabled"],
+    ["Auto-Ban", "auto_ban_enabled"],
+    ["Auto-Summs", "auto_summoners_enabled"],
+    ["Automatisation des skins", "skin_automation_enabled"],
+  ] as const;
+  for (const [label] of childOptions) {
+    const option = page.getByRole("switch", { name: label });
+    await expect(option).toBeEnabled();
+    await expect(option).toHaveAttribute("aria-checked", "true");
+  }
+  const autoAccept = page.getByRole("switch", { name: "Auto-Accept" });
+  const playAgain = page.getByRole("switch", { name: "Auto Play Again" });
+  await expect(autoAccept).toBeEnabled();
+  await expect(autoAccept).toHaveAttribute("aria-checked", "false");
+  await expect(playAgain).toBeEnabled();
+  await expect(playAgain).toHaveAttribute("aria-checked", "false");
+
+  await page.goto("/#dashboard");
+  const master = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  const disableMaster = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.request().postDataJSON()?.presets_enabled === false
+    && response.status() === 200,
+  );
+  await master.click();
+  expect((await disableMaster).ok()).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(false);
+
+  await page.goto("/#settings/automations");
+  for (const [label, key] of childOptions) {
+    const option = page.getByRole("switch", { name: label });
+    await expect(option).toBeDisabled();
+    await expect(option).toHaveAttribute("aria-checked", "true");
+    expect((await readSettings(page))[key]).toBe(true);
+  }
+  await expect(autoAccept).toBeEnabled();
+  await expect(autoAccept).toHaveAttribute("aria-checked", "false");
+  await expect(playAgain).toBeEnabled();
+  await expect(playAgain).toHaveAttribute("aria-checked", "false");
+
+  await page.goto("/#dashboard");
+  const enableMaster = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.request().postDataJSON()?.presets_enabled === true
+    && response.status() === 200,
+  );
+  await master.click();
+  expect((await enableMaster).ok()).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(true);
+
+  await page.goto("/#settings/automations");
+  for (const [label, key] of childOptions) {
+    const option = page.getByRole("switch", { name: label });
+    await expect(option).toBeEnabled();
+    await expect(option).toHaveAttribute("aria-checked", "true");
+    expect((await readSettings(page))[key]).toBe(true);
+  }
 });
 
 test("[SET-04] account identity recovers on a settings change after its read endpoint returns 503", async ({ page }) => {
