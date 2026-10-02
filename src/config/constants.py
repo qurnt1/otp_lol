@@ -16,21 +16,28 @@ Developers maintaining shared constants for networking, UI labels, assets, and s
 
 DEPENDENCIES:
 Used by:
-- Most modules under `src.config`, `src.core`, `src.services`, and `src.ui`.
+- Most modules under `src.config`, `src.core`, `src.services`, and `src.desktop`.
 Uses:
 - Standard library typing helpers.
 """
 
 from typing import Dict
 
+from ..domain.providers import (
+    HOTKEY_SITE_LABELS,
+    HOTKEY_SITE_ORDER,
+    LIVE_PROVIDER_IDS as HOTKEY_PROVIDERS,
+    STATS_PROVIDER_IDS as STATS_PROVIDERS,
+    STATS_SITE_LABELS,
+    STATS_SITE_ORDER,
+)
+
 APP_NAME: str = "OTP LOL"
 APP_BUILD_NAME: str = "OTP LOL"
 GITHUB_REPO_NAME: str = "qurnt1/otp_lol"
-APP_VERSION: str = "11.0"
+APP_VERSION: str = "11.1"
 CURRENT_VERSION: str = APP_VERSION
-CONFIG_SCHEMA_VERSION: int = 3
-# Backwards-compatible name used by earlier schema work.
-SETTINGS_SCHEMA_VERSION: int = CONFIG_SCHEMA_VERSION
+CONFIG_SCHEMA_VERSION: int = 6
 GITHUB_REPO_URL: str = f"https://github.com/{GITHUB_REPO_NAME}"
 GITHUB_DOWNLOAD_ZIP_URL: str = f"{GITHUB_REPO_URL}/archive/refs/heads/main.zip"
 GITHUB_RELEASES_API: str = f"https://api.github.com/repos/{GITHUB_REPO_NAME}/releases/latest"
@@ -41,6 +48,7 @@ URL_DD_CHAMPIONS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/
 URL_DD_SUMMONERS: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/summoner.json"
 URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{filename}"
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
+URL_DD_IMG_ITEM: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/item/{filename}"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
 URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
 URL_CDRAGON_CHAMPION_DETAIL: str = (
@@ -71,7 +79,8 @@ EP_CS_RUNE_PAGE: str = "/lol-champ-select/v1/session/rune-page"
 EP_PERKS_CURRENT_PAGE: str = "/lol-perks/v1/currentpage"
 EP_LOBBY: str = "/lol-lobby/v2/lobby"
 
-REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru"]
+REGION_LIST: list[str] = ["euw", "eune", "na", "kr", "jp", "br", "lan", "las", "oce", "tr", "ru", "sea"]
+SUPPORTED_REGIONS: tuple[str, ...] = tuple(REGION_LIST)
 
 SUMMONER_SPELL_MAP: Dict[str, int] = {
     "Barrier": 21, "Cleanse": 1, "Exhaust": 3, "Flash": 4, "Ghost": 6,
@@ -83,7 +92,21 @@ SUMMONER_SPELL_LIST: list[str] = sorted(list(SUMMONER_SPELL_MAP.keys()))
 PLATFORM_TO_REGION: Dict[str, str] = {
     "euw1": "euw", "eun1": "eune", "na1": "na", "kr": "kr",
     "jp1": "jp", "br1": "br", "la1": "lan", "la2": "las",
-    "oc1": "oce", "tr1": "tr", "ru": "ru"
+    "oc1": "oce", "tr1": "tr", "ru": "ru",
+    "ph2": "sea", "sg2": "sea", "th2": "sea", "tw2": "sea", "vn2": "sea",
+}
+
+REGION_TO_PLATFORM: Dict[str, str] = {
+    "euw": "euw1", "eune": "eun1", "na": "na1", "kr": "kr",
+    "jp": "jp1", "br": "br1", "lan": "la1", "las": "la2",
+    "oce": "oc1", "tr": "tr1", "ru": "ru", "sea": "sg2",
+}
+
+PLATFORM_TO_REGIONAL_ROUTING: Dict[str, str] = {
+    "euw1": "europe", "eun1": "europe", "tr1": "europe", "ru": "europe",
+    "na1": "americas", "br1": "americas", "la1": "americas", "la2": "americas",
+    "oc1": "sea", "kr": "asia", "jp1": "asia",
+    "ph2": "sea", "sg2": "sea", "th2": "sea", "tw2": "sea", "vn2": "sea",
 }
 
 PHASE_DISPLAY_MAP: Dict[str, str] = {
@@ -129,38 +152,7 @@ QUEUE_ID_LABELS: Dict[int, str] = {
 APP_IMAGE_FILES: Dict[str, str] = {
     "icon_webp": "config/images/app/garen.webp",
     "icon_ico": "config/images/app/garen.ico",
-    "gear": "config/images/app/gear.png",
-    "gear_light": "config/images/app/gear_light.png",
-    "gear_dark": "config/images/app/gear_dark.png",
-    "question_mark_white_mode": "config/images/app/question-mark-white_mode.png",
-    "question_mark_black_mode": "config/images/app/question-mark-black_mode.png",
 }
-
-WEBSITE_LOGO_FILES: Dict[str, str] = {
-    "opgg": "config/images/websites/opgg.png",
-    "deeplol": "config/images/websites/deeplol.png",
-    "dpm": "config/images/websites/dpm-lol.png",
-    "porofessor": "config/images/websites/porofessor.png",
-    "leagueofgraphs": "config/images/websites/leagueofgraphs.png",
-}
-
-STATS_SITE_LABELS: Dict[str, str] = {
-    "opgg": "OP.GG",
-    "deeplol": "DeepLOL",
-    "dpm": "DPM.LOL",
-    "leagueofgraphs": "League of Graphs",
-}
-
-STATS_SITE_ORDER: list[str] = ["opgg", "deeplol", "dpm", "leagueofgraphs"]
-
-HOTKEY_SITE_LABELS: Dict[str, str] = {
-    "porofessor": "Porofessor",
-    "deeplol": "DeepLOL",
-    "dpm": "DPM.LOL",
-    "opgg": "OP.GG",
-}
-
-HOTKEY_SITE_ORDER: list[str] = ["porofessor", "deeplol", "dpm", "opgg"]
 
 THEME_LABELS: Dict[str, str] = {
     "darkly": "Dark",

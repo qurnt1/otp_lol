@@ -1,0 +1,45 @@
+name: Website CI
+
+on:
+  pull_request:
+    paths:
+      - "website/**"
+      - "docs/images/**"
+      - "frontend/public/assets/app/garen.*"
+      - ".github/workflows/website-ci.yml"
+      - ".github/workflows/deploy-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Website CI / Build and Playwright
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+
+      - name: Build
+        working-directory: website
+        run: npm run build
+
+      - name: Install Playwright Chromium
+        working-directory: website
+        run: npx playwright install --with-deps chromium
+
+      - name: Test built website in preview
+        working-directory: website
+        run: npx playwright test --workers=1

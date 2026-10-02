@@ -17,7 +17,7 @@ Developers working on filesystem access, caching, packaging, or resource loading
 
 DEPENDENCIES:
 Used by:
-- src.config, src.core, src.services, and src.ui modules that read files or write caches.
+- src.config, src.core, src.services, and src.desktop modules that read files or write caches.
 Uses:
 - Standard library: os, sys, tempfile
 """
@@ -27,6 +27,7 @@ import sys
 import tempfile
 
 APP_STORAGE_FOLDER = "OTP LOL"
+LEGACY_APP_STORAGE_FOLDER = "MainLoL"
 APP_TEMP_PREFIX = "otp_lol"
 
 
@@ -65,6 +66,10 @@ def get_appdata_path(filename: str) -> str:
 
 PARAMETERS_PATH: str = get_appdata_path("parameters.toml")
 PARAMETERS_JSON_PATH: str = get_appdata_path("parameters.json")
+_appdata_dir = os.getenv("APPDATA")
+LEGACY_PARAMETERS_JSON_PATH: str | None = (
+    os.path.join(_appdata_dir, LEGACY_APP_STORAGE_FOLDER, "parameters.json") if _appdata_dir else None
+)
 HISTORY_PATH: str = get_appdata_path("history.json")
 LOCKFILE_PATH: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}.lock")
 DDRAGON_CACHE_FILE: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_ddragon_champions.json")
@@ -72,3 +77,6 @@ ICONS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_i
 SPELLS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_spells")
 SKINS_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_skins")
 RUNES_CACHE_DIR: str = os.path.join(tempfile.gettempdir(), f"{APP_TEMP_PREFIX}_runes")
+WEBVIEW_STORAGE_DIR: str = get_appdata_path("webview-data")
+LCU_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "lcu"))
+ACCOUNT_CACHE_DIR: str = get_appdata_path(os.path.join("cache", "account"))

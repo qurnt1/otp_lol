@@ -1,5 +1,15 @@
 # OTP LOL — Changelog
 
+## Version 11.1
+
+- fix: stop rune-page reconciliation when Auto-Summs is disabled, including after asynchronous page loading
+- fix: validate the merged preset state under the settings persistence lock to reject conflicting concurrent edits
+- fix: align app and installer WebView2 checks on the Evergreen runtime and valid registry versions
+- fix: show failed automation, provider, and settings-export requests in the interface
+- fix: reset older or schema-less settings without migrating them or creating a `.bak`; keep schema version 6
+- chore: run security scans for all code changes, not only dependency-file changes
+- chore: create tagged GitHub Releases as drafts until the required League/WebView2 smoke test is complete
+
 ## Version 11.0
 
 - feat: enable presets for Clash (700) and Practice Tool via gameMode check
@@ -23,3 +33,29 @@
 - fix: use GitHub Releases as the desktop and website update source
 - chore: add Windows Python CI and tagged release workflows
 - chore: harden website metadata, accessibility, responsive states, and copy
+- feat: add FastAPI, event broker, and WebView desktop runtime boundaries
+- feat: expose React controls for presets, champions, spells, runes, skins, history, and settings
+- refactor: move tray, hotkeys, and audio services behind src/desktop while retaining Tk fallback
+- chore: build frontend assets in CI and embed them in the PyInstaller executable
+- refactor: expose asynchronous LCU rune, skin, spell, and pick-ban operations
+- test: add frontend API and WebSocket contract coverage with Vitest
+- fix: refresh website build dependencies to remove reported npm audit vulnerabilities
+- fix: return a failing process status when the WebView shell cannot start
+- fix: keep API persistence async, harden shutdown event dispatch, and filter unowned skin choices
+- test: cover event broker cleanup when an asyncio consumer loop closes
+- docs: align the legacy Tk shell dependency map with the new desktop modules
+- feat: restart the embedded API server after an unexpected Uvicorn thread exit
+- refactor: remove the legacy Tk shell and restore the historical asset-driven frontend direction
+- fix: package the migrated WebView app without Tk runtime modules
+- cleanup: remove unused legacy UI asset exports
+- fix: keep the marketing site favicon compatible with its GitHub Pages base path
+- cleanup: remove orphaned synchronous LCU wrappers after the async runtime migration
+- fix: restore the compact Tk home layout and add a native Windows hotkey backend
+- fix: serve cached champion, spell, and rune assets through the local API
+- fix: preserve rune and skin fallbacks, isolate hotkey conflicts, and reload shortcuts live
+- docs: refresh production setup, architecture, and current UI screenshots
+- chore: ignore local environment files and release packaging artifacts
+- refactor: configure presets directly from Dashboard cards and remove the duplicate Presets page
+- fix: surface preset and ban save errors and centralize Dashboard preset actions
+- ui: rebalance Dashboard cards, sidebar spacing, and automation separation without behavior changes
+- feat: persist provider WebView storage, sync provider geometry, and polish Dashboard card assets

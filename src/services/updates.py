@@ -19,7 +19,7 @@ Developers maintaining release detection, semantic version comparison, and updat
 
 DEPENDENCIES:
 Used by:
-- launcher.py and tests.
+- launcher_web.py and tests.
 Uses:
 - Standard library: base64, logging, re, typing
 - Third-party libraries: packaging, requests
@@ -42,6 +42,8 @@ _GITHUB_HEADERS = {
     "User-Agent": "OTP-LOL-UpdateChecker",
     "X-GitHub-Api-Version": "2022-11-28",
 }
+RELEASE_EXECUTABLE_NAME = "OTP-LOL-Setup.exe"
+RELEASE_CHECKSUM_NAME = "OTP-LOL-Setup.exe.sha256"
 
 
 def fetch_remote_readme() -> Optional[str]:
@@ -113,17 +115,31 @@ def check_for_updates() -> Optional[Dict[str, str]]:
                 (
                     asset
                     for asset in assets
-                    if isinstance(asset, dict)
-                    and str(asset.get("name") or "").lower().endswith(".exe")
+                    if isinstance(asset, dict) and asset.get("name") == RELEASE_EXECUTABLE_NAME
                 ),
                 {},
             ) if isinstance(assets, list) else {}
+            checksum = next(
+                (
+                    asset
+                    for asset in assets
+                    if isinstance(asset, dict) and asset.get("name") == RELEASE_CHECKSUM_NAME
+                ),
+                {},
+            ) if isinstance(assets, list) else {}
+            asset_url = str(executable.get("browser_download_url") or "")
+            checksum_url = str(checksum.get("browser_download_url") or "")
+            if not asset_url or not checksum_url:
+                logging.warning("[Update] Release is missing the executable or SHA-256 asset")
+                return None
             return {
                 "version": remote_version,
                 "highlights": str(release.get("body") or "").strip(),
                 "release_url": str(release.get("html_url") or f"{GITHUB_REPO_URL}/releases/latest"),
-                "asset_name": str(executable.get("name") or ""),
-                "asset_url": str(executable.get("browser_download_url") or ""),
+                "asset_name": RELEASE_EXECUTABLE_NAME,
+                "asset_url": asset_url,
+                "checksum_name": RELEASE_CHECKSUM_NAME,
+                "checksum_url": checksum_url,
             }
 
     except requests.RequestException as e:

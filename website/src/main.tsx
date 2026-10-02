@@ -1,10 +1,13 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import App from "./App";
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./site/App";
 import "./styles.css";
+import faviconUrl from "../../frontend/public/assets/app/garen.ico";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
+document.getElementById("site-favicon")?.setAttribute("href", faviconUrl);
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
     <App />
-  </React.StrictMode>,
+  </StrictMode>,
 );
