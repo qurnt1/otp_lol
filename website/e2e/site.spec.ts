@@ -69,6 +69,45 @@ test("screenshot selector preserves each content id, description, and loaded ass
   await expect(buttons.nth(0)).toHaveAttribute("aria-pressed", "false");
 });
 
+test("screenshot selector works from the keyboard and opens the selected screenshot", async ({ page }) => {
+  const selector = page.getByRole("group", { name: "Choisir une capture de l’application" });
+  const statisticsButton = selector.getByRole("button", { name: "Statistiques Choisis tes fournisseurs" });
+
+  await statisticsButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(statisticsButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".showcase-caption > span")).toContainText("profil fictif");
+
+  await page.getByRole("button", { name: "Agrandir la capture" }).click();
+  const dialog = page.getByRole("dialog", { name: "Statistiques" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("img")).toHaveAttribute("alt", "Capture des statistiques OTP LOL avec le choix d’un fournisseur et l’ouverture de son profil.");
+});
+
+test("FAQ answers expand and collapse by mouse and keyboard", async ({ page }) => {
+  const questions = page.locator(".faq-list summary");
+  await expect(questions).toHaveCount(4);
+
+  const firstQuestion = questions.nth(0);
+  await firstQuestion.focus();
+  await page.keyboard.press("Enter");
+  const firstItem = firstQuestion.locator("xpath=..");
+  await expect(firstItem).toHaveAttribute("open", "");
+  await expect(firstItem.locator("p")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(firstItem).not.toHaveAttribute("open", "");
+
+  for (let index = 1; index < 4; index += 1) {
+    const question = questions.nth(index);
+    const item = question.locator("xpath=..");
+    await question.click();
+    await expect(item).toHaveAttribute("open", "");
+    await expect(item.locator("p")).toBeVisible();
+    await question.click();
+    await expect(item).not.toHaveAttribute("open", "");
+  }
+});
+
 test("screenshot dialog changes display size, closes, and restores focus", async ({ page }) => {
   const openButton = page.getByRole("button", { name: "Agrandir la capture" });
   const dialog = page.getByRole("dialog", { name: "Réglages" });

@@ -43,6 +43,259 @@ async function enableAutomation(page: import("@playwright/test").Page, label: st
   await expect.poll(async () => (await readSettings(page))[key]).toBe(true);
 }
 
+async function disableAutomation(page: import("@playwright/test").Page, label: string, key: string) {
+  const toggle = page.getByRole("switch", { name: label });
+  await expect(toggle).toHaveAttribute("aria-checked", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page))[key]).toBe(false);
+}
+
+test("[FE-LCU-AUTO-PICK-OFF-01] désactiver Auto-Pick empêche le verrouillage d’un pick actif", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoPick: true,
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await disableAutomation(page, "Auto-Pick", "auto_pick_enabled");
+
+  const actionId = 610;
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: false, championId: 0 });
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === `/lol-champ-select/v1/session/actions/${actionId}`,
+  )).toBe(false);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Champion automatically locked in: Garen.");
+});
+
+test("[FE-LCU-AUTO-BAN-OFF-01] désactiver Auto-Ban empêche le verrouillage d’un ban actif", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoBan: true,
+    lcuState: { static_data_online: true, session: champSelectSession([]) },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await disableAutomation(page, "Auto-Ban", "auto_ban_enabled");
+
+  const actionId = 611;
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "ban",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: false, championId: 0 });
+  expect(state.session.bans.myTeamBans).toEqual([]);
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === `/lol-champ-select/v1/session/actions/${actionId}`,
+  )).toBe(false);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatic ban confirmed on Teemo.");
+});
+
+test("[FE-LCU-PRESET-MASTER-OFF-01] couper le maître des presets bloque les picks et bans automatiques", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoPick: true,
+    autoBan: true,
+    lcuState: { static_data_online: true, pickable_champion_ids: [86], session: champSelectSession([]) },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#dashboard");
+  await eventsConnected;
+  const master = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  await expect(master).toHaveAttribute("aria-checked", "true");
+  await master.click();
+  await expect(master).toHaveAttribute("aria-checked", "false");
+  await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(false);
+
+  const requestOffset = app.lcuRequests.length;
+  const pickActionId = 612;
+  const pickSession = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: pickActionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  await app.configureLcuState({ session: pickSession, pickable_champion_ids: [86] });
+  const pickEvent = await app.emitLcuEvent("/lol-champ-select/v1/session", pickSession);
+  await app.waitForLcuEventCompletion(pickEvent.id);
+
+  const banActionId = 613;
+  const banSession = champSelectSession([[{
+    actorCellId: 1,
+    type: "ban",
+    id: banActionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  await app.configureLcuState({ session: banSession });
+  const banEvent = await app.emitLcuEvent("/lol-champ-select/v1/session", banSession);
+  await app.waitForLcuEventCompletion(banEvent.id);
+
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: false, championId: 0 });
+  expect(state.session.bans.myTeamBans).toEqual([]);
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && [pickActionId, banActionId].some((id) => request.path === `/lol-champ-select/v1/session/actions/${id}`),
+  )).toBe(false);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Champion automatically locked in: Garen.");
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatic ban confirmed on Teemo.");
+});
+
+test("[FE-LCU-AUTO-SUMMONERS-OFF-01] désactiver Auto-Summs laisse les sorts LCU inchangés après un pick", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoPick: true,
+    autoSummoners: true,
+    settings: { skin_automation_enabled: false },
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      rune_pages: [targetRunePage, activeRunePage],
+      current_rune_page: activeRunePage,
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await disableAutomation(page, "Auto-Summs", "auto_summoners_enabled");
+
+  const actionId = 614;
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+  await app.waitForLcuRequest("PUT", "/lol-perks/v1/pages/401");
+
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: true, championId: 86 });
+  expect(state.session.myTeam[0]).toMatchObject({ championId: 86, spell1Id: 0, spell2Id: 0 });
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/my-selection",
+  )).toBe(false);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatic summs applied: Flash + Ignite.");
+});
+
+test("[FE-LCU-SKIN-OFF-01] désactiver l’automatisation des skins laisse le skin LCU inchangé après un pick", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    autoPick: true,
+    autoSummoners: false,
+    skinAutomation: true,
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      rune_pages: [targetRunePage, activeRunePage],
+      current_rune_page: activeRunePage,
+      session: champSelectSession([]),
+    },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await disableAutomation(page, "Automatisation des skins", "skin_automation_enabled");
+
+  const actionId = 615;
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+  await app.waitForLcuRequest("PUT", "/lol-perks/v1/pages/401");
+
+  const state = await app.readLcuState();
+  expect(state.session.actions[0][0]).toMatchObject({ completed: true, championId: 86 });
+  expect(state.session.myTeam[0]).toMatchObject({ championId: 86, selectedSkinId: 0 });
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/my-selection",
+  )).toBe(false);
+  expect((await readHistory(page)).items.some((item) => item.message.startsWith("Skin applied automatically:"))).toBe(false);
+});
+
+test("[FE-LCU-PLAY-AGAIN-OFF-01] désactiver Auto Play Again empêche le retour automatique au lobby", async ({ page }) => {
+  const { app } = await setupApplication(page, { connected: true, phase: "Lobby", autoPlayAgain: true });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#settings/automations");
+  await eventsConnected;
+  await disableAutomation(page, "Auto Play Again", "auto_play_again_enabled");
+
+  const requestOffset = app.lcuRequests.length;
+  await app.configureLcuState({ phase: "WaitingForStats" });
+  const event = await app.emitLcuEvent("/lol-gameflow/v1/gameflow-phase", "WaitingForStats");
+  await app.waitForLcuEventCompletion(event.id);
+
+  expect((await app.readLcuState()).phase).toBe("WaitingForStats");
+  expect(app.lcuRequests.slice(requestOffset).some((request) =>
+    request.method === "POST" && request.path === "/lol-lobby/v2/play-again",
+  )).toBe(false);
+  expect((await readHistory(page)).items.map((item) => item.message))
+    .not.toContain("Automatically returned to lobby after the game.");
+});
+
 test("Auto-Pick applique le champion, sorts, skin et page de runes via le vrai LCU", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,

@@ -487,6 +487,61 @@ test("successful settings API updates survive a same-profile restart", async ({ 
   }
 });
 
+test("settings export omits detected League identity and import preserves current identity on disk", async ({ page }) => {
+  const app = await startOtpApp();
+  try {
+    await waitForDetectedAccount(app, page.request);
+    const before = await readSettings(app, page.request);
+    const exportedResponse = await page.request.get(`${app.baseURL}/api/settings/export`);
+    expect(exportedResponse.status()).toBe(200);
+    expect(exportedResponse.headers()["content-disposition"]).toContain('filename="otp-lol-settings.json"');
+    const exported = await exportedResponse.json();
+    expect(exported.config_schema_version).toBe(before.config_schema_version);
+    for (const key of ["auto_detected_riot_id", "auto_detected_region", "auto_detected_platform"]) {
+      expect(exported).not.toHaveProperty(key);
+    }
+
+    const theme = before.theme === "flatly" ? "darkly" : "flatly";
+    const importedResponse = await page.request.post(`${app.baseURL}/api/settings/import`, {
+      headers: { Origin: new URL(app.baseURL).origin },
+      data: {
+        config_schema_version: before.config_schema_version,
+        theme,
+        auto_detected_riot_id: "Imported Account#NA",
+        auto_detected_region: "na",
+        auto_detected_platform: "NA1",
+      },
+    });
+    expect(importedResponse.status()).toBe(200);
+    expect(await importedResponse.json()).toMatchObject({
+      theme,
+      auto_detected_riot_id: before.auto_detected_riot_id,
+      auto_detected_region: before.auto_detected_region,
+      auto_detected_platform: before.auto_detected_platform,
+    });
+
+    const persistedToml = await readFile(path.join(app.appDataDir, "OTP LOL", "parameters.toml"), "utf8");
+    const detectedAccount = {
+      auto_detected_riot_id: before.auto_detected_riot_id,
+      auto_detected_region: before.auto_detected_region,
+      auto_detected_platform: before.auto_detected_platform,
+    };
+    for (const [key, value] of Object.entries(detectedAccount)) {
+      expect(persistedToml).toContain(`${key} = ${JSON.stringify(value)}`);
+    }
+    for (const [key, value] of Object.entries({
+      auto_detected_riot_id: "Imported Account#NA",
+      auto_detected_region: "na",
+      auto_detected_platform: "NA1",
+    })) {
+      expect(persistedToml).not.toContain(`${key} = ${JSON.stringify(value)}`);
+    }
+
+  } finally {
+    await app.stop();
+  }
+});
+
 test("history append enforces its retention limit, ordering, API limit, and restart persistence", async ({ page }) => {
   let app = await startOtpApp();
   try {

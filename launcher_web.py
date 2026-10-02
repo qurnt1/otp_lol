@@ -30,10 +30,6 @@ def main() -> int:
         from src.desktop.self_test import run_headless_smoke
 
         return run_headless_smoke()
-    if "--provider-smoke" in sys.argv:
-        from src.desktop.self_test import run_provider_smoke
-
-        return run_provider_smoke()
     try:
         run_webview()
     except KeyboardInterrupt:

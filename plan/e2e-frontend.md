@@ -10,6 +10,31 @@ Depuis `frontend/`, lancer les commandes ciblées avec `npx playwright test --wo
 
 Priorités: **P0** protège d’une action LCU incorrecte ou d’une perte de configuration; **P1** couvre un parcours de première importance ou un retour d’erreur; **P2** couvre une action secondaire ou un chemin redondant.
 
+## Inventaire des contrôles UI React
+
+Inventaire relu contre les éléments interactifs de `frontend/src` et rapproché des gestes Playwright des specs. Les assertions via `/api/*` et le faux LCU sont des oracles après le geste UI, pas des tests API comptés à la place d’une action. Une panne `page.route` est explicitement simulée. Les numéros de ligne sont évités ici pour que les références restent stables après ajout de scénarios.
+
+| Écran / contrôle visible | Geste UI vérifié et résultat observé | Preuve Playwright | Limite ou état restant |
+|---|---|---|---|
+| Démarrage, reprise réseau | Réessayer le bootstrap après deux 503 simulés; voir le Dashboard après reprise. Réessayer la disponibilité réseau en ligne/hors ligne et garder les pages accessibles pendant l’avertissement. | `settings.spec.ts` FE-DASH-LOAD-01; `network-gate.spec.ts` | Les erreurs sont simulées au client navigateur; elles ne prouvent pas une panne réelle du serveur. |
+| Bannière de version | Attendre une release par le faux endpoint externe; cliquer les liens nouveautés et téléchargement, constater les deux URL de navigation demandées; Ignorer la version et relire la préférence après reload. | `dashboard-disconnected.spec.ts`, scénario liens release et scénario Ignorer | Le harness bloque le trafic externe, donc aucun site GitHub ni téléchargement réel n’est validé. |
+| Shell et navigation | Cliquer les liens principaux et raccourcis Dashboard, revenir par Back, ouvrir les 7 sections Settings par leurs boutons, naviguer au clavier, suivre le logo vers Dashboard, tester deep-links et route invalide. | `navigation.spec.ts`: NAV-01, FE-SET-NAV-CLICK-01, FE-SHELL-BRAND-01 | Le clic `Gérer` atteint `Settings/Général`; sa destination produit attendue reste à confirmer. |
+| Dashboard, slots et ban | Ouvrir les trois slots et le ban, y compris un slot vide; enregistrer un pick, ouvrir le ban, sélectionner/annuler et vérifier API, carte et focus. | `presets.spec.ts`, `dashboard-connected.spec.ts`, `navigation.spec.ts` | Les préférences écrites sont relues, mais l’UI packagée WebView n’est pas utilisée par ces tests browser. |
+| Maître et interrupteurs Dashboard/Settings | Basculer maître et six interrupteurs; vérifier `aria-checked`, persistance, état pending, rollback/retry et absence d’une seconde mutation concurrente. Des scénarios LCU livrent ensuite un événement après désactivation Auto-Accept, Auto-Pick, Auto-Ban, Auto-Summs, skin ou maître, puis vérifient l’absence de commande interdite. Auto Play Again OFF est vérifié en fin de partie. | `presets.spec.ts`, `dashboard-mutation-errors.spec.ts`, `auto-accept-failure.spec.ts`; `lcu-automation.spec.ts` FE-LCU-AUTO-PICK-OFF-01, FE-LCU-AUTO-BAN-OFF-01, FE-LCU-PRESET-MASTER-OFF-01, FE-LCU-AUTO-SUMMONERS-OFF-01, FE-LCU-SKIN-OFF-01, FE-LCU-PLAY-AGAIN-OFF-01 | LCU entièrement synthétique; aucune vraie file ou partie League n’est lancée. Les tests ON/OFF ne couvrent pas toutes les permutations de préférences combinées. |
+| Onboarding premier lancement | Cliquer le CTA et configurer un preset; masquer la bannière et relire après reload. Injecter un premier PATCH 503, constater le retour de la bannière/alerte, puis réussir le retry. | `first-launch.spec.ts`, `settings.spec.ts` FE-ONBOARD-DISMISS-RETRY-01 | La panne de sauvegarde du dismiss est simulée; le succès atteint FastAPI. |
+| Éditeur champion | Ouvrir/fermer dialog et picker à la souris/clavier; rechercher, vérifier vide, activer les 6 filtres depuis Tous jusqu’à Support, choisir au clavier, vérifier les champions déjà utilisés, retry du catalogue puis persister le choix. | `presets.spec.ts`: FE-PICK-KEY-01, FE-PICK-ROLE-01 et parcours de recherche/retry/save | Le catalogue est une fixture Data Dragon contrôlée; sa taille change selon la version réelle. |
+| Sorts | Ouvrir les Select, parcourir par clavier/typeahead, choisir deux sorts distincts, utiliser Aucun, fermer puis rouvrir et relire les valeurs. | `presets.spec.ts` scénarios Select, typeahead et persistance; `lcu-automation.spec.ts` | L’application LCU de `(Aucun)` n’est pas testée tant que le contrat produit de l’id `0` n’est pas confirmé. |
+| Runes par preset | Choisir une page LCU, l’option Ne rien faire, traiter l’état offline, charger/échouer/réessayer, enregistrer perks et rouvrir; désactiver `Appliquer automatiquement les runes` et confirmer pick sans PUT de page. | `presets.spec.ts`; `lcu-automation.spec.ts` FE-LCU-RUNE-OFF-01 | Fake LCU seulement; pages réelles et comportement selon les versions client Riot non vérifiés. |
+| Skins | Changer Aucun/Fixe/Aléatoire; choisir un skin fixe; cocher/décocher le pool, Tout sélectionner/Tout effacer, filtrer Possédés uniquement sans perdre les choix; récupérer catalogue/preview en erreur; appliquer un pool de deux skins au LCU; vérifier que l’automatisation globale OFF n’applique rien. | `presets.spec.ts` FE-PRESET-SKIN-MODE-01 et pickers; `lcu-automation.spec.ts` FE-LCU-SKIN-RANDOM-01 et FE-LCU-SKIN-OFF-01; `skin-account-switch.spec.ts` | Le test aléatoire prouve qu’un skin du pool a été appliqué, pas une distribution statistique uniforme. |
+| Statistiques / En direct | Changer chaque fournisseur depuis son choix visible, relire le réglage et URL; rafraîchir les deux routes; suivre le compte connecté, manuel, changé ou offline; ouvrir le CTA Compte; essayer navigateur externe et fenêtre intégrée/erreur native. | `statistics.spec.ts`, `navigation.spec.ts`, `settings.spec.ts` | La création/réutilisation réussie d’une vraie fenêtre provider nécessite WebView2 native; seul le fallback/bridge browser simulé est établi ici. |
+| Historique | Filtrer les catégories alimentées par événements LCU, Tout et Erreurs; rechercher message/détail; récupérer une lecture en erreur; effacer, annuler par bouton/Escape, confirmer, gérer 503 puis retry. | `history.spec.ts`, `history-live-actions.spec.ts` | La catégorie Erreurs est vérifiée vide en parcours normal; les gestes normaux actuels ne produisent pas un événement History `error`. |
+| Réglages compte | Basculer détection auto/manuel; saisir Riot ID au blur ou Enter, valider/rejeter et corriger; choisir une région; copier le compte détecté avec confirmation et retry; oublier le compte en annulant/confirmant; déconnecter/reconnecter LCU. | `settings.spec.ts` FE-ACCOUNT-ENTER-01 et scénarios Account; `settings-manual-hotkeys.spec.ts` | Le test Enter confirme PATCH 200 et identité FastAPI. Le comportement Windows de vraie détection League reste couvert par le faux LCU seulement. |
+| Raccourcis et thème | Capturer/annuler, touche seule sans modificateur, F-key, conflit et valeur invalide; éditer un champ et sauver blur/Enter; sélectionner le thème par clavier, annuler par Escape, recharger. | `settings.spec.ts`, `settings-manual-hotkeys.spec.ts` | Déclenchement global/raccourcis réservés par Windows requièrent le runner natif. |
+| Avancé, import/export/reset | Importer JSON valide, malformé, ancien/futur, retry 503; exporter un vrai téléchargement redacted puis round-trip; restaurer/effacer presets et réinitialiser compte/settings avec annulation, confirmation, rollback et retry; ouvrir Diagnostics et la page signalement. | `settings.spec.ts`, `diagnostics.spec.ts` | Les dialogues natifs Annuler, explorateur de fichiers et fenêtre plein écran ne sont pas prouvés par Chromium. Les tests natifs du source WebView sont décrits séparément dans `plan/e2e-desktop-lcu.md`. |
+| Diagnostics | Rafraîchir, exécuter les checks, copier/exporter (identité exclue par défaut, incluse après opt-in), rechercher, activer les 6 filtres, ouvrir/fermer le JSON, récupérer lectures/exécution/export refusés. | `diagnostics.spec.ts` | Filtre WebView vide en E2E browser; un résultat demande un événement WebView natif. |
+
+**Principe de portée:** les scénarios cliquent chaque groupe de contrôles visible et testent les gestes particuliers qui ajoutent une logique (clavier, confirmation, filtrage, retry, persist). Les composants HTML natifs réutilisés (boutons, liens, champs) ne sont pas dupliqués sur toutes les permutations clavier/souris lorsque la même interaction accessible est déjà prouvée; les contrôles custom (switch, Select, picker, dialogue) ont des cas dédiés. Les tests desktop natifs et les actions League réelles restent des preuves séparées, non déduites des specs navigateur.
+
 ## Couverture actuelle à conserver
 
 Ces parcours ont déjà des interactions UI et des assertions visibles ou persistées dans les specs présentes. Ne pas recréer des tests supplémentaires pour les mêmes scénarios sans changement de comportement:
@@ -133,8 +158,8 @@ Le test anti-doublon de `dashboard-connected.spec.ts` relit aussi `ready_check.p
 - **Geste:** activer dans l’interface l’automatisation et le réglage par slot nécessaires, puis livrer le vrai événement WSS synthétique qui déclenche l’effet.
 - **Assertions visibles:** après le refus, aucun statut `success` ni confirmation d’application n’est rendu pour l’effet rejeté; garder visible l’avertissement si le produit en expose un. Les autres effets non rejetés ne doivent pas être comptés comme échec du scénario.
 - **Persistance / intégration:** état du faux LCU reste inchangé pour la mutation refusée; aucune entrée History de succès pour elle. Si le code prévoit un retry, attendre sa fin sans délai fixe, puis vérifier l’état réellement appliqué et une seule confirmation. Couvrir séparément les endpoints car pick, sorts/skin et runes n’ont pas tous la même voie LCU.
-- **Preuve actuelle:** les E2E vérifient l’Auto-Accept refusé, Auto-Ban refusé et Auto Play Again refusé (`auto-accept-failure.spec.ts`, `lcu-automation.spec.ts:181-225,248-277`). Le scénario d’Auto-Pick et effets secondaires vérifie seulement les réponses réussies (`lcu-automation.spec.ts:46-137`); aucun `mutation_responses` sur l’endpoint pick, spells/skin ou runes n’est présent dans les specs.
-- **Spec visé:** étendre `frontend/e2e/lcu-automation.spec.ts`, avec un test par famille de mutation et ID commun ou suffixé.
+- **Preuve actuelle:** `auto-accept-failure.spec.ts` vérifie qu’un refus LCU ne devient pas un succès. Auto-Ban et Auto Play Again injectent un 503, vérifient l’absence de confirmation pendant le refus, puis réessaient jusqu’à l’application confirmée (`lcu-automation.spec.ts:588-632,655-684`). Les cas Auto-Ban OFF et Play Again OFF (`lcu-automation.spec.ts:94-129,279-297`) prouvent qu’une préférence désactivée n’envoie aucune mutation; ils ne couvrent pas le traitement d’un refus LCU quand l’option est activée. Les scénarios pick/sorts/skin/runes vérifient actuellement leurs réponses réussies (`lcu-automation.spec.ts:299-390`); aucun refus injecté n’est couvert pour leurs endpoints.
+- **Spec visé:** étendre `frontend/e2e/lcu-automation.spec.ts` aux refus des mutations pick, spells, skin et runes, avec un test par famille ou endpoint partagé.
 - **Priorité:** P0 pour le pick; P1 pour les effets secondaires.
 - **Commande:** `npx playwright test --workers=1 --grep 'FE-LCU-REFUSAL-01'`.
 
@@ -155,10 +180,70 @@ Le test anti-doublon de `dashboard-connected.spec.ts` relit aussi `ready_check.p
 - **Geste:** modifier le champ Riot ID et appuyer sur Entrée sans quitter le champ.
 - **Assertions visibles:** le champ conserve la valeur acceptée; l’erreur de validation disparaît après une valeur valide.
 - **Persistance / intégration:** attendre le PATCH settings 200 puis relire le Riot ID et l’identité effective de `/api/account/identity`; conserver un cas invalide distinct pour confirmer que l’ancienne valeur reste intacte.
-- **Preuve actuelle:** le contrôle déclenche `saveManual` sur blur et Enter (`SettingsPage.tsx:260-266`). `settings.spec.ts:251-299` ne valide la saisie du Riot ID qu’en sortant du champ par Tab; l’action Enter est testée sur les raccourcis mais pas sur ce formulaire.
+- **Preuve actuelle:** le contrôle déclenche `saveManual` sur blur et Enter (`SettingsPage.tsx:260-266`). `settings.spec.ts` FE-ACCOUNT-ENTER-01 saisit un Riot ID puis presse Enter, attend PATCH 200, relit le réglage et `/api/account/identity`; le scénario voisin couvre toujours blur, erreur 422 et correction.
 - **Spec visé:** `frontend/e2e/settings.spec.ts`.
 - **Priorité:** P2, même mutation que le blur avec un geste de validation différent.
 - **Commande:** `npx playwright test --workers=1 --grep 'FE-ACCOUNT-ENTER-01'`.
+
+### FE-ONBOARD-DISMISS-RETRY-01 — Récupérer l’échec de fermeture de l’onboarding
+
+- **Précondition:** profil temporaire avec `onboarding_completed=false` et bannière visible sur le Dashboard.
+- **Geste:** cliquer Masquer; rejeter une fois le PATCH qui mémorise `onboarding_completed=true`; cliquer à nouveau.
+- **Assertions visibles:** l’échec affiche l’alerte et restaure la bannière; après retry réussi elle disparaît.
+- **Persistance / intégration:** l’état relu reste `false` après la première panne puis devient `true` via FastAPI; reload garde la bannière masquée.
+- **Preuve actuelle:** `settings.spec.ts` FE-ONBOARD-DISMISS-RETRY-01 injecte le premier 503 sur le PATCH onboarding, puis laisse le retry atteindre le vrai FastAPI.
+- **Priorité:** P1, l’action de dismiss doit pouvoir être reprise si l’écriture locale échoue.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-ONBOARD-DISMISS-RETRY-01'`.
+
+### FE-UPDATE-LINKS-01 — Ouvrir les liens proposés par la mise à jour
+
+- **Précondition:** le endpoint updates de la fixture annonce une release contrôlée.
+- **Geste:** cliquer Voir les nouveautés puis Télécharger dans la bannière.
+- **Assertions visibles:** chaque lien ouvre un nouvel onglet et déclenche l’URL de release ou d’asset fournie par la bannière.
+- **Persistance / intégration:** l’URL demandée correspond aux données renvoyées par l’endpoint update synthétique. Le trafic Internet est bloqué par le harness.
+- **Preuve actuelle:** `dashboard-disconnected.spec.ts` FE-UPDATE-LINKS-01 constate les deux popups et leurs requêtes sortantes exactes. Le test ne prétend pas valider le site GitHub ni télécharger l’EXE.
+- **Priorité:** P2, ces deux liens de mise à jour sont des actions visibles indépendantes du bouton Ignorer déjà testé.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-UPDATE-LINKS-01'`.
+
+### FE-LCU-AUTO-PICK-OFF-01 / FE-LCU-AUTO-BAN-OFF-01 — Respecter chaque interrupteur LCU OFF
+
+- **Précondition:** preset valide, maître actif, fake LCU connecté avec une action Pick ou Ban du joueur en cours.
+- **Geste:** désactiver respectivement Auto-Pick ou Auto-Ban depuis Réglages, puis livrer une transition de session champ-select.
+- **Assertions visibles:** le switch est OFF et la préférence est relue sur FastAPI.
+- **Persistance / intégration:** le handler d’événement est terminé, aucune requête PATCH ne verrouille l’action, son snapshot reste non terminé et aucun succès n’est ajouté à History.
+- **Preuve actuelle:** `lcu-automation.spec.ts` contient les deux IDs et vérifie séparément les endpoints Pick/Ban; cela complète les scénarios nominals qui activaient les interrupteurs avant de livrer l’événement.
+- **Priorité:** P0, l’option désactivée ne doit pas envoyer de commande de sélection.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-LCU-AUTO-PICK-OFF-01|FE-LCU-AUTO-BAN-OFF-01'`.
+
+### FE-LCU-PRESET-MASTER-OFF-01 — Respecter le maître des presets OFF
+
+- **Précondition:** presets valides, Auto-Pick et Auto-Ban activés, fake LCU connecté en ChampSelect.
+- **Geste:** désactiver Utiliser les presets en sélection depuis le Dashboard, puis livrer un Pick et un Ban actifs.
+- **Assertions visibles:** le maître passe à OFF et FastAPI conserve cette valeur.
+- **Persistance / intégration:** aucun des deux endpoints PATCH d’action n’est appelé; ni pick, ni ban, ni entrée de succès ne sont appliqués.
+- **Preuve actuelle:** `lcu-automation.spec.ts` FE-LCU-PRESET-MASTER-OFF-01 vérifie les deux actions après le vrai clic Dashboard.
+- **Priorité:** P0, le maître doit neutraliser tous les automatismes liés aux presets sans effacer les préférences enfants.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-LCU-PRESET-MASTER-OFF-01'`.
+
+### FE-LCU-AUTO-SUMMONERS-OFF-01 / FE-LCU-SKIN-OFF-01 — Respecter les automatismes secondaires OFF
+
+- **Précondition:** fake LCU en ChampSelect, Auto-Pick ON et preset Garen valide, sorts Flash/Ignite et skin fixe configurés.
+- **Geste:** couper Auto-Summs ou l’automatisation globale des skins depuis Réglages, puis livrer un pick jouable.
+- **Assertions visibles:** le pick continue de s’appliquer; la préférence sélectionnée reste OFF.
+- **Persistance / intégration:** Auto-Summs OFF conserve les deux sorts LCU sans PATCH de sélection; skin OFF conserve `selectedSkinId=0` sans succès History. Le test attend la page de runes appliquée pour vérifier que les autres tâches du même pick ont convergé.
+- **Preuve actuelle:** `lcu-automation.spec.ts` FE-LCU-AUTO-SUMMONERS-OFF-01 et FE-LCU-SKIN-OFF-01 couvrent les deux interrupteurs séparément avec le faux LCU.
+- **Priorité:** P0 pour les sorts; P1 pour le skin, ce sont des commandes LCU configurables qui doivent respecter le réglage global.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-LCU-AUTO-SUMMONERS-OFF-01|FE-LCU-SKIN-OFF-01'`.
+
+### FE-LCU-PLAY-AGAIN-OFF-01 — Ne pas rejouer après la désactivation
+
+- **Précondition:** fake LCU en Lobby, Auto Play Again activé, aucune fin de partie initiale.
+- **Geste:** couper Auto Play Again dans Réglages, puis livrer la transition WaitingForStats.
+- **Assertions visibles:** le switch et le réglage persistent à OFF.
+- **Persistance / intégration:** attendre la fin de traitement de l’événement, conserver WaitingForStats et ne recevoir aucun POST `/lol-lobby/v2/play-again` ni entrée History de succès.
+- **Preuve actuelle:** `lcu-automation.spec.ts` FE-LCU-PLAY-AGAIN-OFF-01 utilise l’event completion du harness comme barrière de fin de traitement.
+- **Priorité:** P1, respecte un réglage de confort qui provoque sinon une mutation LCU.
+- **Commande:** `npx playwright test --workers=1 --grep 'FE-LCU-PLAY-AGAIN-OFF-01'`.
 
 ### FE-STATS-ACCOUNT-CTA-01 — Rejoindre Réglages Compte sans identité
 
@@ -220,3 +305,5 @@ Le test anti-doublon de `dashboard-connected.spec.ts` relit aussi `ready_check.p
 - Le premier rerun des trois cas red-team a passé Auto-Accept OFF et skin random, mais le lien de marque a échoué parce que le changement de hash conservait le focus du clic précédent. Après rechargement de `/#history` pour repartir du focus naturel, rerun ciblé depuis `frontend/`: `npx playwright test e2e/auto-accept-failure.spec.ts e2e/lcu-automation.spec.ts e2e/navigation.spec.ts --workers=1 --grep "FE-LCU-AUTO-ACCEPT-OFF-01|FE-LCU-SKIN-RANDOM-01|FE-SHELL-BRAND-01"` => **3 réussis**, 28,5 s.
 - Scénario restart relancé avec la commande du guide `scripts/e2e/README.md:14`, depuis `frontend/`: `npx playwright test --config ../scripts/e2e/playwright.config.mjs --workers=1` => **1 réussi**, 24,6 s. Un essai initial depuis la racine a échoué avant d’exécuter le test (`test() did not expect test() here`); le mauvais répertoire de travail était la cause, pas un échec applicatif.
 - Aucun run global n’est consigné pour cette expansion.
+- Expansion contrôle → action du 2026-10-02: les IDs FE-ACCOUNT-ENTER-01 (1/1), FE-UPDATE-LINKS-01 (1/1), FE-ONBOARD-DISMISS-RETRY-01 (1/1) et les six nouveaux IDs de désactivation LCU (6/6) passent chacun en ciblé. Puis la commande `npx playwright test e2e/settings.spec.ts e2e/dashboard-disconnected.spec.ts e2e/lcu-automation.spec.ts --workers=1` depuis `frontend/` passe **66/66 en 10,2 min**. Ce run traverse également tous les autres cas de ces trois specs, pas le reste du navigateur.
+- Deux assertions exploratoires ont été corrigées avant le run vert: Enter désactive temporairement le champ pendant le PATCH, donc la perte de focus pendant l’enregistrement est normale et n’est pas un critère de succès; le popup de release passe à `chrome-error://chromewebdata/` car l’egress est bloqué, donc le test valide désormais le popup et l’URL demandée avant blocage, pas le chargement du site externe. Aucun défaut produit n’est établi par ces deux tentatives.

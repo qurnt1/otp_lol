@@ -96,3 +96,25 @@ test("une release contrôlée traverse l’API et Ignorer persiste après rechar
   await expect(page.locator(".update-banner")).toHaveCount(0);
   await expect.poll(async () => (await page.request.get(new URL("/api/updates", app.baseURL).href).then((response) => response.json())).available).toBe(false);
 });
+
+test("[FE-UPDATE-LINKS-01] release notes and download links open the advertised URLs", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+  await setupApplication(page, { updateStatus: "available" });
+  await page.goto("/#dashboard");
+  await page.clock.fastForward(7_000);
+
+  const banner = page.getByRole("region", { name: "Mise à jour" });
+  await expect(banner).toContainText("OTP LOL 99.0 est disponible");
+  const requestedUrls: string[] = [];
+  page.context().on("request", (request) => requestedUrls.push(request.url()));
+  for (const [label, url] of [
+    ["Voir les nouveautés", "https://github.com/qurnt1/otp_lol/releases/tag/v99.0"],
+    ["Télécharger", "https://github.com/qurnt1/otp_lol/releases/download/v99.0/OTP-LOL-Setup.exe"],
+  ]) {
+    const popupPromise = page.waitForEvent("popup");
+    await banner.getByRole("link", { name: label }).click();
+    const popup = await popupPromise;
+    await expect.poll(() => requestedUrls).toContain(url);
+    await popup.close();
+  }
+});

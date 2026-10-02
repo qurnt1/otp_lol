@@ -271,6 +271,27 @@ test("manual Riot ID and region edits persist as the selected provider identity"
   });
 });
 
+test("[FE-ACCOUNT-ENTER-01] manual Riot ID saves when Enter is pressed", async ({ page }) => {
+  await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
+  await page.goto("/#settings/account");
+
+  const riotId = page.getByRole("textbox", { name: "Riot ID" });
+  const patchResponse = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.status() === 200,
+  );
+  await riotId.fill("Keyboard Player#ENTER");
+  await riotId.press("Enter");
+
+  expect((await patchResponse).ok()).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).manual_summoner_name).toBe("Keyboard Player#ENTER");
+  await expect.poll(async () => {
+    const response = await page.request.get(new URL("/api/account/identity", new URL(page.url()).origin).href);
+    return response.json();
+  }).toMatchObject({ riot_id: "Keyboard Player#ENTER", region: "euw", source: "manual" });
+});
+
 test("an invalid manual Riot ID is rejected and a corrected value persists", async ({ page }) => {
   await setupApplication(page, { autoDetect: false, manualRiotId: "Manual#EUW", region: "euw" });
   await page.goto("/#settings/account");
@@ -626,6 +647,43 @@ test("first-run onboarding closes permanently after a real preset edit", async (
   await expect(onboarding).toBeHidden();
   await page.reload();
   await expect(onboarding).toBeHidden();
+});
+
+test("[FE-ONBOARD-DISMISS-RETRY-01] a rejected welcome-banner dismissal is restored and can be retried", async ({ page }) => {
+  await setupApplication(page, { onboardingCompleted: false });
+  await page.goto("/#dashboard");
+  const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
+  await expect(onboarding).toBeVisible();
+
+  let failedDismiss = false;
+  await page.route("**/api/settings", async (route) => {
+    if (route.request().method() === "PATCH") {
+      const body = route.request().postDataJSON() as Record<string, unknown> | undefined;
+      if (body?.onboarding_completed === true && !failedDismiss) {
+        failedDismiss = true;
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected onboarding save failure" }) });
+        return;
+      }
+    }
+    await route.continue();
+  });
+
+  await onboarding.getByRole("button", { name: "Masquer le message de bienvenue" }).click();
+  await expect(page.getByRole("alert")).toHaveText("Impossible d’enregistrer ce réglage.");
+  await expect(onboarding).toBeVisible();
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(false);
+
+  const retry = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.status() === 200,
+  );
+  await onboarding.getByRole("button", { name: "Masquer le message de bienvenue" }).click();
+  expect((await retry).ok()).toBe(true);
+  await expect(onboarding).toBeHidden();
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(true);
+  await page.reload();
+  await expect(onboarding).toHaveCount(0);
 });
 
 test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masque son CTA", async ({ page }) => {
