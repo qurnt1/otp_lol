@@ -8,7 +8,7 @@ Le périmètre couvre l’application desktop, son frontend, son backend et le s
 
 ## État de validation courant — 2026-10-02
 
-Branche `codex/react-fastapi-webview-migration`. Les résultats ci-dessous ont été exécutés sur le checkout de travail du jour; le run complet navigateur couvre notamment le correctif Ready Check DASH-14. Ils ne constituent pas une preuve d’interface EXE ou de compatibilité League réelle.
+Branche `codex/react-fastapi-webview-migration`. Les résultats ci-dessous ont été exécutés sur le checkout de travail du jour; le run complet navigateur couvre notamment le correctif Ready Check DASH-14. Le résultat 189/189 précède les derniers ajustements de synchronisation des specs après CI Windows au commit `843f6dc`; le full browser doit être relancé. Ces résultats ne constituent pas une preuve d’interface EXE ou de compatibilité League réelle.
 
 | Validation | Résultat | Portée et limite |
 |---|---|---|
@@ -28,9 +28,13 @@ La revue red-team a trouvé que le helper d’attente d’événement LCU pouvai
 
 Limite de fidélité à garder pour DASH-14: le scénario rejoue après succès un événement dont le payload indique `playerResponse=None`. Le faux LCU remplace la ressource côté serveur après le POST d’acceptation; le test n’inspecte pas cette ressource après le rejeu. Cette séquence synthétique ne démontre donc pas le comportement exact d’un événement LCU réel après acceptation. C’est une limite de portée du test, pas un défaut produit confirmé. **À confirmer** (`src/core/websocket.py:949-963`): si le POST d’acceptation réussit après invalidation de son cycle, History, status et son peuvent encore être émis. Ce scénario dépend d’une réponse LCU tardive; aucun vrai client League n’a reproduit ce cas.
 
+## Derniers échecs CI Windows — commit `843f6dc`
+
+Les checks PR et push ont chacun signalé un échec d’assertion de route dans `prepick-transition.spec.ts`: l’état API devenait visible avant que le callback de mutation UI ferme le picker et réinitialise le hash, si bien que l’assertion testait trop tôt. Le push a aussi signalé une assertion transitoire « Enregistré » dans `settings.spec.ts`, alors que le `PATCH` répondait 200 et que l’état du switch était déjà correct; le toast avait disparu avant sa vérification. Ces deux cas indiquent des problèmes de synchronisation des tests, sans défaut produit confirmé. Les deux scénarios corrigés passent isolément et dans le full browser local. Ce run complet a fini à 188/189 à cause d’un `page.goto` échouant avec `net::ERR_NO_BUFFER_SPACE` dans un autre test; relancé seul, ce test passe. L’inspection du teardown n’a révélé aucun serveur E2E ou processus synthétique resté actif. Une nouvelle CI distante est nécessaire pour confirmer les specs corrigées.
+
 Les résultats ciblés du 2026-10-01 ci-dessous restent historiques et ne s’ajoutent pas aux suites récentes. Le runner natif reste partiel: son garde a correctement refusé une interaction tray quand une autre application détenait le premier plan. Aucun vrai client League ni interface EXE windowed n’a été testé. Le screenshot de la capture native indique un éventuel clipping du CTA, mais la mesure exacte de son viewport CSS manque; le contrôle Playwright ne reproduit pas de clipping.
 
-Correction produit incluse: l’échec de lecture `GET /api/diagnostics` affiche « Impossible de charger les diagnostics. », distinct du message d’échec d’exécution des checks (`frontend/src/features/diagnostics/DiagnosticsPage.tsx`, `frontend/src/features/diagnostics/copy.ts`). Le comportement Ready Check a été corrigé et le scénario DASH-14 ainsi que la suite complète passent dans le run courant. Le tray, les hotkeys globaux et l’EXE interactif sont encore à valider.
+Correction produit incluse: l’échec de lecture `GET /api/diagnostics` affiche « Impossible de charger les diagnostics. », distinct du message d’échec d’exécution des checks (`frontend/src/features/diagnostics/DiagnosticsPage.tsx`, `frontend/src/features/diagnostics/copy.ts`). Le comportement Ready Check a été corrigé; DASH-14 et les deux specs ajustées passent dans le full browser local 188/189, mais ce run a rencontré un autre échec réseau transitoire `ERR_NO_BUFFER_SPACE`; le test concerné passe isolément. Le tray, les hotkeys globaux et l’EXE interactif sont encore à valider.
 
 ## Baseline du lot précédent — 2026-09-30
 

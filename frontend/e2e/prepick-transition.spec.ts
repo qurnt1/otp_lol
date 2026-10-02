@@ -91,9 +91,14 @@ test("le ban attend la confirmation du pré-pick, puis le pick suit après le ba
   await banPicker.getByRole("textbox", { name: "Rechercher un champion…" }).fill("Annie");
   await banPicker.getByRole("option", { name: /Annie/ }).click();
   await expect.poll(async () => (await readPresets(page)).selected_ban).toBe("Annie");
+  await expect(banPicker).toBeHidden();
 
-  await page.goto("/#settings/automations");
-  await expect(page.getByRole("button", { name: "Automatisations" })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("link", { name: "Réglages", exact: true }).click();
+  await expect(page).toHaveURL(/#settings\/general$/);
+  const automationsSection = page.getByRole("button", { name: "Automatisations", exact: true });
+  await automationsSection.click();
+  await expect(page).toHaveURL(/#settings\/automations$/);
+  await expect(automationsSection).toHaveAttribute("aria-current", "page");
   await enableAutomation(page, "Auto-Pick", "auto_pick_enabled");
   await enableAutomation(page, "Auto-Ban", "auto_ban_enabled");
   await enableAutomation(page, "Auto-Summs", "auto_summoners_enabled");

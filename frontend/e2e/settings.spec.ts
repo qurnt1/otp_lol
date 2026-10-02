@@ -1103,10 +1103,10 @@ test("[SET-03] an automation setting rolls back after a rejected save and persis
     && new URL(response.url()).pathname === "/api/settings"
     && response.status() === 200,
   );
-  await autoPick.click();
-  expect((await savedResponse).ok()).toBe(true);
+  const savedFeedback = expect(page.getByText("Enregistré", { exact: true })).toBeVisible({ timeout: 10_000 });
+  const [, response] = await Promise.all([autoPick.click(), savedResponse, savedFeedback]);
+  expect(response.ok()).toBe(true);
   await expect(autoPick).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByText("Enregistré", { exact: true })).toBeVisible();
   await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(true);
   await page.reload();
   await expect(page.getByRole("switch", { name: "Auto-Pick" })).toHaveAttribute("aria-checked", "true");
