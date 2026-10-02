@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   unit-build:
-    name: Frontend CI / Unit and build
+    name: Frontend CI / Typecheck and build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
