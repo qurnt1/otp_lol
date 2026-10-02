@@ -248,7 +248,9 @@ test("Dashboard suit la fermeture réelle du client puis une reconnexion LCU", a
     phase: "Lobby",
     settings: { close_app_on_lol_exit: false },
   });
+  const eventsConnected = waitForRuntimeEvents(page);
   await page.goto("/#dashboard");
+  await eventsConnected;
   await expect(page.locator(".sidebar-runtime")).toHaveAttribute("aria-label", "Client connecté");
 
   await app.configureLcuConnection({ online: false });
