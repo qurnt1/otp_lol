@@ -422,6 +422,75 @@ async function waitForHelperReady(helper, timeoutMs = 3_000) {
   throw new Error("Native dialog helper did not enter its wait state.");
 }
 
+async function chooseWebViewFile(page, trigger, filePath) {
+  const chooserPromise = page.waitForEvent("filechooser", { timeout: 10_000 })
+    .then((chooser) => ({ chooser }), (error) => ({ error }));
+  await trigger.click();
+  const chooserResult = await chooserPromise;
+  if (chooserResult.error) throw chooserResult.error;
+  await chooserResult.chooser.setFiles(filePath);
+  return { selectedPath: filePath, multiple: chooserResult.chooser.isMultiple() };
+}
+
+async function exerciseDiagnosticsWebViewSearch(page) {
+  const diagnosticsAction = page.locator("button.advanced-action").filter({ hasText: "Diagnostics LCU" });
+  assert.equal(await diagnosticsAction.count(), 1);
+  await diagnosticsAction.click();
+  await page.getByRole("heading", { name: "Diagnostics LCU" }).waitFor({ state: "visible" });
+  const diagnosticsResponse = await page.request.get(new URL("/api/diagnostics", page.url()).toString());
+  assert.equal(diagnosticsResponse.status(), 200);
+  const diagnostics = await diagnosticsResponse.json();
+  assert.ok(diagnostics.events.some((event) => event.topic === "otp-lol/webview" && event.event_type === "created"), "Diagnostics must contain the event emitted by the real WebView startup.");
+  const selectedCheck = diagnostics.endpoint_checks[0];
+  assert.ok(selectedCheck?.id && selectedCheck.path, "Diagnostics must expose a safe endpoint check to seed a real non-WebView log entry.");
+  const runButton = page.getByRole("button", { name: "Tester les endpoints sûrs" });
+  assert.equal(await runButton.isDisabled(), true, "The user-facing LCU check must stay disabled while League is disconnected.");
+  const seededCheckResponse = await page.request.post(new URL("/api/diagnostics/run", page.url()).toString(), {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { endpoint_ids: [selectedCheck.id] },
+  });
+  assert.equal(seededCheckResponse.status(), 200, "The isolated diagnostic route must record one safe disconnected LCU check.");
+  const seededCheck = (await seededCheckResponse.json()).results[0];
+  assert.equal(seededCheck.id, selectedCheck.id);
+  assert.equal(seededCheck.success, false);
+  assert.equal(seededCheck.error, "disconnected", "The synthetic disconnected run must stop before opening an LCU request.");
+  await page.getByRole("button", { name: "Actualiser" }).click();
+  const seededRequestTitle = `GET ${selectedCheck.path}`;
+  await page.locator(".diagnostics-log-row strong").getByText(seededRequestTitle, { exact: true }).waitFor({ state: "visible" });
+  const logRows = page.locator(".diagnostics-log-row");
+  const visibleRowsBeforeFilter = await logRows.evaluateAll((rows) => rows.map((row) => ({
+    title: row.querySelector("strong")?.textContent?.trim() ?? "",
+    text: row.textContent ?? "",
+  })));
+  const nonWebViewRow = visibleRowsBeforeFilter.find(({ title, text }) => title && !`${title} ${text}`.toLocaleLowerCase().includes("webview"));
+  assert.ok(nonWebViewRow, "Diagnostics must show a non-WebView entry before applying the WebView filter.");
+  const webviewFilter = page.locator(".diagnostics-filter button").filter({ hasText: "WebView" });
+  assert.equal(await webviewFilter.count(), 1);
+  await webviewFilter.click();
+  const webviewCreatedRow = page.locator(".diagnostics-log-row").filter({ hasText: "otp-lol/webview · created" });
+  await webviewCreatedRow.waitFor({ state: "visible" });
+  const visibleTitlesAfterFilter = await logRows.locator("strong").allTextContents();
+  assert.equal(visibleTitlesAfterFilter.includes(nonWebViewRow.title), false, "The WebView filter must remove the visible non-WebView entry.");
+  const diagnosticsSearch = page.locator('.diagnostics-log-controls input[type="search"]');
+  await diagnosticsSearch.fill("otp-lol/webview");
+  assert.equal(await webviewCreatedRow.count(), 1, "A nonempty Diagnostics search must retain the real WebView created event.");
+  const noMatchQuery = "otp-lol-native-e2e-no-such-event";
+  await diagnosticsSearch.fill(noMatchQuery);
+  assert.equal(await logRows.count(), 0, "A search with no matching Diagnostics entry must hide every log row.");
+  const emptyState = page.locator(".diagnostics-log-list .statistics-empty");
+  await emptyState.waitFor({ state: "visible" });
+  assert.equal(await emptyState.innerText(), "Aucune entrée pour ce filtre.");
+  return {
+    filter: "WebView",
+    seed: { endpointId: selectedCheck.id, result: seededCheck, userRunButtonDisabled: true },
+    removedNonWebViewEntry: nonWebViewRow.title,
+    query: "otp-lol/webview",
+    event: "otp-lol/webview · created",
+    noMatchQuery,
+    emptyState: await emptyState.innerText(),
+  };
+}
+
 async function processTree(pid, expectedBrowserArg) {
   const args = ["--tree-pid", String(pid)];
   if (expectedBrowserArg) args.push(`--expected-browser-arg=${expectedBrowserArg}`);
@@ -605,6 +674,103 @@ try {
   assert.equal(await page.locator("#settings-import").evaluate((input) => input.files?.length ?? 0), 0);
   await importButton.waitFor({ state: "visible" });
   completedActions.push("Win32 canceled the native file dialog and the hidden file input remained empty.");
+
+  const currentSettingsResponse = await page.request.get(new URL("/api/settings", page.url()).toString());
+  assert.equal(currentSettingsResponse.status(), 200);
+  const settingsBeforeInvalidImport = await currentSettingsResponse.json();
+  const settingsExportResponse = await page.request.get(new URL("/api/settings/export", page.url()).toString());
+  assert.equal(settingsExportResponse.status(), 200);
+  const validSettingsImport = await settingsExportResponse.json();
+  assert.equal(Number.isInteger(validSettingsImport.config_schema_version), true, "The settings export must contain its current schema version.");
+  validSettingsImport.theme = validSettingsImport.theme === "flatly" ? "darkly" : "flatly";
+  const invalidImportPath = path.join(tempRoot, "invalid-settings.json");
+  const validImportPath = path.join(tempRoot, "valid-settings.json");
+  await fs.writeFile(invalidImportPath, JSON.stringify({
+    config_schema_version: validSettingsImport.config_schema_version + 1,
+    theme: validSettingsImport.theme,
+  }), "utf8");
+  await fs.writeFile(validImportPath, JSON.stringify(validSettingsImport, null, 2), "utf8");
+
+  const invalidImportResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/settings/import")
+    .then((response) => ({ response }), (error) => ({ error }));
+  const invalidImportFileChooser = await chooseWebViewFile(page, importButton, invalidImportPath);
+  const invalidImportResponseResult = await invalidImportResponsePromise;
+  if (invalidImportResponseResult.error) throw invalidImportResponseResult.error;
+  const invalidImportResponse = invalidImportResponseResult.response;
+  assert.equal(invalidImportResponse.status(), 422, "The real import action must reject an unsupported schema.");
+  await page.getByRole("alert").filter({ hasText: "unsupported settings schema" }).waitFor({ state: "visible" });
+  const afterInvalidImportResponse = await page.request.get(new URL("/api/settings", page.url()).toString());
+  assert.equal(afterInvalidImportResponse.status(), 200);
+  const settingsAfterInvalidImport = await afterInvalidImportResponse.json();
+  assert.deepEqual(settingsAfterInvalidImport, settingsBeforeInvalidImport, "An invalid native import must preserve the complete settings object.");
+  nativeActionEvidence.settingsImportInvalid = {
+    fileChooser: invalidImportFileChooser,
+    responseStatus: invalidImportResponse.status(),
+    completeSettingsUnchanged: true,
+  };
+  completedActions.push("Selected a schema-invalid JSON file through the visible import action in the actual WebView, observed the backend 422 and UI error, and verified the isolated settings stayed unchanged.");
+
+  const validImportResponsePromise = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/settings/import")
+    .then((response) => ({ response }), (error) => ({ error }));
+  const validImportFileChooser = await chooseWebViewFile(page, importButton, validImportPath);
+  const validImportResponseResult = await validImportResponsePromise;
+  if (validImportResponseResult.error) throw validImportResponseResult.error;
+  const validImportResponse = validImportResponseResult.response;
+  assert.equal(validImportResponse.status(), 200, "The real import action must accept a current settings export.");
+  await page.getByText("Enregistré", { exact: true }).waitFor({ state: "visible" });
+  const importedSettings = await validImportResponse.json();
+  assert.equal(importedSettings.theme, validSettingsImport.theme);
+  const settingsAfterValidImportResponse = await page.request.get(new URL("/api/settings", page.url()).toString());
+  assert.equal(settingsAfterValidImportResponse.status(), 200);
+  assert.equal((await settingsAfterValidImportResponse.json()).theme, validSettingsImport.theme);
+  const parametersTomlPath = path.join(tempRoot, "profile", "Roaming", "OTP LOL", "parameters.toml");
+  const persistedParametersToml = await fs.readFile(parametersTomlPath, "utf8");
+  const persistedThemeLine = /^theme\s*=\s*("(?:\\.|[^"\\])*")\s*$/m.exec(persistedParametersToml);
+  assert.ok(persistedThemeLine, "The isolated parameters.toml must contain a quoted theme value.");
+  assert.equal(JSON.parse(persistedThemeLine[1]), validSettingsImport.theme, "The imported theme must be persisted to the isolated parameters.toml.");
+  nativeActionEvidence.settingsImportValid = { fileChooser: validImportFileChooser, responseStatus: validImportResponse.status(), importedTheme: importedSettings.theme, persistedTheme: JSON.parse(persistedThemeLine[1]), parametersTomlPath };
+  completedActions.push("Selected a complete current settings export through the visible import action in the actual WebView, observed the 200 response and saved feedback, and verified the imported theme in the API response and isolated parameters.toml.");
+
+  const settingsExportButton = page.locator("button.advanced-action").filter({ hasText: "Exporter la configuration" });
+  assert.equal(await settingsExportButton.count(), 1);
+  const settingsDownloadPromise = page.waitForEvent("download", { timeout: 10_000 })
+    .then((download) => ({ download }), (error) => ({ error }));
+  await settingsExportButton.click();
+  const settingsDownloadResult = await settingsDownloadPromise;
+  if (settingsDownloadResult.error) throw settingsDownloadResult.error;
+  const settingsDownloadPath = path.join(tempRoot, "settings-export.json");
+  await settingsDownloadResult.download.saveAs(settingsDownloadPath);
+  const downloadedSettings = JSON.parse(await fs.readFile(settingsDownloadPath, "utf8"));
+  assert.equal(downloadedSettings.config_schema_version, validSettingsImport.config_schema_version);
+  assert.equal(downloadedSettings.theme, validSettingsImport.theme);
+  for (const key of ["auto_detected_riot_id", "auto_detected_region", "auto_detected_platform"]) {
+    assert.equal(Object.hasOwn(downloadedSettings, key), false, `A settings export must omit local ${key}.`);
+  }
+  nativeActionEvidence.settingsExport = { suggestedFilename: settingsDownloadResult.download.suggestedFilename(), parsed: true, schemaVersion: downloadedSettings.config_schema_version, localIdentityOmitted: true };
+  completedActions.push("Exported configuration through the visible settings action, parsed the downloaded JSON, and verified schema metadata plus omission of the local detected identity.");
+
+  nativeActionEvidence.diagnosticsWebviewSearch = await exerciseDiagnosticsWebViewSearch(page);
+  completedActions.push("Verified the visible non-WebView Diagnostics entry disappears under the WebView filter, retained the real window startup event with a matching search, and checked the no-match empty state.");
+  await saveScreenshot(page, "diagnostics-webview-filter");
+  const saveDialogHelper = startJsonHelper([nativeDialog, "--app-pid", String(app.pid), "--wait-and-cancel", "--timeout", "20"]);
+  await waitForHelperReady(saveDialogHelper);
+  await page.getByRole("button", { name: "Exporter le rapport" }).click();
+  const saveDialogEvidence = await helperResult(saveDialogHelper);
+  assert.equal(saveDialogEvidence.win32CancelClicked, true);
+  assert.equal(saveDialogEvidence.dialogClosed, true);
+  await page.getByRole("status").filter({ hasText: "Export annulé." }).waitFor({ state: "visible" });
+  nativeActionEvidence.diagnosticsSaveDialog = saveDialogEvidence;
+  completedActions.push("Opened the diagnostics native Save dialog through the visible export action, canceled it through Win32, and verified the UI reports Export annulé.");
+  const diagnosticsExportResponse = await page.request.get(new URL("/api/diagnostics/export", page.url()).toString());
+  assert.equal(diagnosticsExportResponse.status(), 200);
+  const diagnosticsExport = await diagnosticsExportResponse.json();
+  assert.ok(diagnosticsExport.events.some((event) => event.topic === "otp-lol/webview" && event.event_type === "created"), "The diagnostics export must contain the real WebView startup event.");
+  assert.equal(Object.hasOwn(diagnosticsExport, "riot_id"), false, "The default diagnostics export must remain redacted.");
+  nativeActionEvidence.diagnosticsExportApi = { status: diagnosticsExportResponse.status(), parsed: true, includesWebviewCreated: true, riotIdRedacted: true };
+  completedActions.push("Exported and parsed the diagnostics JSON endpoint, confirming it contains the real WebView startup event and omits Riot ID by default.");
+  await page.getByRole("link", { name: "Réglages" }).click();
+  await page.getByRole("button", { name: "Avancé" }).click();
+  await page.getByRole("heading", { name: "Fichiers et diagnostics" }).waitFor({ state: "visible" });
 
   const trayFile = path.join(tempRoot, "tray-window.json");
   const trayStateFile = path.join(tempRoot, "tray-menu-states.json");
@@ -938,21 +1104,6 @@ try {
   assert.equal(folderOpenAction.launchSuppressed, true);
   nativeActionEvidence.localShell = folderOpenAction;
   completedActions.push("Clicked Dossier AppData and captured only this run's isolated APPDATA target; Explorer launch was suppressed by the test-only shell interceptor.");
-
-  const diagnosticsAction = page.locator("button.advanced-action").filter({ hasText: "Diagnostics LCU" });
-  assert.equal(await diagnosticsAction.count(), 1);
-  await diagnosticsAction.click();
-  await page.getByRole("heading", { name: "Diagnostics LCU" }).waitFor({ state: "visible" });
-  await saveScreenshot(page, "diagnostics");
-  const saveDialogHelper = startJsonHelper([nativeDialog, "--app-pid", String(app.pid), "--wait-and-cancel", "--timeout", "20"]);
-  await waitForHelperReady(saveDialogHelper);
-  await page.getByRole("button", { name: "Exporter le rapport" }).click();
-  const saveDialogEvidence = await helperResult(saveDialogHelper);
-  assert.equal(saveDialogEvidence.win32CancelClicked, true);
-  assert.equal(saveDialogEvidence.dialogClosed, true);
-  await page.getByRole("status").filter({ hasText: "Export annulé." }).waitFor({ state: "visible" });
-  nativeActionEvidence.diagnosticsSaveDialog = saveDialogEvidence;
-  completedActions.push("Opened the diagnostics native Save dialog through the visible export action, canceled it through Win32, and verified the UI reports Export annulé.");
 
   const quitTray = trayMenu("quit", 20_000);
   assert.equal(quitTray.action, "Quit");

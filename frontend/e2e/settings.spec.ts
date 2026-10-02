@@ -1,3 +1,5 @@
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { expect, getOtpApp, readPresets, readSettings, readRuntime, setupApplication, test, waitForRuntimeEvents } from "./helpers";
 
 test("settings persists a toggle across a real page reload", async ({ page }) => {
@@ -125,6 +127,61 @@ test("a settings transport failure rolls back the toggle and allows a successful
   expect((await saved).status()).toBe(200);
   await expect(closeOnExit).toHaveAttribute("aria-checked", "false");
   await expect.poll(async () => (await readSettings(page)).close_app_on_lol_exit).toBe(false);
+});
+
+test("[FE-API-WRITE-01] a real settings-file write failure rolls back the UI and preserves the file before retry", async ({ page }) => {
+  const { app, settings: before } = await setupApplication(page);
+  const parametersPath = path.join(app.appDataDir, "OTP LOL", "parameters.toml");
+  const heldParametersPath = `${parametersPath}.e2e-held`;
+  let originalFileHeld = false;
+
+  try {
+    expect(before.auto_hide_on_connect).toBe(true);
+    const originalBytes = await readFile(parametersPath);
+    await page.goto("/#settings/general");
+    const autoHide = page.getByRole("switch", { name: "Masquer à la connexion" });
+    await expect(autoHide).toHaveAttribute("aria-checked", "true");
+
+    await rename(parametersPath, heldParametersPath);
+    originalFileHeld = true;
+    await mkdir(parametersPath);
+    await writeFile(path.join(parametersPath, "occupied"), "prevent replacing this directory");
+
+    const failedSave = page.waitForResponse((response) =>
+      response.request().method() === "PATCH"
+      && new URL(response.url()).pathname === "/api/settings"
+      && response.status() === 500,
+    );
+    await autoHide.click();
+    const failedResponse = await failedSave;
+    expect(await failedResponse.json()).toEqual({ detail: "Unable to save settings" });
+    await expect(page.getByRole("alert")).toHaveText("Unable to save settings");
+    await expect(autoHide).toHaveAttribute("aria-checked", "true");
+    await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(true);
+    expect(await readFile(heldParametersPath)).toEqual(originalBytes);
+
+    await rm(parametersPath, { recursive: true, force: true });
+    await rename(heldParametersPath, parametersPath);
+    originalFileHeld = false;
+
+    const retriedSave = page.waitForResponse((response) =>
+      response.request().method() === "PATCH"
+      && new URL(response.url()).pathname === "/api/settings"
+      && response.status() === 200,
+    );
+    await autoHide.click();
+    expect((await retriedSave).ok()).toBe(true);
+    await expect(autoHide).toHaveAttribute("aria-checked", "false");
+    await expect.poll(async () => (await readSettings(page)).auto_hide_on_connect).toBe(false);
+    expect(await readFile(parametersPath, "utf8")).toContain("auto_hide_on_connect = false");
+    await page.reload();
+    await expect(page.getByRole("switch", { name: "Masquer à la connexion" })).toHaveAttribute("aria-checked", "false");
+  } finally {
+    if (originalFileHeld) {
+      await rm(parametersPath, { recursive: true, force: true });
+      await rename(heldParametersPath, parametersPath);
+    }
+  }
 });
 
 test("a rejected settings update shows the API detail and preserves the saved value", async ({ page }) => {
