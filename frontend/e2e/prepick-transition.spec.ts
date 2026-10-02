@@ -200,16 +200,27 @@ test("le ban attend la confirmation du pré-pick, puis le pick suit après le ba
     request.method === "PATCH" && request.path === `/lol-champ-select/v1/session/actions/${pickActionId}`
       && requestBody(request.body).completed === true && requestBody(request.body).championId === 86,
   )).toBe(true);
-  const finalState = await app.readLcuState();
-  expect(finalState.session.actions[0][2]).toMatchObject({ completed: true, championId: 86 });
-  expect(finalState.session.myTeam[0]).toMatchObject({
+  await expect.poll(async () => {
+    const state = await app.readLcuState();
+    const player = state.session.myTeam[0];
+    return {
+      actionLocked: state.session.actions[0][2].completed,
+      championId: player.championId,
+      spell1Id: player.spell1Id,
+      spell2Id: player.spell2Id,
+      skinId: player.selectedSkinId,
+      runePageId: player.selectedRunePageId,
+      activeRunePageId: state.current_rune_page.id,
+    };
+  }).toEqual({
+    actionLocked: true,
     championId: 86,
     spell1Id: 4,
     spell2Id: 14,
-    selectedSkinId: 86013,
-    selectedRunePageId: 401,
+    skinId: 86013,
+    runePageId: 401,
+    activeRunePageId: 401,
   });
-  expect(finalState.current_rune_page.id).toBe(401);
 
   const historyMessages = (await readHistory(page)).items.map((item) => item.message);
   expect(historyMessages).toContain("Pre-pick sent for Garen.");
