@@ -88,7 +88,7 @@ flowchart LR
 - `website/` contains OTP LOL's separate React/Vite product landing page; it is not the desktop interface. The GitHub Pages workflow is configured for `https://qurnt1.github.io/otp_lol/`.
 - `quentin-chabot.vercel.app` is Quentin's personal portfolio, separate from OTP LOL. It can host the project's presentation PDF, but it is not the OTP LOL app or product site.
 
-As checked on 14 October 2026, the GitHub Pages URL serves an older Jekyll-rendered repository README instead of the React landing page in `website/`. The repository has a deployment workflow for that site, but the public page needs a deployment/source correction before it can be presented as the live OTP LOL landing page.
+The public GitHub Pages site at `https://qurnt1.github.io/otp_lol/` is the React/Vite landing page built from `website/` by `.github/workflows/deploy-website.yml`. The desktop interface remains a separate app under `frontend/`.
 
 Settings, history and caches live on the PC under `%APPDATA%\OTP LOL`. The API binds to loopback. Public game assets and update information may be requested from their providers; there is no OTP LOL account or hosted user profile.
 
