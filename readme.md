@@ -20,7 +20,7 @@ OTP LOL connects to the League Client Update API on your PC. You set champion pr
 ## Screenshots
 
 <p align="center">
-  <img src="./docs/images/portfolio-dashboard-demo.png" alt="OTP LOL dashboard with three champion priority cards and automation controls" width="100%">
+  <img src="./docs/images/portfolio-dashboard-demo.png" alt="OTP LOL dashboard with the God-King Garen, Star Guardian Lux and Queen Ashe skin splash arts" width="100%">
 </p>
 
 <table>
@@ -85,7 +85,10 @@ flowchart LR
 - `src/api/` exposes validated HTTP and WebSocket boundaries through FastAPI and Pydantic schemas.
 - `frontend/src/` is the React/TypeScript desktop interface. Its API types are generated from OpenAPI.
 - `src/desktop/` owns the pywebview shell, window lifecycle, tray and native shortcuts.
-- `website/` is the separate public marketing site; it is not the desktop interface.
+- `website/` contains OTP LOL's separate React/Vite product landing page; it is not the desktop interface. The GitHub Pages workflow is configured for `https://qurnt1.github.io/otp_lol/`.
+- `quentin-chabot.vercel.app` is Quentin's personal portfolio, separate from OTP LOL. It can host the project's presentation PDF, but it is not the OTP LOL app or product site.
+
+As checked on 14 October 2026, the GitHub Pages URL serves an older Jekyll-rendered repository README instead of the React landing page in `website/`. The repository has a deployment workflow for that site, but the public page needs a deployment/source correction before it can be presented as the live OTP LOL landing page.
 
 Settings, history and caches live on the PC under `%APPDATA%\OTP LOL`. The API binds to loopback. Public game assets and update information may be requested from their providers; there is no OTP LOL account or hosted user profile.
 
