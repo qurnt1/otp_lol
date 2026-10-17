@@ -43,6 +43,7 @@ export function PresetEditorFlow({ action, onClose, returnFocusRef }: {
     enabled: Boolean(editingSlot),
     staleTime: 3_600_000,
   });
+  const spellCatalogError = spells.isError && !spells.data;
   const selectedChampionData = champions.data?.items.find((item) => item.name.toLocaleLowerCase() === selectedChampion.toLocaleLowerCase());
   const championId = selectedChampionData?.id ?? (editingSlot ? bootstrap.data?.preset_previews?.[editingSlot]?.champion_id ?? undefined : undefined);
   const skins = useQuery({
@@ -114,6 +115,7 @@ export function PresetEditorFlow({ action, onClose, returnFocusRef }: {
   };
 
   const updateEditingPreset = (values: Partial<PresetSlot>) => {
+    if (spellCatalogError && ("spell_1" in values || "spell_2" in values)) return;
     if (editingSlot && !updatePreset.isPending) updatePreset.mutate({ slot: editingSlot, values });
   };
 
@@ -177,7 +179,10 @@ export function PresetEditorFlow({ action, onClose, returnFocusRef }: {
       priority={presetSlotKeys.indexOf(editingSlot) + 1}
       champion={editingChampion}
       preview={bootstrap.data?.preset_previews?.[editingSlot]}
-      spells={spells.data?.items ?? [{ name: "(None)", icon_url: null }]}
+      spells={spells.data?.items ?? []}
+      spellLoading={spells.isPending}
+      spellLoadError={spellCatalogError}
+      onRetrySpells={() => void spells.refetch()}
       pending={isSaving}
       feedback={feedback}
       feedbackIsError={feedbackIsError}

@@ -18,21 +18,21 @@ function isDesktopMode(): boolean {
   return Boolean(current.__otpDesktopMode || new URLSearchParams(window.location.search).get("desktop") === "1");
 }
 
-let bridgeReadyFromEvent = false;
 if (typeof window !== "undefined") {
   window.addEventListener("pywebviewready", () => {
-    bridgeReadyFromEvent = true;
-    (window as Window & { __otpNativeBridgeReady?: boolean }).__otpNativeBridgeReady = true;
+    (window as NativeWindow).__otpNativeBridgeReady = true;
   });
+}
+
+export function isNativeBridgeExpected(): boolean {
+  return typeof window !== "undefined" && (isDesktopMode() || "pywebview" in window);
 }
 
 export function isNativeBridgeReady(): boolean {
   if (typeof window === "undefined") return false;
   const current = window as NativeWindow;
-  const desktopMode = isDesktopMode();
-  if (!desktopMode && !("pywebview" in window)) return true;
-  if (desktopMode) return Boolean(current.__otpNativeBridgeReady || current.pywebview?.api);
-  return bridgeReadyFromEvent || Boolean(current.__otpNativeBridgeReady || current.pywebview?.api);
+  if (!isNativeBridgeExpected()) return true;
+  return Boolean(current.__otpNativeBridgeReady || current.pywebview?.api);
 }
 
 export function getNativeDesktopApi(): NativeDesktopApi | undefined {

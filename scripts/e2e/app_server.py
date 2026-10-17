@@ -413,10 +413,22 @@ def _start_synthetic_league_process(port: int, token: str, state_dir: Path) -> s
 app_pid = {app_pid}
 if os.name == "nt":
     import ctypes
-    handle = ctypes.windll.kernel32.OpenProcess(0x00100000, False, app_pid)
-    if handle:
-        ctypes.windll.kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
-        ctypes.windll.kernel32.CloseHandle(handle)
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    handle = kernel32.OpenProcess(0x00100000, False, app_pid)
+    if not handle:
+        raise OSError(ctypes.get_last_error(), "OpenProcess failed for the E2E app server")
+    try:
+        if kernel32.WaitForSingleObject(handle, 0xFFFFFFFF) != 0:
+            raise OSError(ctypes.get_last_error(), "WaitForSingleObject failed for the E2E app server")
+    finally:
+        kernel32.CloseHandle(handle)
 else:
     while True:
         try:
@@ -454,17 +466,34 @@ def _verify_process_discovery_and_isolate_driver(
     """Prove OS discovery without connecting, then expose only this PID to the driver."""
     import lcu_driver.connector as connector_module
     import lcu_driver.utils as lcu_utils
+    import psutil
     from lcu_driver.connection import Connection
 
     synthetic_pid = process.pid
-    discovered = next(
-        (
-            candidate
-            for candidate in connector_module._return_ux_process()
-            if candidate.pid == synthetic_pid
-        ),
-        None,
-    )
+    scan_deadline = time.monotonic() + 5
+    while True:
+        try:
+            discovered = next(
+                (
+                    candidate
+                    for candidate in connector_module._return_ux_process()
+                    if candidate.pid == synthetic_pid
+                ),
+                None,
+            )
+        except (
+            ProcessLookupError,
+            psutil.NoSuchProcess,
+            psutil.ZombieProcess,
+            psutil.AccessDenied,
+        ):
+            if time.monotonic() >= scan_deadline:
+                raise
+            time.sleep(0.05)
+            continue
+        if discovered is not None or time.monotonic() >= scan_deadline:
+            break
+        time.sleep(0.05)
     if discovered is None:
         raise RuntimeError("The unfiltered production process scanner did not find the synthetic League process.")
 

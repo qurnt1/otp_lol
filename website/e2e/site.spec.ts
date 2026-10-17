@@ -37,15 +37,15 @@ test("screenshot selector preserves each content id, description, and loaded ass
       id: "settings",
       label: "Réglages",
       title: "Active ce qui te convient",
-      alt: "Capture des réglages OTP LOL pour les automatismes, les fichiers locaux et la configuration.",
-      note: "Aperçu des réglages. Les automatismes sont désactivés par défaut au premier lancement.",
+      alt: "Capture de la page Avancé des réglages OTP LOL, avec les fichiers locaux, les diagnostics et les actions de configuration.",
+      note: "Aperçu de la page Avancé. Les automatismes restent désactivés au premier lancement.",
     },
     {
       id: "statistics",
       label: "Statistiques",
       title: "Choisis tes fournisseurs",
-      alt: "Capture des statistiques OTP LOL avec le choix d’un fournisseur et l’ouverture de son profil.",
-      note: "Capture de test avec données simulées et profil fictif. Les profils et données de partie viennent de services tiers.",
+      alt: "Capture de la page Statistiques OTP LOL avec les fournisseurs disponibles et aucun compte configuré.",
+      note: "Aperçu sans compte configuré. Les profils et données de partie viennent du fournisseur tiers choisi.",
     },
   ] as const;
 
@@ -61,7 +61,7 @@ test("screenshot selector preserves each content id, description, and loaded ass
     const image = page.locator(".showcase-frame .showcase-image");
     await expect(image).toHaveAttribute("alt", screenshot.alt);
     const source = await image.getAttribute("src");
-    expect(source).toContain(`${screenshot.id}-web`);
+    expect(source).toContain(`portfolio-${screenshot.id}-demo`);
     await expect(page.locator(".showcase-caption > span")).toHaveText(screenshot.note);
     await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
   }
@@ -76,12 +76,20 @@ test("screenshot selector works from the keyboard and opens the selected screens
   await statisticsButton.focus();
   await page.keyboard.press("Enter");
   await expect(statisticsButton).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".showcase-caption > span")).toContainText("profil fictif");
+  await expect(page.locator(".showcase-caption > span")).toContainText("sans compte configuré");
 
   await page.getByRole("button", { name: "Agrandir la capture" }).click();
   const dialog = page.getByRole("dialog", { name: "Statistiques" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("img")).toHaveAttribute("alt", "Capture des statistiques OTP LOL avec le choix d’un fournisseur et l’ouverture de son profil.");
+  await expect(dialog.locator("img")).toHaveAttribute("alt", "Capture de la page Statistiques OTP LOL avec les fournisseurs disponibles et aucun compte configuré.");
+});
+
+test("hero uses the current disconnected-client demo screenshot", async ({ page }) => {
+  const image = page.locator(".hero-figure img");
+  await expect(image).toHaveAttribute("alt", "Capture de démonstration du tableau de bord OTP LOL avec trois champions et leurs skins configurés, client League déconnecté.");
+  await expect(image).toHaveAttribute("src", /portfolio-dashboard-demo/);
+  await expect(page.locator(".hero-figure figcaption")).toContainText("client déconnecté");
+  await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 });
 
 test("FAQ answers expand and collapse by mouse and keyboard", async ({ page }) => {
@@ -196,3 +204,21 @@ for (const viewport of [
     expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
   });
 }
+
+test("mobile body copy remains at least 12px at 390px", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bodyCopy = page.locator([
+    ".workflow-list p",
+    ".feature-column > p",
+    ".feature-column ul",
+    ".local-intro > p:not(.eyebrow)",
+    ".install-block li p",
+    ".faq-list summary",
+    ".faq-list details p",
+  ].join(", "));
+
+  for (const element of await bodyCopy.all()) {
+    const fontSize = await element.evaluate((node) => Number.parseFloat(getComputedStyle(node).fontSize));
+    expect(fontSize).toBeGreaterThanOrEqual(12);
+  }
+});

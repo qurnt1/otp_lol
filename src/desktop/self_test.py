@@ -8,6 +8,8 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..config import FIRST_LAUNCH_PARAMS, load_parameters, save_parameters
@@ -15,6 +17,18 @@ from ..config import settings as settings_module
 from .window import has_webview2_runtime
 
 logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _temporary_parameters_path(prefix: str) -> Iterator[None]:
+    """Keep settings reads and writes made by a diagnostic inside its temp dir."""
+    previous_path = settings_module.PARAMETERS_PATH
+    with tempfile.TemporaryDirectory(prefix=prefix) as temp_dir:
+        settings_module.PARAMETERS_PATH = str(Path(temp_dir) / "parameters.toml")
+        try:
+            yield
+        finally:
+            settings_module.PARAMETERS_PATH = previous_path
 
 
 def run_self_test(*, require_webview2: bool = True) -> int:
@@ -32,16 +46,10 @@ def run_self_test(*, require_webview2: bool = True) -> int:
         logger.info(
             "SKIP webview2_detection (runtime prerequisite is checked by the installer)"
         )
-    with tempfile.TemporaryDirectory(prefix="otp-lol-self-test-") as temp_dir:
-        temp_path = Path(temp_dir) / "parameters.toml"
-        previous_path = settings_module.PARAMETERS_PATH
-        settings_module.PARAMETERS_PATH = str(temp_path)
-        try:
-            checks["settings_write"] = save_parameters(FIRST_LAUNCH_PARAMS)
-            checks["settings_read"] = load_parameters() == FIRST_LAUNCH_PARAMS
-        finally:
-            settings_module.PARAMETERS_PATH = previous_path
-    checks["embedded_api_smoke"] = run_headless_smoke() == 0
+    with _temporary_parameters_path("otp-lol-self-test-"):
+        checks["settings_write"] = save_parameters(FIRST_LAUNCH_PARAMS)
+        checks["settings_read"] = load_parameters() == FIRST_LAUNCH_PARAMS
+        checks["embedded_api_smoke"] = _run_headless_smoke() == 0
     for name, passed in checks.items():
         logger.info("%s%s", "PASS " if passed else "FAIL ", name)
     return 0 if all(checks.values()) else 1
@@ -49,6 +57,12 @@ def run_self_test(*, require_webview2: bool = True) -> int:
 
 def run_headless_smoke() -> int:
     """Start the embedded API, probe health, and stop it without opening a GUI."""
+    with _temporary_parameters_path("otp-lol-headless-smoke-"):
+        return _run_headless_smoke()
+
+
+def _run_headless_smoke() -> int:
+    """Run API probes only after its settings path has been isolated."""
     from ..api.app import create_app
     from ..api.context import ApplicationContext
     from .server import EmbeddedApiServer

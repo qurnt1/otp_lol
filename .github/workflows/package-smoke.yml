@@ -73,15 +73,41 @@ jobs:
             throw "Expected onedir executable was not produced."
           }
 
-      - name: Run packaged self-test
+      - name: Run packaged diagnostics without touching existing settings
         shell: pwsh
         run: |
-          $log = Join-Path $env:RUNNER_TEMP "otp-lol-self-test.log"
-          & ".\OTP LOL\OTP LOL.exe" --self-test --allow-missing-webview2 2>&1 | Tee-Object -FilePath $log
-          $exitCode = $LASTEXITCODE
-          "### Packaged self-test output" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          Get-Content -LiteralPath $log | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          if ($exitCode -ne 0) { throw "Packaged self-test failed with exit code $exitCode." }
+          $profileRoot = Join-Path $env:RUNNER_TEMP "otp-lol-diagnostic-isolation"
+          $roaming = Join-Path $profileRoot "Roaming"
+          $localAppData = Join-Path $profileRoot "Local"
+          $temp = Join-Path $profileRoot "Temp"
+          $settingsDirectory = Join-Path $roaming "OTP LOL"
+          $settingsPath = Join-Path $settingsDirectory "parameters.toml"
+          New-Item -ItemType Directory -Path $settingsDirectory, $localAppData, $temp -Force | Out-Null
+          $sentinel = "config_schema_version = 3`nuser_setting = `"preserve-me`"`n"
+          $sentinelBytes = [System.Text.UTF8Encoding]::new($false).GetBytes($sentinel)
+          [System.IO.File]::WriteAllBytes($settingsPath, $sentinelBytes)
+          $expectedSettings = [Convert]::ToBase64String($sentinelBytes)
+          $env:APPDATA = $roaming
+          $env:LOCALAPPDATA = $localAppData
+          $env:TEMP = $temp
+          $env:TMP = $temp
+
+          $smokes = @(
+            @{ Name = "self-test"; Arguments = @("--self-test", "--allow-missing-webview2") },
+            @{ Name = "headless-smoke"; Arguments = @("--headless-smoke") }
+          )
+          foreach ($smoke in $smokes) {
+            $log = Join-Path $env:RUNNER_TEMP "otp-lol-$($smoke.Name).log"
+            $arguments = $smoke.Arguments
+            & ".\OTP LOL\OTP LOL.exe" @arguments 2>&1 | Tee-Object -FilePath $log
+            $exitCode = $LASTEXITCODE
+            "### Packaged $($smoke.Name) output" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            Get-Content -LiteralPath $log | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            if ($exitCode -ne 0) { throw "Packaged $($smoke.Name) failed with exit code $exitCode." }
+            if ([Convert]::ToBase64String([System.IO.File]::ReadAllBytes($settingsPath)) -cne $expectedSettings) {
+              throw "Packaged $($smoke.Name) changed the existing settings sentinel."
+            }
+          }
 
       - name: Upload package diagnostics on failure
         if: ${{ failure() }}

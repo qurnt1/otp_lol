@@ -1103,8 +1103,3 @@ class WebSocketManager(ChampSelectMixin):
                 logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
         except Exception as e:
             logging.debug("Error polling lobby for queue id: %s", e)
-
-    @staticmethod
-    def _platform_to_region_routing(platform: str) -> str:
-        """Keep the old helper as a compatibility wrapper for callers and tests."""
-        return platform_to_regional_routing(platform) or ""

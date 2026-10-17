@@ -8,4 +8,4 @@ The README and project presentation use these screenshots:
 
 They use a synthetic or disconnected League client and contain no real Riot ID. The dashboard was captured on 14 October 2026 from the current React/FastAPI full-stack E2E app; the screenshot uses fixed Garen, Lux and Ashe skin presets, with the official Data Dragon artwork served locally to the isolated browser. Statistics and Settings were captured on the same date from the current React/FastAPI browser E2E app. These screenshots document the interface, not a live League session or a packaged WebView2 build.
 
-The older `dashboard-web.png`, `settings-web.png` and `statistics-web.png` images belong to the marketing-site capture set. Do not use them for public product documentation without checking their account data and UI state first.
+The older `dashboard-web.png` and `settings-web.png` images are archived captures from the previous site presentation and are not used by the current website. The old `statistics-web.png` capture was removed because it exposed a real Riot ID and region; do not restore or reuse public copies of it.

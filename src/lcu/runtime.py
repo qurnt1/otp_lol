@@ -11,6 +11,7 @@ from ..core.datadragon import DataDragon
 from ..core.websocket import WebSocketManager
 from ..domain.events import EventBroker
 from ..domain.models import RuntimeSnapshot
+from ..services.urls import is_valid_detected_account
 from .client import LcuClient, LcuResponse
 
 
@@ -76,6 +77,29 @@ class LcuRuntime:
     def is_active(self) -> bool:
         return self.manager.is_active
 
+    def get_riot_id(self) -> str | None:
+        return self.manager.get_riot_id()
+
+    def get_account_stats_identity(self, params: dict[str, Any]) -> dict[str, Any]:
+        state = self.manager.state
+        if self.is_active:
+            riot_id = self.get_riot_id()
+            region = state.provider_region
+            platform = state.platform_routing
+        else:
+            riot_id = params.get("auto_detected_riot_id")
+            region = params.get("auto_detected_region")
+            platform = params.get("auto_detected_platform")
+        if not is_valid_detected_account(str(riot_id or ""), str(region or ""), str(platform or "")):
+            riot_id = None
+            region = None
+        return {
+            "puuid": getattr(state, "puuid", None),
+            "summoner_id": getattr(state, "summoner_id", None),
+            "riot_id": riot_id,
+            "region": region,
+        }
+
     def get_account_identity(self, params: dict[str, Any]) -> dict[str, Any]:
         """Expose the normalized account identity used by every API surface."""
         return self.manager.get_account_identity(params)
@@ -96,7 +120,7 @@ class LcuRuntime:
             version=CURRENT_VERSION,
             connected=self.is_active,
             phase=str(state.current_phase or "None"),
-            riot_id=self.manager.get_riot_id(),
+            riot_id=self.get_riot_id(),
             region=self.manager.get_platform_for_websites(),
             queue_id=queue_id,
             assigned_position=str(state.assigned_position or ""),
@@ -145,57 +169,9 @@ class LcuRuntime:
     async def fetch_rune_styles(self) -> dict[int, dict[str, Any]]:
         return await self._submit(self.manager._fetch_rune_styles_async)
 
-    async def fetch_current_rune_page(self) -> dict[str, Any] | None:
-        return await self._submit(self.manager._fetch_current_rune_page_async)
-
-    async def set_rune_page(self, page_data: dict[str, Any]) -> bool:
-        return bool(
-            await self._submit(
-                lambda: self.manager._set_rune_page_via_perks_async(page_data)
-            )
-        )
-
-    async def create_rune_page(self, page_data: dict[str, Any]) -> int | None:
-        return await self._submit(
-            lambda: self.manager._create_rune_page_async(page_data)
-        )
-
-    async def delete_rune_page(self, page_id: int) -> bool:
-        return bool(
-            await self._submit(lambda: self.manager._delete_rune_page_async(page_id))
-        )
-
     async def fetch_owned_skins(self, champion_id: int) -> dict[str, Any]:
         return await self._submit(
             lambda: self.manager._fetch_owned_skins_for_champion(champion_id)
-        )
-
-    async def apply_spells(self, slot_key: str | None = None) -> None:
-        await self._submit(
-            lambda: self.manager._set_spells(self.get_params(), slot_key=slot_key)
-        )
-
-    async def apply_skin(self, slot_key: str | None = None) -> None:
-        await self._submit(
-            lambda: self.manager._set_skin(self.get_params(), slot_key=slot_key)
-        )
-
-    async def apply_runes(self, slot_key: str | None = None) -> None:
-        await self._submit(
-            lambda: self.manager._set_rune_page(self.get_params(), slot_key=slot_key)
-        )
-
-    async def lock_in_champion(
-        self, action_id: int, champion_id: int, *, action_type: str = "pick"
-    ) -> bool:
-        if action_type not in {"pick", "ban"}:
-            raise ValueError("action_type must be 'pick' or 'ban'")
-        return bool(
-            await self._submit(
-                lambda: self.manager._lock_in_champion(
-                    action_id, champion_id, action_type=action_type
-                )
-            )
         )
 
     async def get_skin_catalog(self, champion_id: int) -> list[dict[str, Any]]:

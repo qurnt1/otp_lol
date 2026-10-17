@@ -738,6 +738,53 @@ test("both spell fields accept distinct choices and None survives reopening", as
   await expect.poll(async () => (await readPresets(page)).slots.pick_1).toMatchObject({ spell_1: "Teleport", spell_2: "(None)" });
 });
 
+test("spell catalogue failure preserves saved spells and can be retried", async ({ page }) => {
+  await setupApplication(page, { configured: true });
+  let spellReads = 0;
+  let releaseFirstSpellRequest!: () => void;
+  let markFirstSpellRequestStarted!: () => void;
+  const firstSpellRequestStarted = new Promise<void>((resolve) => { markFirstSpellRequestStarted = resolve; });
+  const firstSpellRequestBlocked = new Promise<void>((resolve) => { releaseFirstSpellRequest = resolve; });
+  await page.route("**/api/spells", async (route) => {
+    spellReads += 1;
+    if (spellReads === 1) {
+      markFirstSpellRequestStarted();
+      await firstSpellRequestBlocked;
+    }
+    if (spellReads <= 2) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Injected spell catalogue outage" }) });
+      return;
+    }
+    await route.continue();
+  });
+  await page.goto("/#dashboard");
+  await page.locator(".priority-card").first().click();
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await firstSpellRequestStarted;
+  const loading = editor.locator(".preset-editor-loading");
+  await expect(loading).toBeVisible();
+  expect(await loading.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(80);
+  releaseFirstSpellRequest();
+  const error = editor.getByRole("alert");
+  await expect(error).toContainText("Impossible de charger les sorts.");
+  const retry = error.getByRole("button", { name: "Réessayer" });
+  await expect(retry).toBeVisible();
+  await expect(editor.getByRole("combobox")).toHaveCount(0);
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1).toMatchObject({ spell_1: "Flash", spell_2: "Ignite" });
+  expect(spellReads).toBe(2);
+
+  const recoveredCatalogue = page.waitForResponse((response) =>
+    response.request().method() === "GET" && new URL(response.url()).pathname === "/api/spells" && response.status() === 200,
+  );
+  await retry.click();
+  expect((await recoveredCatalogue).ok()).toBe(true);
+  await expect(editor.getByRole("combobox", { name: "Sort 1" })).toBeVisible();
+  await editor.getByRole("combobox", { name: "Sort 1" }).click();
+  await page.getByRole("option", { name: "Teleport" }).click();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.spell_1).toBe("Teleport");
+});
+
 test("each Dashboard automation switch persists its own setting", async ({ page }) => {
   await setupApplication(page, {
     configured: true,

@@ -7,6 +7,15 @@ export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
 export type PresetSlot = components["schemas"]["PresetSlot"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
+export type RuntimeSnapshot = components["schemas"]["RuntimeSnapshotResponse"];
+export type HistoryEntry = components["schemas"]["HistoryEntry"];
+export type PresetsResponse = components["schemas"]["PresetsResponse"];
+export type HistoryResponse = components["schemas"]["HistoryResponse"];
+export type ProviderOption = components["schemas"]["ProviderOption"];
+export type RegionOption = components["schemas"]["RegionOption"];
+export type ProviderCatalog = components["schemas"]["ProviderCatalog"];
+export type SkinReference = components["schemas"]["SkinReference"];
+export type PresetPreview = Required<components["schemas"]["PresetPreview"]>;
 
 export type PageId = "dashboard" | "statistics" | "live" | "history" | "settings" | "diagnostics";
 export type SettingsSection = "general" | "automations" | "account" | "links" | "shortcuts" | "appearance" | "advanced";
@@ -15,73 +24,13 @@ export type AppRoute =
   | { page: "dashboard"; action?: DashboardAction }
   | { page: Exclude<PageId, "settings" | "dashboard"> };
 
-export interface RuntimeSnapshot {
-  version: string;
-  connected: boolean;
-  phase: string;
-  riot_id: string | null;
-  region: string | null;
-  queue_id: number;
-  assigned_position: string;
-  presets_enabled: boolean;
-  auto_accept_enabled: boolean;
-  auto_pick_enabled: boolean;
-  auto_ban_enabled: boolean;
-  auto_summoners_enabled: boolean;
-}
-
 export interface RuntimeEvent {
   type: string;
   data: unknown;
   timestamp: string;
 }
 
-export interface Settings {
-  auto_accept_enabled: boolean;
-  auto_pick_enabled: boolean;
-  auto_ban_enabled: boolean;
-  auto_summoners_enabled: boolean;
-  presets_enabled: boolean;
-  onboarding_completed: boolean;
-  selected_pick_1: string;
-  selected_pick_2: string;
-  selected_pick_3: string;
-  selected_ban: string;
-  theme: "darkly" | "flatly";
-  summoner_name_auto_detect: boolean;
-  manual_summoner_name: string;
-  manual_region: string;
-  auto_detected_riot_id: string;
-  auto_detected_region: string;
-  auto_detected_platform: string;
-  auto_detected_account_valid: boolean;
-  preferred_stats_site: string;
-  preferred_hotkey_site: string;
-  hotkey_toggle_window: string;
-  hotkey_open_site: string;
-  auto_play_again_enabled: boolean;
-  auto_hide_on_connect: boolean;
-  close_app_on_lol_exit: boolean;
-  ignored_update_version: string;
-  skin_automation_enabled: boolean;
-  window_x: number;
-  window_y: number;
-  window_width: number;
-  window_height: number;
-  window_maximized: boolean;
-}
-
-export interface SkinReference {
-  skin_id: number;
-  skin_name: string;
-  skin_num: number;
-}
-
-export interface PresetsResponse {
-  presets_enabled: boolean;
-  selected_ban: string;
-  slots: Record<string, PresetSlot>;
-}
+export type Settings = Omit<components["schemas"]["SettingsResponse"], "config_version" | "config_schema_version" | "pick_slots">;
 
 export interface Champion {
   id: number;
@@ -163,21 +112,6 @@ export interface RunesResponse {
   styles: Record<string, RuneStyle>;
 }
 
-export interface HistoryEntry {
-  timestamp: string;
-  type: string;
-  level: string;
-  category: string;
-  action: string;
-  message: string;
-  details: Record<string, unknown>;
-}
-
-export interface HistoryResponse {
-  items: HistoryEntry[];
-  count: number;
-}
-
 export type UpdateResponse = components["schemas"]["UpdatesResponse"];
 export type AccountIdentity = components["schemas"]["AccountIdentityResponse"];
 export type StatsLinkResponse = components["schemas"]["StatsLinkResponse"];
@@ -202,38 +136,8 @@ export interface HotkeyStatus { hotkey: string; backend: "keyboard_hook" | "regi
 export interface DiagnosticsResponse { runtime: Omit<RuntimeSnapshot, "riot_id">; account_identity: AccountIdentity; hotkeys?: Record<"window" | "site", HotkeyStatus>; game_data: GameDataStatus; requests: DiagnosticRequestEntry[]; events: DiagnosticEventEntry[]; errors: DiagnosticErrorEntry[]; endpoint_checks: DiagnosticEndpoint[]; endpoint_results: DiagnosticCheckResult[] }
 export interface DiagnosticsRunResponse { results: DiagnosticCheckResult[] }
 
-export interface ProviderOption {
-  id: string;
-  label: string;
-  logo_url: string;
-}
-
-export interface RegionOption {
-  id: string;
-  label: string;
-}
-
-export interface ProviderCatalog {
-  stats: ProviderOption[];
-  live: ProviderOption[];
-  regions: RegionOption[];
-}
-
-export interface BootstrapResponse {
-  runtime: RuntimeSnapshot;
+export type BootstrapResponse = Omit<components["schemas"]["BootstrapResponse"], "settings" | "preset_previews" | "ban_preview"> & {
   settings: Settings;
-  presets: PresetsResponse;
   preset_previews?: Record<string, PresetPreview>;
   ban_preview?: PresetPreview | null;
-}
-
-export interface PresetPreview {
-  champion_id: number | null;
-  champion_name: string;
-  champion_icon_url: string | null;
-  champion_splash_url: string | null;
-  spell_1_url: string | null;
-  spell_2_url: string | null;
-  skin_name: string | null;
-  skin_preview_url: string | null;
-}
+};

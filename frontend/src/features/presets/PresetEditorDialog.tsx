@@ -3,6 +3,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ChevronRight, CircleOff, Sparkles, Swords, X } from "lucide-react";
 
 import { AssetImage } from "../../components/game/AssetImage";
+import { Button } from "../../components/ui/button";
 import { Select } from "../../components/ui/Select";
 import { fr } from "../../content/fr";
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
@@ -17,6 +18,9 @@ export function PresetEditorDialog({
   champion,
   preview,
   spells,
+  spellLoading,
+  spellLoadError,
+  onRetrySpells,
   pending,
   feedback,
   feedbackIsError,
@@ -35,6 +39,9 @@ export function PresetEditorDialog({
   champion?: Champion;
   preview?: PresetPreview;
   spells: SummonerSpell[];
+  spellLoading: boolean;
+  spellLoadError: boolean;
+  onRetrySpells: () => void;
   pending: boolean;
   feedback: string;
   feedbackIsError: boolean;
@@ -99,10 +106,14 @@ export function PresetEditorDialog({
 
             <section className="preset-editor-section" aria-labelledby="preset-spells-heading">
               <h3 id="preset-spells-heading">{fr.dashboard.spells}</h3>
-              <div className="preset-editor-spells">
-                <label className="editor-spell"><span>{fr.presets.spellOne}</span><Select label={fr.presets.spellOne} value={slot.spell_1 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_1: value })} /></label>
-                <label className="editor-spell"><span>{fr.presets.spellTwo}</span><Select label={fr.presets.spellTwo} value={slot.spell_2 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_2: value })} /></label>
-              </div>
+              {spellLoading
+                ? <div className="preset-editor-loading" role="status">{fr.common.loading}</div>
+                : spellLoadError
+                  ? <div className="state-error" role="alert"><strong>{fr.presets.spellLoadError}</strong><Button type="button" disabled={pending} onClick={onRetrySpells}>{fr.common.retry}</Button></div>
+                  : <div className="preset-editor-spells">
+                    <label className="editor-spell"><span>{fr.presets.spellOne}</span><Select label={fr.presets.spellOne} value={slot.spell_1 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_1: value })} /></label>
+                    <label className="editor-spell"><span>{fr.presets.spellTwo}</span><Select label={fr.presets.spellTwo} value={slot.spell_2 || "(None)"} options={spellOptions} disabled={pending} renderOption={renderSpell} onChange={(value) => onUpdate({ spell_2: value })} /></label>
+                  </div>}
             </section>
 
             <section className="preset-editor-section">

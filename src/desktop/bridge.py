@@ -122,7 +122,7 @@ class DesktopBridge:
             import webview
 
             selected = create_dialog(
-                webview.SAVE_DIALOG,
+                webview.FileDialog.SAVE,
                 save_filename="otp-lol-diagnostics.json",
                 file_types=("JSON files (*.json)", "All files (*.*)"),
             )

@@ -38,9 +38,12 @@ jobs:
           cache-dependency-path: |
             requirements.txt
             requirements-constraints.txt
+            scripts/e2e/requirements.txt
 
       - name: Install dependencies
-        run: python -m pip install -c requirements-constraints.txt -r requirements.txt
+        run: |
+          python -m pip install -c requirements-constraints.txt -r requirements.txt
+          python -m pip install -c requirements-constraints.txt -r scripts/e2e/requirements.txt
 
       - name: Compile Python sources
         run: python -m compileall -q launcher_web.py src create_exe.py
@@ -55,7 +58,11 @@ jobs:
 
       - name: Run browser smoke tests
         working-directory: frontend
-        run: npm run test:e2e -- --workers=1
+        run: npx playwright test --workers=1
+
+      - name: Run full-stack restart and LCU smoke
+        working-directory: frontend
+        run: npx playwright test --config ../scripts/e2e/playwright.config.mjs --workers=1
 
       - name: Run API-focused E2E suites
         working-directory: frontend

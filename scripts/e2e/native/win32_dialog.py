@@ -280,7 +280,7 @@ def _any_main_window(pids: set[int]) -> dict[str, object] | None:
     )
 
 
-def _foreground_menu_state(app_pids: set[int], menu_owner_hwnd: int) -> dict[str, int | bool | None]:
+def _current_foreground_menu_state() -> dict[str, int | bool | None]:
     info = GuiThreadInfo()
     info.cbSize = ctypes.sizeof(info)
     if not user32.GetGUIThreadInfo(0, ctypes.byref(info)):
@@ -299,13 +299,50 @@ def _foreground_menu_state(app_pids: set[int], menu_owner_hwnd: int) -> dict[str
         "menuOwnerHwnd": active_menu or None,
         "popupMenuMode": bool(info.flags & GUI_POPUPMENUMODE),
     }
-    if foreground_pid not in app_pids:
-        raise RuntimeError(f"Refusing native menu input because the foreground window is outside the isolated app: {state}")
-    if not state["popupMenuMode"] or active_menu != menu_owner_hwnd:
-        raise RuntimeError(f"Refusing native menu input because the expected popup is not active on the foreground thread: {state}")
-    if focus_pid is not None and focus_pid not in app_pids:
-        raise RuntimeError(f"Refusing native menu input because keyboard focus is outside the isolated app: {state}")
     return state
+
+
+def _foreground_menu_state(
+    app_pids: set[int], menu_owner_hwnd: int
+) -> dict[str, int | bool | None]:
+    state = _current_foreground_menu_state()
+    foreground_pid = state["foregroundPid"]
+    focus_pid = state["focusPid"]
+    active_menu = state["menuOwnerHwnd"]
+    if foreground_pid not in app_pids:
+        raise RuntimeError(
+            f"Refusing native menu input because the foreground window is outside the isolated app: {state}"
+        )
+    if not state["popupMenuMode"] or active_menu != menu_owner_hwnd:
+        raise RuntimeError(
+            f"Refusing native menu input because the expected popup is not active on the foreground thread: {state}"
+        )
+    if focus_pid is not None and focus_pid not in app_pids:
+        raise RuntimeError(
+            f"Refusing native menu input because keyboard focus is outside the isolated app: {state}"
+        )
+    return state
+
+
+def _wait_for_foreground_menu_state(
+    app_pids: set[int], menu_owner_hwnd: int, timeout: float = 3
+) -> dict[str, int | bool | None]:
+    deadline = time.monotonic() + timeout
+    latest_state = None
+    while time.monotonic() < deadline:
+        latest_state = _current_foreground_menu_state()
+        if (
+            latest_state["foregroundPid"] in app_pids
+            and latest_state["popupMenuMode"]
+            and latest_state["menuOwnerHwnd"] == menu_owner_hwnd
+            and latest_state["focusPid"] in {*app_pids, None}
+        ):
+            return latest_state
+        time.sleep(0.025)
+    raise RuntimeError(
+        "The app-owned native tray popup did not become the verified foreground menu before input: "
+        f"{latest_state}"
+    )
 
 
 def _send_menu_keys(app_pids: set[int], menu_owner_hwnd: int, keys: list[int]) -> dict[str, object]:
@@ -667,6 +704,7 @@ def _select_tray_menu(app_pid: int, tray_file: str, state_file: str, action: str
         time.sleep(0.05)
     if popup is None:
         raise RuntimeError("pystray did not show its app-owned native menu after WM_NOTIFY.")
+    _wait_for_foreground_menu_state(pids, menu_owner_hwnd)
 
     snapshots = json.loads(tray_states_path.read_text(encoding="utf-8"))
     if len(snapshots) <= len(snapshots_before):

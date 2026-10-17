@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import content from "../content.json";
-import dashboardImage from "../../../docs/images/dashboard-web.png";
-import settingsImage from "../../../docs/images/settings-web.png";
-import statisticsImage from "../../../docs/images/statistics-web.png";
+import dashboardImage from "../../../docs/images/portfolio-dashboard-demo.png";
+import settingsImage from "../../../docs/images/portfolio-settings-demo.jpg";
+import statisticsImage from "../../../docs/images/portfolio-statistics-demo.jpg";
 import garenImage from "../../../frontend/public/assets/app/garen.webp";
 
 const screenshots = content.screenshots;
@@ -63,13 +63,13 @@ export default function App() {
             <div className="hero-image-wrap">
               <img
                 src={dashboardImage}
-                alt="Capture du tableau de bord OTP LOL avec les priorités de champions et les options de partie."
-                width="1917"
-                height="1002"
+                alt="Capture de démonstration du tableau de bord OTP LOL avec trois champions et leurs skins configurés, client League déconnecté."
+                width="1920"
+                height="1080"
                 fetchPriority="high"
               />
             </div>
-            <figcaption><span>Tableau de bord</span><span>Capture de test avec données simulées</span></figcaption>
+            <figcaption><span>Tableau de bord</span><span>Presets de démonstration · client déconnecté</span></figcaption>
           </figure>
         </section>
 
@@ -128,8 +128,8 @@ export default function App() {
               className="showcase-image"
               src={activeImage}
               alt={activeScreenshot.alt}
-              width="1917"
-              height={activeScreenshot.id === "settings" ? "892" : "1002"}
+              width="1440"
+              height="920"
               loading="lazy"
             />
             <figcaption className="showcase-caption">

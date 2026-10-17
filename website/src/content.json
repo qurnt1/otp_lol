@@ -6,15 +6,15 @@
       "id": "settings",
       "label": "Réglages",
       "title": "Active ce qui te convient",
-      "alt": "Capture des réglages OTP LOL pour les automatismes, les fichiers locaux et la configuration.",
-      "note": "Aperçu des réglages. Les automatismes sont désactivés par défaut au premier lancement."
+      "alt": "Capture de la page Avancé des réglages OTP LOL, avec les fichiers locaux, les diagnostics et les actions de configuration.",
+      "note": "Aperçu de la page Avancé. Les automatismes restent désactivés au premier lancement."
     },
     {
       "id": "statistics",
       "label": "Statistiques",
       "title": "Choisis tes fournisseurs",
-      "alt": "Capture des statistiques OTP LOL avec le choix d’un fournisseur et l’ouverture de son profil.",
-      "note": "Capture de test avec données simulées et profil fictif. Les profils et données de partie viennent de services tiers."
+      "alt": "Capture de la page Statistiques OTP LOL avec les fournisseurs disponibles et aucun compte configuré.",
+      "note": "Aperçu sans compte configuré. Les profils et données de partie viennent du fournisseur tiers choisi."
     }
   ]
 }
