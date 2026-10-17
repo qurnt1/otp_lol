@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#18232d" />
+    <link rel="icon" href="./assets/app/garen.ico" type="image/x-icon" />
+    <link rel="shortcut icon" href="./assets/app/garen.ico" type="image/x-icon" />
+    <title>OTP LOL</title>
+    <script>
+      (() => {
+        const desktop = new URLSearchParams(window.location.search).get("desktop") === "1";
+        window.__otpDesktopMode = desktop;
+        window.__otpNativeBridgeReady = false;
+        window.addEventListener("pywebviewready", () => {
+          window.__otpNativeBridgeReady = true;
+        });
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

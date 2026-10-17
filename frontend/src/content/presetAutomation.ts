@@ -1,0 +1,18 @@
+export const presetAutomationCopy = {
+  masterLabel: "Utiliser les presets en sélection",
+  masterEnabled: "Les options configurées peuvent agir pendant la sélection.",
+  masterDisabled: "Tes presets restent configurés, mais aucune action automatique liée aux presets n'est exécutée.",
+  masterRequired: "Active d'abord les automatisations des presets.",
+  onboardingTitle: "Des exemples sont prêts.",
+  onboardingMessage: "Personnalise les trois priorités avant d'activer les automatisations.",
+  onboardingAction: "Configurer mes priorités",
+  dismissOnboarding: "Masquer le message de bienvenue",
+  resetPresets: "Restaurer les presets d'exemple",
+  resetPresetsDescription: "Restaure les exemples Garen, Lux et Ashe; automatismes désactivés.",
+  resetPresetsConfirm: "Restaurer les exemples",
+  resetPresetsConfirmation: "Tes trois picks seront remplacés par Garen, Lux et Ashe. Le maître des automatisations sera désactivé; tes autres réglages et préférences enfants resteront inchangés.",
+  clearPresets: "Effacer uniquement les presets",
+  clearPresetsDescription: "Efface les picks et le ban sans toucher aux autres réglages.",
+  clearPresetsConfirm: "Effacer les presets",
+  clearPresetsConfirmation: "Les trois picks et le ban seront effacés. Pour remettre les exemples Garen, Lux et Ashe, utilise « Restaurer les presets d'exemple ».",
+} as const;
