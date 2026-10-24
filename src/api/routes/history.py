@@ -7,7 +7,7 @@ import asyncio
 from fastapi import APIRouter, Request
 
 from ...services.history import clear_history_entries, get_history_entries
-from ..schemas import HistoryResponse
+from ..schemas import HistoryClearResponse, HistoryResponse
 
 router = APIRouter(prefix="/api")
 
@@ -20,8 +20,8 @@ async def history(request: Request, limit: int = 100) -> HistoryResponse:
     return {"items": entries, "count": len(entries)}
 
 
-@router.delete("/history")
-async def clear_history(request: Request) -> dict[str, bool]:
+@router.delete("/history", response_model=HistoryClearResponse)
+async def clear_history(request: Request) -> HistoryClearResponse:
     del request
     await asyncio.to_thread(clear_history_entries)
     return {"ok": True}

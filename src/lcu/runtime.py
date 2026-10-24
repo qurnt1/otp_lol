@@ -90,7 +90,9 @@ class LcuRuntime:
             riot_id = params.get("auto_detected_riot_id")
             region = params.get("auto_detected_region")
             platform = params.get("auto_detected_platform")
-        if not is_valid_detected_account(str(riot_id or ""), str(region or ""), str(platform or "")):
+        if not is_valid_detected_account(
+            str(riot_id or ""), str(region or ""), str(platform or "")
+        ):
             riot_id = None
             region = None
         return {

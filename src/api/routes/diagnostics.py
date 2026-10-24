@@ -10,6 +10,11 @@ from pydantic import BaseModel, Field, StrictStr
 
 from ...config import CURRENT_VERSION
 from ...desktop.window import get_webview2_runtime_version
+from ..schemas import (
+    DiagnosticsExportResponse,
+    DiagnosticsResponse,
+    DiagnosticsRunResponse,
+)
 from .game_data import resolved_game_data_status
 
 router = APIRouter(prefix="/api/diagnostics", tags=["diagnostics"])
@@ -19,8 +24,8 @@ class DiagnosticRunRequest(BaseModel):
     endpoint_ids: list[StrictStr] | None = Field(default=None, max_length=16)
 
 
-@router.get("")
-async def read_diagnostics(request: Request) -> dict[str, Any]:
+@router.get("", response_model=DiagnosticsResponse)
+async def read_diagnostics(request: Request) -> DiagnosticsResponse:
     context = request.app.state.context
     runtime = context.runtime.snapshot(context.get_params()).as_dict()
     identity = context.runtime.get_account_identity(context.get_params())
@@ -38,7 +43,7 @@ async def read_diagnostics(request: Request) -> dict[str, Any]:
 async def run_diagnostics(
     request: Request,
     payload: DiagnosticRunRequest,
-) -> dict[str, Any]:
+) -> DiagnosticsRunResponse:
     try:
         results = await request.app.state.context.diagnostics.run(payload.endpoint_ids)
     except (TypeError, ValueError) as error:
@@ -46,7 +51,11 @@ async def run_diagnostics(
     return {"results": results}
 
 
-@router.get("/export")
+@router.get(
+    "/export",
+    response_model=DiagnosticsExportResponse,
+    response_model_exclude_unset=True,
+)
 async def export_diagnostics(request: Request, include_riot_id: bool = False) -> JSONResponse:
     context = request.app.state.context
     report = context.diagnostics.export(include_riot_id=include_riot_id)

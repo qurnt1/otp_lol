@@ -112,11 +112,24 @@ def _preview_for_champion(context: Any, champion_name: Any) -> PresetPreview:
                         f"/api/assets/champions/{champion_id}/splash",
                         context.data_dragon.version,
                     ) if has_splash else None,
+                    spell_1_url=None,
+                    spell_2_url=None,
+                    skin_name=None,
+                    skin_preview_url=None,
                 )
 
     cached = _cached_champion(context.data_dragon, name)
     if not cached:
-        return PresetPreview(champion_name=name)
+        return PresetPreview(
+            champion_id=None,
+            champion_name=name,
+            champion_icon_url=None,
+            champion_splash_url=None,
+            spell_1_url=None,
+            spell_2_url=None,
+            skin_name=None,
+            skin_preview_url=None,
+        )
     champion_id, champion = cached
     has_image = bool((champion.get("image") or {}).get("full"))
     return PresetPreview(
@@ -128,6 +141,10 @@ def _preview_for_champion(context: Any, champion_name: Any) -> PresetPreview:
         champion_splash_url=versioned_asset_url(
             f"/api/assets/champions/{champion_id}/splash", context.data_dragon.version
         ) if has_image else None,
+        spell_1_url=None,
+        spell_2_url=None,
+        skin_name=None,
+        skin_preview_url=None,
     )
 
 

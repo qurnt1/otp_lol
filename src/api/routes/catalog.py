@@ -23,7 +23,13 @@ from ...lcu.runtime import RuntimeUnavailable
 from ...services.champion_roles import get_champion_positions
 from ...services.urls import PROVIDER_LOGO_FILES, provider_catalog_options
 from ..asset_urls import versioned_asset_url
-from ..schemas import ProviderCatalog
+from ..schemas import (
+    ChampionCatalogResponse,
+    ProviderCatalog,
+    RunesResponse,
+    SkinsResponse,
+    SummonerSpellCatalogResponse,
+)
 
 router = APIRouter(prefix="/api")
 def _context(request: Request) -> Any:
@@ -99,8 +105,8 @@ def _lcu_champions(payload: Any, context: Any) -> list[dict[str, Any]] | None:
     return items or None
 
 
-@router.get("/champions")
-async def champions(request: Request, q: str = "") -> dict[str, Any]:
+@router.get("/champions", response_model=ChampionCatalogResponse)
+async def champions(request: Request, q: str = "") -> ChampionCatalogResponse:
     context = _context(request)
     normalized_query = q.strip().lower()
     await context.ensure_static_data()
@@ -159,8 +165,8 @@ def provider_logo(provider_id: str) -> FileResponse:
     return FileResponse(path, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
 
 
-@router.get("/spells")
-async def spells(request: Request) -> dict[str, Any]:
+@router.get("/spells", response_model=SummonerSpellCatalogResponse)
+async def spells(request: Request) -> SummonerSpellCatalogResponse:
     context = _context(request)
     await context.ensure_static_data()
     static_data = getattr(context, "static_data", None)
@@ -200,8 +206,8 @@ async def spells(request: Request) -> dict[str, Any]:
     return {"items": items}
 
 
-@router.get("/skins/{champion_id}")
-async def skins(request: Request, champion_id: int) -> dict[str, Any]:
+@router.get("/skins/{champion_id}", response_model=SkinsResponse)
+async def skins(request: Request, champion_id: int) -> SkinsResponse:
     context = _context(request)
     catalog = await context.runtime.get_skin_catalog(champion_id)
     for skin in catalog:
@@ -223,8 +229,8 @@ async def skins(request: Request, champion_id: int) -> dict[str, Any]:
     return {"champion_id": champion_id, "catalog": catalog, "owned": owned}
 
 
-@router.get("/runes")
-async def runes(request: Request) -> dict[str, Any]:
+@router.get("/runes", response_model=RunesResponse)
+async def runes(request: Request) -> RunesResponse:
     context = _context(request)
     if not context.runtime.is_active:
         return {"available": False, "pages": [], "styles": {}}

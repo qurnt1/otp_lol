@@ -1154,6 +1154,32 @@ export interface components {
             /** Categories */
             categories: components["schemas"]["ChallengeCategory"][];
         };
+        /** ChampionCatalogEntry */
+        ChampionCatalogEntry: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /** Title */
+            title: string;
+            /** Tags */
+            tags: string[];
+            /** Roles */
+            roles: string[];
+            /** Icon Url */
+            icon_url: string | null;
+            /** Splash Url */
+            splash_url: string | null;
+        };
+        /** ChampionCatalogResponse */
+        ChampionCatalogResponse: {
+            /** Items */
+            items: components["schemas"]["ChampionCatalogEntry"][];
+            /** Count */
+            count: number;
+        };
         /** ChampionMastery */
         ChampionMastery: {
             /** Champion Id */
@@ -1167,10 +1193,213 @@ export interface components {
             /** Chest Granted */
             chest_granted?: boolean | null;
         };
+        /** DiagnosticCheckResult */
+        DiagnosticCheckResult: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Path */
+            path: string;
+            /**
+             * Method
+             * @constant
+             */
+            method: "GET";
+            /** Status */
+            status: number | null;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Success */
+            success: boolean;
+            /** Error */
+            error: string | null;
+            /** Summary */
+            summary: string;
+        };
+        /** DiagnosticEndpoint */
+        DiagnosticEndpoint: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Path */
+            path: string;
+            /**
+             * Method
+             * @constant
+             */
+            method: "GET";
+        };
+        /** DiagnosticErrorEntry */
+        DiagnosticErrorEntry: {
+            /** Timestamp */
+            timestamp: string;
+            /** Source */
+            source: string;
+            /** Error */
+            error: string;
+            /** Method */
+            method: ("GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "UNKNOWN") | null;
+            /** Path */
+            path: string | null;
+            /** Status */
+            status: number | null;
+        };
+        /** DiagnosticEventEntry */
+        DiagnosticEventEntry: {
+            /** Timestamp */
+            timestamp: string;
+            /** Topic */
+            topic: string;
+            /** Event Type */
+            event_type: string;
+            /** Summary */
+            summary: string;
+            /** Payload */
+            payload: unknown;
+            /** Payload Truncated */
+            payload_truncated: boolean;
+            /** Payload Redacted */
+            payload_redacted: boolean;
+        };
+        /** DiagnosticHotkeyStatus */
+        DiagnosticHotkeyStatus: {
+            /** Hotkey */
+            hotkey: string;
+            /**
+             * Backend
+             * @enum {string}
+             */
+            backend: "keyboard_hook" | "register_hotkey" | "unavailable";
+            /** Active */
+            active: boolean;
+        };
+        /** DiagnosticRequestEntry */
+        DiagnosticRequestEntry: {
+            /** Timestamp */
+            timestamp: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "UNKNOWN";
+            /** Path */
+            path: string;
+            /** Status */
+            status: number | null;
+            /** Duration Ms */
+            duration_ms: number;
+            /** Success */
+            success: boolean;
+            /** Error */
+            error: string | null;
+        };
         /** DiagnosticRunRequest */
         DiagnosticRunRequest: {
             /** Endpoint Ids */
             endpoint_ids?: string[] | null;
+        };
+        /** DiagnosticRuntimeResponse */
+        DiagnosticRuntimeResponse: {
+            /** Version */
+            version: string;
+            /** Connected */
+            connected: boolean;
+            /** Phase */
+            phase: string;
+            /** Region */
+            region: string;
+            /** Queue Id */
+            queue_id: number;
+            /** Assigned Position */
+            assigned_position: string;
+            /** Presets Enabled */
+            presets_enabled: boolean;
+            /** Auto Accept Enabled */
+            auto_accept_enabled: boolean;
+            /** Auto Pick Enabled */
+            auto_pick_enabled: boolean;
+            /** Auto Ban Enabled */
+            auto_ban_enabled: boolean;
+            /** Auto Summoners Enabled */
+            auto_summoners_enabled: boolean;
+        };
+        /** DiagnosticsExportResponse */
+        DiagnosticsExportResponse: {
+            runtime: components["schemas"]["DiagnosticRuntimeResponse"];
+            account_identity: components["schemas"]["AccountIdentityResponse"];
+            /** Hotkeys */
+            hotkeys: {
+                [key: string]: components["schemas"]["DiagnosticHotkeyStatus"];
+            };
+            game_data: components["schemas"]["GameDataStatusResponse"];
+            /** Requests */
+            requests: components["schemas"]["DiagnosticRequestEntry"][];
+            /** Events */
+            events: components["schemas"]["DiagnosticEventEntry"][];
+            /** Errors */
+            errors: components["schemas"]["DiagnosticErrorEntry"][];
+            /** Endpoint Checks */
+            endpoint_checks: components["schemas"]["DiagnosticEndpoint"][];
+            /** Endpoint Results */
+            endpoint_results: components["schemas"]["DiagnosticCheckResult"][];
+            /** Generated At */
+            generated_at: string;
+            /** App Version */
+            app_version: string;
+            /** Webview2 Version */
+            webview2_version: string | null;
+            /** League Connected */
+            league_connected: boolean;
+            /** League Version */
+            league_version: string | null;
+            /** Riot Id */
+            riot_id?: string | null;
+        };
+        /** DiagnosticsResponse */
+        DiagnosticsResponse: {
+            runtime: components["schemas"]["DiagnosticRuntimeResponse"];
+            account_identity: components["schemas"]["AccountIdentityResponse"];
+            /** Hotkeys */
+            hotkeys: {
+                [key: string]: components["schemas"]["DiagnosticHotkeyStatus"];
+            };
+            game_data: components["schemas"]["GameDataStatusResponse"];
+            /** Requests */
+            requests: components["schemas"]["DiagnosticRequestEntry"][];
+            /** Events */
+            events: components["schemas"]["DiagnosticEventEntry"][];
+            /** Errors */
+            errors: components["schemas"]["DiagnosticErrorEntry"][];
+            /** Endpoint Checks */
+            endpoint_checks: components["schemas"]["DiagnosticEndpoint"][];
+            /** Endpoint Results */
+            endpoint_results: components["schemas"]["DiagnosticCheckResult"][];
+        };
+        /** DiagnosticsRunResponse */
+        DiagnosticsRunResponse: {
+            /** Results */
+            results: components["schemas"]["DiagnosticCheckResult"][];
+        };
+        /** GameDataStatusResponse */
+        GameDataStatusResponse: {
+            /** Source */
+            source: ("lcu" | "cache" | "mixed" | "datadragon") | null;
+            /** Game Version */
+            game_version: string | null;
+            /** Connected */
+            connected: boolean;
+            /** Cache Available */
+            cache_available: boolean;
+            /** Cache Version */
+            cache_version: string | null;
+            /** Fallback */
+            fallback: "datadragon" | null;
+            /** Catalogs */
+            catalogs: {
+                [key: string]: boolean;
+            };
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1187,6 +1416,11 @@ export interface components {
             version: string;
             /** Lcu Connected */
             lcu_connected: boolean;
+        };
+        /** HistoryClearResponse */
+        HistoryClearResponse: {
+            /** Ok */
+            ok: boolean;
         };
         /** HistoryEntry */
         HistoryEntry: {
@@ -1362,30 +1596,53 @@ export interface components {
             /** Source */
             source: string;
         };
+        /** OwnedSkinEntry */
+        OwnedSkinEntry: {
+            /** Skin Id */
+            skin_id: number;
+            /** Skin Num */
+            skin_num: number;
+            /** Skin Name */
+            skin_name: string;
+            /** Preview Url */
+            preview_url: string;
+            /** Tile Url */
+            tile_url: string;
+            /** Splash Url */
+            splash_url: string;
+        };
+        /** OwnedSkinsResponse */
+        OwnedSkinsResponse: {
+            /** Ok */
+            ok: boolean;
+            /** Message */
+            message: string;
+            /** Owned Skins */
+            owned_skins: components["schemas"]["OwnedSkinEntry"][];
+            /** Source */
+            source?: string | null;
+        };
         /**
          * PresetPreview
          * @description Metadata-only preview assembled from already loaded local catalog data.
          */
         PresetPreview: {
             /** Champion Id */
-            champion_id?: number | null;
-            /**
-             * Champion Name
-             * @default
-             */
+            champion_id: number | null;
+            /** Champion Name */
             champion_name: string;
             /** Champion Icon Url */
-            champion_icon_url?: string | null;
+            champion_icon_url: string | null;
             /** Champion Splash Url */
-            champion_splash_url?: string | null;
+            champion_splash_url: string | null;
             /** Spell 1 Url */
-            spell_1_url?: string | null;
+            spell_1_url: string | null;
             /** Spell 2 Url */
-            spell_2_url?: string | null;
+            spell_2_url: string | null;
             /** Skin Name */
-            skin_name?: string | null;
+            skin_name: string | null;
             /** Skin Preview Url */
-            skin_preview_url?: string | null;
+            skin_preview_url: string | null;
         };
         /**
          * PresetSlot
@@ -1543,6 +1800,46 @@ export interface components {
             /** Logo Url */
             logo_url: string;
         };
+        /** ProviderWindowActionResponse */
+        ProviderWindowActionResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "stats" | "live";
+            /** Ok */
+            ok: boolean;
+            /** Reason */
+            reason: string | null;
+            /** State */
+            state: string;
+            /** Provider Id */
+            provider_id: string | null;
+        };
+        /** ProviderWindowStatus */
+        ProviderWindowStatus: {
+            /** State */
+            state: string;
+            /** Provider Id */
+            provider_id: string | null;
+            /** Last Error */
+            last_error: string | null;
+            /** Last Action */
+            last_action: string;
+            /** Last Transition At */
+            last_transition_at: number | null;
+            /** Load Started At */
+            load_started_at: number | null;
+            /** Last Load Duration Ms */
+            last_load_duration_ms: number | null;
+        };
+        /** ProviderWindowsStatusResponse */
+        ProviderWindowsStatusResponse: {
+            /** Windows */
+            windows: {
+                [key: string]: components["schemas"]["ProviderWindowStatus"];
+            };
+        };
         /** RankedQueue */
         RankedQueue: {
             /** Queue Type */
@@ -1569,6 +1866,56 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+        };
+        /** RunePageResponse */
+        RunePageResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Primarystyleid */
+            primaryStyleId: number;
+            /** Substyleid */
+            subStyleId: number;
+            /** Selectedperkids */
+            selectedPerkIds: number[];
+            /** Selectedperkpaths */
+            selectedPerkPaths: string[];
+            /** Current */
+            current: boolean;
+        };
+        /** RunePerkResponse */
+        RunePerkResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Iconpath */
+            iconPath: string;
+            /** Icon Url */
+            icon_url: string | null;
+        };
+        /** RuneStyleResponse */
+        RuneStyleResponse: {
+            /** Name */
+            name: string;
+            /** Iconpath */
+            iconPath: string;
+            /** Icon Url */
+            icon_url: string | null;
+            /** Perks */
+            perks: components["schemas"]["RunePerkResponse"][];
+        };
+        /** RunesResponse */
+        RunesResponse: {
+            /** Available */
+            available: boolean;
+            /** Pages */
+            pages: components["schemas"]["RunePageResponse"][];
+            /** Styles */
+            styles: {
+                [key: string]: components["schemas"]["RuneStyleResponse"];
+            };
         };
         /** RuntimeSnapshotResponse */
         RuntimeSnapshotResponse: {
@@ -1841,6 +2188,29 @@ export interface components {
             /** Auto Detected Account Valid */
             readonly auto_detected_account_valid: boolean;
         };
+        /** SkinCatalogEntry */
+        SkinCatalogEntry: {
+            /** Champion Id */
+            champion_id: number;
+            /** Champion Name */
+            champion_name: string;
+            /** Champion Slug */
+            champion_slug: string | null;
+            /** Skin Id */
+            skin_id: number;
+            /** Skin Num */
+            skin_num: number;
+            /** Skin Name */
+            skin_name: string;
+            /** Splash Url */
+            splash_url: string | null;
+            /** Tile Url */
+            tile_url: string | null;
+            /** Centered Splash Url */
+            centered_splash_url: string | null;
+            /** Uncentered Splash Url */
+            uncentered_splash_url: string | null;
+        };
         /** SkinReference */
         SkinReference: {
             /** Skin Id */
@@ -1849,6 +2219,14 @@ export interface components {
             skin_name: string;
             /** Skin Num */
             skin_num: number;
+        };
+        /** SkinsResponse */
+        SkinsResponse: {
+            /** Champion Id */
+            champion_id: number;
+            /** Catalog */
+            catalog: components["schemas"]["SkinCatalogEntry"][];
+            owned: components["schemas"]["OwnedSkinsResponse"];
         };
         /** StatsLinkResponse */
         StatsLinkResponse: {
@@ -1869,6 +2247,18 @@ export interface components {
              * @enum {string}
              */
             account_source: "connected" | "saved" | "manual" | "unavailable";
+        };
+        /** SummonerSpellCatalogResponse */
+        SummonerSpellCatalogResponse: {
+            /** Items */
+            items: components["schemas"]["SummonerSpellEntry"][];
+        };
+        /** SummonerSpellEntry */
+        SummonerSpellEntry: {
+            /** Name */
+            name: string;
+            /** Icon Url */
+            icon_url: string | null;
         };
         /** TimelineEvent */
         TimelineEvent: {
@@ -2350,9 +2740,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ChampionCatalogResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2432,9 +2820,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SummonerSpellCatalogResponse"];
                 };
             };
         };
@@ -2456,9 +2842,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SkinsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2487,9 +2871,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RunesResponse"];
                 };
             };
         };
@@ -3040,9 +3422,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagnosticsResponse"];
                 };
             };
         };
@@ -3066,9 +3446,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DiagnosticsRunResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3099,7 +3477,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["DiagnosticsExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3128,9 +3506,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["GameDataStatusResponse"];
                 };
             };
         };
@@ -3181,9 +3557,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: boolean;
-                    };
+                    "application/json": components["schemas"]["HistoryClearResponse"];
                 };
             };
         };
@@ -3243,9 +3617,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProviderWindowsStatusResponse"];
                 };
             };
         };
@@ -3269,9 +3641,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProviderWindowActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3304,9 +3674,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProviderWindowActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3337,9 +3705,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProviderWindowActionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3370,9 +3736,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ProviderWindowActionResponse"];
                 };
             };
             /** @description Validation Error */

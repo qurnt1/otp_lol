@@ -322,14 +322,16 @@ class SettingsImport(SettingsPatch):
 class PresetPreview(BaseModel):
     """Metadata-only preview assembled from already loaded local catalog data."""
 
-    champion_id: int | None = None
-    champion_name: str = ""
-    champion_icon_url: str | None = None
-    champion_splash_url: str | None = None
-    spell_1_url: str | None = None
-    spell_2_url: str | None = None
-    skin_name: str | None = None
-    skin_preview_url: str | None = None
+    # These fields are all emitted by the bootstrap response, including nulls.
+    # Keep them required in OpenAPI so generated clients match the serialized DTO.
+    champion_id: int | None
+    champion_name: str
+    champion_icon_url: str | None
+    champion_splash_url: str | None
+    spell_1_url: str | None
+    spell_2_url: str | None
+    skin_name: str | None
+    skin_preview_url: str | None
 
 
 class BootstrapResponse(BaseModel):
@@ -374,10 +376,242 @@ class HistoryResponse(BaseModel):
     count: int
 
 
+class HistoryClearResponse(BaseModel):
+    ok: bool
+
+
+class ChampionCatalogEntry(BaseModel):
+    id: int
+    name: str
+    slug: str
+    title: str
+    tags: list[str]
+    roles: list[str]
+    icon_url: str | None
+    splash_url: str | None
+
+
+class ChampionCatalogResponse(BaseModel):
+    items: list[ChampionCatalogEntry]
+    count: int
+
+
+class SummonerSpellEntry(BaseModel):
+    name: str
+    icon_url: str | None
+
+
+class SummonerSpellCatalogResponse(BaseModel):
+    items: list[SummonerSpellEntry]
+
+
+class SkinCatalogEntry(BaseModel):
+    champion_id: int
+    champion_name: str
+    champion_slug: str | None
+    skin_id: int
+    skin_num: int
+    skin_name: str
+    splash_url: str | None
+    tile_url: str | None
+    centered_splash_url: str | None
+    uncentered_splash_url: str | None
+
+
+class OwnedSkinEntry(BaseModel):
+    skin_id: int
+    skin_num: int
+    skin_name: str
+    preview_url: str
+    tile_url: str
+    splash_url: str
+
+
+class OwnedSkinsResponse(BaseModel):
+    ok: bool
+    message: str
+    owned_skins: list[OwnedSkinEntry]
+    source: str | None = None
+
+
+class SkinsResponse(BaseModel):
+    champion_id: int
+    catalog: list[SkinCatalogEntry]
+    owned: OwnedSkinsResponse
+
+
+class RunePageResponse(BaseModel):
+    id: int
+    name: str
+    primaryStyleId: int
+    subStyleId: int
+    selectedPerkIds: list[int]
+    selectedPerkPaths: list[str]
+    current: bool
+
+
+class RunePerkResponse(BaseModel):
+    id: int
+    name: str
+    iconPath: str
+    icon_url: str | None
+
+
+class RuneStyleResponse(BaseModel):
+    name: str
+    iconPath: str
+    icon_url: str | None
+    perks: list[RunePerkResponse]
+
+
+class RunesResponse(BaseModel):
+    available: bool
+    pages: list[RunePageResponse]
+    styles: dict[int, RuneStyleResponse]
+
+
+GameDataSource = Literal["lcu", "cache", "mixed", "datadragon"]
+
+
+class GameDataCatalogStatus(BaseModel):
+    available: bool
+    source: Literal["lcu", "cache"] | None
+    version: str | None
+
+
+class GameDataStatusResponse(BaseModel):
+    source: GameDataSource | None
+    game_version: str | None
+    connected: bool
+    cache_available: bool
+    cache_version: str | None
+    fallback: Literal["datadragon"] | None
+    catalogs: dict[str, bool]
+
+
+class DiagnosticRuntimeResponse(BaseModel):
+    version: str
+    connected: bool
+    phase: str
+    region: str
+    queue_id: int
+    assigned_position: str
+    presets_enabled: bool
+    auto_accept_enabled: bool
+    auto_pick_enabled: bool
+    auto_ban_enabled: bool
+    auto_summoners_enabled: bool
+
+
+class DiagnosticRequestEntry(BaseModel):
+    timestamp: str
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "UNKNOWN"]
+    path: str
+    status: int | None
+    duration_ms: float
+    success: bool
+    error: str | None
+
+
+class DiagnosticEventEntry(BaseModel):
+    timestamp: str
+    topic: str
+    event_type: str
+    summary: str
+    payload: Any
+    payload_truncated: bool
+    payload_redacted: bool
+
+
+class DiagnosticErrorEntry(BaseModel):
+    timestamp: str
+    source: str
+    error: str
+    method: Literal["GET", "POST", "PUT", "PATCH", "DELETE", "UNKNOWN"] | None
+    path: str | None
+    status: int | None
+
+
+class DiagnosticEndpoint(BaseModel):
+    id: str
+    label: str
+    path: str
+    method: Literal["GET"]
+
+
+class DiagnosticCheckResult(DiagnosticEndpoint):
+    status: int | None
+    duration_ms: float
+    success: bool
+    error: str | None
+    summary: str
+
+
+class DiagnosticHotkeyStatus(BaseModel):
+    hotkey: str
+    backend: Literal["keyboard_hook", "register_hotkey", "unavailable"]
+    active: bool
+
+
+class DiagnosticsResponse(BaseModel):
+    runtime: DiagnosticRuntimeResponse
+    account_identity: AccountIdentityResponse
+    hotkeys: dict[str, DiagnosticHotkeyStatus]
+    game_data: GameDataStatusResponse
+    requests: list[DiagnosticRequestEntry]
+    events: list[DiagnosticEventEntry]
+    errors: list[DiagnosticErrorEntry]
+    endpoint_checks: list[DiagnosticEndpoint]
+    endpoint_results: list[DiagnosticCheckResult]
+
+
+class DiagnosticsRunResponse(BaseModel):
+    results: list[DiagnosticCheckResult]
+
+
+class DiagnosticsExportResponse(DiagnosticsResponse):
+    generated_at: str
+    app_version: str
+    webview2_version: str | None
+    league_connected: bool
+    league_version: str | None
+    riot_id: str | None = None
+
+
+class ProviderWindowStatus(BaseModel):
+    state: str
+    provider_id: str | None
+    last_error: str | None
+    last_action: str
+    last_transition_at: float | None
+    load_started_at: float | None
+    last_load_duration_ms: float | None
+
+
+class ProviderWindowsStatusResponse(BaseModel):
+    windows: dict[Literal["stats", "live"], ProviderWindowStatus]
+
+
+class ProviderWindowActionResponse(BaseModel):
+    kind: Literal["stats", "live"]
+    ok: bool
+    reason: str | None
+    state: str
+    provider_id: str | None
+
+
 __all__ = [
     "AccountIdentityResponse",
     "BootstrapResponse",
+    "ChampionCatalogResponse",
+    "DiagnosticCheckResult",
+    "DiagnosticEndpoint",
+    "DiagnosticsExportResponse",
+    "DiagnosticsResponse",
+    "DiagnosticsRunResponse",
+    "GameDataStatusResponse",
     "HealthResponse",
+    "HistoryClearResponse",
     "HistoryResponse",
     "LiveLinkResponse",
     "MetadataResponse",
@@ -385,6 +619,11 @@ __all__ = [
     "PresetSlotPatch",
     "PresetsResponse",
     "ProviderCatalog",
+    "ProviderWindowActionResponse",
+    "ProviderWindowsStatusResponse",
+    "RunesResponse",
+    "SkinsResponse",
+    "SummonerSpellCatalogResponse",
     "RuntimeSnapshotResponse",
     "SettingsImport",
     "SettingsPatch",

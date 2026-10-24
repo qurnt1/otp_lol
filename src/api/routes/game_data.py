@@ -6,11 +6,13 @@ from typing import Any
 
 from fastapi import APIRouter, Request
 
+from ..schemas import GameDataStatusResponse
+
 router = APIRouter(prefix="/api", tags=["game-data"])
 
 
-@router.get("/game-data/status")
-async def game_data_status(request: Request) -> dict[str, Any]:
+@router.get("/game-data/status", response_model=GameDataStatusResponse)
+async def game_data_status(request: Request) -> GameDataStatusResponse:
     return await resolved_game_data_status(request.app.state.context)
 
 

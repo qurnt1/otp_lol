@@ -1,30 +1,16 @@
 import type {
-  Champion, HistoryResponse, PresetsResponse, RuntimeSnapshot, RunesResponse, Settings,
-  SkinsResponse, StatsLinkResponse, SummonerSpell, UpdateResponse, PresetSlot, PresetSlotPatch, SettingsPatch, ProviderCatalog,
-  BootstrapResponse, SettingsImport, LiveLinkResponse,
-  DiagnosticsResponse, DiagnosticsRunResponse, AccountIdentity,
+  AccountIdentity, BootstrapResponse, ChampionCatalogResponse, DiagnosticsExportResponse,
+  DiagnosticsResponse, DiagnosticsRunResponse, HistoryClearResponse, HistoryResponse,
+  LiveLinkResponse, NetworkStatus, PresetSlot, PresetSlotPatch, PresetsResponse,
+  ProviderCatalog, ProviderWindowActionResponse, ProviderWindowStatus,
+  ProviderWindowsStatusResponse, RunesResponse, RuntimeSnapshot, Settings, SettingsImport,
+  SettingsPatch, SkinsResponse, StatsLinkResponse, SummonerSpellCatalogResponse, UpdateResponse,
 } from "../types/api";
 
-export type ProviderWindowState = "not_created" | "creating" | "loading" | "ready" | "hidden" | "visible" | "error" | "closed";
-export type ProviderWindowStatus = {
-  state: ProviderWindowState | string;
-  provider_id?: string | null;
-  last_error?: string | null;
-  last_action?: string;
-  last_transition_at?: number | null;
-  load_started_at?: number | null;
-  last_load_duration_ms?: number | null;
-};
-export type ProviderWindowAction = { ok: boolean; kind: "stats" | "live"; reason?: string | null; state: string; provider_id?: string | null };
+export type { ProviderWindowStatus } from "../types/api";
+export type ProviderWindowAction = ProviderWindowActionResponse;
 export type ProviderActionSource = "route_enter" | "button" | "hotkey" | "api";
-export type NetworkStatus = {
-  state: "checking" | "offline" | "online";
-  online: boolean;
-  checked_at?: number | null;
-  last_success_at?: number | null;
-  reason?: string | null;
-  source: string;
-};
+export type { NetworkStatus } from "../types/api";
 
 export class ApiError extends Error {
   constructor(message: string, public readonly status: number) {
@@ -71,8 +57,8 @@ export const api = {
   resetPresets: () => request<Settings>("/api/presets/reset", { method: "POST" }),
   clearPresets: () => request<Settings>("/api/presets/clear", { method: "POST" }),
   patchPreset: (slot: string, values: PresetSlotPatch | Partial<PresetSlot>) => request<PresetsResponse>("/api/presets/" + slot, { method: "PUT", body: JSON.stringify(values) }),
-  getChampions: (query = "", signal?: AbortSignal) => request<{ items: Champion[]; count: number }>("/api/champions?q=" + encodeURIComponent(query), { signal }),
-  getSpells: () => request<{ items: SummonerSpell[] }>("/api/spells"),
+  getChampions: (query = "", signal?: AbortSignal) => request<ChampionCatalogResponse>("/api/champions?q=" + encodeURIComponent(query), { signal }),
+  getSpells: () => request<SummonerSpellCatalogResponse>("/api/spells"),
   getSkins: (championId: number) => request<SkinsResponse>("/api/skins/" + championId),
   getRunes: () => request<RunesResponse>("/api/runes"),
   getStatsLink: () => request<StatsLinkResponse>("/api/links/stats"),
@@ -80,17 +66,17 @@ export const api = {
   getAccountIdentity: () => request<AccountIdentity>("/api/account/identity"),
   getDiagnostics: () => request<DiagnosticsResponse>("/api/diagnostics"),
   runDiagnostics: (endpointIds?: string[]) => request<DiagnosticsRunResponse>("/api/diagnostics/run", { method: "POST", body: JSON.stringify({ endpoint_ids: endpointIds ?? null }) }),
-  exportDiagnostics: (includeRiotId: boolean) => request<Record<string, unknown>>(`/api/diagnostics/export?include_riot_id=${includeRiotId}`),
+  exportDiagnostics: (includeRiotId: boolean) => request<DiagnosticsExportResponse>(`/api/diagnostics/export?include_riot_id=${includeRiotId}`),
   getProviders: () => request<ProviderCatalog>("/api/catalog/providers"),
   getHistory: (limit = 100) => request<HistoryResponse>("/api/history?limit=" + limit),
   getUpdates: () => request<UpdateResponse>("/api/updates"),
   getNetworkStatus: () => request<NetworkStatus>("/api/network/status"),
   checkNetworkStatus: () => request<NetworkStatus>("/api/network/check", { method: "POST" }),
-  clearHistory: () => request<{ ok: boolean }>("/api/history", { method: "DELETE" }),
+  clearHistory: () => request<HistoryClearResponse>("/api/history", { method: "DELETE" }),
   resetSettings: () => request<Settings>("/api/settings/reset", { method: "POST" }),
   clearLastDetectedAccount: () => request<Settings>("/api/settings/last-detected-account", { method: "DELETE" }),
   importSettings: (values: SettingsImport) => request<Settings>("/api/settings/import", { method: "POST", body: JSON.stringify(values) }),
-  getProviderWindowStatus: () => request<{ windows: Record<"stats" | "live", ProviderWindowStatus> }>("/api/desktop/providers/status"),
+  getProviderWindowStatus: () => request<ProviderWindowsStatusResponse>("/api/desktop/providers/status"),
   openProviderWindow: (kind: "stats" | "live", source: ProviderActionSource = "button") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/open?source=${source}`, { method: "POST" }),
   showProviderWindow: (kind: "stats" | "live", source: ProviderActionSource = "button") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/show?source=${source}`, { method: "POST" }),
   reloadProviderWindow: (kind: "stats" | "live") => request<ProviderWindowAction>(`/api/desktop/providers/${kind}/reload`, { method: "POST" }),

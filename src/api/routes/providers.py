@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..schemas import ProviderWindowActionResponse, ProviderWindowsStatusResponse
+
 router = APIRouter(prefix="/api/desktop/providers", tags=["desktop-providers"])
 _KINDS = frozenset({"stats", "live"})
 
@@ -51,38 +53,38 @@ def _public_result(kind: str, result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.get("/status")
-def provider_status(request: Request) -> dict[str, Any]:
+@router.get("/status", response_model=ProviderWindowsStatusResponse)
+def provider_status(request: Request) -> ProviderWindowsStatusResponse:
     manager = _manager(request)
     return {"windows": _public_status(manager)}
 
 
-@router.post("/{kind}/open")
-def open_provider(request: Request, kind: str, source: str = "api") -> dict[str, Any]:
+@router.post("/{kind}/open", response_model=ProviderWindowActionResponse)
+def open_provider(request: Request, kind: str, source: str = "api") -> ProviderWindowActionResponse:
     _check_kind(kind)
     manager = _manager(request)
     result = manager.request_open(kind, **({"source": source} if source != "api" else {}))
     return _public_result(kind, result)
 
 
-@router.post("/{kind}/show")
-def show_provider(request: Request, kind: str, source: str = "api") -> dict[str, Any]:
+@router.post("/{kind}/show", response_model=ProviderWindowActionResponse)
+def show_provider(request: Request, kind: str, source: str = "api") -> ProviderWindowActionResponse:
     _check_kind(kind)
     manager = _manager(request)
     result = manager.request_show(kind, **({"source": source} if source != "api" else {}))
     return _public_result(kind, result)
 
 
-@router.post("/{kind}/reload")
-def reload_provider(request: Request, kind: str) -> dict[str, Any]:
+@router.post("/{kind}/reload", response_model=ProviderWindowActionResponse)
+def reload_provider(request: Request, kind: str) -> ProviderWindowActionResponse:
     _check_kind(kind)
     manager = _manager(request)
     result = manager.request_reload(kind)
     return _public_result(kind, result)
 
 
-@router.post("/{kind}/hide")
-def hide_provider(request: Request, kind: str) -> dict[str, Any]:
+@router.post("/{kind}/hide", response_model=ProviderWindowActionResponse)
+def hide_provider(request: Request, kind: str) -> ProviderWindowActionResponse:
     _check_kind(kind)
     manager = _manager(request)
     return _public_result(kind, manager.request_hide(kind))
