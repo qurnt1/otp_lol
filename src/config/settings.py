@@ -255,16 +255,20 @@ def _write_parameters_file(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _backup_parameters_file() -> bool:
-    """Preserve an unreadable settings file before replacing it with safe defaults."""
+    """Preserve settings before replacing an invalid or unsupported file."""
     if not os.path.exists(PARAMETERS_PATH):
         return True
     backup_path = f"{PARAMETERS_PATH}.bak"
+    suffix = 1
+    while os.path.exists(backup_path):
+        backup_path = f"{PARAMETERS_PATH}.bak.{suffix}"
+        suffix += 1
     try:
         shutil.copy2(PARAMETERS_PATH, backup_path)
-        logging.warning("Backed up unreadable settings to %s", backup_path)
+        logging.warning("Backed up settings to %s", backup_path)
         return True
     except OSError as e:
-        logging.error("Unable to back up unreadable settings to %s: %s", backup_path, e)
+        logging.error("Unable to back up settings to %s: %s", backup_path, e)
         return False
 
 
@@ -284,11 +288,11 @@ def _clear_skin_cache() -> None:
             logging.debug("Unable to remove skin cache entry %s: %s", target, e)
 
 
-def _reset_parameters_file(reason: str, *, backup_existing: bool = True) -> Dict[str, Any]:
+def _reset_parameters_file(reason: str) -> Dict[str, Any]:
     """Reset the settings file to first-launch defaults after a validation failure."""
     logging.warning("Resetting parameters.toml to first-launch defaults: %s", reason)
     had_parameters_file = os.path.exists(PARAMETERS_PATH)
-    if backup_existing and not _backup_parameters_file():
+    if not _backup_parameters_file():
         return _build_first_launch_payload()
     payload = _build_first_launch_payload()
     try:
@@ -424,8 +428,7 @@ def load_parameters() -> Dict[str, Any]:
         return _reset_parameters_file(str(e))
     if schema_version < CONFIG_SCHEMA_VERSION:
         return _reset_parameters_file(
-            f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})",
-            backup_existing=False,
+            f"unsupported settings schema (found={schema_version}, expected={CONFIG_SCHEMA_VERSION})"
         )
 
     try:

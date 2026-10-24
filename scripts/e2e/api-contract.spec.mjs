@@ -405,13 +405,15 @@ test("startup recovers an older TOML schema and keeps the recovered settings acr
     'manual_summoner_name = "Older TOML Player#SAFE"',
     "",
   ].join("\n");
-  let app = await startOtpApp({ settingsToml: olderToml });
+  const existingBackup = 'config_schema_version = 4\nmanual_summoner_name = "PREVIOUS_BACKUP"\n';
+  let app = await startOtpApp({ settingsToml: olderToml, settingsTomlBackup: existingBackup });
 
   try {
     const initialHealth = await page.request.get(`${app.baseURL}/api/health`);
     expect(initialHealth.status()).toBe(200);
     const recoveredSettings = await readSettings(app, page.request);
     expect(recoveredSettings.config_schema_version).toBe(6);
+    expect(recoveredSettings.selected_pick_1).not.toBe("OLDER_TOML_PROFILE_SENTINEL");
     const recoveredProfileState = {
       config_schema_version: recoveredSettings.config_schema_version,
       selected_pick_1: recoveredSettings.selected_pick_1,
@@ -419,6 +421,9 @@ test("startup recovers an older TOML schema and keeps the recovered settings acr
       manual_region: recoveredSettings.manual_region,
       pick_slots: recoveredSettings.pick_slots,
     };
+    const settingsPath = path.join(app.appDataDir, "OTP LOL", "parameters.toml");
+    expect(await readFile(`${settingsPath}.bak`, "utf8")).toBe(existingBackup);
+    expect(await readFile(`${settingsPath}.bak.1`, "utf8")).toBe(olderToml);
 
     const stateDir = app.stateDir;
     await app.stop({ retainState: true });
@@ -430,6 +435,8 @@ test("startup recovers an older TOML schema and keeps the recovered settings acr
     const restartedSettings = await readSettings(app, page.request);
     expect(restartedSettings.config_schema_version).toBe(6);
     expect(restartedSettings).toMatchObject(recoveredProfileState);
+    expect(await readFile(`${settingsPath}.bak`, "utf8")).toBe(existingBackup);
+    expect(await readFile(`${settingsPath}.bak.1`, "utf8")).toBe(olderToml);
   } finally {
     if (app) await app.stop();
   }

@@ -53,6 +53,7 @@ export async function startOtpApp({
   startupTimeoutMs = 60_000,
   stateDir: retainedStateDir,
   settingsToml,
+  settingsTomlBackup,
   legacySettingsJson,
   legacySettingsFolder = "OTP LOL",
   legacyMainSettingsJson,
@@ -82,7 +83,11 @@ export async function startOtpApp({
   if (settingsToml !== undefined) {
     const currentSettingsDir = path.join(appDataDir, "OTP LOL");
     await mkdir(currentSettingsDir, { recursive: true });
-    await writeFile(path.join(currentSettingsDir, "parameters.toml"), settingsToml, { flag: "wx" });
+    const settingsPath = path.join(currentSettingsDir, "parameters.toml");
+    await writeFile(settingsPath, settingsToml, { flag: "wx" });
+    if (settingsTomlBackup !== undefined) {
+      await writeFile(`${settingsPath}.bak`, settingsTomlBackup, { flag: "wx" });
+    }
   }
   if (legacySettingsJson !== undefined) {
     if (legacySettingsFolder !== "OTP LOL" && legacySettingsFolder !== "MainLoL") {
