@@ -1,9 +1,11 @@
+# Keep requirements-style audits on the same direct-dependency versions as CI and builds.
+-c requirements-constraints.txt
 aiohttp~=3.9
 fastapi~=0.135
 keyboard~=0.13.5
 lcu-driver~=3.0
 packaging~=25.0
-Pillow~=12.3
+Pillow~=13.0
 psutil~=7.0
 pygame~=2.5
 pystray~=0.19

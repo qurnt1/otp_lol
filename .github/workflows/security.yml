@@ -33,7 +33,7 @@ jobs:
         run: pip-audit -r requirements-build.txt
 
       - name: Audit Python E2E dependencies
-        run: pip-audit -r scripts/e2e/requirements.txt
+        run: pip-audit -r requirements.txt -r scripts/e2e/requirements.txt
 
       - name: Audit frontend dependencies
         working-directory: frontend
