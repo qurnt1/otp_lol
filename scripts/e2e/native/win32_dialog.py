@@ -34,6 +34,16 @@ user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsWindowVisible.restype = wintypes.BOOL
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.GetWindowRect.restype = wintypes.BOOL
+user32.SetWindowPos.argtypes = [
+    wintypes.HWND,
+    wintypes.HWND,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.c_int,
+    wintypes.UINT,
+]
+user32.SetWindowPos.restype = wintypes.BOOL
 user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
 user32.MonitorFromWindow.restype = wintypes.HMONITOR
 user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.c_void_p]
@@ -558,6 +568,28 @@ def _window_snapshot(app_pid: int) -> dict[str, object]:
     }
 
 
+def _set_window_bounds(
+    app_pid: int, left: int, top: int, width: int, height: int
+) -> dict[str, object]:
+    pids = _process_tree(app_pid)
+    window = _any_main_window(pids)
+    if window is None or not window["visible"]:
+        raise RuntimeError("The visible app-owned OTP LOL window is unavailable.")
+    hwnd = int(window["hwnd"])
+    before = _rect(hwnd)
+    if width < 800 or height < 540:
+        raise ValueError("The native E2E window bounds must respect the app's minimum size.")
+    flags = 0x0004 | 0x0010  # SWP_NOZORDER | SWP_NOACTIVATE
+    if not user32.SetWindowPos(hwnd, None, left, top, width, height, flags):
+        raise ctypes.WinError()
+    after = _rect(hwnd)
+    return {
+        "before": before,
+        "after": after,
+        "requested": {"left": left, "top": top, "width": width, "height": height},
+    }
+
+
 def _other_otp_instances(app_pids: set[int]) -> list[dict[str, object]]:
     matches = []
     for process in psutil.process_iter(["pid", "name", "cmdline"]):
@@ -867,6 +899,11 @@ def main() -> int:
     parser.add_argument("--wait-and-cancel", action="store_true")
     parser.add_argument("--wait-main-window", action="store_true")
     parser.add_argument("--window-snapshot", action="store_true")
+    parser.add_argument("--set-window-bounds", action="store_true")
+    parser.add_argument("--left", type=int)
+    parser.add_argument("--top", type=int)
+    parser.add_argument("--width", type=int)
+    parser.add_argument("--height", type=int)
     parser.add_argument("--send-hotkey", action="store_true")
     parser.add_argument("--close-window", action="store_true")
     parser.add_argument("--key", choices=("c", "p", "C", "P"))
@@ -902,6 +939,23 @@ def main() -> int:
 
     if args.window_snapshot:
         print(json.dumps(_window_snapshot(args.app_pid), separators=(",", ":")))
+        return 0
+
+    if args.set_window_bounds:
+        if any(
+            value is None for value in (args.left, args.top, args.width, args.height)
+        ):
+            parser.error(
+                "--set-window-bounds requires --left, --top, --width, and --height"
+            )
+        print(
+            json.dumps(
+                _set_window_bounds(
+                    args.app_pid, args.left, args.top, args.width, args.height
+                ),
+                separators=(",", ":"),
+            )
+        )
         return 0
 
     if args.send_hotkey:

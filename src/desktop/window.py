@@ -117,6 +117,7 @@ class WebViewWindow:
         self._shown_callbacks: list[Any] = []
         self._native_shown = False
         self._visibility_when_shown: bool | None = None
+        self._geometry_before_close: dict[str, Any] = {}
 
     def create(self) -> None:
         import webview
@@ -174,6 +175,10 @@ class WebViewWindow:
 
     def geometry(self) -> dict[str, Any]:
         """Read native bounds defensively for shutdown persistence."""
+        events = getattr(self.window, "events", None)
+        closed = getattr(events, "closed", None)
+        if callable(getattr(closed, "is_set", None)) and closed.is_set():
+            return self._geometry_before_close.copy()
         if self.window is None or not self._native_window_ready():
             return {}
         result: dict[str, Any] = {}
@@ -289,6 +294,7 @@ class WebViewWindow:
     def _on_closing(self) -> bool:
         """Hide on a user close request when the tray can restore the window."""
         if self._allow_close or not self._close_to_tray:
+            self._geometry_before_close = self.geometry()
             return True
         self.hide()
         return False

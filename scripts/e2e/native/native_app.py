@@ -336,6 +336,21 @@ def _instrument_fullscreen_bridge(bridge_type: type) -> None:
     bridge_type.toggle_fullscreen = capture_fullscreen_rpc
 
 
+def _instrument_window_close_geometry(state_dir: Path, window_type: type) -> None:
+    """Capture pywebview's live geometry before the native backend tears down its HWND."""
+    original_closing = window_type._on_closing
+
+    def capture_geometry_before_close(window: Any) -> bool:
+        geometry = window.geometry()
+        should_close = original_closing(window)
+        if should_close:
+            _write_json(state_dir / "native-window-close-geometry.json", geometry)
+            _emit("native_window_close_geometry", geometry=geometry)
+        return should_close
+
+    window_type._on_closing = capture_geometry_before_close
+
+
 def _instrument_single_instance(state_dir: Path) -> None:
     """Record the real primary lock contents after production acquires the lock."""
     from src.services import single_instance
@@ -450,11 +465,13 @@ def _run_app(state_dir: Path, cdp_port: int) -> int:
     _instrument_single_instance(state_dir)
 
     import launcher_web
-    import src.desktop.bridge as desktop_bridge_module
     import src.api.context as context_module
     import src.config.paths as app_paths
+    import src.desktop.bridge as desktop_bridge_module
+    import src.desktop.window as desktop_window_module
 
     _instrument_fullscreen_bridge(desktop_bridge_module.DesktopBridge)
+    _instrument_window_close_geometry(state_dir, desktop_window_module.WebViewWindow)
     context_module.psutil.process_iter = lambda *_args, **_kwargs: iter(())
     resolved_paths = {
         "parameters": app_paths.PARAMETERS_PATH,

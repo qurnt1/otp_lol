@@ -1105,9 +1105,81 @@ try {
   nativeActionEvidence.localShell = folderOpenAction;
   completedActions.push("Clicked Dossier AppData and captured only this run's isolated APPDATA target; Explorer launch was suppressed by the test-only shell interceptor.");
 
+  const beforeGeometry = win32Json(["--app-pid", String(app.pid), "--window-snapshot"]);
+  assert.ok(beforeGeometry.monitorBounds, "The native app window must belong to a connected display.");
+  const geometryTarget = {
+    left: beforeGeometry.rect.left + 40,
+    top: beforeGeometry.rect.top + 30,
+    width: Math.min(960, beforeGeometry.monitorBounds.width - 32),
+    height: Math.min(620, beforeGeometry.monitorBounds.height - 64),
+  };
+  assert.ok(
+    geometryTarget.width >= 800,
+    "The current display must fit the native app's minimum window width.",
+  );
+  assert.ok(
+    geometryTarget.height >= 540,
+    "The current display must fit the native app's minimum window height.",
+  );
+  const geometryChange = win32Json([
+    "--app-pid", String(app.pid),
+    "--set-window-bounds",
+    "--left", String(geometryTarget.left),
+    "--top", String(geometryTarget.top),
+    "--width", String(geometryTarget.width),
+    "--height", String(geometryTarget.height),
+  ]);
+  assert.notEqual(
+    geometryChange.after.left,
+    geometryChange.before.left,
+    "The native E2E must move the real app window.",
+  );
+  assert.notEqual(
+    geometryChange.after.top,
+    geometryChange.before.top,
+    "The native E2E must move the real app window.",
+  );
+  assert.notEqual(
+    geometryChange.after.width,
+    geometryChange.before.width,
+    "The native E2E must resize the real app window.",
+  );
+  assert.notEqual(
+    geometryChange.after.height,
+    geometryChange.before.height,
+    "The native E2E must resize the real app window.",
+  );
+  nativeActionEvidence.geometryChange = geometryChange;
+
   const quitTray = trayMenu("quit", 20_000);
   assert.equal(quitTray.action, "Quit");
   assert.equal(quitTray.processExited, true);
+  const closeGeometry = await waitForJsonFile(path.join(tempRoot, "native-window-close-geometry.json"));
+  assert.equal(typeof closeGeometry.window_x, "number");
+  assert.equal(typeof closeGeometry.window_y, "number");
+  assert.equal(typeof closeGeometry.window_width, "number");
+  assert.equal(typeof closeGeometry.window_height, "number");
+  const persistedGeometry = await fs.readFile(
+    path.join(tempRoot, "profile", "Roaming", "OTP LOL", "parameters.toml"),
+    "utf8",
+  );
+  const persistedInteger = (key) => {
+    const match = new RegExp(`^${key}\\s*=\\s*(-?\\d+)\\s*$`, "m").exec(persistedGeometry);
+    assert.ok(match, `The isolated parameters.toml must persist ${key}.`);
+    return Number(match[1]);
+  };
+  for (const key of ["window_x", "window_y", "window_width", "window_height"]) {
+    assert.equal(
+      persistedInteger(key),
+      closeGeometry[key],
+      `The saved ${key} must match the live native geometry captured before HWND teardown.`,
+    );
+  }
+  const persistedMaximized = /^window_maximized\\s*=\\s*(true|false)\\s*$/m.exec(persistedGeometry);
+  assert.ok(persistedMaximized, "The isolated parameters.toml must persist window_maximized.");
+  assert.equal(persistedMaximized[1] === "true", closeGeometry.window_maximized);
+  nativeActionEvidence.geometryPersistence = { capturedBeforeClose: closeGeometry, persistedAfterShutdown: true };
+  completedActions.push("Moved and resized the real WebView2 HWND, quit through the native tray, and verified every saved geometry field matches pywebview's pre-close measurements.");
   nativeActionEvidence.tray.quit = quitTray;
   completedActions.push("Selected Quit from the actual pystray native popup menu and verified the isolated source-app PID exited.");
 
