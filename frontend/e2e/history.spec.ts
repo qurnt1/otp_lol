@@ -1,4 +1,25 @@
-import { expect, readHistory, setupApplication, test, waitForRuntimeEvents } from "./helpers";
+import { expect, readHistory, readRuntime, setupApplication, test, waitForRuntimeEvents } from "./helpers";
+
+test("History refreshes while mounted when the League connection changes", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  const eventsConnected = waitForRuntimeEvents(page);
+  await page.goto("/#history");
+  await eventsConnected;
+  await expect(page.getByText("Aucun événement pour le moment.")).toBeVisible();
+
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await expect(page.locator(".history-table tbody tr").filter({ hasText: "LoL client connection lost, trying to reconnect." })).toBeVisible();
+  await expect(page).toHaveURL(/#history$/);
+
+  await app.configureLcuConnection({ online: true });
+  await app.waitForWebSocketSubscription(2);
+  await expect(page.locator(".history-table tbody tr").filter({ hasText: "LoL client detected and connection established." })).toBeVisible();
+  await expect(page).toHaveURL(/#history$/);
+});
 
 test("an initial History read failure can be retried into real persisted events", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true, autoAccept: true });

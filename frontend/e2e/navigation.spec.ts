@@ -103,14 +103,16 @@ test("[FE-SHELL-BRAND-01] le lien de marque ramène au Dashboard", async ({ page
   await expect(page.getByRole("heading", { name: "Préparation de partie", exact: true })).toBeVisible();
 });
 
-test("[FE-DASH-MANAGE-01] le lien Gérer atteint Settings, destination produit à confirmer", async ({ page }) => {
+test("[FE-DASH-MANAGE-01] le lien Gérer ouvre les réglages des automatisations", async ({ page }) => {
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");
 
   await page.getByRole("link", { name: "Gérer", exact: true }).click();
 
-  await expect(page).toHaveURL(/#settings$/);
-  await expect(page.locator(".settings-section h2")).toHaveText("Général");
+  await expect(page).toHaveURL(/#settings\/automations$/);
+  await expect(page.locator(".settings-section h2")).toHaveText("Automatisations");
+  await expect(page.getByRole("navigation", { name: "Sections des réglages" }).getByRole("button", { name: "Automatisations", exact: true }))
+    .toHaveAttribute("aria-current", "page");
 });
 
 test("the Settings deep link without a section opens General", async ({ page }) => {

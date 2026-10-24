@@ -1,4 +1,4 @@
-import { expect, readSettings, setupApplication, test } from "./helpers";
+import { expect, readRuntime, readSettings, setupApplication, test } from "./helpers";
 
 test("skin ownership refreshes after the connected League account changes", async ({ page }) => {
   const { app } = await setupApplication(page, { configured: true });
@@ -65,4 +65,32 @@ test("skin ownership refreshes after the connected League account changes", asyn
   await expect.poll(() => app.lcuRequests.some(({ method, path }) =>
     method === "GET" && path === "/lol-champions/v1/inventories/22222222/champions/86/skins"
   )).toBe(true);
+});
+
+test("skin ownership is rechecked after the League client disconnects", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    configured: true,
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuState({ inventory_skins: [{ id: 86013, ownershipType: "owned" }] });
+  await page.goto("/#dashboard/pick_1");
+
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await editor.getByRole("button", { name: /Galerie des skins/ }).click();
+  const skinDialog = page.getByRole("dialog", { name: "Galerie des skins" });
+  await expect(skinDialog.getByRole("checkbox", { name: "Possédés uniquement" })).toBeChecked();
+  await expect(skinDialog.locator(".skin-option").filter({ hasText: "God-King Garen" })).toBeVisible();
+  await expect(skinDialog.locator(".skin-option").filter({ hasText: "Commando Garen" })).toHaveCount(0);
+
+  const disconnectedInventory = page.waitForResponse((response) =>
+    response.request().method() === "GET"
+      && new URL(response.url()).pathname === "/api/skins/86"
+      && response.status() === 200,
+  );
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  const response = await disconnectedInventory;
+  expect((await response.json()).owned.ok).toBe(false);
+  await expect(skinDialog.getByText("Inventaire indisponible, catalogue complet affiché.")).toBeVisible();
+  await expect(skinDialog.locator(".skin-option").filter({ hasText: "Commando Garen" })).toBeVisible();
 });
