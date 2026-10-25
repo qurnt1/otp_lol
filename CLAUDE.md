@@ -88,16 +88,3 @@ Central registry shared by reference everywhere — champion metadata, image cac
 ## Commit style
 
 Conventional commits in English: `refactor:`, `fix:`, `feat:`, `chore:`. Messages describe the "why", not the "what".
-
-## Release changelog
-
-An up-to-date changelog grouped by version lives in `track_updates.md` at the repo root. After every meaningful change (feature, fix, refactor, significant cleanup) append a one-line summary to the **current version** bullet list in that file.
-
-**Rules for writing to track_updates.md:**
-- Only ever **append** new entries. Never edit, reword, reorder, or delete existing lines.
-- Group entries under `## Version X.Y` headings. When a new version is released, create a new heading at the top.
-- Each entry is a single-line bullet: `- <verb>: <description>`.
-- Keep descriptions short — one line, no more than ~100 characters.
-- Use the same conventional-commit verbs as git messages: `feat`, `fix`, `refactor`, `chore`.
-- If you are unsure whether a change is "meaningful", include it anyway — it is easier to skim past a minor entry than to notice a missing one.
-- When in doubt, ask before writing to the file.

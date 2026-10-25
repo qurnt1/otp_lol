@@ -110,5 +110,3 @@ The main browser and API E2E paths run a real local FastAPI process with a contr
 - [Development and packaging guide](./docs/development.md)
 - [Architecture](./docs/architecture.md)
 - [Security model](./docs/security.md)
-- [Release notes](./track_updates.md)
-- [Project presentation source (LaTeX)](./otp-lol-case-study.tex)
