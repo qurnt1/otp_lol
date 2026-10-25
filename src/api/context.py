@@ -255,7 +255,11 @@ class ApplicationContext:
         with self._params_lock:
             updated = copy.deepcopy(self.params)
             updated[key] = copy.deepcopy(value)
-            self.params = normalize_parameters(updated)
+            normalized = normalize_parameters(updated)
+            if self.params.get(key) == normalized.get(key):
+                return
+            self.params = normalized
+        self.broker.publish("presets_updated", {"keys": [key]})
 
     def update_parameters(self, values: Mapping[str, Any]) -> Dict[str, Any]:
         with self._params_lock:

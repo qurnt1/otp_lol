@@ -116,6 +116,10 @@ function App() {
         void queryClient.invalidateQueries({ queryKey: ["stats-link"] });
         void queryClient.invalidateQueries({ queryKey: ["live-stats-link"] });
       }
+      if (event.type === "presets_updated") {
+        void queryClient.invalidateQueries({ queryKey: ["presets"] });
+        void queryClient.invalidateQueries({ queryKey: ["bootstrap"] });
+      }
       if (event.type === "account_identity_updated") {
         void queryClient.invalidateQueries({ queryKey: ["settings"] });
         void queryClient.invalidateQueries({ queryKey: ["account-identity"] });

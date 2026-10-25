@@ -533,6 +533,11 @@ test("[FE-LCU-SKIN-RANDOM-01] le pool aléatoire choisi dans l’éditeur est ap
   await expect.poll(async () => poolIds.includes((await app.readLcuState()).session.myTeam[0].selectedSkinId)).toBe(true);
   const selectedSkinId = (await app.readLcuState()).session.myTeam[0].selectedSkinId;
   expect(poolIds).toContain(selectedSkinId);
+  const nextPreviewSkinId = poolIds.find((skinId) => skinId !== selectedSkinId);
+  expect(nextPreviewSkinId).toBeDefined();
+  await expect.poll(async () => (await readPresets(page)).slots.pick_1.random_skin_id).toBe(nextPreviewSkinId);
+  await expect.poll(() => page.locator(".priority-card").first().locator(".priority-art img").getAttribute("src"))
+    .toContain(`/api/assets/skins/86/${nextPreviewSkinId}/splash`);
   const selectedSkinName = selectedSkinId === 86001 ? "Commando Garen" : "God-King Garen";
   const selectedSkinPatch = app.lcuRequests.slice(requestOffset).find((request) =>
     request.method === "PATCH" && request.path === "/lol-champ-select/v1/session/my-selection"
