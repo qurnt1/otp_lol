@@ -41,7 +41,7 @@ The assistant runs on Windows in a native pywebview window backed by a local Fas
 ## Evidence on Hand
 
 - `README.md` documents the local assistant's real automation features and Windows/WebView2 runtime.
-- `config/images/app/` and `frontend/public/assets/app/` contain the application icon, Garen artwork, gear variants, and skin-mode question marks.
+- `config/images/app/` and `frontend/public/assets/app/` contain the application icon and Garen artwork used by the current app; unused legacy gear and skin-mode images have been removed.
 - The API exposes runtime state, presets, champion/spell/rune/skin catalogs, history, updates, and stats links.
 - The League client and live WebView2 shell are not available as part of ordinary frontend browser validation.
 

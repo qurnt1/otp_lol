@@ -14,7 +14,7 @@ The React application talks to the backend through typed HTTP endpoints and a We
 
 - `src/api/`: HTTP and WebSocket boundary, request validation, and response schemas.
 - `src/config/`: paths, constants, first-launch defaults, normalization, import/export, and atomic persistence.
-- `src/core/`: champion select, Data Dragon catalog access, and website-region mapping.
+- `src/core/`: champion select and Data Dragon catalog access. Region aliases are normalized in `src/config/regions.py`, with provider URL builders in `src/services/urls.py`.
 - `src/lcu/`: bounded local `LcuClient`, versioned static-data snapshots, normalized account statistics, diagnostics buffers, runtime snapshots, and event publication.
 - `src/integrations/`: external providers such as CommunityDragon.
 - `src/desktop/`: pywebview bridge, native links, self-tests, and window lifecycle.
