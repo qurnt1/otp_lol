@@ -159,21 +159,22 @@ img { display: block; }
 .dashboard-aside { display: flex; flex-direction: column; gap: 14px; }
 .priority-section { display: flex; flex-direction: column; height: 100%; padding: 16px; }
 .priority-grid { display: grid; flex: 1; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; min-height: 0; }
-.priority-card { position: relative; height: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.priority-card { position: relative; height: 100%; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); touch-action: pan-y; transition: border-color 160ms ease, box-shadow 180ms ease, transform 140ms cubic-bezier(.2,.75,.25,1); }
 .priority-card.is-empty { border-style: dashed; }
-.priority-card.is-dragging { opacity: .55; }
-.priority-card.is-drop-target { border-color: var(--primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 42%, transparent); }
-.priority-card-order { position: absolute; top: 7px; right: 7px; z-index: 3; display: flex; gap: 3px; }
-.priority-card-order button { display: grid; place-items: center; width: 27px; height: 27px; padding: 0; border: 1px solid rgb(238 244 251 / .22); border-radius: 5px; color: var(--text); background: rgb(8 12 18 / .78); cursor: pointer; }
-.priority-card-order button:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: rgb(8 12 18 / .95); }
-.priority-card-order button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.priority-card-order button:disabled { opacity: .42; cursor: not-allowed; }
-.priority-card-drag { cursor: grab !important; }
-.priority-card-drag:active { cursor: grabbing !important; }
+.priority-card.is-press-armed { border-color: var(--primary); cursor: grab; }
+.priority-card.is-press-armed .priority-card-link { cursor: grab; }
+.priority-card.is-dragging { z-index: 4; opacity: .82; transform: translate(var(--drag-x, 0px), var(--drag-y, 0px)) scale(1.025); box-shadow: 0 12px 28px rgb(0 0 0 / .3); pointer-events: none; user-select: none; }
+.priority-card.is-dragging .priority-card-link { cursor: grabbing; pointer-events: none; }
+.priority-card.is-preview-shifted { transform: translate(var(--preview-x), var(--preview-y)); }
+.priority-card.is-drop-target { border-color: var(--primary); box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 52%, transparent), 0 6px 18px color-mix(in srgb, var(--primary) 16%, transparent); transform: translate(var(--preview-x, 0px), calc(var(--preview-y, 0px) - 2px)); }
+.priority-card.is-dragging.is-drop-target { transform: translate(var(--drag-x, 0px), var(--drag-y, 0px)) scale(1.025); }
+.priority-gesture-hint { max-width: 390px; text-align: right; line-height: 1.45; }
+.priority-grid.is-reorder-committing .priority-card { transition: none; }
 .priority-reorder-feedback { margin: 9px 0 0; color: var(--muted); font-size: 10px; }
 .priority-reorder-feedback.is-error { color: var(--danger); }
 .priority-card-link { display: flex; flex-direction: column; height: 100%; color: inherit; text-decoration: none; }
 .priority-card-link:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
+.priority-card-link[aria-disabled="true"] { cursor: not-allowed; }
 .priority-art { position: relative; display: block; flex: 1; min-height: clamp(154px, 14vw, 220px); overflow: hidden; border-bottom: 1px solid var(--line); background: linear-gradient(145deg, var(--surface-3), var(--bg-raised)); color: var(--text); text-decoration: none; }
 .priority-art > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 24%; }
 .priority-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgb(3 7 12 / .05) 25%, rgb(3 7 12 / .88) 100%); }

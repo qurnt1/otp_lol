@@ -63,7 +63,32 @@ async function visibleChampionOrder(page: Parameters<typeof setupApplication>[0]
   return page.locator(".priority-card h3").allTextContents();
 }
 
-test("priority cards can be dragged, moved by keyboard, and keep the complete preset blocks after reload", async ({ page }) => {
+async function visibleCardFrames(page: Parameters<typeof setupApplication>[0], frameCount = 12) {
+  return page.evaluate(async (count) => {
+    const frames: Array<Array<{ champion: string; spells: string[]; rune: string; skin: string; images: Array<string | null>; x: number; y: number }>> = [];
+    for (let index = 0; index < count; index += 1) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      frames.push(Array.from(document.querySelectorAll<HTMLElement>(".priority-card"), (card) => {
+        const rect = card.getBoundingClientRect();
+        return {
+          champion: card.querySelector("h3")?.textContent?.trim() ?? "",
+          spells: Array.from(card.querySelectorAll<HTMLImageElement>(".summoner-row img"), (image) => image.title),
+          rune: card.querySelector(".rune-name")?.textContent?.trim() ?? "",
+          skin: card.querySelector(".skin-preview strong")?.textContent?.trim() ?? "",
+          images: [
+            card.querySelector<HTMLImageElement>(".priority-art img")?.getAttribute("src") ?? null,
+            card.querySelector<HTMLImageElement>(".skin-preview img")?.getAttribute("src") ?? null,
+          ],
+          x: Math.round(rect.x),
+          y: Math.round(rect.y),
+        };
+      }));
+    }
+    return frames;
+  }, frameCount);
+}
+
+test("a short click opens the preset, while a held card drag reorders complete presets and keyboard shortcuts remain available", async ({ page }) => {
   const { app } = await setupApplication(page, { configured: true });
   await seedPresets(page, app);
   await page.goto("/#dashboard");
@@ -72,13 +97,51 @@ test("priority cards can be dragged, moved by keyboard, and keep the complete pr
   await expect(cards).toHaveCount(3);
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Garen", "Lux", "Ashe"]);
 
+  const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
+  await cards.nth(0).click();
+  await expect(editor).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(editor).toHaveCount(0);
+
   const reorderResponse = page.waitForResponse((response) =>
     response.request().method() === "PUT"
       && new URL(response.url()).pathname === "/api/presets/order"
       && response.status() === 200,
   );
-  await cards.nth(0).getByRole("button", { name: /Faire glisser pour réordonner/ }).dragTo(cards.nth(1));
+  let delayNextReorder = true;
+  await page.route("**/api/presets/order", async (route) => {
+    if (delayNextReorder) {
+      delayNextReorder = false;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    await route.continue();
+  });
+  const sourceBox = await cards.nth(0).boundingBox();
+  const targetBox = await cards.nth(1).boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await expect(cards.nth(0)).toHaveClass(/is-press-armed/);
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 5 });
+  await expect(cards.nth(0)).toHaveClass(/is-dragging/);
+  await expect(cards.nth(1)).toHaveClass(/is-drop-target/);
+  await expect(cards.nth(1)).toHaveClass(/is-preview-shifted/);
+  await expect.poll(async () => {
+    const previewBox = await cards.nth(1).boundingBox();
+    return previewBox ? Math.abs(previewBox.x - sourceBox!.x) < 3 : false;
+  }).toBe(true);
+  const targetPreviewBox = await cards.nth(1).boundingBox();
+  expect(targetPreviewBox).not.toBeNull();
+  expect(targetPreviewBox!.x).toBeLessThan(targetBox!.x - 3);
+  await page.mouse.up();
+  const observedCards = await visibleCardFrames(page);
+  expect(observedCards.slice(1)).toEqual(Array.from({ length: 11 }, () => observedCards[0]));
+  expect(observedCards[0].map((card) => card.champion)).toEqual(["Lux", "Garen", "Ashe"]);
   const response = await reorderResponse;
+  const savedCardFrames = await visibleCardFrames(page);
+  expect(savedCardFrames.slice(1)).toEqual(Array.from({ length: 11 }, () => savedCardFrames[0]));
+  expect(savedCardFrames[0].map((card) => card.champion)).toEqual(["Lux", "Garen", "Ashe"]);
   expect(response.request().postDataJSON()).toEqual({ order: ["pick_2", "pick_1", "pick_3"] });
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Lux", "Garen", "Ashe"]);
   await expect.poll(async () => (await readPresets(page)).slots).toMatchObject({
@@ -94,15 +157,14 @@ test("priority cards can be dragged, moved by keyboard, and keep the complete pr
   await page.reload();
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Lux", "Garen", "Ashe"]);
 
-  const moveUp = cards.nth(1).getByRole("button", { name: /Monter dans les priorités.*Garen/ });
-  await expect(moveUp).toBeEnabled();
+  const moveUp = cards.nth(1).locator(".priority-card-link");
   const keyboardReorder = page.waitForResponse((nextResponse) =>
     nextResponse.request().method() === "PUT"
       && new URL(nextResponse.url()).pathname === "/api/presets/order"
       && nextResponse.status() === 200,
   );
   await moveUp.focus();
-  await page.keyboard.press("Enter");
+  await page.keyboard.press("Alt+ArrowUp");
   expect((await keyboardReorder).request().postDataJSON()).toEqual({ order: ["pick_2", "pick_1", "pick_3"] });
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Garen", "Lux", "Ashe"]);
   await expect.poll(async () => (await readPresets(page)).slots).toMatchObject({
@@ -124,14 +186,95 @@ test("a failed preset reorder restores the previous card order and leaves saved 
     body: JSON.stringify({ detail: "Injected preset-order outage" }),
   }));
 
-  await page.locator(".priority-card").first().getByRole("button", { name: /Descendre dans les priorités.*Garen/ }).click();
+  await page.locator(".priority-card-link").first().focus();
+  await page.keyboard.press("Alt+ArrowDown");
   await expect(page.getByRole("alert")).toHaveText("Impossible d’enregistrer l’ordre des priorités.");
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Garen", "Lux", "Ashe"]);
   expect(await readPresets(page)).toEqual(beforePresets);
   expect(await readSettings(page)).toEqual(beforeSettings);
 });
 
-test("a failed bootstrap refresh after reorder never reuses the previous slot preview", async ({ page }) => {
+test("dragging the second or third preset to the first position shifts siblings right inside the grid", async ({ page }) => {
+  const { app } = await setupApplication(page, { configured: true });
+  await seedPresets(page, app);
+  await page.goto("/#dashboard");
+
+  const cards = page.locator(".priority-card");
+  await expect.poll(() => visibleChampionOrder(page)).toEqual(["Garen", "Lux", "Ashe"]);
+
+  for (const sourceIndex of [1, 2]) {
+    const originalXs = await cards.evaluateAll((nodes) => nodes.map((node) => (node as HTMLElement).getBoundingClientRect().x));
+    const sourceBox = await cards.nth(sourceIndex).boundingBox();
+    const targetBox = await cards.nth(0).boundingBox();
+    expect(sourceBox).not.toBeNull();
+    expect(targetBox).not.toBeNull();
+
+    await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+    await page.mouse.down();
+    await expect(cards.nth(sourceIndex)).toHaveClass(/is-press-armed/);
+    await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 5 });
+    await expect(cards.nth(sourceIndex)).toHaveClass(/is-dragging/);
+    await expect(cards.nth(0)).toHaveClass(/is-preview-shifted/);
+
+    for (let shiftedIndex = 0; shiftedIndex < sourceIndex; shiftedIndex += 1) {
+      await expect.poll(async () => {
+        const previewBox = await cards.nth(shiftedIndex).boundingBox();
+        return previewBox ? previewBox.x : originalXs[shiftedIndex];
+      }).toBeGreaterThan(originalXs[shiftedIndex] + 20);
+    }
+
+    const reorderResponse = page.waitForResponse((response) =>
+      response.request().method() === "PUT"
+        && new URL(response.url()).pathname === "/api/presets/order"
+        && response.status() === 200,
+    );
+    await page.mouse.up();
+    await reorderResponse;
+
+    const expectedOrder = sourceIndex === 1 ? ["Lux", "Garen", "Ashe"] : ["Ashe", "Lux", "Garen"];
+    await expect.poll(() => visibleChampionOrder(page)).toEqual(expectedOrder);
+  }
+});
+
+test("dragging outside the priority grid cancels the preview without saving a new order", async ({ page }) => {
+  const { app } = await setupApplication(page, { configured: true });
+  await seedPresets(page, app);
+  await page.goto("/#dashboard");
+  let reorderRequests = 0;
+  await page.route("**/api/presets/order", async (route) => {
+    reorderRequests += 1;
+    await route.continue();
+  });
+
+  const cards = page.locator(".priority-card");
+  const sourceBox = await cards.nth(0).boundingBox();
+  const targetBox = await cards.nth(1).boundingBox();
+  const gridBox = await page.locator(".priority-grid").boundingBox();
+  expect(sourceBox).not.toBeNull();
+  expect(targetBox).not.toBeNull();
+  expect(gridBox).not.toBeNull();
+
+  await page.mouse.move(sourceBox!.x + sourceBox!.width / 2, sourceBox!.y + sourceBox!.height / 2);
+  await page.mouse.down();
+  await expect(cards.nth(0)).toHaveClass(/is-press-armed/);
+  await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2, { steps: 4 });
+  await expect(cards.nth(0)).toHaveClass(/is-dragging/);
+  await expect(cards.nth(1)).toHaveClass(/is-preview-shifted/);
+
+  await page.mouse.move(gridBox!.x + gridBox!.width + 80, gridBox!.y + gridBox!.height + 80);
+  await expect(cards.nth(1)).not.toHaveClass(/is-preview-shifted/);
+  await page.mouse.up();
+
+  expect(reorderRequests).toBe(0);
+  await expect.poll(() => visibleChampionOrder(page)).toEqual(["Garen", "Lux", "Ashe"]);
+  expect((await readPresets(page)).slots).toMatchObject({
+    pick_1: presetFixtures.pick_1,
+    pick_2: presetFixtures.pick_2,
+    pick_3: presetFixtures.pick_3,
+  });
+});
+
+test("a cached skin preview stays with its preset when the bootstrap refresh fails", async ({ page }) => {
   const { app } = await setupApplication(page, { configured: true });
   await seedPresets(page, app);
   let bootstrapReads = 0;
@@ -175,13 +318,15 @@ test("a failed bootstrap refresh after reorder never reuses the previous slot pr
       && new URL(response.url()).pathname === "/api/presets/order"
       && response.status() === 200,
   );
-  await page.locator(".priority-card").first().getByRole("button", { name: /Descendre dans les priorités.*Garen/ }).click();
+  await page.locator(".priority-card-link").first().focus();
+  await page.keyboard.press("Alt+ArrowDown");
   await reorderResponse;
 
   await expect.poll(() => visibleChampionOrder(page)).toEqual(["Lux", "Garen", "Ashe"]);
   await expect(page.locator(".priority-reorder-feedback")).toHaveText("Ordre des priorités enregistré.");
   await expect.poll(() => bootstrapReads).toBeGreaterThanOrEqual(2);
-  await expect(page.locator(".priority-card .priority-art img[src='/__e2e__/stale-preview.svg']")).toHaveCount(0);
+  await expect(page.locator(".priority-card").nth(0).locator(".priority-art img[src='/__e2e__/stale-preview.svg']")).toHaveCount(0);
+  await expect(page.locator(".priority-card").nth(1).locator(".priority-art img[src='/__e2e__/stale-preview.svg']")).toHaveCount(1);
 });
 
 test("Quick Actions has one accessible title", async ({ page }) => {

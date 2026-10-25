@@ -129,10 +129,17 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
   const [automationErrors, setAutomationErrors] = useState<Record<string, string>>({});
   const [slotOrder, setSlotOrder] = useState<PresetSlotKey[]>([...slots]);
   const [draggingSlot, setDraggingSlot] = useState<PresetSlotKey | null>(null);
+  const [dragTargetSlot, setDragTargetSlot] = useState<PresetSlotKey | null>(null);
+  const [dragPreviewOffsets, setDragPreviewOffsets] = useState<Partial<Record<PresetSlotKey, { x: number; y: number }>>>({});
+  const [reorderCommit, setReorderCommit] = useState(false);
   const [reorderPending, setReorderPending] = useState(false);
   const [reorderMessage, setReorderMessage] = useState("");
   const [reorderError, setReorderError] = useState(false);
   const cardTriggerRefs = useRef<Record<PresetSlotKey, HTMLElement | null>>({ pick_1: null, pick_2: null, pick_3: null });
+  const dragOriginOrderRef = useRef<PresetSlotKey[] | null>(null);
+  const dragOriginRectsRef = useRef<Map<PresetSlotKey, DOMRect>>(new Map());
+  const dragSourceRef = useRef<PresetSlotKey | null>(null);
+  const dragTargetSlotRef = useRef<PresetSlotKey | null>(null);
   const banTriggerRef = useRef<HTMLElement | null>(null);
   const activeTriggerRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -145,9 +152,9 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     return next;
   });
 
-  const persistSlotOrder = async (nextOrder: PresetSlotKey[]) => {
-    if (reorderPending || nextOrder.every((key, index) => key === slotOrder[index])) return;
-    const previousOrder = slotOrder;
+  const persistSlotOrder = async (nextOrder: PresetSlotKey[], rollbackOrder: PresetSlotKey[] = slotOrder) => {
+    if (reorderPending || nextOrder.every((key, index) => key === rollbackOrder[index])) return;
+    const previousOrder = [...rollbackOrder];
     setSlotOrder(nextOrder);
     setReorderPending(true);
     setReorderMessage("");
@@ -155,9 +162,15 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     try {
       const updatedPresets = await api.reorderPresets({ order: nextOrder });
       await queryClient.cancelQueries({ queryKey: ["bootstrap"] });
-      queryClient.setQueryData<BootstrapResponse>(["bootstrap"], (current) => current
-        ? { ...current, presets: updatedPresets, preset_previews: {} }
-        : current);
+      queryClient.setQueryData<BootstrapResponse>(["bootstrap"], (current) => {
+        if (!current) return current;
+        const presetPreviews: NonNullable<BootstrapResponse["preset_previews"]> = {};
+        slots.forEach((slotKey, index) => {
+          const preview = current.preset_previews?.[nextOrder[index]];
+          if (preview) presetPreviews[slotKey] = preview;
+        });
+        return { ...current, presets: updatedPresets, preset_previews: presetPreviews };
+      });
       queryClient.setQueryData(["presets"], updatedPresets);
       setSlotOrder([...slots]);
       await Promise.all([
@@ -174,14 +187,83 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     }
   };
 
+  const beginCardDrag = (source: PresetSlotKey) => {
+    dragOriginOrderRef.current = [...slotOrder];
+    dragSourceRef.current = source;
+    dragTargetSlotRef.current = null;
+    dragOriginRectsRef.current = new Map(slots.flatMap((key) => {
+      const card = cardTriggerRefs.current[key]?.closest<HTMLElement>(".priority-card");
+      return card ? [[key, card.getBoundingClientRect()] as const] : [];
+    }));
+    setDragPreviewOffsets({});
+    setDragTargetSlot(null);
+    setDraggingSlot(source);
+  };
+
+  const previewCardDrop = (target: PresetSlotKey | null) => {
+    if (target === dragTargetSlotRef.current) return;
+    dragTargetSlotRef.current = target;
+    setDragTargetSlot(target);
+
+    const originOrder = dragOriginOrderRef.current;
+    const source = dragSourceRef.current;
+    if (!target || !originOrder || !source || target === source) {
+      setDragPreviewOffsets({});
+      return;
+    }
+
+    const sourceIndex = originOrder.indexOf(source);
+    const targetIndex = originOrder.indexOf(target);
+    const adjacentKey = originOrder[sourceIndex + (sourceIndex < targetIndex ? 1 : -1)];
+    const sourceRect = dragOriginRectsRef.current.get(source);
+    const adjacentRect = adjacentKey ? dragOriginRectsRef.current.get(adjacentKey) : undefined;
+    if (sourceIndex < 0 || targetIndex < 0 || !sourceRect || !adjacentRect) {
+      setDragPreviewOffsets({});
+      return;
+    }
+
+    const stepX = sourceRect.left - adjacentRect.left;
+    const stepY = sourceRect.top - adjacentRect.top;
+    const offsets: Partial<Record<PresetSlotKey, { x: number; y: number }>> = {};
+    if (sourceIndex < targetIndex) {
+      for (let index = sourceIndex + 1; index <= targetIndex; index += 1) {
+        offsets[originOrder[index]] = { x: stepX, y: stepY };
+      }
+    } else {
+      for (let index = targetIndex; index < sourceIndex; index += 1) {
+        offsets[originOrder[index]] = { x: stepX, y: stepY };
+      }
+    }
+    setDragPreviewOffsets(offsets);
+  };
+
+  const cancelCardDrag = () => {
+    setDragPreviewOffsets({});
+  };
+
+  const finishCardDrag = () => {
+    setDraggingSlot(null);
+    setDragTargetSlot(null);
+    setDragPreviewOffsets({});
+    dragOriginOrderRef.current = null;
+    dragOriginRectsRef.current.clear();
+    dragSourceRef.current = null;
+    dragTargetSlotRef.current = null;
+  };
+
   const reorderCard = (source: PresetSlotKey, target: PresetSlotKey) => {
-    const sourceIndex = slotOrder.indexOf(source);
-    const targetIndex = slotOrder.indexOf(target);
+    const originOrder = dragOriginOrderRef.current ?? slotOrder;
+    const sourceIndex = originOrder.indexOf(source);
+    const targetIndex = originOrder.indexOf(target);
     if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
-    const nextOrder = [...slotOrder];
+    const nextOrder = [...originOrder];
     nextOrder.splice(sourceIndex, 1);
     nextOrder.splice(targetIndex, 0, source);
-    void persistSlotOrder(nextOrder);
+    if (dragSourceRef.current === source) {
+      setReorderCommit(true);
+      window.requestAnimationFrame(() => setReorderCommit(false));
+    }
+    void persistSlotOrder(nextOrder, originOrder);
   };
 
   const moveCard = (source: PresetSlotKey, delta: -1 | 1) => {
@@ -238,9 +320,9 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">
-        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><span className="field-hint">{fr.dashboard.priorityHint}</span></div><div className="priority-grid">{slotOrder.map((slotKey, index) => {
+        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><span className="field-hint priority-gesture-hint">{fr.dashboard.priorityHint}</span></div><div className={cn("priority-grid", reorderCommit && "is-reorder-committing")}>{slotOrder.map((slotKey, index) => {
           const slot = currentPresets?.slots[slotKey];
-          return <ChampionPriorityCard key={slotKey} slotKey={slotKey} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slotKey]} champion={championFor(slot?.champion || "", previews[slotKey])} isOpen={action === slotKey} triggerRef={(node) => { cardTriggerRefs.current[slotKey] = node; if (node && action === slotKey) activeTriggerRef.current = node; }} reorderDisabled={reorderPending || Boolean(action)} isDragging={draggingSlot === slotKey} onMove={moveCard} onDragStart={setDraggingSlot} onDragEnd={() => setDraggingSlot(null)} onDrop={reorderCard} />;
+          return <ChampionPriorityCard key={slotKey} slotKey={slotKey} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slotKey]} champion={championFor(slot?.champion || "", previews[slotKey])} isOpen={action === slotKey} triggerRef={(node) => { cardTriggerRefs.current[slotKey] = node; if (node && action === slotKey) activeTriggerRef.current = node; }} reorderDisabled={reorderPending || Boolean(action)} isDragging={draggingSlot === slotKey} isDropTarget={dragTargetSlot === slotKey} previewOffset={dragPreviewOffsets[slotKey]} onMove={moveCard} onDragStart={beginCardDrag} onDragTarget={previewCardDrop} onDragEnd={finishCardDrag} onDragCancel={cancelCardDrag} onDrop={reorderCard} />;
         })}</div>{(reorderPending || reorderMessage) && <p className={cn("priority-reorder-feedback", reorderError && "is-error")} role={reorderError ? "alert" : "status"} aria-live="polite">{reorderPending ? fr.dashboard.prioritySaving : reorderMessage}</p>}</section>
       </div>
       <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} isOpen={action === "ban"} triggerRef={(node) => { banTriggerRef.current = node; if (node && action === "ban") activeTriggerRef.current = node; }} /><QuickActions /></aside>
