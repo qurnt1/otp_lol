@@ -1,24 +1,42 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import content from "../content.json";
 import dashboardImage from "../../../docs/images/portfolio-dashboard-demo.png";
 import settingsImage from "../../../docs/images/portfolio-settings-demo.jpg";
 import statisticsImage from "../../../docs/images/portfolio-statistics-demo.jpg";
 import garenImage from "../../../frontend/public/assets/app/garen.webp";
+import { siteCopy } from "./copy";
+import type { Locale, ScreenshotCopy } from "./copy";
 
-const screenshots = content.screenshots;
 const screenshotImages = {
   settings: settingsImage,
   statistics: statisticsImage,
 };
-type ScreenshotId = keyof typeof screenshotImages;
+const contactHref = `mailto:${content.contactEmail}?subject=OTP%20LOL%20contact`;
+
+function preferredLocale(): Locale {
+  return typeof navigator !== "undefined" && navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en";
+}
 
 export default function App() {
-  const [activeScreenshotId, setActiveScreenshotId] = useState(screenshots[0].id);
+  const [locale, setLocale] = useState<Locale>(preferredLocale);
+  const [activeScreenshotId, setActiveScreenshotId] = useState<ScreenshotCopy["id"]>(siteCopy.fr.showcase.screenshots[0].id);
   const [imageAtActualSize, setImageAtActualSize] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const activeScreenshot = screenshots.find((shot) => shot.id === activeScreenshotId) ?? screenshots[0];
-  const activeImage = screenshotImages[activeScreenshot.id as ScreenshotId];
+  const t = siteCopy[locale];
+  const activeScreenshot = t.showcase.screenshots.find((shot) => shot.id === activeScreenshotId) ?? t.showcase.screenshots[0];
+  const activeImage = screenshotImages[activeScreenshot.id];
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.title = t.documentTitle;
+    document.querySelector('meta[name="description"]')?.setAttribute("content", t.metaDescription);
+    document.querySelector('meta[property="og:title"]')?.setAttribute("content", t.documentTitle);
+    document.querySelector('meta[property="og:description"]')?.setAttribute("content", t.metaDescription);
+    document.querySelector('meta[property="og:locale"]')?.setAttribute("content", locale === "fr" ? "fr_FR" : "en_US");
+    document.querySelector('meta[name="twitter:title"]')?.setAttribute("content", t.documentTitle);
+    document.querySelector('meta[name="twitter:description"]')?.setAttribute("content", t.metaDescription);
+  }, [locale, t]);
 
   const closeOnBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
     if (event.target === dialogRef.current) dialogRef.current.close();
@@ -26,76 +44,68 @@ export default function App() {
 
   return (
     <div id="top">
-      <a className="skip-link" href="#main">Aller au contenu</a>
+      <a className="skip-link" href="#main">{t.skipToContent}</a>
       <header className="site-header">
         <div className="header-inner">
-          <a className="brand" href="#top" aria-label="OTP LOL, accueil">
+          <a className="brand" href="#top" aria-label={t.home}>
             <img src={garenImage} alt="" width="34" height="34" />
             <span>OTP <strong>LOL</strong></span>
           </a>
-          <nav className="main-nav" aria-label="Navigation principale">
-            <a href="#fonctionnement">Fonctionnement</a>
-            <a href="#captures">L’application</a>
-            <a href="#installation">Installation</a>
+          <nav className="main-nav" aria-label={t.navigation}>
+            <a href="#fonctionnement">{t.nav.workflow}</a>
+            <a href="#captures">{t.nav.app}</a>
+            <a href="#installation">{t.nav.installation}</a>
+            <a href="#contact">{t.nav.contact}</a>
           </nav>
-          <a className="button button-small button-primary header-download" href={content.releasesUrl} target="_blank" rel="noreferrer">
-            Téléchargements
-            <span aria-hidden="true">↗</span>
-          </a>
+          <div className="header-actions">
+            <div className="language-toggle" role="group" aria-label={t.languageSelector}>
+              <button type="button" aria-pressed={locale === "en"} aria-label={t.switchToEnglish} onClick={() => setLocale("en")}>EN</button>
+              <button type="button" aria-pressed={locale === "fr"} aria-label={t.switchToFrench} onClick={() => setLocale("fr")}>FR</button>
+            </div>
+            <a className="button button-small button-primary header-download" href={content.releasesUrl} target="_blank" rel="noreferrer">
+              {t.downloads}<span aria-hidden="true">↗</span>
+            </a>
+          </div>
         </div>
       </header>
 
       <main id="main">
         <section className="hero section-wrap" aria-labelledby="hero-title">
           <div className="hero-copy">
-            <p className="eyebrow">Compagnon League pour Windows</p>
-            <h1 id="hero-title">Tes choix prêts avant la sélection.</h1>
-            <p className="hero-lead">Prépare tes priorités, tes sorts, tes runes et tes skins. OTP LOL applique uniquement les automatismes que tu actives, sur ton PC.</p>
+            <p className="eyebrow">{t.hero.eyebrow}</p>
+            <h1 id="hero-title">{t.hero.title[0]}<br />{t.hero.title[1]}</h1>
+            <p className="hero-lead">{t.hero.lead}</p>
             <div className="hero-actions">
               <a className="button button-primary" href={content.releasesUrl} target="_blank" rel="noreferrer">
-                Voir les téléchargements Windows <span aria-hidden="true">↗</span>
+                {t.hero.download}<span aria-hidden="true">↗</span>
               </a>
-              <a className="text-link" href="#captures">Voir l’application <span aria-hidden="true">↓</span></a>
+              <a className="text-link" href="#captures">{t.hero.seeApp}<span aria-hidden="true">↓</span></a>
             </div>
-            <p className="requirements">Il te faut Windows, le client League sur le même ordinateur et le runtime Microsoft Edge WebView2.</p>
+            <p className="requirements">{t.hero.requirements}</p>
           </div>
           <figure className="hero-figure">
             <div className="hero-image-wrap">
-              <img
-                src={dashboardImage}
-                alt="Capture de démonstration du tableau de bord OTP LOL avec trois champions et leurs skins configurés, client League déconnecté."
-                width="1920"
-                height="1080"
-                fetchPriority="high"
-              />
+              <img src={dashboardImage} alt={t.hero.imageAlt} width="1920" height="1080" fetchPriority="high" />
             </div>
-            <figcaption><span>Tableau de bord</span><span>Presets de démonstration · client déconnecté</span></figcaption>
+            <figcaption><span>{t.hero.caption}</span><span>{t.hero.captionNote}</span></figcaption>
           </figure>
         </section>
 
         <section className="workflow" id="fonctionnement" aria-labelledby="workflow-title">
           <div className="section-wrap">
             <div className="section-heading">
-              <p className="eyebrow">La routine, à ta façon</p>
-              <h2 id="workflow-title">Tu règles. Tu choisis.<br />League continue.</h2>
-              <p>OTP LOL prépare les actions autour de la partie. Tu gardes le contrôle de ce qui s’active.</p>
+              <p className="eyebrow">{t.workflow.eyebrow}</p>
+              <h2 id="workflow-title">{t.workflow.title[0]}<br />{t.workflow.title[1]}</h2>
+              <p>{t.workflow.intro}</p>
             </div>
             <ol className="workflow-list">
-              <li>
-                <span className="step-number">01</span>
-                <div><h3>Prépare tes presets</h3><p>Classe jusqu’à trois picks prioritaires. Configure le ban, les sorts, les runes et un skin fixe ou tiré d’un pool.</p></div>
-                <span className="step-marker" aria-hidden="true">↘</span>
-              </li>
-              <li>
-                <span className="step-number">02</span>
-                <div><h3>Active les actions voulues</h3><p>Auto-Accept attend le ready-check. Auto-Pick passe aux champions indisponibles ou bannis. Chaque automatisme se règle séparément.</p></div>
-                <span className="step-marker" aria-hidden="true">↘</span>
-              </li>
-              <li>
-                <span className="step-number">03</span>
-                <div><h3>Lance ta file dans League</h3><p>OTP LOL suit le client local. Après la partie, le retour au lobby peut être activé lorsque League le permet.</p></div>
-                <span className="step-marker" aria-hidden="true">↗</span>
-              </li>
+              {t.workflow.steps.map((step, index) => (
+                <li key={step.title}>
+                  <span className="step-number">0{index + 1}</span>
+                  <div><h3>{step.title}</h3><p>{step.body}</p></div>
+                  <span className="step-marker" aria-hidden="true">{index === 2 ? "↗" : "↘"}</span>
+                </li>
+              ))}
             </ol>
           </div>
         </section>
@@ -103,13 +113,13 @@ export default function App() {
         <section className="showcase section-wrap" id="captures" aria-labelledby="showcase-title">
           <div className="showcase-heading">
             <div>
-              <p className="eyebrow">L’application, en vrai</p>
-              <h2 id="showcase-title">Les réglages se voient.<br />Les choix restent les tiens.</h2>
+              <p className="eyebrow">{t.showcase.eyebrow}</p>
+              <h2 id="showcase-title">{t.showcase.title[0]}<br />{t.showcase.title[1]}</h2>
             </div>
-            <p>Parcours les écrans de préparation, de réglages et de statistiques.</p>
+            <p>{t.showcase.intro}</p>
           </div>
-          <div className="shot-selector" role="group" aria-label="Choisir une capture de l’application">
-            {screenshots.map((shot) => (
+          <div className="shot-selector" role="group" aria-label={t.showcase.selector}>
+            {t.showcase.screenshots.map((shot) => (
               <button
                 className="shot-tab"
                 key={shot.id}
@@ -124,7 +134,7 @@ export default function App() {
           </div>
           <figure className="showcase-frame">
             <img
-              key={activeScreenshot.id}
+              key={`${locale}-${activeScreenshot.id}`}
               className="showcase-image"
               src={activeImage}
               alt={activeScreenshot.alt}
@@ -135,7 +145,7 @@ export default function App() {
             <figcaption className="showcase-caption">
               <span aria-live="polite">{activeScreenshot.note}</span>
               <button className="text-link expand-button" type="button" aria-haspopup="dialog" onClick={() => { setImageAtActualSize(false); dialogRef.current?.showModal(); }}>
-                Agrandir la capture <span aria-hidden="true">↗</span>
+                {t.showcase.enlarge}<span aria-hidden="true">↗</span>
               </button>
             </figcaption>
           </figure>
@@ -144,19 +154,19 @@ export default function App() {
         <section className="features" aria-labelledby="features-title">
           <div className="section-wrap">
             <div className="section-heading feature-heading">
-              <p className="eyebrow">Précis quand League en a besoin</p>
-              <h2 id="features-title">Une routine visible.<br />Aucune stratégie à ta place.</h2>
+              <p className="eyebrow">{t.features.eyebrow}</p>
+              <h2 id="features-title">{t.features.title[0]}<br />{t.features.title[1]}</h2>
             </div>
             <div className="feature-columns">
               <article className="feature-column">
-                <h3>Dans la sélection</h3>
-                <p>Choisis tes picks par ordre de priorité, ton ban et les éléments de ton preset. Si un champion ne peut pas être pris, OTP LOL passe au suivant configuré.</p>
-                <ul><li>Sorts et pages de runes</li><li>Skin fixe ou pool aléatoire</li><li>Automatismes désactivés au premier lancement</li></ul>
+                <h3>{t.features.championSelect}</h3>
+                <p>{t.features.championSelectBody}</p>
+                <ul>{t.features.championSelectItems.map((item) => <li key={item}>{item}</li>)}</ul>
               </article>
               <article className="feature-column">
-                <h3>Pour tes statistiques</h3>
-                <p>Ouvre le profil de ton compte ou les statistiques de la partie avec le fournisseur que tu choisis. Ces pages viennent de services tiers.</p>
-                <p className="provider-copy"><strong>Profil</strong> OP.GG, DeepLOL, DPM.LOL, League of Graphs<br /><strong>En direct</strong> Porofessor, DeepLOL, DPM.LOL, OP.GG</p>
+                <h3>{t.features.stats}</h3>
+                <p>{t.features.statsBody}</p>
+                <p className="provider-copy"><strong>{t.features.profile}</strong> OP.GG, DeepLOL, DPM.LOL, League of Graphs<br /><strong>{t.features.live}</strong> Porofessor, DeepLOL, DPM.LOL, OP.GG</p>
               </article>
             </div>
           </div>
@@ -164,71 +174,66 @@ export default function App() {
 
         <section className="local section-wrap" id="installation" aria-labelledby="local-title">
           <div className="local-intro">
-            <p className="eyebrow">Sur ton ordinateur</p>
-            <h2 id="local-title">Tes réglages restent chez toi.</h2>
-            <p>OTP LOL fonctionne en local auprès du client League installé sur le même PC. Tes réglages et ton historique restent sur ton ordinateur. Il ne demande pas de compte OTP LOL et n’héberge pas de profil joueur.</p>
-            <a className="text-link" href={content.projectUrl} target="_blank" rel="noreferrer">Voir le projet sur GitHub <span aria-hidden="true">↗</span></a>
+            <p className="eyebrow">{t.installation.eyebrow}</p>
+            <h2 id="local-title">{t.installation.title}</h2>
+            <p>{t.installation.intro}</p>
+            <a className="text-link" href={content.projectUrl} target="_blank" rel="noreferrer">{t.installation.github}<span aria-hidden="true">↗</span></a>
           </div>
           <div className="install-block">
-            <h3>Pour commencer</h3>
+            <h3>{t.installation.start}</h3>
             <ol>
-              <li><span>1</span><p>Télécharge l’installateur depuis la page des releases.</p></li>
-              <li><span>2</span><p>Installe WebView2 si ton PC te le demande, puis relance l’installateur.</p></li>
-              <li><span>3</span><p>Ouvre League et OTP LOL. Configure tes presets avant d’activer une automatisation.</p></li>
+              {t.installation.steps.map((step, index) => <li key={step}><span>{index + 1}</span><p>{step}</p></li>)}
             </ol>
-            <a className="button button-light" href={content.releasesUrl} target="_blank" rel="noreferrer">Ouvrir les téléchargements <span aria-hidden="true">↗</span></a>
+            <a className="button button-light" href={content.releasesUrl} target="_blank" rel="noreferrer">{t.installation.downloads}<span aria-hidden="true">↗</span></a>
           </div>
-          <p className="data-note">L’application peut contacter les services de métadonnées League et de mise à jour. Quand tu ouvres un profil, le fournisseur choisi reçoit le lien correspondant.</p>
+          <p className="data-note">{t.installation.dataNote}</p>
         </section>
 
         <section className="faq section-wrap" aria-labelledby="faq-title">
           <div className="faq-heading">
-            <p className="eyebrow">Avant de te lancer</p>
-            <h2 id="faq-title">Questions pratiques.</h2>
+            <p className="eyebrow">{t.faq.eyebrow}</p>
+            <h2 id="faq-title">{t.faq.title}</h2>
           </div>
           <div className="faq-list">
-            <details>
-              <summary>OTP LOL joue-t-il à ma place ?</summary>
-              <p>Non. Il ne joue pas la partie et ne choisit pas ta stratégie. Il applique les actions de client que tu as configurées, dans les phases où League les autorise.</p>
-            </details>
-            <details>
-              <summary>Les automatismes sont-ils activés d’avance ?</summary>
-              <p>Non. Ils sont désactivés au premier lancement. Tu peux configurer les presets, puis activer chaque automatisme séparément.</p>
-            </details>
-            <details>
-              <summary>De quoi ai-je besoin pour l’installer ?</summary>
-              <p>D’un PC Windows, du client League installé sur ce même PC et du runtime Microsoft Edge WebView2. Si WebView2 manque, installe-le depuis la page Microsoft qui s’ouvre, puis relance l’installateur.</p>
-            </details>
-            <details>
-              <summary>D’où viennent les statistiques ?</summary>
-              <p>Les données de profil et de partie sont fournies par le service tiers que tu sélectionnes. OTP LOL prépare le lien et l’ouvre dans une fenêtre dédiée, avec le navigateur comme solution de repli.</p>
-            </details>
+            {t.faq.items.map((item) => <details key={item.question}><summary>{item.question}</summary><p>{item.answer}</p></details>)}
+          </div>
+        </section>
+
+        <section className="contact-section" id="contact" aria-labelledby="contact-title">
+          <div className="section-wrap contact-inner">
+            <div>
+              <p className="eyebrow">{t.contact.eyebrow}</p>
+              <h2 id="contact-title">{t.contact.title}</h2>
+              <p>{t.contact.body}</p>
+            </div>
+            <a className="button button-primary" href={contactHref}>{t.contact.email}<span aria-hidden="true">↗</span></a>
           </div>
         </section>
 
         <section className="closing">
           <div className="section-wrap closing-inner">
             <div>
-              <p className="eyebrow">OTP LOL pour Windows</p>
-              <h2>Configure ta routine.<br />Puis lance ta partie.</h2>
+              <p className="eyebrow">{t.closing.eyebrow}</p>
+              <h2>{t.closing.title[0]}<br />{t.closing.title[1]}</h2>
             </div>
-            <a className="button button-primary" href={content.releasesUrl} target="_blank" rel="noreferrer">Voir la dernière version <span aria-hidden="true">↗</span></a>
+            <a className="button button-primary" href={content.releasesUrl} target="_blank" rel="noreferrer">{t.closing.download}<span aria-hidden="true">↗</span></a>
           </div>
         </section>
       </main>
 
       <footer className="site-footer">
         <div className="section-wrap footer-inner">
-          <a className="brand" href="#top" aria-label="OTP LOL, retour en haut">
+          <a className="brand" href="#top" aria-label={t.footer.backToTop}>
             <img src={garenImage} alt="" width="30" height="30" />
             <span>OTP <strong>LOL</strong></span>
           </a>
-          <span className="footer-note">Projet indépendant pour League of Legends.</span>
+          <span className="footer-note">{t.footer.note}</span>
           <div className="footer-links">
             <a href={content.projectUrl} target="_blank" rel="noreferrer">GitHub</a>
-            <a href={content.releasesUrl} target="_blank" rel="noreferrer">Téléchargements</a>
+            <a href={content.releasesUrl} target="_blank" rel="noreferrer">{t.footer.downloads}</a>
+            <a href={contactHref}>{t.nav.contact}</a>
           </div>
-          <small>OTP LOL n’est ni affilié à Riot Games ni approuvé par Riot Games. League of Legends et ses marques appartiennent à Riot Games.</small>
+          <small>{t.footer.disclaimer}</small>
         </div>
       </footer>
 
@@ -236,10 +241,10 @@ export default function App() {
         <div className="dialog-bar">
           <h2 id="dialog-title">{activeScreenshot.label}</h2>
           <div className="dialog-actions">
-            <button className="dialog-size" type="button" aria-label={imageAtActualSize ? "Ajuster la capture à la fenêtre" : "Afficher la capture à sa taille réelle"} aria-pressed={imageAtActualSize} onClick={() => setImageAtActualSize((actual) => !actual)}>
-              {imageAtActualSize ? "Ajuster" : "Taille réelle"}
+            <button className="dialog-size" type="button" aria-label={imageAtActualSize ? t.dialog.fit : t.dialog.actual} aria-pressed={imageAtActualSize} onClick={() => setImageAtActualSize((actual) => !actual)}>
+              {imageAtActualSize ? (locale === "fr" ? "Ajuster" : "Fit") : (locale === "fr" ? "Taille réelle" : "Actual size")}
             </button>
-            <button className="dialog-close" type="button" aria-label="Fermer la capture agrandie" onClick={() => dialogRef.current?.close()}>×</button>
+            <button className="dialog-close" type="button" aria-label={t.dialog.close} onClick={() => dialogRef.current?.close()}>×</button>
           </div>
         </div>
         <img src={activeImage} alt={activeScreenshot.alt} />

@@ -12,6 +12,7 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4174",
     browserName: "chromium",
+    locale: "fr-FR",
     viewport: { width: 1366, height: 900 },
   },
   webServer: {

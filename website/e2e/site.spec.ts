@@ -9,6 +9,7 @@ test("main navigation moves to the requested sections", async ({ page }) => {
     ["Fonctionnement", "#fonctionnement"],
     ["L’application", "#captures"],
     ["Installation", "#installation"],
+    ["Contact", "#contact"],
   ] as const;
 
   for (const [label, hash] of destinations) {
@@ -19,6 +20,101 @@ test("main navigation moves to the requested sections", async ({ page }) => {
 
   await page.getByRole("link", { name: "OTP LOL, accueil" }).click();
   await expect(page).toHaveURL(/#top$/);
+});
+
+test("language selector switches page content, screenshot text, and document metadata", async ({ page }) => {
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+  await expect(page.locator("h1")).toContainText("Tes choix prêts avant");
+  await expect(page.locator('meta[property="og:locale"]')).toHaveAttribute("content", "fr_FR");
+  await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute("content", "OTP LOL — Tes choix prêts avant la sélection");
+  await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", /Prépare tes priorités/);
+
+  await page.getByRole("button", { name: "English" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator("h1")).toContainText("Your picks, ready");
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "How it works" })).toBeVisible();
+  await expect(page).toHaveTitle("OTP LOL — Your picks, ready before champion select");
+  await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", /Set your champion priorities/);
+  await expect(page.locator('meta[property="og:locale"]')).toHaveAttribute("content", "en_US");
+  await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute("content", "OTP LOL — Your picks, ready before champion select");
+  await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", /Set your champion priorities/);
+  const englishScreenshots = page.getByRole("group", { name: "Choose an app screenshot" });
+  await englishScreenshots.getByRole("button", { name: "Settings Enable what suits you" }).click();
+  await expect(page.locator(".showcase-frame img")).toHaveAttribute("alt", "OTP LOL Advanced settings page showing local files, diagnostics, and configuration actions.");
+  await expect(page.getByRole("link", { name: "Email chbtquentin@gmail.com" }))
+    .toHaveAttribute("href", "mailto:chbtquentin@gmail.com?subject=OTP%20LOL%20contact");
+  await page.setViewportSize({ width: 320, height: 740 });
+  const englishMobileWidths = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+  }));
+  expect(englishMobileWidths.documentWidth).toBeLessThanOrEqual(englishMobileWidths.viewportWidth);
+
+  await page.getByRole("button", { name: "Français" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+  await expect(page.locator("h1")).toContainText("Tes choix prêts avant");
+  await expect(page.locator('meta[property="og:locale"]')).toHaveAttribute("content", "fr_FR");
+  await expect(page.locator('meta[name="twitter:title"]')).toHaveAttribute("content", "OTP LOL — Tes choix prêts avant la sélection");
+  await expect(page.locator('meta[name="twitter:description"]')).toHaveAttribute("content", /Prépare tes priorités/);
+});
+
+test("raw HTML includes crawler metadata and serves its referenced brand assets", async ({ page }) => {
+  const response = await page.request.get(page.url());
+  expect(response.ok()).toBeTruthy();
+  const html = await response.text();
+
+  expect(html).toContain('<meta name="robots" content="index, follow" />');
+  expect(html).toContain('<link rel="canonical" href="https://qurnt1.github.io/otp_lol/" />');
+  expect(html).toContain('<meta property="og:title" content="OTP LOL — Tes choix prêts avant la sélection" />');
+  expect(html).toContain('<meta property="og:description" content="Configure tes préférences League et choisis les automatismes qui t’aident." />');
+  expect(html).toContain('<meta property="og:type" content="website" />');
+  expect(html).toContain('<meta property="og:site_name" content="OTP LOL" />');
+  expect(html).toContain('<meta property="og:url" content="https://qurnt1.github.io/otp_lol/" />');
+  expect(html).toContain('<meta property="og:locale" content="fr_FR" />');
+  expect(html).toContain('<meta property="og:locale:alternate" content="en_US" />');
+  expect(html).toContain('<meta property="og:image" content="https://qurnt1.github.io/otp_lol/assets/app/garen.webp" />');
+  expect(html).toContain('<meta property="og:image:alt" content="Icône OTP LOL, compagnon League pour Windows" />');
+  expect(html).toContain('<meta property="og:image:type" content="image/webp" />');
+  expect(html).toContain('<meta property="og:image:width" content="256" />');
+  expect(html).toContain('<meta property="og:image:height" content="256" />');
+  expect(html).toContain('<meta name="twitter:card" content="summary" />');
+  expect(html).toContain('<meta name="twitter:url" content="https://qurnt1.github.io/otp_lol/" />');
+  expect(html).toContain('<meta name="twitter:title" content="OTP LOL — Tes choix prêts avant la sélection" />');
+  expect(html).toContain('<meta name="twitter:description" content="Prépare tes priorités, tes sorts, tes runes et tes skins. OTP LOL applique les automatismes que tu choisis, sur ton PC Windows." />');
+  expect(html).toContain('<meta name="twitter:image" content="https://qurnt1.github.io/otp_lol/assets/app/garen.webp" />');
+  expect(html).toContain('<meta name="twitter:image:alt" content="Icône OTP LOL, compagnon League pour Windows" />');
+  expect(html).toContain('<link id="site-favicon" rel="icon" type="image/x-icon" href="./favicon.ico" />');
+  expect(html).toContain('<link rel="shortcut icon" href="./favicon.ico" />');
+
+  const favicon = await page.request.get(new URL("./favicon.ico", page.url()).href);
+  expect(favicon.ok()).toBeTruthy();
+  expect(favicon.headers()["content-type"]).toContain("image/x-icon");
+
+  const socialImage = await page.request.get(new URL("./assets/app/garen.webp", page.url()).href);
+  expect(socialImage.ok()).toBeTruthy();
+  expect(socialImage.headers()["content-type"]).toContain("image/webp");
+});
+
+test("French navigation fits a 305px usable viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 305, height: 900 });
+  await expect(page.locator("html")).toHaveAttribute("lang", "fr");
+
+  const dimensions = await page.evaluate(() => ({
+    documentWidth: document.documentElement.scrollWidth,
+    viewportWidth: document.documentElement.clientWidth,
+    contactRight: document.querySelector<HTMLAnchorElement>('.main-nav a[href="#contact"]')!.getBoundingClientRect().right,
+  }));
+
+  expect(dimensions.documentWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
+  expect(dimensions.contactRight).toBeLessThanOrEqual(dimensions.viewportWidth);
+  await expect(page.getByRole("navigation", { name: "Navigation principale" }).getByRole("link", { name: "Contact" })).toBeVisible();
+});
+
+test("contact section provides a direct email link", async ({ page }) => {
+  const contact = page.locator("#contact");
+  await expect(contact).toBeVisible();
+  await expect(contact.getByRole("link", { name: "Écrire à chbtquentin@gmail.com" }))
+    .toHaveAttribute("href", "mailto:chbtquentin@gmail.com?subject=OTP%20LOL%20contact");
 });
 
 test("keyboard skip link focuses the main content destination", async ({ page }) => {

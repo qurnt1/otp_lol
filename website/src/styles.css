@@ -37,6 +37,10 @@ img { display: block; max-width: 100%; }
 .main-nav { display: flex; align-items: center; gap: clamp(22px, 3.4vw, 44px); color: #46545e; font-size: 13px; font-weight: 650; }
 .main-nav a, .footer-links a { transition: color .18s ease; }
 .main-nav a:hover, .footer-links a:hover { color: #1d67a3; }
+.header-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
+.language-toggle { padding: 3px; display: inline-flex; gap: 2px; border: 1px solid #c4cdd2; border-radius: 4px; background: rgba(255, 255, 255, .55); }
+.language-toggle button { min-width: 32px; min-height: 32px; padding: 0 5px; border: 0; border-radius: 3px; color: #43515b; background: transparent; font-size: 10px; font-weight: 800; cursor: pointer; }
+.language-toggle button[aria-pressed="true"] { color: white; background: #22303b; }
 .button { min-height: 50px; padding: 0 20px; display: inline-flex; align-items: center; justify-content: center; gap: 13px; border: 1px solid transparent; border-radius: 4px; font-size: 13px; font-weight: 750; transition: color .18s ease, background .18s ease, border-color .18s ease, transform .18s ease; }
 .button:hover { transform: translateY(-1px); }
 .button-small { min-height: 40px; padding-inline: 15px; font-size: 12px; }
@@ -125,6 +129,13 @@ img { display: block; max-width: 100%; }
 .faq-list details[open] summary::after { content: "−"; }
 .faq-list details p { max-width: 66ch; margin: -2px 24px 19px 0; color: #53616b; font-size: 12px; line-height: 1.75; }
 
+.contact-section { padding: clamp(40px, 6vw, 66px) 0; background: #e2e7ea; }
+.contact-inner { display: flex; align-items: center; justify-content: space-between; gap: 30px; }
+.contact-inner .eyebrow { margin-bottom: 9px; }
+.contact-inner h2 { margin: 0; font-size: clamp(26px, 3vw, 36px); font-weight: 740; letter-spacing: -.055em; line-height: 1.1; }
+.contact-inner p:not(.eyebrow) { margin: 9px 0 0; color: #4f5d66; font-size: 13px; line-height: 1.6; }
+.contact-inner .button { flex: 0 0 auto; }
+
 .closing { padding: clamp(54px, 7vw, 82px) 0; color: white; background: #263b49; }
 .closing-inner { display: flex; align-items: end; justify-content: space-between; gap: 32px; }
 .closing h2 { font-size: clamp(35px, 4.6vw, 56px); }
@@ -150,6 +161,7 @@ img { display: block; max-width: 100%; }
 
 @media (max-width: 1000px) {
   .section-wrap, .header-inner { width: min(var(--max), calc(100% - 56px)); }
+  .main-nav { gap: clamp(12px, 2.2vw, 22px); font-size: 12px; }
   .hero { grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 34px; }
   .hero h1 { font-size: clamp(46px, 6.5vw, 66px); }
   .workflow .section-wrap { gap: 48px; }
@@ -175,6 +187,7 @@ img { display: block; max-width: 100%; }
   .local { grid-template-columns: 1fr; gap: 30px; }
   .install-block { padding: 25px 0 0; border-top: 1px solid rgba(236, 243, 247, .2); border-left: 0; }
   .faq { grid-template-columns: 1fr; gap: 30px; }
+  .contact-inner { align-items: start; flex-direction: column; gap: 19px; }
   .closing-inner { align-items: start; flex-direction: column; }
   .footer-inner { grid-template-columns: auto 1fr; }
   .footer-links { grid-column: 1 / -1; }
@@ -187,6 +200,9 @@ img { display: block; max-width: 100%; }
   .brand { gap: 8px; font-size: 12px; }
   .brand img { width: 30px; height: 30px; }
   .header-download { min-height: 38px; margin-left: auto; padding-inline: 12px; font-size: 11px; }
+  .header-actions { gap: 6px; }
+  .language-toggle button { min-width: 28px; min-height: 30px; padding-inline: 4px; }
+  .header-download { padding-inline: 8px; font-size: 10px; }
   .main-nav { gap: 10px; font-size: 12px; }
   .hero { padding-top: 45px; padding-bottom: 58px; gap: 28px; }
   .eyebrow { margin-bottom: 15px; font-size: 11px; }
@@ -236,6 +252,11 @@ img { display: block; max-width: 100%; }
   .footer-note { font-size: 11px; }
   .footer-links { grid-column: 1; gap: 18px; font-size: 11px; }
   .footer-inner small { grid-column: 1; grid-row: auto; font-size: 11px; }
+}
+
+@media (max-width: 360px) {
+  html { scroll-padding-top: 160px; }
+  .main-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
