@@ -9,7 +9,7 @@ Pillow==13.0.0
 psutil==7.0.0
 pygame==2.6.1
 pystray==0.19.5
-pywebview==6.1
+pywebview==6.2.1
 requests==2.33.0
 tomli-w==1.2.0
 uvicorn==0.41.0
