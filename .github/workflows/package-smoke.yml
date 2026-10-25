@@ -136,7 +136,7 @@ jobs:
 
       - name: Upload package diagnostics on failure
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: OTP-LOL-package-smoke-diagnostics-${{ github.run_id }}
           path: |
