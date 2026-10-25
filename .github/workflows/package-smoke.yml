@@ -73,6 +73,31 @@ jobs:
             throw "Expected onedir executable was not produced."
           }
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build and verify installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path -LiteralPath $iscc -PathType Leaf)) { throw "Inno Setup compiler was not found." }
+          $version = python -c "from src.config import CURRENT_VERSION; print(CURRENT_VERSION)"
+          if ($LASTEXITCODE -ne 0) { throw "Could not read the application version." }
+          & $iscc "/DAppVersion=$($version.Trim())" "/DBuildRoot=$(Get-Location)" "installer\OTP-LOL.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed." }
+          $installerPath = "release\OTP-LOL-Setup.exe"
+          if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf)) {
+            throw "Expected installer executable was not produced."
+          }
+          $installer = Get-Item -LiteralPath $installerPath
+          if ($installer.Length -le 0) { throw "Installer executable is empty." }
+          $signature = [System.IO.File]::ReadAllBytes($installerPath)
+          if ($signature.Length -lt 2 -or $signature[0] -ne 0x4D -or $signature[1] -ne 0x5A) {
+            throw "Installer output does not have a Windows executable signature."
+          }
+
       - name: Run packaged diagnostics without touching existing settings
         shell: pwsh
         run: |
@@ -118,4 +143,5 @@ jobs:
             build/**
             dist/**
             OTP LOL/**
+            release/**
           if-no-files-found: ignore
