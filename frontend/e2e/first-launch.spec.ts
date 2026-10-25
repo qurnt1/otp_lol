@@ -58,14 +58,13 @@ test("a fresh profile shows first-run defaults and keeps a configured preset aft
   expect((await savedPreset).ok()).toBe(true);
   await expect(editor.locator(".champion-choice")).toContainText("Annie");
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.champion).toBe("Annie");
-  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(true);
-  await expect(onboarding).toBeHidden();
-
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(false);
   await page.getByRole("button", { name: "Fermer" }).last().click();
+  await expect(onboarding).toBeVisible();
   await page.goto("/#dashboard");
   await page.reload();
   await expect(page.locator(".priority-card").nth(0)).toContainText("Annie");
-  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
 
   const profileDir = firstApp.stateDir;
   const firstShutdown = await firstApp.stop({ retainState: true });
@@ -85,7 +84,7 @@ test("a fresh profile shows first-run defaults and keeps a configured preset aft
     try {
       await restartedPage.goto("/#dashboard");
       await expect.poll(async () => readSettings(restartedPage)).toMatchObject({
-        onboarding_completed: true,
+        onboarding_completed: false,
         presets_enabled: false,
       });
       await expect.poll(async () => readPresets(restartedPage)).toMatchObject({
@@ -94,7 +93,7 @@ test("a fresh profile shows first-run defaults and keeps a configured preset aft
         slots: { pick_1: { champion: "Annie" } },
       });
       await expect(restartedPage.locator(".priority-card").nth(0)).toContainText("Annie");
-      await expect(restartedPage.getByRole("complementary", { name: "Des exemples sont prêts." })).toHaveCount(0);
+      await expect(restartedPage.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
     } finally {
       await context.close();
     }

@@ -142,7 +142,15 @@ PRESET_ENABLED_QUEUE_IDS: set[int] = {
 PRACTICE_TOOL_GAME_MODE: str = "PRACTICETOOL"
 
 QUEUE_ID_LABELS: Dict[int, str] = {
-    0: "Practice Tool",
+    0: "Outil d’entraînement",
+    400: "Draft classique",
+    420: "Classée solo/duo",
+    430: "Normal classique",
+    440: "Classée flexible",
+    490: "Quickplay",
+    700: "Clash",
+    3100: "Outil d’entraînement",
+    3110: "Outil d’entraînement",
     450: "ARAM",
     900: "URF",
     1700: "Arena",

@@ -14,6 +14,8 @@ class RuntimeSnapshot:
     riot_id: str | None
     region: str
     queue_id: int
+    queue_name: str | None
+    preset_queue_supported: bool | None
     assigned_position: str
     presets_enabled: bool
     auto_accept_enabled: bool
@@ -29,6 +31,8 @@ class RuntimeSnapshot:
             "riot_id": self.riot_id,
             "region": self.region,
             "queue_id": self.queue_id,
+            "queue_name": self.queue_name,
+            "preset_queue_supported": self.preset_queue_supported,
             "assigned_position": self.assigned_position,
             "presets_enabled": self.presets_enabled,
             "auto_accept_enabled": self.auto_accept_enabled,

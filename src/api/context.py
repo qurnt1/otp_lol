@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import os
 from dataclasses import dataclass, field
 from threading import RLock
@@ -30,6 +31,19 @@ from ..lcu.runtime import LcuRuntime
 from ..lcu.static_data import LcuStaticDataService
 from ..services.network_status import NetworkStatusService
 from ..services.urls import is_valid_detected_account
+
+logger = logging.getLogger(__name__)
+
+_PRESET_RESULT_ACTIONS = frozenset(
+    {
+        "prepick_confirmed",
+        "ban_confirmed",
+        "pick_confirmed",
+        "summoners_applied",
+        "skin_selected",
+        "runes_applied",
+    }
+)
 
 
 @dataclass
@@ -222,6 +236,12 @@ class ApplicationContext:
 
     def _handle_runtime_event(self, event_type: str, _data: Any = None) -> None:
         self.diagnostics.record_event(f"otp-lol/{event_type}", "Update", _data)
+        if (
+            event_type == "status"
+            and isinstance(_data, dict)
+            and _data.get("action") in _PRESET_RESULT_ACTIONS
+        ):
+            self._complete_preset_onboarding()
         if event_type == "connected":
             self._cancel_shutdown_check()
             if self._connected:
@@ -242,6 +262,20 @@ class ApplicationContext:
                         self._request_shutdown_if_league_stopped()
                 elif self._window is not None:
                     self._window.show()
+
+    def _complete_preset_onboarding(self) -> None:
+        """Persist onboarding completion after the first confirmed preset action."""
+        if self.get_params().get("onboarding_completed"):
+            return
+        try:
+            updated = self.persist_parameters({"onboarding_completed": True})
+        except OSError:
+            logger.exception("Unable to save onboarding completion after a preset action")
+            return
+        if updated is None:
+            logger.warning("Unable to save onboarding completion after a preset action")
+            return
+        self.broker.publish("settings_updated", {"keys": ["onboarding_completed"]})
 
     @classmethod
     def from_system(cls) -> "ApplicationContext":
@@ -350,7 +384,6 @@ class ApplicationContext:
             if selected_champion is not None:
                 slot_number = PICK_SLOT_ORDER.index(slot_key) + 1
                 candidate[f"selected_pick_{slot_number}"] = selected_champion
-            candidate["onboarding_completed"] = True
             candidate = normalize_parameters(candidate)
             changed_keys = set(values)
             if selected_champion is not None:

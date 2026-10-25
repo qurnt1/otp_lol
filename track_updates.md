@@ -2,6 +2,7 @@
 
 ## Version 11.1
 
+- fix: keep preset onboarding open until a confirmed action and show queue compatibility on the Dashboard
 - fix: stop rune-page reconciliation when Auto-Summs is disabled, including after asynchronous page loading
 - fix: validate the merged preset state under the settings persistence lock to reject conflicting concurrent edits
 - fix: align app and installer WebView2 checks on the Evergreen runtime and valid registry versions

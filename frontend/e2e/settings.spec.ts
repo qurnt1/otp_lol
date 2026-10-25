@@ -688,7 +688,7 @@ test("reset restores starter presets and a dismissible first-run message", async
   await expect(onboarding).toBeHidden();
 });
 
-test("first-run onboarding closes permanently after a real preset edit", async ({ page }) => {
+test("first-run onboarding stays open after edits and automation activation", async ({ page }) => {
   await setupApplication(page, { onboardingCompleted: false });
   await page.goto("/#dashboard");
   const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
@@ -698,12 +698,35 @@ test("first-run onboarding closes permanently after a real preset edit", async (
   const editor = page.getByRole("dialog", { name: "Modifier la priorité 1" });
   await editor.getByRole("radio", { name: "Fixe" }).click();
   await expect.poll(async () => (await readPresets(page)).slots.pick_1.skin_mode).toBe("fixed");
-  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(false);
+  await page.getByRole("button", { name: "Fermer" }).last().click();
+  await expect(onboarding).toBeVisible();
 
   await page.goto("/#dashboard");
-  await expect(onboarding).toBeHidden();
+  const master = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  await expect(master).toHaveAttribute("aria-checked", "false");
+  await master.click();
+  await expect(master).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(false);
+  await expect(onboarding).toBeVisible();
   await page.reload();
-  await expect(onboarding).toBeHidden();
+  await expect(onboarding).toBeVisible();
+});
+
+test("onboarding reste utile et visible quand le client League est absent", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    onboardingCompleted: false,
+    settings: { close_app_on_lol_exit: false },
+  });
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await page.goto("/#dashboard");
+
+  const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
+  await expect(onboarding).toBeVisible();
+  await expect(onboarding).toContainText("même si League est fermé");
+  await expect(page.getByRole("status", { name: "FILE ET PRESETS" })).toContainText("Client League non détecté");
 });
 
 test("[FE-ONBOARD-DISMISS-RETRY-01] a rejected welcome-banner dismissal is restored and can be retried", async ({ page }) => {
@@ -743,7 +766,7 @@ test("[FE-ONBOARD-DISMISS-RETRY-01] a rejected welcome-banner dismissal is resto
   await expect(onboarding).toHaveCount(0);
 });
 
-test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masque son CTA", async ({ page }) => {
+test("importer un pick partiel conserve l’onboarding jusqu’à un résultat ou une action explicite", async ({ page }) => {
   await setupApplication(page, { onboardingCompleted: false });
   await page.goto("/#settings/advanced");
 
@@ -757,7 +780,7 @@ test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masqu
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify({
       config_schema_version: 6,
-      onboarding_completed: false,
+      onboarding_completed: true,
       selected_pick_1: "Garen",
       selected_pick_2: "",
       selected_pick_3: "",
@@ -765,7 +788,7 @@ test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masqu
   });
   expect((await importResponse).ok()).toBe(true);
   await expect.poll(async () => (await readSettings(page))).toMatchObject({
-    onboarding_completed: true,
+    onboarding_completed: false,
     selected_pick_1: "Garen",
     selected_pick_2: "",
     selected_pick_3: "",
@@ -776,8 +799,8 @@ test("[DASH-11] importer un pick partiel marque l’onboarding terminé et masqu
   await expect(page.locator(".priority-card").nth(0)).toContainText("Garen");
   await expect(page.locator(".priority-card").nth(1)).toContainText("Configurer un champion");
   await expect(page.locator(".priority-card").nth(2)).toContainText("Configurer un champion");
-  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Configurer mes priorités" })).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "Des exemples sont prêts." })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Configurer mes priorités" })).toBeVisible();
   await expect.poll(async () => (await readPresets(page)).slots).toMatchObject({
     pick_1: { champion: "Garen" },
     pick_2: { champion: "" },

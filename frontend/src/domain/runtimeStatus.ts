@@ -1,4 +1,5 @@
 import { fr } from "../content/fr";
+import { queueStatusCopy } from "../content/queueStatus";
 import { roleLabel } from "./runtime";
 
 type StatusParams = Record<string, unknown>;
@@ -13,7 +14,7 @@ const STATUS_MESSAGES: Record<string, (params: StatusParams) => string> = {
   login_detected: () => fr.runtime.messages.loginDetected,
   match_accepted: () => fr.runtime.messages.matchAccepted,
   play_again_succeeded: () => fr.runtime.messages.playAgainSucceeded,
-  presets_disabled: () => fr.runtime.messages.presetsDisabled,
+  presets_disabled: (params) => queueStatusCopy.disabledToast(textParam(params, "queue_name") || "cette file inconnue"),
   role_detected: (params) => fr.runtime.messages.roleDetected(roleLabel(textParam(params, "role"))),
   prepick_waiting: () => fr.runtime.messages.prepickWaiting,
   prepick_timed_out: () => fr.runtime.messages.prepickTimedOut,

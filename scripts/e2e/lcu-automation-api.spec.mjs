@@ -241,8 +241,18 @@ test("Auto-Pick does not run in a queue where presets are unsupported", async ({
 
     await activatePick(app, page.request, [86], { session: unsupportedQueueSession });
     await expect.poll(() => runtimeEvents.slice(eventStart).some((event) => (
-      event.type === "status" && event.data?.action === "presets_disabled"
+      event.type === "status"
+      && event.data?.action === "presets_disabled"
+      && event.data?.params?.queue_id === 450
+      && event.data?.params?.queue_name === "ARAM"
     ))).toBe(true);
+
+    const runtimeResponse = await page.request.get(`${app.baseURL}/api/runtime`);
+    expect(await runtimeResponse.json()).toMatchObject({
+      queue_id: 450,
+      queue_name: "ARAM",
+      preset_queue_supported: false,
+    });
 
     const state = await app.readLcuState();
     expect(state.session.gameConfig.queueId).toBe(450);

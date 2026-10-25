@@ -1931,6 +1931,10 @@ export interface components {
             region: string;
             /** Queue Id */
             queue_id: number;
+            /** Queue Name */
+            queue_name: string | null;
+            /** Preset Queue Supported */
+            preset_queue_supported: boolean | null;
             /** Assigned Position */
             assigned_position: string;
             /** Presets Enabled */

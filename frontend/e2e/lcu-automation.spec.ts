@@ -91,6 +91,48 @@ test("[FE-LCU-AUTO-PICK-OFF-01] désactiver Auto-Pick empêche le verrouillage d
     .not.toContain("Champion automatically locked in: Garen.");
 });
 
+test("une première sélection automatisée confirmée termine l’onboarding", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    onboardingCompleted: false,
+    phase: "ChampSelect",
+    lcuState: {
+      static_data_online: true,
+      pickable_champion_ids: [86],
+      session: champSelectSession([]),
+    },
+  });
+  await page.goto("/#dashboard");
+  const onboarding = page.getByRole("complementary", { name: "Des exemples sont prêts." });
+  await expect(onboarding).toBeVisible();
+  await page.getByRole("switch", { name: "Auto-Pick" }).click();
+  await expect.poll(async () => (await readSettings(page)).auto_pick_enabled).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(false);
+  await expect(onboarding).toBeVisible();
+
+  const actionId = 619;
+  const session = champSelectSession([[{
+    actorCellId: 1,
+    type: "pick",
+    id: actionId,
+    isInProgress: true,
+    completed: false,
+    championId: 0,
+  }]]);
+  await app.configureLcuState({ session, pickable_champion_ids: [86] });
+  const event = await app.emitLcuEvent("/lol-champ-select/v1/session", session);
+  await app.waitForLcuEventCompletion(event.id);
+  await expect.poll(() => app.lcuRequests.some((request) =>
+    request.method === "PATCH"
+    && request.path === `/lol-champ-select/v1/session/actions/${actionId}`
+    && requestBody(request.body).completed === true
+    && requestBody(request.body).championId === 86,
+  )).toBe(true);
+  await expect.poll(async () => (await readSettings(page)).onboarding_completed).toBe(true);
+  await expect(onboarding).toBeHidden();
+});
+
 test("[FE-LCU-AUTO-BAN-OFF-01] désactiver Auto-Ban empêche le verrouillage d’un ban actif", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,

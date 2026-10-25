@@ -54,12 +54,7 @@ from ..config import (
     EP_READY_CHECK,
     EP_SESSION,
     EP_SESSION_TIMER,
-    PRACTICE_TOOL_GAME_MODE,
-    PRESET_ENABLED_QUEUE_IDS,
 )
-from ..services.history import log_history_event
-from ..services.profile_config import build_effective_profile_config
-from ..services.urls import is_valid_riot_id
 from ..config.regions import (
     RegionIdentity,
     detect_account_routing,
@@ -67,6 +62,10 @@ from ..config.regions import (
     normalize_provider_region,
     platform_to_regional_routing,
 )
+from ..domain.queue_support import presets_supported_for_queue, queue_label
+from ..services.history import log_history_event
+from ..services.profile_config import build_effective_profile_config
+from ..services.urls import is_valid_riot_id
 from .champ_select import ChampSelectMixin
 from .game_state import GameState
 
@@ -759,6 +758,7 @@ class WebSocketManager(ChampSelectMixin):
         self.state.routing_source = ""
         self.state.last_reported_summoner = None
         self.state.current_queue_id = 0
+        self.state.current_game_mode = ""
         self.state.reset_between_games()
 
     def _reset_ready_check_cycle(self) -> None:
@@ -1095,11 +1095,19 @@ class WebSocketManager(ChampSelectMixin):
             queue_id = int(game_config.get("queueId") or 0)
             game_mode = str(game_config.get("gameMode") or "")
             logging.info("[LOBBY] queueId=%s gameMode=%r", queue_id, game_mode)
-            if queue_id == self.state.current_queue_id:
+            previous_queue = (self.state.current_queue_id, self.state.current_game_mode)
+            if previous_queue == (queue_id, game_mode):
                 return
             self.state.current_queue_id = queue_id
-            if queue_id not in PRESET_ENABLED_QUEUE_IDS:
-                self._notify_status("presets_disabled", level="GAMEMODE")
+            self.state.current_game_mode = game_mode
+            self._notify_event("queue_update", {"queue_id": queue_id, "game_mode": game_mode})
+            if presets_supported_for_queue(queue_id, game_mode) is False:
+                self._notify_status(
+                    "presets_disabled",
+                    level="GAMEMODE",
+                    queue_id=queue_id,
+                    queue_name=queue_label(queue_id, game_mode),
+                )
                 logging.info("Queue %s — presets disabled during lobby phase.", queue_id)
         except Exception as e:
             logging.debug("Error polling lobby for queue id: %s", e)

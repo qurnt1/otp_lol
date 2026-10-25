@@ -33,7 +33,8 @@ import random
 from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set
 
-from ..config import EP_PICKABLE, PRACTICE_TOOL_GAME_MODE, PRESET_ENABLED_QUEUE_IDS, SUMMONER_SPELL_MAP
+from ..config import EP_PICKABLE, PRACTICE_TOOL_GAME_MODE, SUMMONER_SPELL_MAP
+from ..domain.queue_support import presets_supported_for_queue, queue_label
 from ..services.skin_modes import get_effective_skin_mode_for_slot
 
 if TYPE_CHECKING:
@@ -212,12 +213,21 @@ class ChampSelectMixin:
 
         game_config = session.get("gameConfig") or {}
         queue_id = int(game_config.get("queueId") or 0)
-        game_mode = str(game_config.get("gameMode") or "")
+        game_mode = str(game_config.get("gameMode") or self.state.current_game_mode or "")
 
         # Practice Tool and some custom games expose queueId=0 in the session
         # even though the lobby previously reported a real queue id.  Fall back
         # to the value captured during the Lobby/Matchmaking phase.
-        effective_queue_id = queue_id or self.state.current_queue_id
+        effective_queue_id = (
+            queue_id
+            if game_mode.strip().upper() == PRACTICE_TOOL_GAME_MODE
+            else queue_id or self.state.current_queue_id
+        )
+        previous_queue = (self.state.current_queue_id, self.state.current_game_mode)
+        self.state.current_queue_id = effective_queue_id
+        self.state.current_game_mode = game_mode
+        if previous_queue != (effective_queue_id, game_mode):
+            self._notify_event("queue_update", {"queue_id": effective_queue_id, "game_mode": game_mode})
 
         if not self.state.non_preset_mode_notified:
             logging.info(
@@ -227,15 +237,17 @@ class ChampSelectMixin:
                 effective_queue_id,
             )
 
-        presets_allowed = (
-            effective_queue_id in PRESET_ENABLED_QUEUE_IDS
-            or game_mode == PRACTICE_TOOL_GAME_MODE
-        )
+        presets_allowed = presets_supported_for_queue(effective_queue_id, game_mode) is True
         if not presets_allowed:
             if not self.state.non_preset_mode_notified:
                 self.state.non_preset_mode_notified = True
                 logging.info("Queue %s — presets disabled for this session.", effective_queue_id)
-                self._notify_status("presets_disabled", level="GAMEMODE")
+                self._notify_status(
+                    "presets_disabled",
+                    level="GAMEMODE",
+                    queue_id=effective_queue_id,
+                    queue_name=queue_label(effective_queue_id, game_mode),
+                )
             return
 
         local_id = session.get("localPlayerCellId")

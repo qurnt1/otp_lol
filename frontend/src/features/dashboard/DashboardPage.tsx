@@ -5,10 +5,11 @@ import { Activity, AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { api } from "../../api/client";
 import { Button } from "../../components/ui/button";
 import { fr } from "../../content/fr";
+import { queueStatusCopy } from "../../content/queueStatus";
 import { cn } from "../../lib/cn";
 import { phaseLabel } from "../../domain/runtime";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { Champion, DashboardAction, Settings, SettingsPatch } from "../../types/api";
+import type { Champion, DashboardAction, RuntimeSnapshot, Settings, SettingsPatch } from "../../types/api";
 import { presetSlotKeys, type PresetSlotKey } from "../../domain/presets";
 import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
 import { PresetOnboardingBanner } from "../automation/PresetOnboardingBanner";
@@ -50,6 +51,61 @@ function AutomationStatus() {
     <Icon size={14} aria-hidden="true" />
     <span className="automation-status-message">{status.message}</span>
     {relative && <time dateTime={status.timestamp}>{relative}</time>}
+  </section>;
+}
+
+function QueueAutomationStatus({ runtime }: { runtime: RuntimeSnapshot | null }) {
+  const copy = queueStatusCopy;
+  const knownQueue = Boolean(runtime?.queue_name);
+  const queue = runtime?.queue_name || (runtime?.queue_id ? `File ${runtime.queue_id}` : "");
+  let title: string = copy.clientMissing;
+  let detail: string = copy.clientMissingDetail;
+  let state: string = copy.stateWaiting;
+  let tone: "warning" | "info" | "success" = "warning";
+  let Icon = AlertTriangle;
+
+  if (runtime?.connected && runtime.preset_queue_supported === false) {
+    title = copy.unsupported(queue);
+    detail = copy.unsupportedDetail;
+    state = copy.stateUnsupported;
+  } else if (runtime?.connected && runtime.preset_queue_supported === true) {
+    if (!runtime.presets_enabled) {
+      title = copy.paused(queue);
+      detail = copy.pausedDetail;
+      state = copy.statePaused;
+      tone = "info";
+      Icon = Info;
+    } else if (runtime.phase === "ChampSelect") {
+      title = copy.active(queue);
+      detail = copy.activeDetail;
+      state = copy.stateActive;
+      tone = "success";
+      Icon = CheckCircle2;
+    } else {
+      title = copy.available(queue);
+      detail = copy.availableDetail;
+      state = copy.stateAvailable;
+      tone = "info";
+      Icon = Info;
+    }
+  } else if (runtime?.connected && runtime.phase === "ChampSelect") {
+    title = copy.unknownQueue;
+    detail = copy.unknownQueueDetail;
+    state = copy.stateUnknown;
+  } else if (runtime?.connected && !knownQueue) {
+    title = copy.waitingQueue;
+    detail = copy.waitingQueueDetail;
+    state = copy.stateWaiting;
+  } else if (runtime?.connected) {
+    title = copy.unknownQueue;
+    detail = copy.unknownQueueDetail;
+    state = copy.stateUnknown;
+  }
+
+  return <section className={cn("queue-status-card", `is-${tone}`)} aria-label={copy.label} role="status" aria-live="polite">
+    <Icon size={16} aria-hidden="true" />
+    <div className="queue-status-copy"><span>{copy.label}</span><strong>{title}</strong><p>{detail}</p></div>
+    <span className="queue-status-pill">{state}</span>
   </section>;
 }
 
@@ -124,6 +180,7 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     <div className="page-heading dashboard-heading"><h1>{fr.dashboard.title}</h1></div>
     <PresetOnboardingBanner />
     <div className="phase-strip" role="status" aria-live="polite"><Activity size={14} aria-hidden="true" /><span>{fr.dashboard.currentPhase}</span><strong>{currentPhase}</strong></div>
+    <QueueAutomationStatus runtime={runtime} />
     <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">

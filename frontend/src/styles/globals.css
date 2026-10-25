@@ -127,6 +127,15 @@ img { display: block; }
 .phase-strip { display: flex; align-items: center; gap: 9px; min-height: 36px; margin-bottom: 15px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 10px; }
 .phase-strip svg { color: var(--primary); }
 .phase-strip strong { overflow: hidden; margin-left: auto; color: var(--text); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.queue-status-card { display: flex; align-items: center; gap: 10px; min-height: 62px; margin-bottom: 15px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--primary); background: var(--surface); }
+.queue-status-card.is-warning { border-color: rgb(225 176 92 / .36); color: var(--gold); }
+.queue-status-card.is-success { border-color: rgb(89 201 169 / .32); color: var(--success); }
+.queue-status-copy { display: grid; gap: 2px; min-width: 0; }
+.queue-status-copy > span { color: var(--subtle); font-size: 8px; font-weight: 700; letter-spacing: .08em; }
+.queue-status-copy strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.queue-status-copy p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.4; }
+.queue-status-card > svg { flex: 0 0 auto; }
+.queue-status-pill { margin-left: auto; flex: 0 0 auto; padding: 4px 7px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 8px; font-weight: 650; white-space: nowrap; }
 .automation-status { display: flex; align-items: center; gap: 8px; min-height: 34px; margin-bottom: 15px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: var(--surface); font-size: 10px; }
 .automation-status svg { flex: 0 0 auto; color: var(--primary); }
 .automation-status.is-success svg { color: var(--success); }

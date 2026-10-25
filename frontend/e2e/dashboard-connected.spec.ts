@@ -17,6 +17,56 @@ test("dashboard connecté affiche l’identité et la phase LCU sans compte sync
   await expect(page.locator(".priority-mode-select")).toHaveCount(0);
 });
 
+test("dashboard indique la compatibilité de la file et l’attente du client League", async ({ page }) => {
+  const { app } = await setupApplication(page, {
+    connected: true,
+    configured: true,
+    phase: "ChampSelect",
+    settings: { close_app_on_lol_exit: false },
+  });
+  await page.goto("/#dashboard");
+  const queueStatus = page.getByRole("status", { name: "FILE ET PRESETS" });
+  await expect(queueStatus).toContainText("Classée solo/duo · sélection en cours");
+  await expect(queueStatus).toContainText("Maître activé");
+
+  const unsupportedSession = {
+    gameConfig: { queueId: 450, gameMode: "ARAM" },
+    localPlayerCellId: 1,
+    myTeam: [{ cellId: 1, summonerId: 24680135, assignedPosition: "TOP", championId: 0 }],
+    actions: [],
+    bans: { myTeamBans: [], theirTeamBans: [] },
+  };
+  await app.configureLcuState({ phase: "ChampSelect", session: unsupportedSession });
+  const unsupportedEvent = await app.emitLcuEvent("/lol-champ-select/v1/session", unsupportedSession);
+  await app.waitForLcuEventCompletion(unsupportedEvent.id);
+  await expect.poll(async () => readRuntime(page)).toMatchObject({
+    queue_id: 450,
+    queue_name: "ARAM",
+    preset_queue_supported: false,
+  });
+  await expect(queueStatus).toContainText("ARAM · presets suspendus");
+  await expect(queueStatus).toContainText("Les automatisations liées aux presets ne s’exécutent pas sur cette file.");
+
+  const practiceToolSession = {
+    ...unsupportedSession,
+    gameConfig: { queueId: 0, gameMode: "PRACTICETOOL" },
+  };
+  await app.configureLcuState({ phase: "ChampSelect", session: practiceToolSession });
+  const practiceToolEvent = await app.emitLcuEvent("/lol-champ-select/v1/session", practiceToolSession);
+  await app.waitForLcuEventCompletion(practiceToolEvent.id);
+  await expect.poll(async () => readRuntime(page)).toMatchObject({
+    queue_id: 0,
+    queue_name: "Outil d’entraînement",
+    preset_queue_supported: true,
+  });
+  await expect(queueStatus).toContainText("Outil d’entraînement · sélection en cours");
+
+  await app.configureLcuConnection({ online: false });
+  await expect.poll(async () => (await readRuntime(page)).connected).toBe(false);
+  await expect(queueStatus).toContainText("Client League non détecté");
+  await expect(queueStatus).toContainText("En attente");
+});
+
 test("le statut Ready Check provient de l’événement LCU et affiche sa gravité", async ({ page }) => {
   const { app } = await setupApplication(page, {
     connected: true,

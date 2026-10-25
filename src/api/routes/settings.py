@@ -17,7 +17,7 @@ from ...config import (
     build_pick_slot_defaults,
 )
 from ...domain.hotkeys import validate_hotkey_pair
-from ...domain.presets import PRESET_SETTING_KEYS, validate_preset_invariants
+from ...domain.presets import validate_preset_invariants
 from ...services.profile_config import build_effective_profile_config
 from ..schemas import (
     PresetSlotPatch,
@@ -62,7 +62,6 @@ def read_settings(request: Request) -> SettingsResponse:
 async def patch_settings(request: Request, payload: SettingsPatch) -> SettingsResponse:
     context = _context(request)
     values = payload.model_dump(exclude_unset=True)
-    _complete_onboarding_for_edit(context, values)
     _validate_settings_candidate(context, values)
     try:
         updated = await asyncio.to_thread(
@@ -96,7 +95,8 @@ async def import_settings(request: Request, payload: SettingsImport) -> Settings
     values = payload.model_dump(exclude_unset=True)
     for key in LOCAL_ACCOUNT_KEYS:
         values.pop(key, None)
-    _complete_onboarding_for_edit(context, values)
+    # Onboarding is local progress; importing presets must not dismiss it.
+    values.pop("onboarding_completed", None)
     candidate = context.get_params()
     candidate.update(values)
     _validate_settings_candidate(context, values)
@@ -211,9 +211,3 @@ async def patch_preset(request: Request, slot_key: str, payload: PresetSlotPatch
         raise HTTPException(status_code=500, detail="Unable to save settings")
     context.broker.publish("settings_updated", {"keys": ["pick_slots", slot_key]})
     return read_presets(request)
-
-
-def _complete_onboarding_for_edit(context: Any, values: dict[str, Any]) -> None:
-    """Keep onboarding closed after edits or dismissal, except through reset."""
-    if PRESET_SETTING_KEYS.intersection(values) or context.get_params().get("onboarding_completed"):
-        values["onboarding_completed"] = True

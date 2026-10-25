@@ -4,7 +4,7 @@ export const presetAutomationCopy = {
   masterDisabled: "Tes presets restent configurés, mais aucune action automatique liée aux presets n'est exécutée.",
   masterRequired: "Active d'abord les automatisations des presets.",
   onboardingTitle: "Des exemples sont prêts.",
-  onboardingMessage: "Personnalise les trois priorités avant d'activer les automatisations.",
+  onboardingMessage: "Configure tes priorités, puis active les presets quand tu es prêt. Ce repère reste affiché jusqu’à la première action réussie ou jusqu’à ce que tu le masques, même si League est fermé.",
   onboardingAction: "Configurer mes priorités",
   dismissOnboarding: "Masquer le message de bienvenue",
   resetPresets: "Restaurer les presets d'exemple",

@@ -22,7 +22,7 @@ Uses:
 - Standard library: dataclasses, threading, typing
 """
 
-from dataclasses import dataclass, field, fields, MISSING
+from dataclasses import MISSING, dataclass, field, fields
 from threading import Lock
 from typing import Optional, Set
 
@@ -46,6 +46,7 @@ class GameState:
     last_game_start_notify_ts: float = 0.0
     last_reported_summoner: Optional[str] = None
     current_queue_id: int = 0
+    current_game_mode: str = ""
     lobby_presets_warning_shown: bool = field(default=False, metadata={"transient": True})
     cache_lock: Lock = field(default_factory=Lock, repr=False)
 

@@ -193,6 +193,8 @@ class RuntimeSnapshotResponse(BaseModel):
     riot_id: str | None
     region: str
     queue_id: int
+    queue_name: str | None
+    preset_queue_supported: bool | None
     assigned_position: str
     presets_enabled: bool
     auto_accept_enabled: bool
