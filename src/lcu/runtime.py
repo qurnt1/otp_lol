@@ -122,9 +122,7 @@ class LcuRuntime:
             queue_id = 0
         game_mode = str(state.current_game_mode or "")
         queue_support = (
-            presets_supported_for_queue(queue_id, game_mode)
-            if self.is_active
-            else None
+            presets_supported_for_queue(queue_id, game_mode) if self.is_active else None
         )
         return RuntimeSnapshot(
             version=CURRENT_VERSION,

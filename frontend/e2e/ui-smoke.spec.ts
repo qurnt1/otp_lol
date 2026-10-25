@@ -1,10 +1,6 @@
 import { expect, setupApplication, test } from "./helpers";
 
-const isDesktopBridgeCspViolation = (error: string) =>
-  error.includes("Executing inline script violates the following Content Security Policy directive")
-  && error.includes("script-src 'self'");
-
-test("main views remain navigable with only the known desktop bridge CSP violation", async ({ page }) => {
+test("main views remain navigable without browser errors", async ({ page }) => {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
   const failedRequests: string[] = [];
@@ -50,7 +46,7 @@ test("main views remain navigable with only the known desktop bridge CSP violati
   await app.waitForLcuRequest("POST", "/lol-matchmaking/v1/ready-check/accept");
   await page.goto("/#history");
   await expect(page.getByText("Match automatically accepted.")).toBeVisible();
-  expect(consoleErrors.filter((error) => !isDesktopBridgeCspViolation(error))).toEqual([]);
+  expect(consoleErrors).toEqual([]);
   expect(pageErrors).toEqual([]);
   expect(failedRequests).toEqual([]);
 });
@@ -59,7 +55,6 @@ test("desktop bridge bootstrap initializes its flags under the FastAPI CSP", asy
   await setupApplication(page);
   await page.goto("/");
 
-  test.fail(true, "Known product defect: FastAPI CSP script-src 'self' blocks the inline desktop bridge initializer in frontend/index.html.");
   const bridgeFlags = await page.evaluate(() => {
     const current = window as Window & {
       __otpDesktopMode?: boolean;

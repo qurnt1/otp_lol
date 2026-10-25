@@ -852,7 +852,7 @@ for (const scenario of [
     name: "une file sans prise en charge des presets",
     queueId: 450,
     pickableChampionIds: [86],
-    status: "Presets désactivés pour ce mode de partie.",
+    status: "Automatisations de presets suspendues sur ARAM.",
   },
 ]) {
   test(`Auto-Pick explique ${scenario.name} sans modifier l’action LCU`, async ({ page }) => {
