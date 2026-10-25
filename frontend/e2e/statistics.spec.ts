@@ -127,6 +127,72 @@ test("changing the statistics provider persists through FastAPI and rebuilds the
   await expect(page).not.toHaveURL(/#settings/);
 });
 
+test("provider radios support arrow navigation and keep a single tab stop", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#statistics");
+
+  const group = page.getByRole("radiogroup", { name: "Fournisseur" });
+  const radios = group.getByRole("radio");
+  await expect.poll(() => radios.count()).toBeGreaterThan(1);
+  const options = await page.request.get(new URL("/api/catalog/providers", (await page.evaluate(() => window.location.origin))).href).then((response) => response.json());
+  const providerOptions = options.stats as Array<{ id: string; label: string }>;
+  const currentSettings = await readSettings(page);
+  const currentProviderId = currentSettings.preferred_stats_site as string;
+  const selectedIndex = providerOptions.findIndex((provider) => provider.id === currentProviderId);
+  expect(selectedIndex).toBeGreaterThanOrEqual(0);
+  await expect(radios.nth(selectedIndex)).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => await group.locator('[role="radio"][tabindex="0"]').count()).toBe(1);
+  await expect(radios.nth(selectedIndex)).toHaveAttribute("tabindex", "0");
+  for (let index = 0; index < providerOptions.length; index += 1) {
+    if (index !== selectedIndex) await expect(radios.nth(index)).toHaveAttribute("tabindex", "-1");
+  }
+
+  const nextIndex = (selectedIndex + 1) % providerOptions.length;
+  const nextRadio = radios.nth(nextIndex);
+  await radios.nth(selectedIndex).focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(nextRadio).toBeFocused();
+  await expect(nextRadio).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).preferred_stats_site).toBe(providerOptions[nextIndex].id);
+
+  const previousRadio = radios.nth(selectedIndex);
+  await page.keyboard.press("ArrowLeft");
+  await expect(previousRadio).toBeFocused();
+  await expect(previousRadio).toHaveAttribute("aria-checked", "true");
+  await expect.poll(async () => (await readSettings(page)).preferred_stats_site).toBe(currentProviderId);
+});
+
+test("provider radio restores focus to the selected option when a keyboard change fails", async ({ page }) => {
+  await setupApplication(page, { connected: true });
+  await page.goto("/#statistics");
+
+  const group = page.getByRole("radiogroup", { name: "Fournisseur" });
+  const radios = group.getByRole("radio");
+  await expect.poll(async () => await group.locator('[role="radio"][aria-checked="true"]').count()).toBe(1);
+  const selectedIndex = await radios.evaluateAll((elements) => elements.findIndex((element) => element.getAttribute("aria-checked") === "true"));
+  expect(selectedIndex).toBeGreaterThanOrEqual(0);
+  const optionCount = await radios.count();
+  const selected = radios.nth(selectedIndex);
+  const next = radios.nth((selectedIndex + 1) % optionCount);
+  await page.route("**/api/settings", async (route) => {
+    const request = route.request();
+    if (request.method() === "PATCH" && Object.hasOwn(request.postDataJSON() ?? {}, "preferred_stats_site")) {
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ detail: "Injected provider save failure" }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  await selected.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(selected).toBeFocused();
+  await expect(selected).toHaveAttribute("aria-checked", "true");
+  await expect(selected).toHaveAttribute("tabindex", "0");
+  await expect(next).toHaveAttribute("aria-checked", "false");
+  await expect(next).toHaveAttribute("tabindex", "-1");
+});
+
 test("changing the live provider persists without leaving the live route", async ({ page }) => {
   const { app } = await setupApplication(page, { connected: true });
   await page.goto("/#live");

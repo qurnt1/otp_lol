@@ -321,6 +321,26 @@ test("the preset master explains why an empty configuration cannot be activated"
   await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(false);
 });
 
+test("the Automatisations settings section exposes the preset master and keeps its validation message", async ({ page }) => {
+  await setupApplication(page);
+  await page.goto("/#settings/automations");
+
+  const toggle = page.getByRole("switch", { name: "Utiliser les presets en sélection" });
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("switch", { name: "Auto-Pick" })).toBeDisabled();
+  const failedUpdate = page.waitForResponse((response) =>
+    response.request().method() === "PATCH"
+    && new URL(response.url()).pathname === "/api/settings"
+    && response.request().postDataJSON()?.presets_enabled === true
+    && response.status() === 422,
+  );
+  await toggle.click();
+  expect((await failedUpdate).status()).toBe(422);
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByRole("alert")).toHaveText("Configure au moins un champion avant d’activer les presets.");
+  await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(false);
+});
+
 test("the preset master persists changes through the real settings API", async ({ page }) => {
   await setupApplication(page, { configured: true });
   await page.goto("/#dashboard");

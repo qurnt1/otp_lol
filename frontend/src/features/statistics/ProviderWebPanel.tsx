@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, RefreshCw, Settings2 } from "lucide-react";
 
@@ -20,10 +20,14 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   const [providerSaveFailed, setProviderSaveFailed] = useState(false);
   const [providerState, setProviderState] = useState("not_created");
   const [savingProvider, setSavingProvider] = useState(false);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const providerButtonRefs = useRef(new Map<string, HTMLButtonElement>());
+  const pendingProviderFocusRef = useRef<string | null>(null);
   const visibilityRequestRef = useRef<string | null>(null);
   const providerStatus = useQuery({ queryKey: ["provider-window-status", kind], queryFn: api.getProviderWindowStatus, enabled: Boolean(link.data?.available), staleTime: 0, retry: false });
   const providerOptions = kind === "stats" ? providers.data?.stats : providers.data?.live;
   const providerInfo = providerOptions?.find((option) => option.id === link.data?.site);
+  const selectedSite = selectedProviderId ?? link.data?.site;
   const provider = providerInfo?.label ?? link.data?.site ?? "";
   const linkUrl = link.data?.available ? link.data.url : null;
   const externalUrl = linkUrl ?? link.data?.homepage_url ?? null;
@@ -39,6 +43,17 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
     const state = providerStatus.data?.windows?.[kind]?.state;
     if (state) setProviderState(state);
   }, [kind, providerStatus.data]);
+
+  useEffect(() => {
+    setSelectedProviderId(null);
+  }, [link.data?.site]);
+
+  useEffect(() => {
+    if (savingProvider || !pendingProviderFocusRef.current) return;
+    const providerId = pendingProviderFocusRef.current;
+    pendingProviderFocusRef.current = null;
+    providerButtonRefs.current.get(providerId)?.focus();
+  }, [savingProvider]);
 
   useEffect(() => {
     const currentLink = link.data;
@@ -87,8 +102,9 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
   };
 
   const chooseProvider = async (providerId: string) => {
-    if (providerId === link.data?.site || savingProvider) return;
+    if (providerId === selectedSite || savingProvider) return;
     setSavingProvider(true);
+    setSelectedProviderId(providerId);
     setProviderSaveFailed(false);
     try {
       await api.patchSettings({ [settingKey]: providerId });
@@ -97,10 +113,29 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
         queryClient.invalidateQueries({ queryKey: [kind === "stats" ? "stats-link" : "live-stats-link"] }),
       ]);
     } catch {
+      setSelectedProviderId(null);
+      if (pendingProviderFocusRef.current) {
+        pendingProviderFocusRef.current = link.data?.site ?? null;
+      }
       setProviderSaveFailed(true);
     } finally {
       setSavingProvider(false);
     }
+  };
+
+  const navigateProviderOptions = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    if (!providerOptions?.length || savingProvider) return;
+    const direction = event.key === "ArrowRight" || event.key === "ArrowDown"
+      ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? -1
+        : 0;
+    if (!direction) return;
+    event.preventDefault();
+    const nextIndex = (index + direction + providerOptions.length) % providerOptions.length;
+    const nextProvider = providerOptions[nextIndex];
+    pendingProviderFocusRef.current = nextProvider.id;
+    void chooseProvider(nextProvider.id);
   };
 
   const openExternal = async () => {
@@ -140,7 +175,10 @@ export function ProviderWebPanel({ kind }: { kind: "stats" | "live" }) {
       {kind === "live" && !runtime?.connected && link.data.account_source === "saved" && <p className="statistics-note" role="status">{fr.live.offlineSavedProfile}</p>}
       <section className="surface statistics-summary" aria-label={copy.title}>
         <div className="statistics-summary-copy"><span className="section-label">{copy.provider}</span><div className="provider-choice-list" role="radiogroup" aria-label={copy.provider}>
-          {providerOptions?.map((option) => <button key={option.id} className={`provider-choice ${option.id === link.data?.site ? "is-selected" : ""}`} type="button" role="radio" aria-checked={option.id === link.data?.site} disabled={savingProvider} onClick={() => void chooseProvider(option.id)}><img src={option.logo_url} alt="" aria-hidden="true" />{option.label}</button>)}
+          {providerOptions?.map((option, index) => {
+            const selected = option.id === selectedSite;
+            return <button key={option.id} ref={(node) => { if (node) providerButtonRefs.current.set(option.id, node); else providerButtonRefs.current.delete(option.id); }} className={`provider-choice ${selected ? "is-selected" : ""}`} type="button" role="radio" aria-checked={selected} tabIndex={selected || (!selectedSite && index === 0) ? 0 : -1} disabled={savingProvider} onKeyDown={(event) => navigateProviderOptions(event, index)} onClick={() => void chooseProvider(option.id)}><img src={option.logo_url} alt="" aria-hidden="true" />{option.label}</button>;
+          })}
         </div>{providerSaveFailed && <small className="inline-error" role="alert">{fr.settings.failed}</small>}</div>
         <div className="statistics-summary-copy"><span className="section-label">{copy.account}</span><strong>{copy.accountSource[link.data.account_source]}</strong></div>
         {link.data.available && link.data.riot_id && <div className="statistics-summary-copy"><span className="section-label">{copy.profile}</span><strong>{link.data.riot_id}</strong></div>}

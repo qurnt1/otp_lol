@@ -262,6 +262,7 @@ test("Dashboard quick actions expose only valid destinations", async ({ page }) 
   ] as const) {
     const link = quickActions.getByRole("link", { name: label });
     await expect(link).toHaveAttribute("href", route);
+    if (label === "Raccourcis clavier") await expect(link).not.toContainText("Alt+C");
     await link.click();
     await expect(page).toHaveURL(new RegExp(`${route}$`));
     await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();

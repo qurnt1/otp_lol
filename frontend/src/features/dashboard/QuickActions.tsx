@@ -8,6 +8,6 @@ export function QuickActions() {
     <a className="quick-link" href="#live">{fr.dashboard.liveStats}<Activity size={13} aria-hidden="true" /></a>
     <a className="quick-link" href="#history">{fr.dashboard.history}<BookOpen size={13} aria-hidden="true" /></a>
     <a className="quick-link" href="#diagnostics">{fr.dashboard.diagnostics}<Stethoscope size={13} aria-hidden="true" /></a>
-    <a className="quick-link" href="#settings/shortcuts">{fr.dashboard.keyboardShortcuts}<span className="key-hint">Alt+C</span></a>
+    <a className="quick-link" href="#settings/shortcuts">{fr.dashboard.keyboardShortcuts}</a>
   </div></section>;
 }

@@ -1288,7 +1288,7 @@ test("[SET-03] Settings automation controls follow the preset master without los
   await expect(playAgain).toBeEnabled();
   await expect(playAgain).toHaveAttribute("aria-checked", "false");
 
-  await page.goto("/#dashboard");
+  await expect(master).toHaveAttribute("aria-checked", "false");
   const enableMaster = page.waitForResponse((response) =>
     response.request().method() === "PATCH"
     && new URL(response.url()).pathname === "/api/settings"
@@ -1299,7 +1299,6 @@ test("[SET-03] Settings automation controls follow the preset master without los
   expect((await enableMaster).ok()).toBe(true);
   await expect.poll(async () => (await readSettings(page)).presets_enabled).toBe(true);
 
-  await page.goto("/#settings/automations");
   for (const [label, key] of childOptions) {
     const option = page.getByRole("switch", { name: label });
     await expect(option).toBeEnabled();
