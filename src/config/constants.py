@@ -50,10 +50,10 @@ URL_DD_IMG_CHAMP: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/c
 URL_DD_IMG_SPELL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/spell/{filename}"
 URL_DD_IMG_ITEM: str = "https://ddragon.leagueoflegends.com/cdn/{version}/img/item/{filename}"
 URL_DD_CHAMPION_DETAIL: str = "https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion/{champion}.json"
-URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
-URL_CDRAGON_CHAMPION_DETAIL: str = (
-    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/v1/champions/{champion_id}.json"
+URL_DD_SKIN_TILE: str = (
+    "https://ddragon.leagueoflegends.com/cdn/img/champion/tiles/{champion}_{skin_num}.jpg"
 )
+URL_DD_SKIN_SPLASH: str = "https://ddragon.leagueoflegends.com/cdn/img/champion/splash/{champion}_{skin_num}.jpg"
 URL_CDRAGON_ASSET_PREFIX: str = (
     "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default/"
 )

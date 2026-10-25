@@ -391,6 +391,37 @@ class ApplicationContext:
             validate_preset_invariants(candidate, changed_keys=changed_keys)
             return self._commit_candidate_locked(candidate)
 
+    def persist_preset_order(self, order: list[str]) -> Dict[str, Any] | None:
+        """Move complete preset configurations into the requested priority order."""
+        if len(order) != len(PICK_SLOT_ORDER) or set(order) != set(PICK_SLOT_ORDER):
+            raise ValueError("Order must contain each preset slot exactly once")
+
+        with self._params_lock:
+            candidate = copy.deepcopy(self.params)
+            current_slots = candidate.get("pick_slots")
+            if not isinstance(current_slots, dict):
+                current_slots = {}
+            original_slots = copy.deepcopy(current_slots)
+            original_picks = {
+                slot_key: candidate.get(f"selected_pick_{index}", "")
+                for index, slot_key in enumerate(PICK_SLOT_ORDER, start=1)
+            }
+
+            reordered_slots = copy.deepcopy(original_slots)
+            reordered_picks: dict[str, Any] = {}
+            for destination_index, source_slot in enumerate(order, start=1):
+                destination_slot = PICK_SLOT_ORDER[destination_index - 1]
+                reordered_slots[destination_slot] = copy.deepcopy(
+                    original_slots.get(source_slot, {})
+                )
+                reordered_picks[f"selected_pick_{destination_index}"] = copy.deepcopy(
+                    original_picks[source_slot]
+                )
+
+            candidate["pick_slots"] = reordered_slots
+            candidate.update(reordered_picks)
+            return self._commit_candidate_locked(candidate)
+
     async def ensure_data_dragon(self) -> None:
         async with self._get_data_dragon_lock():
             if not self.data_dragon.loaded:

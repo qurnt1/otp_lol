@@ -268,6 +268,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/presets/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reorder Presets */
+        put: operations["reorder_presets_api_presets_order_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/presets/{slot_key}": {
         parameters: {
             query?: never;
@@ -1623,6 +1640,14 @@ export interface components {
             source?: string | null;
         };
         /**
+         * PresetOrderRequest
+         * @description Permutation of preset slots, ordered by their source positions.
+         */
+        PresetOrderRequest: {
+            /** Order */
+            order: ("pick_1" | "pick_2" | "pick_3")[];
+        };
+        /**
          * PresetPreview
          * @description Metadata-only preview assembled from already loaded local catalog data.
          */
@@ -2688,6 +2713,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PresetsResponse"];
+                };
+            };
+        };
+    };
+    reorder_presets_api_presets_order_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresetOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresetsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

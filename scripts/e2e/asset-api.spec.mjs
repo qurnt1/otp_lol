@@ -105,8 +105,8 @@ test("asset API serves validated LCU PNG, JPEG, skin variants and cached bytes",
       ["/api/assets/spells/4.png", "image/png", PNG.subarray(0, 8), "public, max-age=86400"],
       ["/api/assets/runes/perk/8005.png", "image/jpeg", JPEG.subarray(0, 3), "public, max-age=86400"],
       ["/api/assets/items/1001.png", "image/png", PNG.subarray(0, 8), "no-cache"],
-      ["/api/assets/skins/86/86013.png", "image/png", PNG.subarray(0, 8), "public, max-age=86400"],
-      ["/api/assets/skins/86/86013/splash", "image/png", PNG.subarray(0, 8), "public, max-age=86400"],
+      ["/api/assets/skins/86/86013.png", "image/png", PNG.subarray(0, 8), "no-cache"],
+      ["/api/assets/skins/86/86013/splash", "image/png", PNG.subarray(0, 8), "no-cache"],
     ];
     for (const [route, mediaType, signature, cacheControl] of routes) {
       const response = await page.request.get(`${app.baseURL}${route}`);

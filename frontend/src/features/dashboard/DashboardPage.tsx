@@ -9,7 +9,7 @@ import { queueStatusCopy } from "../../content/queueStatus";
 import { cn } from "../../lib/cn";
 import { phaseLabel } from "../../domain/runtime";
 import { useRuntimeStore } from "../../stores/runtimeStore";
-import type { Champion, DashboardAction, RuntimeSnapshot, Settings, SettingsPatch } from "../../types/api";
+import type { BootstrapResponse, Champion, DashboardAction, RuntimeSnapshot, Settings, SettingsPatch } from "../../types/api";
 import { presetSlotKeys, type PresetSlotKey } from "../../domain/presets";
 import { PresetAutomationMaster, usePresetAutomationMaster } from "../automation/PresetAutomationMaster";
 import { PresetOnboardingBanner } from "../automation/PresetOnboardingBanner";
@@ -127,6 +127,11 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
   const championCatalog = useQuery({ queryKey: ["champions", "dashboard"], queryFn: () => api.getChampions(), enabled: needsChampionCatalog, staleTime: 3_600_000 });
   const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
   const [automationErrors, setAutomationErrors] = useState<Record<string, string>>({});
+  const [slotOrder, setSlotOrder] = useState<PresetSlotKey[]>([...slots]);
+  const [draggingSlot, setDraggingSlot] = useState<PresetSlotKey | null>(null);
+  const [reorderPending, setReorderPending] = useState(false);
+  const [reorderMessage, setReorderMessage] = useState("");
+  const [reorderError, setReorderError] = useState(false);
   const cardTriggerRefs = useRef<Record<PresetSlotKey, HTMLElement | null>>({ pick_1: null, pick_2: null, pick_3: null });
   const banTriggerRef = useRef<HTMLElement | null>(null);
   const activeTriggerRef = useRef<HTMLElement | null>(null);
@@ -139,6 +144,55 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     pending ? next.add(key) : next.delete(key);
     return next;
   });
+
+  const persistSlotOrder = async (nextOrder: PresetSlotKey[]) => {
+    if (reorderPending || nextOrder.every((key, index) => key === slotOrder[index])) return;
+    const previousOrder = slotOrder;
+    setSlotOrder(nextOrder);
+    setReorderPending(true);
+    setReorderMessage("");
+    setReorderError(false);
+    try {
+      const updatedPresets = await api.reorderPresets({ order: nextOrder });
+      await queryClient.cancelQueries({ queryKey: ["bootstrap"] });
+      queryClient.setQueryData<BootstrapResponse>(["bootstrap"], (current) => current
+        ? { ...current, presets: updatedPresets, preset_previews: {} }
+        : current);
+      queryClient.setQueryData(["presets"], updatedPresets);
+      setSlotOrder([...slots]);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["presets"] }),
+        queryClient.invalidateQueries({ queryKey: ["bootstrap"] }),
+      ]);
+      setReorderMessage(fr.dashboard.prioritySaved);
+    } catch {
+      setSlotOrder(previousOrder);
+      setReorderMessage(fr.dashboard.prioritySaveFailed);
+      setReorderError(true);
+    } finally {
+      setReorderPending(false);
+    }
+  };
+
+  const reorderCard = (source: PresetSlotKey, target: PresetSlotKey) => {
+    const sourceIndex = slotOrder.indexOf(source);
+    const targetIndex = slotOrder.indexOf(target);
+    if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return;
+    const nextOrder = [...slotOrder];
+    nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, source);
+    void persistSlotOrder(nextOrder);
+  };
+
+  const moveCard = (source: PresetSlotKey, delta: -1 | 1) => {
+    const sourceIndex = slotOrder.indexOf(source);
+    const targetIndex = sourceIndex + delta;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= slotOrder.length) return;
+    const nextOrder = [...slotOrder];
+    nextOrder.splice(sourceIndex, 1);
+    nextOrder.splice(targetIndex, 0, source);
+    void persistSlotOrder(nextOrder);
+  };
 
   const patchSetting = async (key: string, value: unknown) => {
     const previous = queryClient.getQueryData<Settings>(["settings"]);
@@ -184,7 +238,10 @@ function DashboardPage({ action, onActionClose }: { action?: DashboardAction; on
     <AutomationStatus />
     <div className="dashboard-grid">
       <div className="dashboard-main">
-        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><span className="field-hint">{fr.dashboard.priorityHint}</span></div><div className="priority-grid">{slotsData.map((slot, index) => <ChampionPriorityCard key={slots[index]} slotKey={slots[index]} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slots[index]]} champion={championFor(slot?.champion || "", previews[slots[index]])} isOpen={action === slots[index]} triggerRef={(node) => { cardTriggerRefs.current[slots[index]] = node; if (node && action === slots[index]) activeTriggerRef.current = node; }} />)}</div></section>
+        <section className="surface priority-section" aria-labelledby="slots-heading"><div className="section-head"><div><div className="section-label">{fr.dashboard.slots}</div><h2 id="slots-heading">{configuredCount}/3 {fr.dashboard.ready.toLowerCase()}</h2></div><span className="field-hint">{fr.dashboard.priorityHint}</span></div><div className="priority-grid">{slotOrder.map((slotKey, index) => {
+          const slot = currentPresets?.slots[slotKey];
+          return <ChampionPriorityCard key={slotKey} slotKey={slotKey} slot={slot} index={index} spells={spells.data?.items ?? []} preview={previews[slotKey]} champion={championFor(slot?.champion || "", previews[slotKey])} isOpen={action === slotKey} triggerRef={(node) => { cardTriggerRefs.current[slotKey] = node; if (node && action === slotKey) activeTriggerRef.current = node; }} reorderDisabled={reorderPending || Boolean(action)} isDragging={draggingSlot === slotKey} onMove={moveCard} onDragStart={setDraggingSlot} onDragEnd={() => setDraggingSlot(null)} onDrop={reorderCard} />;
+        })}</div>{(reorderPending || reorderMessage) && <p className={cn("priority-reorder-feedback", reorderError && "is-error")} role={reorderError ? "alert" : "status"} aria-live="polite">{reorderPending ? fr.dashboard.prioritySaving : reorderMessage}</p>}</section>
       </div>
       <aside className="dashboard-aside"><BanPanel banName={banName} autoBanEnabled={Boolean(currentSettings?.auto_ban_enabled && presetMaster.enabled)} preview={bootstrap.data?.ban_preview} champion={championFor(banName, bootstrap.data?.ban_preview ?? undefined)} isOpen={action === "ban"} triggerRef={(node) => { banTriggerRef.current = node; if (node && action === "ban") activeTriggerRef.current = node; }} /><QuickActions /></aside>
     </div>

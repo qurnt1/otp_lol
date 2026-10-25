@@ -9,7 +9,7 @@
     "api:generate": "node scripts/generate-api-types.mjs",
     "api:check": "node scripts/generate-api-types.mjs --check",
     "test:e2e": "playwright test",
-    "test:e2e:api": "playwright test --config ../scripts/e2e/account-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/asset-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/diagnostics-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/lcu-automation-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/datadragon-cache-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/api-contract.config.mjs --workers=1",
+    "test:e2e:api": "playwright test --config ../scripts/e2e/account-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/asset-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/diagnostics-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/lcu-automation-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/preset-order-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/datadragon-cache-api.config.mjs --workers=1 && playwright test --config ../scripts/e2e/api-contract.config.mjs --workers=1",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b"
   },

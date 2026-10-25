@@ -63,6 +63,23 @@ class PresetSlotPatch(BaseModel):
         raise ValueError("Unknown summoner spell")
 
 
+class PresetOrderRequest(BaseModel):
+    """Permutation of preset slots, ordered by their source positions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    order: list[Literal["pick_1", "pick_2", "pick_3"]] = Field(
+        min_length=3, max_length=3
+    )
+
+    @field_validator("order")
+    @classmethod
+    def validate_order(cls, value: list[str]) -> list[str]:
+        if set(value) != {"pick_1", "pick_2", "pick_3"}:
+            raise ValueError("Order must contain each preset slot exactly once")
+        return value
+
+
 class PresetSlot(BaseModel):
     """Complete preset slot returned to the frontend."""
 
@@ -617,6 +634,7 @@ __all__ = [
     "HistoryResponse",
     "LiveLinkResponse",
     "MetadataResponse",
+    "PresetOrderRequest",
     "PresetPreview",
     "PresetSlotPatch",
     "PresetsResponse",

@@ -27,14 +27,18 @@ SKINS = {
     "Lux": [(99000, 0, "default"), (99007, 7, "Star Guardian Lux"), (99010, 10, "Battle Academia Lux")],
     "Teemo": [(17000, 0, "default"), (17001, 1, "Happy Elf Teemo")],
 }
-_EXTERNAL_STATE = {"dataDragon": "online", "updates": "offline"}
+_EXTERNAL_STATE = {"dataDragon": "online", "updates": "offline", "skinTile": "available"}
 
 
 def configure_external_state(state: dict[str, str]) -> dict[str, str]:
     unknown = set(state) - _EXTERNAL_STATE.keys()
     if unknown:
         raise ValueError(f"Unknown external fixture state: {', '.join(sorted(unknown))}.")
-    valid_modes = {"dataDragon": {"online", "offline"}, "updates": {"offline", "available", "none"}}
+    valid_modes = {
+        "dataDragon": {"online", "offline"},
+        "updates": {"offline", "available", "none"},
+        "skinTile": {"available", "missing"},
+    }
     for name, value in state.items():
         if value not in valid_modes[name]:
             choices = ", ".join(sorted(valid_modes[name]))
@@ -57,7 +61,14 @@ def _json(url: str, payload: object) -> Response:
 
 
 def _image(url: str, suffix: str) -> Response:
-    image = Image.new("RGB", (2, 2), color=(62, 93, 122))
+    path = urlsplit(url).path
+    if "/champion/tiles/" in path:
+        dimensions = (308, 560)
+    elif "/champion/splash/" in path:
+        dimensions = (1215, 717)
+    else:
+        dimensions = (2, 2)
+    image = Image.new("RGB", dimensions, color=(62, 93, 122))
     output = BytesIO()
     is_jpeg = suffix.lower().lstrip(".") in {"jpg", "jpeg"}
     image.save(output, format="JPEG" if is_jpeg else "PNG")
@@ -188,7 +199,15 @@ def response_for_external_request(method: str, url: str) -> Response | None:
         if detail_match and detail_match.group(1) in CHAMPIONS:
             slug = detail_match.group(1)
             return _json(url, {"type": "champion", "version": VERSION, "data": {slug: _champion_record(slug)}})
-        if re.fullmatch(r"/cdn/(?:[\d.]+/img/(?:champion|spell)/[^/]+|img/champion/splash/[A-Za-z0-9_]+)\.(?:png|jpg|jpeg)", path):
+        if (
+            _EXTERNAL_STATE["skinTile"] == "missing"
+            and path == "/cdn/img/champion/tiles/Garen_13.jpg"
+        ):
+            return _response(url, 404, b"Synthetic skin tile not found", "text/plain")
+        if re.fullmatch(
+            r"/cdn/(?:[\d.]+/img/(?:champion|spell)/[^/]+|img/champion/(?:splash|tiles)/[A-Za-z0-9_]+)\.(?:png|jpg|jpeg)",
+            path,
+        ):
             return _image(url, path.rsplit(".", 1)[-1])
         return None
 

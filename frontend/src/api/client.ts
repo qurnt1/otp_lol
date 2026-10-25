@@ -1,7 +1,7 @@
 import type {
   AccountIdentity, BootstrapResponse, ChampionCatalogResponse, DiagnosticsExportResponse,
   DiagnosticsResponse, DiagnosticsRunResponse, HistoryClearResponse, HistoryResponse,
-  LiveLinkResponse, NetworkStatus, PresetSlot, PresetSlotPatch, PresetsResponse,
+  LiveLinkResponse, NetworkStatus, PresetOrderRequest, PresetSlot, PresetSlotPatch, PresetsResponse,
   ProviderCatalog, ProviderWindowActionResponse, ProviderWindowStatus,
   ProviderWindowsStatusResponse, RunesResponse, RuntimeSnapshot, Settings, SettingsImport,
   SettingsPatch, SkinsResponse, StatsLinkResponse, SummonerSpellCatalogResponse, UpdateResponse,
@@ -57,6 +57,7 @@ export const api = {
   resetPresets: () => request<Settings>("/api/presets/reset", { method: "POST" }),
   clearPresets: () => request<Settings>("/api/presets/clear", { method: "POST" }),
   patchPreset: (slot: string, values: PresetSlotPatch | Partial<PresetSlot>) => request<PresetsResponse>("/api/presets/" + slot, { method: "PUT", body: JSON.stringify(values) }),
+  reorderPresets: (values: PresetOrderRequest) => request<PresetsResponse>("/api/presets/order", { method: "PUT", body: JSON.stringify(values) }),
   getChampions: (query = "", signal?: AbortSignal) => request<ChampionCatalogResponse>("/api/champions?q=" + encodeURIComponent(query), { signal }),
   getSpells: () => request<SummonerSpellCatalogResponse>("/api/spells"),
   getSkins: (championId: number) => request<SkinsResponse>("/api/skins/" + championId),

@@ -20,6 +20,7 @@ from ...domain.hotkeys import validate_hotkey_pair
 from ...domain.presets import validate_preset_invariants
 from ...services.profile_config import build_effective_profile_config
 from ..schemas import (
+    PresetOrderRequest,
     PresetSlotPatch,
     PresetsResponse,
     SettingsImport,
@@ -177,6 +178,22 @@ def read_presets(request: Request) -> PresetsResponse:
         "selected_ban": effective["selected_ban"],
         "slots": effective["pick_slots"],
     }
+
+
+@router.put("/presets/order", response_model=PresetsResponse)
+async def reorder_presets(request: Request, payload: PresetOrderRequest) -> PresetsResponse:
+    context = _context(request)
+    try:
+        updated = await asyncio.to_thread(context.persist_preset_order, payload.order)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    if updated is None:
+        raise HTTPException(status_code=500, detail="Unable to save preset order")
+    context.broker.publish(
+        "settings_updated",
+        {"keys": ["pick_slots", "selected_pick_1", "selected_pick_2", "selected_pick_3"]},
+    )
+    return read_presets(request)
 
 
 @router.put("/presets/{slot_key}", response_model=PresetsResponse)

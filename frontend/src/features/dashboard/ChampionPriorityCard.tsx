@@ -1,5 +1,5 @@
-import { CircleOff, Moon, Swords } from "lucide-react";
-import type { Ref } from "react";
+import { ArrowDown, ArrowUp, CircleOff, GripVertical, Moon, Swords } from "lucide-react";
+import { useState, type Ref } from "react";
 
 import { runeAssetUrl, safeImageUrl } from "../../domain/assets";
 import { cn } from "../../lib/cn";
@@ -18,9 +18,16 @@ interface ChampionPriorityCardProps {
   champion?: Champion;
   isOpen?: boolean;
   triggerRef?: Ref<HTMLAnchorElement>;
+  reorderDisabled?: boolean;
+  isDragging?: boolean;
+  onMove?: (slotKey: PresetSlotKey, delta: -1 | 1) => void;
+  onDragStart?: (slotKey: PresetSlotKey) => void;
+  onDragEnd?: () => void;
+  onDrop?: (source: PresetSlotKey, target: PresetSlotKey) => void;
 }
 
-export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, champion, isOpen = false, triggerRef }: ChampionPriorityCardProps) {
+export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, champion, isOpen = false, triggerRef, reorderDisabled = false, isDragging = false, onMove, onDragStart, onDragEnd, onDrop }: ChampionPriorityCardProps) {
+  const [isDropTarget, setIsDropTarget] = useState(false);
   const championName = slot?.champion?.trim() ?? "";
   const skinMode = slot?.skin_mode ?? "none";
   const skinLabel = skinMode === "fixed" ? preview?.skin_name || fr.presets.skinFixed : skinMode === "random" ? fr.presets.skinRandom : fr.presets.skinNone;
@@ -37,8 +44,26 @@ export function ChampionPriorityCard({ slotKey, slot, index, spells, preview, ch
     ?? safeImageUrl(preview?.champion_splash_url)
     ?? safeImageUrl(champion?.splash_url);
 
-  return <article className={cn("priority-card", !championName && "is-empty")}>
-    <a ref={triggerRef} className="priority-card-link" href={routeToHash({ page: "dashboard", action: slotKey })} aria-haspopup="dialog" aria-expanded={isOpen} aria-label={`${championName ? `Modifier ${championName}` : "Configurer un champion"}, preset ${index + 1}`}>
+  return <article className={cn("priority-card", !championName && "is-empty", isDragging && "is-dragging", isDropTarget && "is-drop-target")} onDragEnter={() => { if (!reorderDisabled) setIsDropTarget(true); }} onDragLeave={(event) => {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsDropTarget(false);
+  }} onDragOver={(event) => { if (!reorderDisabled) event.preventDefault(); }} onDrop={(event) => {
+    event.preventDefault();
+    setIsDropTarget(false);
+    const source = event.dataTransfer.getData("text/plain") as PresetSlotKey;
+    if (source && source !== slotKey) onDrop?.(source, slotKey);
+  }}>
+    <div className="priority-card-order" role="group" aria-label={`Réordonner le preset ${index + 1}`}>
+      <button className="priority-card-drag" type="button" draggable={!reorderDisabled} disabled={reorderDisabled} aria-label={`${fr.dashboard.dragPriority} : ${championName || fr.dashboard.configure}`} title={fr.dashboard.dragPriority} onDragStart={(event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", slotKey);
+        onDragStart?.(slotKey);
+      }} onDragEnd={onDragEnd}>
+        <GripVertical size={15} aria-hidden="true" />
+      </button>
+      <button className="priority-card-order-button" type="button" disabled={reorderDisabled || index === 0} aria-label={`${fr.dashboard.movePriorityUp} : ${championName || fr.dashboard.configure}`} title={fr.dashboard.movePriorityUp} onClick={() => onMove?.(slotKey, -1)}><ArrowUp size={13} aria-hidden="true" /></button>
+      <button className="priority-card-order-button" type="button" disabled={reorderDisabled || index === 2} aria-label={`${fr.dashboard.movePriorityDown} : ${championName || fr.dashboard.configure}`} title={fr.dashboard.movePriorityDown} onClick={() => onMove?.(slotKey, 1)}><ArrowDown size={13} aria-hidden="true" /></button>
+    </div>
+    <a ref={triggerRef} className="priority-card-link" href={routeToHash({ page: "dashboard", action: slotKey })} aria-haspopup="dialog" aria-expanded={isOpen} aria-disabled={reorderDisabled} aria-label={`${championName ? `Modifier ${championName}` : "Configurer un champion"}, preset ${index + 1}`} onClick={(event) => { if (reorderDisabled) event.preventDefault(); }}>
       <div className="priority-art">
       {splashUrl && <AssetImage src={splashUrl} alt="" width="640" height="340" loading={index === 0 ? "eager" : "lazy"} />}
       <span className="priority-shade" aria-hidden="true" />

@@ -6,6 +6,7 @@ export type { DashboardAction } from "../domain/presets";
 export type SettingsPatch = components["schemas"]["SettingsPatch"];
 export type PresetSlotPatch = components["schemas"]["PresetSlotPatch"];
 export type PresetSlot = components["schemas"]["PresetSlot"];
+export type PresetOrderRequest = components["schemas"]["PresetOrderRequest"];
 export type SettingsImport = components["schemas"]["SettingsImport"];
 export type RuntimeSnapshot = components["schemas"]["RuntimeSnapshotResponse"];
 export type HistoryEntry = components["schemas"]["HistoryEntry"];

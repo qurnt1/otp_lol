@@ -46,17 +46,16 @@ from ..config import (
     ICONS_CACHE_DIR,
     SKINS_CACHE_DIR,
     SPELLS_CACHE_DIR,
-    URL_CDRAGON_ASSET_PREFIX,
-    URL_CDRAGON_CHAMPION_DETAIL,
+    SUMMONER_SPELL_MAP,
     URL_DD_CHAMPION_DETAIL,
     URL_DD_CHAMPIONS,
     URL_DD_IMG_CHAMP,
     URL_DD_IMG_SPELL,
     URL_DD_SKIN_SPLASH,
+    URL_DD_SKIN_TILE,
     URL_DD_SUMMONERS,
     URL_DD_VERSIONS,
     URL_PERK_ICON_PREFIX,
-    SUMMONER_SPELL_MAP,
     get_cache_dirs,
 )
 from ..integrations.communitydragon import CommunityDragonClient
@@ -81,11 +80,8 @@ class DataDragon:
         self._image_cache: OrderedDict[str, Image.Image] = OrderedDict()
         self._image_cache_maxsize: int = 200
         self._champion_detail_cache: Dict[tuple[str, int], Dict[str, Any]] = {}
-        self._cdragon_champion_detail_cache: Dict[tuple[str, int], Dict[str, Any]] = {}
         self._champion_detail_failures: Dict[tuple[str, int], float] = {}
         self._champion_detail_inflight: Dict[tuple[str, int], Event] = {}
-        self._cdragon_detail_failures: Dict[tuple[str, int], float] = {}
-        self._cdragon_detail_inflight: Dict[tuple[str, int], Event] = {}
         self._rune_perk_icon_path_by_id: Optional[Dict[int, str]] = None
         self._rune_perk_name_by_id: Optional[Dict[int, str]] = None
         self._cache_lock = Lock()
@@ -385,9 +381,7 @@ class DataDragon:
             if previous_version != online_version:
                 with self._cache_lock:
                     self._champion_detail_cache.clear()
-                    self._cdragon_champion_detail_cache.clear()
                     self._champion_detail_failures.clear()
-                    self._cdragon_detail_failures.clear()
                     self.summoner_data.clear()
                     self.summoner_loaded = False
             self.all_names = sorted(list(self.name_by_id.values()))
@@ -535,12 +529,33 @@ class DataDragon:
             return None
         if normalized_champion_id <= 0 or normalized_skin_num < 0:
             return None
-        champion_slug = str((self.by_id.get(normalized_champion_id) or {}).get("id") or "").strip()
+        champion_slug = str(
+            (self.by_id.get(normalized_champion_id) or {}).get("id") or ""
+        ).strip()
         if not champion_slug:
             return None
         return self.get_remote_image(
             URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=normalized_skin_num),
             cache_key=f"skin_preview_{normalized_champion_id}_{normalized_skin_num}",
+        )
+
+    def get_skin_tile(self, champion_id: Any, skin_num: Any) -> Optional[Image.Image]:
+        """Fetch a known skin thumbnail directly without loading the skin catalogue."""
+        try:
+            normalized_champion_id = int(champion_id)
+            normalized_skin_num = int(skin_num)
+        except (TypeError, ValueError):
+            return None
+        if normalized_champion_id <= 0 or normalized_skin_num < 0:
+            return None
+        champion_slug = str((self.by_id.get(normalized_champion_id) or {}).get("id") or "").strip()
+        if not champion_slug:
+            return None
+        return self.get_remote_image(
+            URL_DD_SKIN_TILE.format(
+                champion=champion_slug, skin_num=normalized_skin_num
+            ),
+            cache_key=f"skin_tile_{normalized_champion_id}_{normalized_skin_num}",
         )
 
     def load_summoners(self) -> None:
@@ -666,94 +681,6 @@ class DataDragon:
                     self._champion_detail_cache[key] = detail
         return dict(detail) if detail is not None else None
 
-    @staticmethod
-    def cdragon_url_from_asset_path(asset_path: str) -> Optional[str]:
-        raw_path = str(asset_path or "").strip()
-        if not raw_path:
-            return None
-        normalized = raw_path.replace("\\", "/")
-        prefix = "/lol-game-data/assets/"
-        lowered = normalized.lower()
-        if "://" in lowered or lowered.startswith("//") or "?" in lowered or "#" in lowered:
-            return None
-        if ".." in lowered.split("/"):
-            return None
-        if lowered.startswith(prefix):
-            relative = lowered[len(prefix):]
-        else:
-            relative = lowered.lstrip("/")
-            if not relative.startswith("assets/"):
-                return None
-        if not relative:
-            return None
-        return f"{URL_CDRAGON_ASSET_PREFIX}{relative}"
-
-    def get_cdragon_champion_detail(self, name_or_id: Any) -> Optional[Dict[str, Any]]:
-        champion_id = self.resolve_champion(name_or_id)
-        version = self.version
-        if not champion_id or not version:
-            return None
-
-        cached = self._get_cached_cdragon_champion_detail(champion_id)
-        if cached is not None:
-            return cached
-
-        key = (version, champion_id)
-        with self._cache_lock:
-            if self._cdragon_detail_failures.get(key, 0) > monotonic():
-                return None
-            event = self._cdragon_detail_inflight.get(key)
-            is_owner = event is None
-            if is_owner:
-                event = Event()
-                self._cdragon_detail_inflight[key] = event
-
-        if not is_owner:
-            event.wait()
-            return self._get_cached_cdragon_champion_detail(champion_id)
-
-        url = URL_CDRAGON_CHAMPION_DETAIL.format(champion_id=champion_id)
-        detail: Optional[Dict[str, Any]] = None
-        try:
-            response = self._request_get(url, timeout=8)
-            if response is not None:
-                response.raise_for_status()
-                downloaded_detail = response.json()
-                if isinstance(downloaded_detail, dict):
-                    detail = downloaded_detail
-        except requests.RequestException as e:
-            logging.warning("DataDragon: CDragon champion detail download error - %s", e)
-        except Exception as e:
-            logging.warning("DataDragon: CDragon champion detail parsing error - %s", e)
-        finally:
-            with self._cache_lock:
-                if detail is not None:
-                    self._cdragon_champion_detail_cache[key] = detail
-                    self._cdragon_detail_failures.pop(key, None)
-                else:
-                    self._cdragon_detail_failures[key] = monotonic() + DETAIL_FAILURE_TTL_SECONDS
-                self._cdragon_detail_inflight.pop(key, None)
-                event.set()
-
-        if detail is not None:
-            self._save_detail_file("communitydragon", version, champion_id, detail)
-            return dict(detail)
-        return None
-
-    def _get_cached_cdragon_champion_detail(self, champion_id: int) -> Optional[Dict[str, Any]]:
-        version = self.version
-        if not version:
-            return None
-        key = (version, champion_id)
-        with self._cache_lock:
-            detail = self._cdragon_champion_detail_cache.get(key)
-        if detail is None:
-            detail = self._load_detail_file("communitydragon", version, champion_id)
-            if detail is not None:
-                with self._cache_lock:
-                    self._cdragon_champion_detail_cache[key] = detail
-        return dict(detail) if detail is not None else None
-
     def get_skin_catalog(self, name_or_id: Any) -> List[Dict[str, Any]]:
         champion_id = self.resolve_champion(name_or_id)
         if not champion_id:
@@ -762,9 +689,7 @@ class DataDragon:
         detail = self.get_champion_detail(champion_id)
         if not detail:
             return []
-        cdragon_detail = self.get_cdragon_champion_detail(champion_id) or {}
-
-        return self._build_skin_catalog(champion_id, name_or_id, detail, cdragon_detail)
+        return self._build_skin_catalog(champion_id, name_or_id, detail)
 
     def get_cached_skin_catalog(self, name_or_id: Any) -> List[Dict[str, Any]]:
         """Build skin metadata from memory/disk only; never initiate a network request."""
@@ -777,42 +702,18 @@ class DataDragon:
         detail = self._get_cached_champion_detail(champion_id)
         if not detail:
             return []
-        cdragon_detail = self._get_cached_cdragon_champion_detail(champion_id) or {}
-        return self._build_skin_catalog(champion_id, name_or_id, detail, cdragon_detail)
+        return self._build_skin_catalog(champion_id, name_or_id, detail)
 
     def _build_skin_catalog(
         self,
         champion_id: int,
         name_or_id: Any,
         detail: Dict[str, Any],
-        cdragon_detail: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
 
         champion_slug = detail.get("id") or self.by_id.get(champion_id, {}).get("id")
         champion_name = detail.get("name") or self.id_to_name(champion_id) or str(name_or_id)
         skins = detail.get("skins", [])
-        cdragon_skins = cdragon_detail.get("skins", []) if isinstance(cdragon_detail, dict) else []
-        cdragon_by_skin_id: Dict[int, Dict[str, Any]] = {}
-        cdragon_by_num: Dict[int, Dict[str, Any]] = {}
-        cdragon_by_name: Dict[str, Dict[str, Any]] = {}
-        for item in cdragon_skins if isinstance(cdragon_skins, list) else []:
-            if not isinstance(item, dict):
-                continue
-            try:
-                cdragon_skin_id = int(item.get("id") or item.get("skinId") or 0)
-            except (TypeError, ValueError):
-                cdragon_skin_id = 0
-            try:
-                cdragon_skin_num = int(item.get("num") or 0)
-            except (TypeError, ValueError):
-                cdragon_skin_num = 0
-            if cdragon_skin_id:
-                cdragon_by_skin_id[cdragon_skin_id] = item
-            if cdragon_skin_num >= 0:
-                cdragon_by_num[cdragon_skin_num] = item
-            normalized_name = self._normalize(str(item.get("name") or ""))
-            if normalized_name:
-                cdragon_by_name[normalized_name] = item
         catalog: List[Dict[str, Any]] = []
         for skin in skins:
             if skin.get("parentSkin") not in {None, "", 0}:
@@ -826,11 +727,11 @@ class DataDragon:
             except (TypeError, ValueError):
                 skin_num = 0
             name = str(skin.get("name") or "")
-            cdragon_skin = (
-                cdragon_by_skin_id.get(skin_id)
-                or cdragon_by_num.get(skin_num)
-                or cdragon_by_name.get(self._normalize(name))
-                or {}
+            tile_url = URL_DD_SKIN_TILE.format(
+                champion=champion_slug, skin_num=skin_num
+            )
+            splash_url = URL_DD_SKIN_SPLASH.format(
+                champion=champion_slug, skin_num=skin_num
             )
             entry = {
                 "champion_id": champion_id,
@@ -839,12 +740,10 @@ class DataDragon:
                 "skin_id": skin_id,
                 "skin_num": skin_num,
                 "skin_name": name,
-                "splash_url": URL_DD_SKIN_SPLASH.format(champion=champion_slug, skin_num=skin_num),
-                "tile_url": self.cdragon_url_from_asset_path(cdragon_skin.get("tilePath", "")),
-                "centered_splash_url": self.cdragon_url_from_asset_path(cdragon_skin.get("splashPath", "")),
-                "uncentered_splash_url": self.cdragon_url_from_asset_path(
-                    cdragon_skin.get("uncenteredSplashPath", "")
-                ),
+                "splash_url": splash_url,
+                "tile_url": tile_url,
+                "centered_splash_url": None,
+                "uncentered_splash_url": None,
             }
             catalog.append(entry)
         return catalog

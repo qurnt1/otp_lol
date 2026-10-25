@@ -36,7 +36,7 @@ def _context(request: Request) -> Any:
     return request.app.state.context
 
 
-def _png_response(image: Any) -> Response:
+def _png_response(image: Any, *, cache_control: str = "no-cache") -> Response:
     if image is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     buffer = BytesIO()
@@ -44,8 +44,31 @@ def _png_response(image: Any) -> Response:
     return Response(
         content=buffer.getvalue(),
         media_type="image/png",
-        headers={"Cache-Control": "no-cache"},
+        headers={"Cache-Control": cache_control},
     )
+
+
+def _skin_image_response(image: Any, *, cache_control: str) -> Response:
+    if image is None:
+        raise HTTPException(status_code=404, detail="Asset not found")
+    buffer = BytesIO()
+    image.convert("RGB").save(
+        buffer, format="JPEG", quality=90, optimize=True
+    )
+    return Response(
+        content=buffer.getvalue(),
+        media_type="image/jpeg",
+        headers={"Cache-Control": cache_control},
+    )
+
+
+def _skin_image_cache_control(request: Request, context: Any) -> str:
+    """Cache Data Dragon skin images only when the URL names their data version."""
+    version = str(getattr(context.data_dragon, "version", "") or "")
+    requested_version = request.query_params.get("v", "")
+    if version and requested_version == version:
+        return "public, max-age=31536000, immutable"
+    return "no-cache"
 
 
 def _lcu_records(payload: Any, collection: str) -> list[dict[str, Any]]:
@@ -378,30 +401,32 @@ async def skin_asset(request: Request, champion_id: int, skin_id: int, skin_num:
     if asset_service is not None:
         asset = await asset_service.get_asset("skin", skin_id)
         if asset is not None:
-            return Response(content=asset.content, media_type=asset.content_type, headers={"Cache-Control": "public, max-age=86400"})
+            return Response(
+                content=asset.content,
+                media_type=asset.content_type,
+                headers={"Cache-Control": "no-cache"},
+            )
     await context.ensure_data_dragon()
+    cache_control = _skin_image_cache_control(request, context)
 
     def load_image() -> Any:
         catalog = context.data_dragon.get_cached_skin_catalog(champion_id)
         skin = next((item for item in catalog if int(item.get("skin_id") or 0) == skin_id), None)
         if not skin:
-            return context.data_dragon.get_skin_preview(champion_id, skin_num) if skin_num is not None else None
-        preview_url = (
-            skin.get("tile_url")
-            or skin.get("centered_splash_url")
-            or skin.get("uncentered_splash_url")
-            or skin.get("splash_url")
-        )
+            return context.data_dragon.get_skin_tile(champion_id, skin_num) if skin_num is not None else None
+        preview_url = skin.get("tile_url")
         if not preview_url:
-            return context.data_dragon.get_skin_preview(champion_id, skin_num) if skin_num is not None else None
+            return context.data_dragon.get_skin_tile(champion_id, skin_num) if skin_num is not None else None
         image = context.data_dragon.get_remote_image(
-            preview_url, cache_key=f"frontend_skin_{champion_id}_{skin_id}"
+            preview_url, cache_key=f"frontend_skin_tile_{champion_id}_{skin_id}"
         )
         if image is None and skin_num is not None:
-            return context.data_dragon.get_skin_preview(champion_id, skin_num)
+            return context.data_dragon.get_skin_tile(champion_id, skin_num)
         return image
 
-    return _png_response(await asyncio.to_thread(load_image))
+    return _skin_image_response(
+        await asyncio.to_thread(load_image), cache_control=cache_control
+    )
 
 
 @router.get("/assets/skins/{champion_id}/{skin_id}/splash")
@@ -416,8 +441,13 @@ async def skin_splash_asset(
     if asset_service is not None:
         asset = await asset_service.get_asset("skin", skin_id, variant="splash")
         if asset is not None:
-            return Response(content=asset.content, media_type=asset.content_type, headers={"Cache-Control": "public, max-age=86400"})
+            return Response(
+                content=asset.content,
+                media_type=asset.content_type,
+                headers={"Cache-Control": "no-cache"},
+            )
     await context.ensure_data_dragon()
+    cache_control = _skin_image_cache_control(request, context)
 
     def load_image() -> Any:
         skin = next(
@@ -433,15 +463,14 @@ async def skin_splash_asset(
         if skin is None:
             return None
 
-        for field in ("centered_splash_url", "uncentered_splash_url", "splash_url", "tile_url"):
-            image_url = str(skin.get(field) or "").strip()
-            if image_url:
-                image = context.data_dragon.get_remote_image(
-                    image_url,
-                    cache_key=f"frontend_skin_splash_{champion_id}_{skin_id}_{field}",
-                )
-                if image is not None:
-                    return image
-        return None
+        image_url = str(skin.get("splash_url") or "").strip()
+        if not image_url:
+            return None
+        return context.data_dragon.get_remote_image(
+            image_url,
+            cache_key=f"frontend_skin_splash_{champion_id}_{skin_id}",
+        )
 
-    return _png_response(await asyncio.to_thread(load_image))
+    return _skin_image_response(
+        await asyncio.to_thread(load_image), cache_control=cache_control
+    )
