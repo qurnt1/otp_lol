@@ -18,7 +18,7 @@ Developers maintaining startup guards and shutdown cleanup.
 
 DEPENDENCIES:
 Used by:
-- launcher.py.
+- launcher_web.py.
 Uses:
 - Standard library: logging, msvcrt, os
 - Third-party libraries: psutil
@@ -49,6 +49,10 @@ def _is_stale_lockfile() -> bool:
             return False
         except psutil.NoSuchProcess:
             return True
+    except PermissionError:
+        # An active Windows msvcrt lock can deny a second process read access.
+        # Treat that state as owned rather than deleting a live instance's lock.
+        return False
     except (OSError, ValueError):
         return True
 

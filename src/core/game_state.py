@@ -22,7 +22,7 @@ Uses:
 - Standard library: dataclasses, threading, typing
 """
 
-from dataclasses import dataclass, field, fields, MISSING
+from dataclasses import MISSING, dataclass, field, fields
 from threading import Lock
 from typing import Optional, Set
 
@@ -39,11 +39,14 @@ class GameState:
     puuid: Optional[str] = None
     auto_game_name: Optional[str] = None
     auto_tag_line: Optional[str] = None
-    platform_routing: str = "euw1"
-    region_routing: str = "europe"
+    platform_routing: str = ""
+    provider_region: str = ""
+    region_routing: str = ""
+    routing_source: str = ""
     last_game_start_notify_ts: float = 0.0
     last_reported_summoner: Optional[str] = None
     current_queue_id: int = 0
+    current_game_mode: str = ""
     lobby_presets_warning_shown: bool = field(default=False, metadata={"transient": True})
     cache_lock: Lock = field(default_factory=Lock, repr=False)
 

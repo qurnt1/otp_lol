@@ -15,7 +15,7 @@ Developers maintaining profile settings, champion-select automation, and main-wi
 
 DEPENDENCIES:
 Used by:
-- src.core.websocket and src.ui.main_preview
+- src.core.websocket and the desktop frontend.
 Uses:
 - Standard library: typing
 - Local modules: src.config.constants
@@ -73,6 +73,7 @@ def _resolve_slot(
         "rune_page_id": _to_int(slot.get("rune_page_id")),
         "rune_page_name": str(slot.get("rune_page_name") or ""),
         "rune_auto_apply": bool(slot.get("rune_auto_apply", True)),
+        "rune_keystone_id": _to_int(slot.get("rune_keystone_id")),
         "rune_keystone_path": str(slot.get("rune_keystone_path") or ""),
         "rune_sub_style_icon_path": str(slot.get("rune_sub_style_icon_path") or ""),
     }
