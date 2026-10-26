@@ -86,7 +86,6 @@ flowchart LR
 - `frontend/src/` is the React/TypeScript desktop interface. Its API types are generated from OpenAPI.
 - `src/desktop/` owns the pywebview shell, window lifecycle, tray and native shortcuts.
 - `website/` contains OTP LOL's separate React/Vite product landing page; it is not the desktop interface. The GitHub Pages workflow is configured for `https://qurnt1.github.io/otp_lol/`.
-- `quentin-chabot.vercel.app` is Quentin's personal portfolio, separate from OTP LOL. It can host the project's presentation PDF, but it is not the OTP LOL app or product site.
 
 The public GitHub Pages site at `https://qurnt1.github.io/otp_lol/` is the React/Vite landing page built from `website/` by `.github/workflows/deploy-website.yml`. The desktop interface remains a separate app under `frontend/`.
 
