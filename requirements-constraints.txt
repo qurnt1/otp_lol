@@ -4,7 +4,7 @@ cryptography==50.0.1
 fastapi==0.135.1
 keyboard==0.13.5
 lcu-driver==3.0.2
-packaging==25.0
+packaging==26.3
 Pillow==13.0.0
 psutil==7.0.0
 pygame==2.6.1
