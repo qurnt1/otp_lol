@@ -6,7 +6,7 @@ keyboard==0.13.5
 lcu-driver==3.0.2
 packaging==25.0
 Pillow==13.0.0
-psutil==7.0.0
+psutil==7.2.2
 pygame==2.6.1
 pystray==0.19.5
 pywebview==6.2.1
